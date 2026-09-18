@@ -1,0 +1,29 @@
+@page "/dev-session-test"
+@layout YKCoatings.Components.Layout.EmptyLayout
+@using YKCoatings.Services
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+<h3 style="font-family:Cairo;direction:rtl;padding:20px">صفحة اختبار مؤقتة — تُنشئ جلسة حقيقية ثم تنتقل</h3>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // إنشاء جلسة حقيقية في ProtectedSessionStorage بدون لمس قاعدة البيانات
+        await UserSession.LoginAsync(
+            userId: 999,
+            username: "devtest",
+            fullName: "مستخدم اختبار",
+            roleId: 1,
+            roleName: "اختبار",
+            roleCode: "TEST",
+            employeeId: null,
+            mustChangePassword: false,
+            passwordExpired: false);
+
+        Navigation.NavigateTo("/items");
+    }
+}

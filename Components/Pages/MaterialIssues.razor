@@ -1,0 +1,738 @@
+﻿@page "/material-issues"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject MaterialIssueService IssueService
+@inject NavigationManager NavigationManager
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>أذون صرف الخامات - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions is null || !Perms.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>
+            العودة للرئيسية
+        </button>
+    </div>
+}
+else
+{
+    <div class="mi-page">
+
+        <!-- Header -->
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    أذون صرف الخامات
+                </h1>
+                <p class="header-subtitle">Material Issue Orders</p>
+            </div>
+            <div class="header-actions">
+                @if (Perms.CanExport)
+                {
+                    <button class="btn-success-modern" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting)
+                        {
+                            <span class="spinner-tiny"></span>
+                            <span>جاري التصدير...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-file-earmark-excel-fill"></i>
+                            <span>تصدير إكسيل</span>
+                        }
+                    </button>
+                }
+                @if (Perms.CanAdd)
+                {
+                    <button class="btn-primary-modern" @onclick="NavigateToAdd">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>إذن صرف جديد</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon-wrap primary"><i class="bi bi-clipboard-data-fill"></i></div>
+                <div class="stat-info">
+                    <div class="stat-value">@issues.Count</div>
+                    <div class="stat-label">إجمالي الأذون</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap warning"><i class="bi bi-hourglass-split"></i></div>
+                <div class="stat-info">
+                    <div class="stat-value">@issues.Count(i => i.IssueStatus == 1)</div>
+                    <div class="stat-label">مسودة</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap success"><i class="bi bi-check-circle-fill"></i></div>
+                <div class="stat-info">
+                    <div class="stat-value">@issues.Count(i => i.IssueStatus == 2)</div>
+                    <div class="stat-label">تم الصرف</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap info"><i class="bi bi-cash-stack"></i></div>
+                <div class="stat-info">
+                    <div class="stat-value">@issues.Where(i => i.IssueStatus == 2).Sum(i => i.TotalCost).ToString("N0")</div>
+                    <div class="stat-label">إجمالي التكلفة المصروفة</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-card">
+            <div class="filter-header">
+                <i class="bi bi-funnel-fill"></i>
+                خيارات التصفية والبحث
+            </div>
+            <div class="filter-body">
+                <div class="filter-group" style="flex:2; min-width:220px;">
+                    <label class="filter-label">بحث سريع</label>
+                    <div class="search-wrap">
+                        <i class="bi bi-search search-ico"></i>
+                        <input type="text" class="filter-input"
+                               placeholder="رقم الإذن أو أمر التصنيع..."
+                               @bind="searchQuery"
+                               @bind:event="oninput"
+                               @onkeyup="HandleSearch" />
+                    </div>
+                </div>
+                <div class="filter-group" style="flex:1; min-width:140px;">
+                    <label class="filter-label">الحالة</label>
+                    <select class="filter-select" @bind="statusFilter">
+                        <option value="">— الكل —</option>
+                        <option value="1">📝 مسودة</option>
+                        <option value="2">✅ تم الصرف</option>
+                        <option value="3">❌ ملغي</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="flex:1; min-width:140px;">
+                    <label class="filter-label">من تاريخ</label>
+                    <input type="date" class="filter-input" @bind="fromDate" />
+                </div>
+                <div class="filter-group" style="flex:1; min-width:140px;">
+                    <label class="filter-label">إلى تاريخ</label>
+                    <input type="date" class="filter-input" @bind="toDate" />
+                </div>
+                <div class="filter-group" style="flex:.6; min-width:100px; justify-content:flex-end;">
+                    <label class="filter-label" style="visibility:hidden;">.</label>
+                    <button class="btn-primary-modern" @onclick="LoadData">
+                        <i class="bi bi-search"></i>
+                        <span>تصفية</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-card">
+            <div class="table-card-header">
+                <div class="table-card-title">
+                    <i class="bi bi-table"></i>
+                    قائمة أذون الصرف
+                    @if (!isLoading)
+                    {
+                        <span class="count-badge">@issues.Count إذن</span>
+                    }
+                </div>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="state-box">
+                    <div class="spinner-md"></div>
+                    <span class="state-text">جاري تحميل البيانات...</span>
+                </div>
+            }
+            else if (!issues.Any())
+            {
+                <div class="state-box">
+                    <div class="empty-icon-circle"><i class="bi bi-inbox"></i></div>
+                    <p class="empty-title">لا توجد أذون صرف مطابقة</p>
+                    <p class="empty-sub">جرّب تغيير المعايير أو أنشئ إذن صرف جديد</p>
+                    @if (Perms.CanAdd)
+                    {
+                        <button class="btn-primary-modern" @onclick="NavigateToAdd">
+                            <i class="bi bi-plus-lg"></i>
+                            <span>إذن صرف جديد</span>
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="mi-table">
+                        <thead>
+                            <tr>
+                                <th>رقم الإذن</th>
+                                <th>التاريخ</th>
+                                <th>أمر التصنيع</th>
+                                <th>المنتج</th>
+                                <th>المخزن</th>
+                                <th class="tc">الأصناف</th>
+                                <th class="tr">الكمية</th>
+                                <th class="tr">التكلفة</th>
+                                <th class="tc">الحالة</th>
+                                <th class="tc">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var issue in issues)
+                            {
+                                <tr>
+                                    <td><span class="code-chip">@issue.IssueNumber</span></td>
+                                    <td><span class="date-txt">@issue.IssueDate.ToString("dd/MM/yyyy")</span></td>
+                                    <td><span class="order-chip">@issue.OrderNumber</span></td>
+                                    <td><span class="prod-name">@issue.ProductName</span></td>
+                                    <td><span class="wh-name">@issue.WarehouseName</span></td>
+                                    <td class="tc"><span class="items-val">@issue.TotalItems</span></td>
+                                    <td class="tr"><span class="qty-val">@issue.TotalQty.ToString("N2")</span></td>
+                                    <td class="tr"><span class="cost-val">@issue.TotalCost.ToString("N2")</span></td>
+                                    <td class="tc">
+                                        <span class="status-chip @GetStatusClass(issue.IssueStatus)">
+                                            @issue.StatusName
+                                        </span>
+                                    </td>
+                                    <td class="tc">
+                                        <div class="actions-wrap">
+                                            @if (issue.IssueStatus == 1 && Perms.CanEdit)
+                                            {
+                                                <button class="ico-btn edit-btn" title="تعديل"
+                                                        @onclick="() => NavigateToEdit(issue.MaterialIssueID)">
+                                                    <i class="bi bi-pencil-fill"></i>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="ico-btn view-btn" title="عرض"
+                                                        @onclick="() => NavigateToEdit(issue.MaterialIssueID)">
+                                                    <i class="bi bi-eye-fill"></i>
+                                                </button>
+                                            }
+                                            @if (issue.IssueStatus == 1 && Perms.CanApprove)
+                                            {
+                                                <button class="ico-btn approve-btn" title="اعتماد وصرف"
+                                                        @onclick="() => ApproveIssue(issue)">
+                                                    <i class="bi bi-check-circle-fill"></i>
+                                                </button>
+                                            }
+                                            @if (issue.IssueStatus == 1 && Perms.CanCancel)
+                                            {
+                                                <button class="ico-btn cancel-btn" title="إلغاء"
+                                                        @onclick="() => CancelIssue(issue)">
+                                                    <i class="bi bi-x-circle-fill"></i>
+                                                </button>
+                                            }
+                                            @if (Perms.CanPrint)
+                                            {
+                                                <button class="ico-btn print-btn" title="طباعة"
+                                                        @onclick="() => PrintIssue(issue.MaterialIssueID)">
+                                                    <i class="bi bi-printer-fill"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- Approve Dialog -->
+@if (showApproveDialog)
+{
+    <div class="modal-overlay" @onclick="CloseDialogs">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <div class="modal-header approve-header">
+                <i class="bi bi-check-circle-fill"></i>
+                تأكيد اعتماد إذن الصرف
+            </div>
+            <div class="modal-body">
+                <p>هل تريد اعتماد وصرف الإذن رقم:</p>
+                <div class="modal-highlight">@selectedIssue?.IssueNumber</div>
+                <p class="modal-sub">سيتم تحديث الكميات المصروفة في أمر التصنيع</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel-modal" @onclick="CloseDialogs">إلغاء</button>
+                <button class="btn-confirm-approve" @onclick="ConfirmApprove" disabled="@isProcessing">
+                    @if (isProcessing) { <span class="spinner-tiny"></span> }
+                    <span>اعتماد وصرف</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Cancel Dialog -->
+@if (showCancelDialog)
+{
+    <div class="modal-overlay" @onclick="CloseDialogs">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <div class="modal-header cancel-header">
+                <i class="bi bi-x-circle-fill"></i>
+                تأكيد إلغاء إذن الصرف
+            </div>
+            <div class="modal-body">
+                <p>هل أنت متأكد من إلغاء الإذن رقم:</p>
+                <div class="modal-highlight danger">@selectedIssue?.IssueNumber</div>
+                <p class="modal-warning">⚠️ لا يمكن التراجع عن هذا الإجراء</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel-modal" @onclick="CloseDialogs">تراجع</button>
+                <button class="btn-confirm-cancel" @onclick="ConfirmCancel" disabled="@isProcessing">
+                    @if (isProcessing) { <span class="spinner-tiny"></span> }
+                    <span>إلغاء الإذن</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Toast -->
+@if (!string.IsNullOrEmpty(resultMessage))
+{
+    <div class="toast-msg @(isSuccess ? "toast-success" : "toast-error")">
+        <i class="bi @(isSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+        @resultMessage
+    </div>
+}
+
+<style>
+    :root {
+        --c-primary: #4f46e5; --c-primary-lt: #eef2ff; --c-primary-dk: #3730a3;
+        --c-success: #10b981; --c-success-lt: #ecfdf5;
+        --c-warning: #f59e0b; --c-warning-lt: #fffbeb;
+        --c-danger: #ef4444;  --c-danger-lt: #fef2f2;
+        --c-info: #0ea5e9;    --c-info-lt: #f0f9ff;
+        --c-secondary: #64748b; --c-secondary-lt: #f1f5f9;
+        --c-indigo: #4f46e5;  --c-indigo-lt: #eef2ff;
+        --c-surface: #fff;    --c-bg: #f8fafc;
+        --c-border: #e2e8f0;  --c-text: #0f172a;
+        --c-text-2: #64748b;  --c-text-3: #94a3b8;
+        --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+        --sh-sm: 0 1px 3px rgba(0,0,0,.06); --sh-md: 0 4px 16px rgba(0,0,0,.08);
+    }
+
+    .mi-page {
+        direction: rtl; padding: 1.75rem 1.5rem; background: var(--c-bg);
+        min-height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex; flex-direction: column; gap: 1.5rem;
+    }
+
+    .no-access-card {
+        text-align: center; padding: 80px 20px; background: white;
+        border-radius: var(--r-xl); border: 1px solid var(--c-border);
+        max-width: 480px; margin: 80px auto; box-shadow: var(--sh-sm);
+    }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .btn-back-dash {
+        background: var(--c-secondary-lt); color: var(--c-secondary);
+        border: none; padding: .6rem 1.4rem; border-radius: var(--r-sm);
+        font-weight: 600; cursor: pointer;
+    }
+
+    .page-header {
+        background: linear-gradient(135deg, #4f46e5, #3730a3);
+        border-radius: var(--r-xl); padding: 1.75rem 2rem;
+        display: flex; justify-content: space-between; align-items: center;
+        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        position: relative; overflow: hidden; flex-wrap: wrap; gap: 1rem;
+    }
+    .page-header::before {
+        content: ''; position: absolute; top: -40px; left: -40px;
+        width: 180px; height: 180px; background: rgba(255,255,255,.06); border-radius: 50%;
+    }
+    .header-content { position: relative; z-index: 1; }
+    .header-title {
+        color: #fff; font-size: 1.5rem; font-weight: 700; margin: 0 0 .25rem;
+        display: flex; align-items: center; gap: .6rem;
+    }
+    .header-subtitle { color: rgba(255,255,255,.7); font-size: .85rem; margin: 0; }
+    .header-actions {
+        display: flex; gap: .75rem; position: relative; z-index: 1;
+        align-items: center; flex-wrap: wrap;
+    }
+
+    .btn-primary-modern {
+        background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk));
+        color: #fff; border: none; border-radius: var(--r-sm);
+        padding: .6rem 1.25rem; font-size: .88rem; font-weight: 600;
+        display: inline-flex; align-items: center; gap: .45rem;
+        cursor: pointer; transition: all .2s;
+        box-shadow: 0 4px 12px rgba(79,70,229,.3); white-space: nowrap;
+    }
+    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.4); }
+    .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
+    .btn-success-modern {
+        background: linear-gradient(135deg, var(--c-success), #059669);
+        color: #fff; border: none; border-radius: var(--r-sm);
+        padding: .6rem 1.25rem; font-size: .88rem; font-weight: 600;
+        display: inline-flex; align-items: center; gap: .45rem;
+        cursor: pointer; transition: all .2s;
+        box-shadow: 0 4px 12px rgba(16,185,129,.25); white-space: nowrap;
+    }
+    .btn-success-modern:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn-success-modern:disabled { opacity: .65; cursor: not-allowed; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    .stat-card {
+        background: var(--c-surface); border-radius: var(--r-md);
+        padding: 1.2rem 1.4rem; box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border); display: flex;
+        align-items: center; gap: 1rem; transition: all .2s;
+    }
+    .stat-card:hover { box-shadow: var(--sh-md); transform: translateY(-2px); }
+    .stat-icon-wrap {
+        width: 48px; height: 48px; border-radius: var(--r-sm);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.3rem; flex-shrink: 0;
+    }
+    .stat-icon-wrap.primary   { background: var(--c-primary-lt); color: var(--c-primary); }
+    .stat-icon-wrap.warning   { background: var(--c-warning-lt); color: var(--c-warning); }
+    .stat-icon-wrap.success   { background: var(--c-success-lt); color: var(--c-success); }
+    .stat-icon-wrap.info      { background: var(--c-info-lt);    color: var(--c-info); }
+    .stat-info { flex: 1; }
+    .stat-value { font-size: 1.6rem; font-weight: 800; color: var(--c-text); line-height: 1; }
+    .stat-label { font-size: .78rem; color: var(--c-text-3); font-weight: 500; margin-top: .2rem; }
+
+    .filter-card {
+        background: var(--c-surface); border-radius: var(--r-md);
+        box-shadow: var(--sh-sm); border: 1px solid var(--c-border); overflow: hidden;
+    }
+    .filter-header {
+        display: flex; align-items: center; gap: .5rem;
+        padding: .85rem 1.4rem; background: #fafafa;
+        border-bottom: 1px solid var(--c-border);
+        font-size: .82rem; font-weight: 700; color: var(--c-text-2);
+        text-transform: uppercase; letter-spacing: .05em;
+    }
+    .filter-body { padding: 1.2rem 1.4rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+    .filter-group { display: flex; flex-direction: column; gap: .4rem; }
+    .filter-label { font-size: .8rem; font-weight: 600; color: var(--c-text-2); }
+    .filter-input, .filter-select {
+        border: 1.5px solid var(--c-border); border-radius: var(--r-sm);
+        padding: .55rem .9rem; font-size: .88rem; color: var(--c-text);
+        background: #fafafa; transition: all .2s; outline: none; width: 100%;
+    }
+    .filter-input:focus, .filter-select:focus {
+        border-color: var(--c-primary); background: #fff;
+        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+    }
+    .search-wrap { position: relative; }
+    .search-ico { position: absolute; right: .85rem; top: 50%; transform: translateY(-50%); color: var(--c-text-3); pointer-events: none; }
+    .search-wrap .filter-input { padding-right: 2.4rem; }
+
+    .table-card {
+        background: var(--c-surface); border-radius: var(--r-md);
+        box-shadow: var(--sh-sm); border: 1px solid var(--c-border); overflow: hidden;
+    }
+    .table-card-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: .9rem 1.4rem; border-bottom: 1px solid var(--c-border); background: #fafafa;
+    }
+    .table-card-title {
+        font-size: .9rem; font-weight: 700; color: var(--c-text);
+        display: flex; align-items: center; gap: .5rem;
+    }
+    .table-card-title i { color: var(--c-primary); }
+    .count-badge {
+        background: var(--c-primary-lt); color: var(--c-primary);
+        font-size: .75rem; font-weight: 700; padding: .2rem .65rem; border-radius: 20px;
+    }
+
+    .table-scroll { overflow-x: auto; }
+    .mi-table { width: 100%; border-collapse: collapse; }
+    .mi-table thead th {
+        background: #f8fafc; padding: .85rem 1rem;
+        font-size: .76rem; font-weight: 700; color: var(--c-text-3);
+        text-transform: uppercase; letter-spacing: .06em;
+        border-bottom: 2px solid var(--c-border); white-space: nowrap; text-align: right;
+    }
+    .mi-table thead th.tc { text-align: center; }
+    .mi-table thead th.tr { text-align: left; }
+    .mi-table tbody tr { border-bottom: 1px solid #f1f5f9; transition: background .15s; }
+    .mi-table tbody tr:last-child { border-bottom: none; }
+    .mi-table tbody tr:hover { background: var(--c-primary-lt); }
+    .mi-table tbody td { padding: .85rem 1rem; font-size: .875rem; color: var(--c-text); vertical-align: middle; }
+    .mi-table tbody td.tc { text-align: center; }
+    .mi-table tbody td.tr { text-align: left; }
+
+    .code-chip {
+        font-family: 'Courier New', monospace; font-weight: 700;
+        color: var(--c-primary); background: var(--c-primary-lt);
+        padding: .2rem .55rem; border-radius: 6px; font-size: .82rem; white-space: nowrap;
+    }
+    .date-txt { font-size: .85rem; color: var(--c-text-2); }
+    .order-chip { font-weight: 600; color: var(--c-text-2); font-size: .85rem; }
+    .prod-name { font-weight: 600; }
+    .wh-name { color: var(--c-text-2); }
+    .items-val { font-weight: 700; }
+    .qty-val { font-weight: 600; direction: ltr; display: inline-block; }
+    .cost-val { font-weight: 700; color: var(--c-success); font-size: .9rem; direction: ltr; display: inline-block; }
+
+    .status-chip {
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .28rem .75rem; border-radius: 20px;
+        font-size: .75rem; font-weight: 700; white-space: nowrap;
+    }
+    .status-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .s-draft    { background: #f1f5f9; color: #64748b; }
+    .s-draft::before    { background: #94a3b8; }
+    .s-issued   { background: var(--c-success-lt); color: #059669; }
+    .s-issued::before   { background: var(--c-success); }
+    .s-cancelled { background: var(--c-danger-lt); color: #dc2626; }
+    .s-cancelled::before { background: var(--c-danger); }
+
+    .actions-wrap { display: flex; align-items: center; justify-content: center; gap: .4rem; }
+    .ico-btn {
+        width: 32px; height: 32px; border-radius: 8px; border: none;
+        background: transparent; display: inline-flex; align-items: center;
+        justify-content: center; font-size: .95rem; cursor: pointer;
+        transition: all .2s; position: relative;
+    }
+    .ico-btn:hover { transform: scale(1.15); }
+    .ico-btn::after {
+        content: attr(title); position: absolute; bottom: calc(100% + 8px); left: 50%;
+        transform: translateX(-50%) scale(.9); background: #1e293b; color: #fff;
+        font-size: .7rem; font-weight: 600; padding: .3rem .6rem; border-radius: 6px;
+        white-space: nowrap; opacity: 0; pointer-events: none; transition: all .2s; z-index: 10;
+    }
+    .ico-btn:hover::after { opacity: 1; transform: translateX(-50%) scale(1); }
+    .edit-btn    { color: var(--c-primary); }
+    .edit-btn:hover    { background: var(--c-primary-lt); }
+    .view-btn    { color: var(--c-info); }
+    .view-btn:hover    { background: var(--c-info-lt); }
+    .approve-btn { color: var(--c-success); }
+    .approve-btn:hover { background: var(--c-success-lt); }
+    .cancel-btn  { color: var(--c-danger); }
+    .cancel-btn:hover  { background: var(--c-danger-lt); }
+    .print-btn   { color: var(--c-primary); }
+    .print-btn:hover   { background: var(--c-primary-lt); }
+
+    .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 2rem; gap: 1rem; }
+    .spinner-md { width: 44px; height: 44px; border: 3px solid var(--c-border); border-top-color: var(--c-primary); border-radius: 50%; animation: spin .7s linear infinite; }
+    .spinner-tiny { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .state-text { color: var(--c-text-3); font-size: .9rem; font-weight: 500; }
+    .empty-icon-circle { width: 80px; height: 80px; background: var(--c-primary-lt); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: var(--c-primary); }
+    .empty-title { font-size: 1.05rem; font-weight: 700; color: var(--c-text); margin: 0; }
+    .empty-sub   { font-size: .85rem; color: var(--c-text-3); margin: 0; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn .2s; }
+    .modal-box { background: #fff; border-radius: var(--r-lg); width: 420px; max-width: 94vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); animation: slideUp .3s; }
+    .modal-header { padding: 1.2rem 1.5rem; font-weight: 700; font-size: 1rem; display: flex; align-items: center; gap: .5rem; border-bottom: 1px solid var(--c-border); }
+    .approve-header { color: var(--c-success); }
+    .cancel-header  { color: var(--c-danger); }
+    .modal-body { padding: 1.5rem; text-align: center; }
+    .modal-body p { margin: 0 0 .5rem; color: var(--c-text-2); }
+    .modal-highlight { font-size: 1.2rem; font-weight: 800; color: var(--c-primary); background: var(--c-primary-lt); padding: .6rem; border-radius: var(--r-sm); margin: .8rem 0; }
+    .modal-highlight.danger { color: var(--c-danger); background: var(--c-danger-lt); }
+    .modal-sub { font-size: .85rem; color: var(--c-text-3); }
+    .modal-warning { font-size: .85rem; color: var(--c-danger); font-weight: 600; margin-top: .5rem; }
+    .modal-footer { display: flex; gap: .75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--c-border); }
+    .btn-cancel-modal { background: var(--c-secondary-lt); color: var(--c-secondary); border: none; padding: .6rem 1.2rem; border-radius: var(--r-sm); font-weight: 600; cursor: pointer; }
+    .btn-confirm-approve { background: var(--c-success); color: #fff; border: none; padding: .6rem 1.5rem; border-radius: var(--r-sm); font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: .4rem; }
+    .btn-confirm-cancel  { background: var(--c-danger); color: #fff; border: none; padding: .6rem 1.5rem; border-radius: var(--r-sm); font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: .4rem; }
+
+    .toast-msg { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: var(--r-sm); font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: .5rem; z-index: 2000; animation: slideUp .3s; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+    .toast-success { background: #065f46; color: #fff; }
+    .toast-error   { background: #991b1b; color: #fff; }
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @@keyframes slideUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+    @@media (max-width: 992px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+    @@media (max-width: 768px) {
+        .mi-page { padding: 1rem; }
+        .page-header { flex-direction: column; align-items: flex-start; }
+        .stats-row { grid-template-columns: repeat(2, 1fr); }
+        .filter-body { flex-direction: column; }
+        .filter-group { width: 100% !important; }
+    }
+</style>
+
+@code {
+    private List<MaterialIssueListDto> issues = new();
+    private bool isLoading = true;
+    private bool isExporting = false;
+    private bool isProcessing = false;
+    private ModulePermissionDto? permissions;
+    private ModulePermissionDto Perms => permissions!;
+
+    private string? searchQuery;
+    private string? statusFilter;
+    private DateTime? fromDate;
+    private DateTime? toDate;
+
+    private bool showApproveDialog = false;
+    private bool showCancelDialog = false;
+    private MaterialIssueListDto? selectedIssue;
+
+    private string? resultMessage;
+    private bool isSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { NavigationManager.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_MATISS");
+        if (permissions is not null && Perms.CanView)
+            await LoadData();
+        else
+            isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            int? status = int.TryParse(statusFilter, out var s) ? s : null;
+            issues = await IssueService.GetListAsync(searchQuery, status, fromDate, toDate);
+        }
+        finally { isLoading = false; }
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadData();
+    }
+
+    private void NavigateToAdd() => NavigationManager.NavigateTo("/material-issues/edit/0");
+    private void NavigateToEdit(int id) => NavigationManager.NavigateTo($"/material-issues/edit/{id}");
+
+    private void ApproveIssue(MaterialIssueListDto issue) { selectedIssue = issue; showApproveDialog = true; }
+    private void CancelIssue(MaterialIssueListDto issue) { selectedIssue = issue; showCancelDialog = true; }
+    private void CloseDialogs() { showApproveDialog = false; showCancelDialog = false; selectedIssue = null; }
+
+    private async Task ConfirmApprove()
+    {
+        if (selectedIssue == null) return;
+        isProcessing = true;
+        try
+        {
+            var result = await IssueService.ApproveAsync(selectedIssue.MaterialIssueID, UserSession.UserID);
+            isSuccess = result.Success; resultMessage = result.Message;
+            if (result.Success) { showApproveDialog = false; await LoadData(); }
+        }
+        finally { isProcessing = false; _ = ClearMessage(); }
+    }
+
+    private async Task ConfirmCancel()
+    {
+        if (selectedIssue == null) return;
+        isProcessing = true;
+        try
+        {
+            var result = await IssueService.CancelAsync(selectedIssue.MaterialIssueID, UserSession.UserID);
+            isSuccess = result.Success; resultMessage = result.Message;
+            if (result.Success) { showCancelDialog = false; await LoadData(); }
+        }
+        finally { isProcessing = false; _ = ClearMessage(); }
+    }
+
+    private async Task PrintIssue(int id)
+    {
+        if (!Perms.CanPrint) return;
+        var issue = await IssueService.GetByIdAsync(id);
+        if (issue == null) return;
+        var details = await IssueService.GetDetailsAsync(id);
+        var html = BuildPrintHtml(issue, details);
+        await JS.InvokeVoidAsync("printHtml", html);
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (!Perms.CanExport) return;
+        isExporting = true;
+        try
+        {
+            var bytes = await IssueService.ExportToExcelAsync(issues, UserSession.UserID);
+            var fileName = $"MaterialIssues_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            await JS.InvokeVoidAsync("downloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        finally { isExporting = false; }
+    }
+
+    private async Task ClearMessage() { await Task.Delay(4000); resultMessage = null; StateHasChanged(); }
+
+    private string GetStatusClass(int s) => s switch { 1 => "s-draft", 2 => "s-issued", 3 => "s-cancelled", _ => "s-draft" };
+
+    private string BuildPrintHtml(MaterialIssueEditDto issue, List<MaterialIssueDetailDto> details)
+    {
+        var thStyle = "padding:11px 14px;text-align:right;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;font-size:13px;";
+        var tdStyle = "padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;";
+        var rows = new System.Text.StringBuilder();
+        int n = 1;
+        foreach (var d in details)
+        {
+            rows.Append($@"<tr>
+                <td style='{tdStyle}text-align:center;color:#94a3b8;'>{n++}</td>
+                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{d.ItemCode}</td>
+                <td style='{tdStyle}font-weight:600;'>{d.ItemName}</td>
+                <td style='{tdStyle}text-align:center;font-weight:600;'>{d.RequiredQty:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#10b981;font-weight:700;'>{d.IssueQty:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{d.UnitName}</td>
+                <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{d.LineCost:N2}</td>
+            </tr>");
+        }
+        return $@"<!DOCTYPE html><html lang='ar' dir='rtl'><head><meta charset='UTF-8'>
+<title>إذن صرف - {issue.IssueNumber}</title>
+<style>*{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:'Segoe UI',sans-serif;direction:rtl;background:#fff;color:#1f2937;padding:30px;font-size:14px;line-height:1.6;}}.no-print{{}}@media print{{.no-print{{display:none!important;}}body{{padding:15px;}}}}</style>
+</head><body>
+<div class='no-print' style='margin-bottom:24px;display:flex;gap:10px;justify-content:flex-end;'>
+<button onclick='window.print()' style='background:#4f46e5;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>🖨️ طباعة</button>
+<button onclick='window.close()' style='background:#6b7280;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>✕ إغلاق</button>
+</div>
+<div style='text-align:center;border-bottom:3px solid #4f46e5;padding-bottom:20px;margin-bottom:28px;'>
+<div style='font-size:2.2rem;margin-bottom:8px;'>📦</div>
+<h1 style='font-size:1.7rem;font-weight:800;color:#1f2937;margin:0;'>واي كي كوتينج ERP</h1>
+<p style='color:#6b7280;margin:6px 0 0;'>إذن صرف خامات (Material Issue)</p>
+</div>
+<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;background:#f9fafb;padding:20px;border-radius:12px;margin-bottom:28px;border:1px solid #e5e7eb;'>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>رقم الإذن:</span><span style='font-weight:800;color:#4f46e5;font-size:13px;'>{issue.IssueNumber}</span></div>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>التاريخ:</span><span style='font-size:13px;'>{issue.IssueDate:dd/MM/yyyy}</span></div>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>أمر التصنيع:</span><span style='font-size:13px;'>{issue.OrderNumber}</span></div>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>المنتج:</span><span style='font-size:13px;'>{issue.ProductName}</span></div>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>المخزن:</span><span style='font-size:13px;'>{issue.WarehouseName}</span></div>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>عدد الأصناف:</span><span style='font-size:13px;'>{issue.TotalItems}</span></div>
+</div>
+<table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+<thead><tr style='background:#f8fafc;'>
+<th style='{thStyle}text-align:center;width:40px;'>#</th><th style='{thStyle}'>كود الصنف</th><th style='{thStyle}'>اسم الصنف</th>
+<th style='{thStyle}text-align:center;'>المطلوب</th><th style='{thStyle}text-align:center;'>المصروف</th>
+<th style='{thStyle}text-align:center;'>الوحدة</th><th style='{thStyle}text-align:left;'>التكلفة (ج.م)</th>
+</tr></thead><tbody>{rows}</tbody>
+<tfoot><tr style='background:#f8fafc;'><td colspan='6' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>الإجمالي</td>
+<td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>{issue.TotalCost:N2}</td></tr></tfoot>
+</table>
+<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e5e7eb;text-align:center;color:#94a3b8;font-size:12px;'>
+<p>تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd - hh:mm tt}</p><p style='margin-top:4px;'>واي كي كوتينج ERP — نظام تخطيط موارد المؤسسات</p>
+</div></body></html>";
+    }
+}

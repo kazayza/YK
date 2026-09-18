@@ -1,0 +1,1083 @@
+﻿@page "/goods-receipts/new"
+@page "/goods-receipts/edit/{ReceiptId:int}"
+@page "/goods-receipts/view/{ReceiptId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject GoodsReceiptService GrnService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
+}
+else
+{
+    <div class="doc-page" dir="rtl">
+
+        <!-- Header -->
+        <div class="doc-header">
+            <div class="doc-header-right">
+                <button class="btn-m btn-ghost" @onclick="GoBack">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5"/><path d="m12 19 7-7-7-7"/>
+                    </svg> رجوع
+                </button>
+                <div>
+                    <h2 class="doc-title">@pageTitle</h2>
+                    @if (!string.IsNullOrEmpty(header.GRNNumber))
+                    {
+                        <div class="doc-num-wrap">
+                            <code class="doc-number">@header.GRNNumber</code>
+                            <span class="status-chip" style="--sc:@GoodsReceiptService.GetStatusColor(header.GRNStatus)">
+                                @GoodsReceiptService.GetStatusName(header.GRNStatus)
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="doc-header-left">
+                @if (permissions.CanPrint && ReceiptId > 0)
+                {
+                    <button class="btn-m btn-outline" @onclick="PrintDoc">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 6 2 18 2 18 9"/>
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                            <rect x="6" y="14" width="12" height="8"/>
+                        </svg> طباعة
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Approval Bar -->
+        @if (canApprove)
+        {
+            <div class="approval-bar">
+                <span class="approval-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
+                    </svg>
+                    إذن الاستلام جاهز للاعتماد
+                </span>
+                <button type="button" class="appr-btn appr-quick" @onclick="ExecuteApprove" disabled="@isSaving">
+                    @if (isSaving) { <div class="btn-spin"></div> }
+                    else { <span>✅</span> }
+                    اعتماد الاستلام
+                </button>
+                <button type="button" class="appr-btn appr-reject" @onclick="ExecuteCancel" disabled="@isSaving">
+                    ❌ إلغاء
+                </button>
+            </div>
+        }
+
+        @if (isLoading)
+        {
+            <div class="loading-st"><div class="loader"></div><p>جاري التحميل...</p></div>
+        }
+        else
+        {
+            <!-- مصدر الاستلام (جديد فقط) -->
+            @if (isNewMode && !isSourceLocked)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon purple">📦</div>
+                        <h3 class="sec-title">مصدر الاستلام</h3>
+                    </div>
+                    <div class="source-cards">
+                        <div class="source-card @(header.GRNSource == 1 ? "active" : "")" @onclick="SelectPOSource">
+                            <div class="source-card-icon" style="background:#ecfeff;color:#0891b2;">📋</div>
+                            <div class="source-card-title">من أمر شراء</div>
+                            <div class="source-card-desc">استلام بناءً على أمر شراء مرسل للمورد</div>
+                        </div>
+                        <div class="source-card @(header.GRNSource == 2 ? "active" : "")" @onclick="SelectDirectSource">
+                            <div class="source-card-icon" style="background:#f5f3ff;color:#1d4ed8;">✏️</div>
+                            <div class="source-card-title">استلام مباشر</div>
+                            <div class="source-card-desc">استلام بضاعة بدون أمر شراء مسبق</div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- اختيار أمر الشراء -->
+            @if (header.GRNSource == 1 && isNewMode && !isPOLoaded)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon cyan">📄</div>
+                        <h3 class="sec-title">اختيار أمر الشراء</h3>
+                    </div>
+                    <div class="form-grid c2">
+                        <div class="f-field">
+                            <label class="f-label required">أمر الشراء</label>
+                            <SearchableSelect Items="@availablePOs" @bind-SelectedId="selectedPOId"
+                                              OnSelected="OnPOSelected" Placeholder="ابحث برقم أمر الشراء..." />
+                        </div>
+                    </div>
+
+                    @if (poLines != null && poLines.Any())
+                    {
+                        <div class="po-lines-section">
+                            <h4 class="po-lines-title">الأصناف المتبقية للاستلام</h4>
+                            <div class="tbl-card" style="margin-top:10px;">
+                                <table class="tbl">
+                                    <thead>
+                                        <tr>
+                                            <th class="tc" style="width:40px;">
+                                                <input type="checkbox" checked="@poLines.All(l => l.IsSelected)"
+                                                       @onchange="ToggleAllPOLines" />
+                                            </th>
+                                            <th>الكود</th>
+                                            <th>الصنف</th>
+                                            <th>الوحدة</th>
+                                            <th class="tc">مطلوب</th>
+                                            <th class="tc">تم استلامه</th>
+                                            <th class="tc">متبقي</th>
+                                            <th class="tc">الكمية المستلمة الآن</th>
+                                            <th>رقم الباتش</th>
+                                            <th>الصلاحية</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var line in poLines)
+                                        {
+                                            <tr class="@(!line.IsSelected ? "tr-deselected" : "")">
+                                                <td class="tc"><input type="checkbox" @bind="line.IsSelected" /></td>
+                                                <td><code class="code-tag">@line.ItemCode</code></td>
+                                                <td class="td-bold">@line.ItemNameAr</td>
+                                                <td>@line.UnitName</td>
+                                                <td class="tc">@line.OrderedQty.ToString("#,##0.##")</td>
+                                                <td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td>
+                                                <td class="tc"><strong class="remaining-qty">@line.RemainingToReceive.ToString("#,##0.##")</strong></td>
+                                                <td class="tc">
+                                                    <input type="number" class="inline-input" @bind="line.QtyToReceive"
+                                                           step="0.01" min="0" max="@line.RemainingToReceive"
+                                                           disabled="@(!line.IsSelected)" />
+                                                </td>
+                                                <td>
+                                                    <input type="text" class="inline-input" @bind="line.BatchNumber"
+                                                           placeholder="باتش..." disabled="@(!line.IsSelected)" />
+                                                </td>
+                                                <td>
+                                                    <input type="date" class="inline-input" @bind="line.ExpiryDate"
+                                                           disabled="@(!line.IsSelected)" />
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- بيانات الإذن -->
+            @if (header.GRNSource > 0 || !isNewMode)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon blue">📝</div>
+                        <h3 class="sec-title">بيانات إذن الاستلام</h3>
+                    </div>
+                    <div class="form-grid c4">
+                        <div class="f-field">
+                            <label class="f-label">رقم الإذن</label>
+                            <input type="text" class="f-input readonly" value="@(header.GRNNumber ?? "تلقائي")" disabled />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">التاريخ</label>
+                            <input type="date" class="f-input" @bind="header.GRNDate" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">المورد</label>
+                            @if (header.GRNSource == 1 && header.SupplierID > 0)
+                            {
+                                <input type="text" class="f-input readonly" value="@header.SupplierNameAr" disabled />
+                            }
+                            else
+                            {
+                                <SearchableSelect Items="@suppliersSearchable" @bind-SelectedId="header.SupplierID"
+                                                  Placeholder="اختر المورد..." IsDisabled="@isReadOnly" />
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">المخزن</label>
+                            <select class="f-input" @bind="header.WarehouseID" disabled="@isReadOnly">
+                                <option value="0">-- اختر --</option>
+                                @if (warehouses != null)
+                                {
+                                    @foreach (var w in warehouses)
+                                    { <option value="@w.Id">@w.Name</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">المستلم</label>
+                            <select class="f-input" @bind="header.ReceivedBy" disabled="@isReadOnly">
+                                <option value="0">-- اختر --</option>
+                                @if (employees != null)
+                                {
+                                    @foreach (var e in employees)
+                                    { <option value="@e.Id">@e.Name</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">فاتورة المورد</label>
+                            <input type="text" class="f-input" @bind="header.SupplierInvoiceNo" disabled="@isReadOnly" placeholder="رقم فاتورة المورد..." />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">تاريخ فاتورة المورد</label>
+                            <input type="date" class="f-input" @bind="header.SupplierInvoiceDate" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">إذن التسليم</label>
+                            <input type="text" class="f-input" @bind="header.DeliveryNoteNo" disabled="@isReadOnly" placeholder="رقم إذن التسليم..." />
+                        </div>
+                    </div>
+
+                    <!-- الفحص -->
+                    <div class="form-grid c4" style="margin-top:14px;">
+                        <div class="f-field">
+                            <label class="f-label">الفاحص</label>
+                            <select class="f-input" @bind="header.InspectedBy" disabled="@isReadOnly">
+                                <option value="0">-- اختر --</option>
+                                @if (employees != null)
+                                {
+                                    @foreach (var e in employees)
+                                    { <option value="@e.Id">@e.Name</option> }
+                                }
+                            </select>
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">حالة الفحص</label>
+                            <select class="f-input" @bind="header.InspectionStatus" disabled="@isReadOnly">
+                                <option value="1">لم يتم الفحص</option>
+                                <option value="2">مقبول</option>
+                                <option value="3">مرفوض</option>
+                            </select>
+                        </div>
+                        <div class="f-field c2">
+                            <label class="f-label">ملاحظات الفحص</label>
+                            <input type="text" class="f-input" @bind="header.InspectionNotes" disabled="@isReadOnly" placeholder="ملاحظات..." />
+                        </div>
+                    </div>
+
+                    <div class="form-grid c1" style="margin-top:14px;">
+                        <div class="f-field">
+                            <label class="f-label">ملاحظات</label>
+                            <input type="text" class="f-input" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات عامة..." />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- الأصناف المستلمة -->
+            @if ((header.GRNSource > 0 || !isNewMode) && (ReceiptId > 0 || isSourceLocked))
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon green">📦</div>
+                        <h3 class="sec-title">الأصناف المستلمة</h3>
+                        <span class="sec-badge">@details.Count صنف</span>
+                        @if (!isReadOnly && permissions.CanAdd)
+                        {
+                            <button class="btn-m btn-primary btn-sm" @onclick="ShowAddLine" style="margin-right:auto;">
+                                + إضافة صنف
+                            </button>
+                        }
+                    </div>
+
+                    @if (!details.Any() && !showLineForm)
+                    {
+                        <div class="empty-lines"><p>لا توجد أصناف مستلمة.</p></div>
+                    }
+                    else
+                    {
+                        <div class="tbl-card">
+                            <table class="tbl">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>الكود</th>
+                                        <th>الصنف</th>
+                                        <th>الوحدة</th>
+                                        <th class="tc">مستلم</th>
+                                        <th class="tc">مقبول</th>
+                                        <th class="tc">مرفوض</th>
+                                        <th>الباتش</th>
+                                        <th>الصلاحية</th>
+                                        <th class="tl">التكلفة</th>
+                                        <th class="tl">الإجمالي</th>
+                                        <th class="tc">الجودة</th>
+                                        @if (!isReadOnly)
+                                        { <th class="tc">إجراءات</th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ int n = 0; }
+                                    @foreach (var line in details)
+                                    {
+                                        n++;
+                                        <tr>
+                                            <td class="td-n">@n</td>
+                                            <td><code class="code-tag">@line.ItemCode</code></td>
+                                            <td class="td-bold">@line.ItemNameAr</td>
+                                            <td>@line.UnitName</td>
+                                            <td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td>
+                                            <td class="tc">@(line.AcceptedQty?.ToString("#,##0.##") ?? "—")</td>
+                                            <td class="tc">
+                                                @if (line.RejectedQty > 0)
+                                                { <span class="rejected-badge">@line.RejectedQty.ToString("#,##0.##")</span> }
+                                                else { <span>0</span> }
+                                            </td>
+                                            <td>@(line.BatchNumber ?? "—")</td>
+                                            <td>@(line.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                            <td class="tl num-cell">@line.UnitCost.ToString("#,##0.00")</td>
+                                            <td class="tl num-cell"><strong>@line.LineTotalCost.ToString("#,##0.00")</strong></td>
+                                            <td class="tc">
+                                                <span class="quality-badge" style="--qc:@GoodsReceiptService.GetInspectionColor(line.QualityStatus)">
+                                                    @GoodsReceiptService.GetQualityStatusName(line.QualityStatus)
+                                                </span>
+                                            </td>
+                                            @if (!isReadOnly)
+                                            {
+                                                <td class="tc">
+                                                    <div class="line-actions">
+                                                        @if (permissions.CanEdit)
+                                                        {
+                                                            <button class="act-btn edit" @onclick="() => ShowEditLine(line)">✏️</button>
+                                                        }
+                                                        @if (permissions.CanDelete)
+                                                        {
+                                                            <button class="act-btn del" @onclick="() => DeleteLine(line.GRNDetailID)">🗑️</button>
+                                                        }
+                                                    </div>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="total-row">
+                                        <td colspan="10" class="tl"><strong>الإجمالي</strong></td>
+                                        <td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalCost).ToString("#,##0.00") ج.م</strong></td>
+                                        <td colspan="@(!isReadOnly ? 2 : 1)"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+
+                    <!-- Line Form -->
+                    @if (showLineForm)
+                    {
+                        <div class="line-form">
+                            <div class="line-form-head">
+                                <h4>@(isEditLine ? "تعديل صنف" : "إضافة صنف")</h4>
+                                <button class="btn-close-x" @onclick="CloseLineForm">✕</button>
+                            </div>
+                            <div class="form-grid c3">
+                                <div class="f-field">
+                                    <label class="f-label required">الصنف</label>
+                                    <SearchableSelect Items="@purchaseItems" @bind-SelectedId="editLine.ItemID"
+                                                      OnSelected="OnItemSelected" Placeholder="ابحث..." IsDisabled="@isEditLine" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label required">الوحدة</label>
+                                    <select class="f-input" @bind="editLine.UnitID">
+                                        <option value="0">-- اختر --</option>
+                                        @if (units != null)
+                                        { @foreach (var u in units) { <option value="@u.Id">@u.Name</option> } }
+                                    </select>
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label required">الكمية المستلمة</label>
+                                    <input type="number" class="f-input" @bind="editLine.ReceivedQty" step="0.01" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">الكمية المقبولة</label>
+                                    <input type="number" class="f-input" @bind="editLine.AcceptedQty" step="0.01" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">الكمية المرفوضة</label>
+                                    <input type="number" class="f-input" @bind="editLine.RejectedQty" step="0.01" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label required">تكلفة الوحدة</label>
+                                    <input type="number" class="f-input" @bind="editLine.UnitCost" step="0.01" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">رقم الباتش</label>
+                                    <input type="text" class="f-input" @bind="editLine.BatchNumber" placeholder="Batch..." />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">تاريخ الإنتاج</label>
+                                    <input type="date" class="f-input" @bind="editLine.ManufactureDate" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">تاريخ الصلاحية</label>
+                                    <input type="date" class="f-input" @bind="editLine.ExpiryDate" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">حالة الجودة</label>
+                                    <select class="f-input" @bind="editLine.QualityStatus">
+                                        <option value="1">انتظار فحص</option>
+                                        <option value="2">مقبول</option>
+                                        <option value="3">مرفوض</option>
+                                    </select>
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">موقع التخزين</label>
+                                    <input type="text" class="f-input" @bind="editLine.StorageLocation" placeholder="رف / منطقة..." />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">ملاحظات</label>
+                                    <input type="text" class="f-input" @bind="editLine.Notes" placeholder="ملاحظات..." />
+                                </div>
+                            </div>
+                            <div class="line-calc-bar">
+                                <span>الإجمالي: <strong>@editLine.LineTotalCost.ToString("#,##0.00") ج.م</strong></span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(lineMsg))
+                            { <div class="form-msg @(lineMsgOk ? "msg-ok" : "msg-err")">@lineMsg</div> }
+                            <div class="line-form-btns">
+                                <button class="btn-m btn-primary" @onclick="SaveLine" disabled="@isSavingLine">
+                                    @if (isSavingLine) { <div class="btn-spin"></div> }
+                                    @(isEditLine ? "تحديث" : "إضافة")
+                                </button>
+                                <button class="btn-m btn-ghost" @onclick="CloseLineForm">إلغاء</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- أزرار الحفظ -->
+@if (!isViewMode && !canApprove)
+{
+    <div class="doc-actions">
+        <div class="doc-actions-right">
+            @if (!isReadOnly)
+            {
+                <button class="btn-m btn-primary" @onclick="SaveReceipt" disabled="@isSaving">
+                    @if (isSaving) { <div class="btn-spin"></div> }
+                    @(isNewMode ? "حفظ إذن الاستلام" : "حفظ التعديلات")
+                </button>
+
+                @if (ReceiptId > 0 && header.GRNStatus == 1 && details.Any())
+                {
+                    @if (header.InspectionStatus == 1)
+                    {
+                        <button class="btn-m btn-inspect" @onclick="SendForInspection" disabled="@isSaving">
+                            🔍 إرسال للفحص
+                        </button>
+                    }
+
+                    @if (header.InspectionStatus == 2)
+                    {
+                        <button class="btn-m btn-warning" @onclick="SendForApproval" disabled="@isSaving">
+                            📤 إرسال للاعتماد
+                        </button>
+                    }
+                }
+            }
+        </div>
+        <button class="btn-m btn-ghost" @onclick="GoBack">رجوع</button>
+    </div>
+}
+        }
+    </div>
+
+    <!-- Toast -->
+    @if (!string.IsNullOrEmpty(toast))
+    {
+        <div class="toast-wrap">
+            <div class="toast @(toastOk ? "t-ok" : "t-err")">
+                <span>@toast</span>
+                <button @onclick='() => toast = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+<style>
+    .doc-page { display:flex; flex-direction:column; gap:18px; max-width:1200px; }
+    .doc-header { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; }
+    .doc-header-right { display:flex; align-items:flex-start; gap:14px; }
+    .doc-header-left { display:flex; gap:8px; }
+    .doc-title { font-weight:800; color:#0f172a; margin:0; font-size:1.2rem; }
+    .doc-num-wrap { display:flex; align-items:center; gap:10px; margin-top:6px; }
+    .doc-number { background:#f1f5f9; padding:4px 14px; border-radius:8px; font-size:.88rem; color:#2563eb; font-weight:700; }
+    .status-chip { display:inline-block; padding:4px 12px; border-radius:999px; font-size:.75rem; font-weight:700; background:color-mix(in srgb, var(--sc) 12%, white); color:var(--sc); }
+    .approval-bar { display:flex; align-items:center; gap:8px; padding:10px 16px; background:linear-gradient(135deg,#ecfdf5,#f0fdf4); border:1.5px solid #a7f3d0; border-radius:14px; flex-wrap:wrap; }
+    .approval-label { display:flex; align-items:center; gap:6px; font-size:.82rem; font-weight:700; color:#065f46; padding-left:10px; border-left:2px solid #a7f3d0; margin-left:4px; }
+    .appr-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:10px; border:none; font-weight:700; font-size:.84rem; cursor:pointer; transition:.2s; }
+    .appr-btn:disabled { opacity:.6; cursor:not-allowed; }
+    .appr-quick { background:linear-gradient(135deg,#059669,#10b981); color:white; }
+    .appr-reject { background:white; color:#dc2626; border:1.5px solid #fecaca; }
+    .source-cards { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+    .source-card { padding:20px; border:2px solid #e2e8f0; border-radius:16px; cursor:pointer; transition:.2s; text-align:center; }
+    .source-card:hover { border-color:#2563eb; background:#f8fafc; }
+    .source-card.active { border-color:#2563eb; background:#eff6ff; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+    .source-card-icon { width:48px; height:48px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; font-size:1.4rem; margin-bottom:10px; }
+    .source-card-title { font-weight:800; font-size:.92rem; color:#0f172a; margin-bottom:4px; }
+    .source-card-desc { font-size:.78rem; color:#64748b; }
+    .po-lines-section { margin-top:16px; }
+    .po-lines-title { font-weight:700; font-size:.88rem; color:#0f172a; margin:0; }
+    .tr-deselected { opacity:.4; }
+    .remaining-qty { color:#2563eb; }
+    .inline-input { width:100px; padding:6px 8px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.82rem; text-align:center; }
+    .inline-input:focus { border-color:#2563eb; }
+    .doc-section { background:white; border:1px solid #e2e8f0; border-radius:18px; padding:22px; box-shadow:0 4px 16px rgba(15,23,42,.04); }
+    .sec-head { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid #f1f5f9; flex-wrap:wrap; }
+    .sec-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:1.2rem; }
+    .sec-icon.blue { background:#eff6ff; color:#2563eb; }
+    .sec-icon.green { background:#ecfdf5; color:#10b981; }
+    .sec-icon.purple { background:#f5f3ff; color:#1d4ed8; }
+    .sec-icon.cyan { background:#ecfeff; color:#0891b2; }
+    .sec-title { font-weight:800; color:#0f172a; margin:0; font-size:.98rem; }
+    .sec-badge { background:#f1f5f9; color:#475569; padding:4px 12px; border-radius:999px; font-size:.78rem; font-weight:700; }
+    .form-grid { display:grid; gap:14px; }
+    .c4 { grid-template-columns:repeat(4,1fr); }
+    .c3 { grid-template-columns:repeat(3,1fr); }
+    .c2 { grid-template-columns:repeat(2,1fr); }
+    .c1 { grid-template-columns:1fr; }
+    .f-field { display:flex; flex-direction:column; gap:5px; }
+    .f-field.c2 { grid-column:span 2; }
+    .f-label { font-size:.8rem; font-weight:700; color:#334155; }
+    .required::after { content:' *'; color:#ef4444; }
+    .f-input { padding:9px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:.88rem; background:white; outline:none; transition:.2s; width:100%; }
+    .f-input:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .f-input.readonly, .f-input:disabled { background:#f8fafc; color:#64748b; }
+    .tbl-card { border:1px solid #e2e8f0; border-radius:14px; overflow:hidden; overflow-x:auto; }
+    .tbl { width:100%; border-collapse:collapse; min-width:1100px; }
+    .tbl thead { background:#f8fafc; }
+    .tbl th { padding:11px 12px; font-size:.78rem; font-weight:700; color:#64748b; text-align:right; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+    .tbl td { padding:10px 12px; font-size:.84rem; color:#334155; border-bottom:1px solid #f1f5f9; }
+    .tbl tbody tr:hover { background:#f8fafc; }
+    .tc { text-align:center; } .tl { text-align:left; }
+    .td-n { text-align:center; color:#94a3b8; font-size:.78rem; }
+    .td-bold { font-weight:700; color:#0f172a; }
+    .num-cell { font-family:monospace; font-weight:600; }
+    .code-tag { background:#f1f5f9; padding:2px 8px; border-radius:6px; font-size:.78rem; color:#2563eb; font-weight:600; }
+    .total-row { background:#f8fafc !important; }
+    .total-row td { border-top:2px solid #e2e8f0; padding:12px; }
+    .rejected-badge { background:#fef2f2; color:#dc2626; padding:2px 8px; border-radius:6px; font-size:.78rem; font-weight:700; border:1px solid #fecaca; }
+    .quality-badge { display:inline-block; padding:3px 10px; border-radius:8px; font-size:.72rem; font-weight:700; background:color-mix(in srgb, var(--qc) 10%, white); color:var(--qc); border:1px solid color-mix(in srgb, var(--qc) 20%, white); }
+    .empty-lines { text-align:center; padding:30px; color:#94a3b8; }
+    .line-actions { display:flex; gap:4px; justify-content:center; }
+    .act-btn { width:28px; height:28px; border-radius:7px; border:1px solid #e2e8f0; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.2s; font-size:.8rem; }
+    .act-btn.edit:hover { background:#eff6ff; } .act-btn.del:hover { background:#fef2f2; }
+    .line-form { margin-top:16px; padding:18px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; }
+    .line-form-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .line-form-head h4 { font-weight:800; color:#0f172a; margin:0; }
+    .btn-close-x { background:none; border:none; font-size:1.1rem; cursor:pointer; color:#94a3b8; }
+    .line-form-btns { display:flex; gap:8px; margin-top:14px; }
+    .line-calc-bar { display:flex; gap:20px; padding:10px 14px; background:white; border:1px solid #e2e8f0; border-radius:10px; margin-top:12px; font-size:.84rem; color:#475569; }
+    .line-calc-bar strong { color:#0f172a; font-family:monospace; }
+    .form-msg { padding:8px 12px; border-radius:8px; font-size:.82rem; font-weight:600; margin-top:10px; }
+    .msg-ok { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+    .msg-err { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+    .doc-actions { display:flex; justify-content:space-between; align-items:center; padding:18px 22px; background:white; border:1px solid #e2e8f0; border-radius:16px; }
+    .doc-actions-right { display:flex; gap:10px; }
+    .btn-m { display:inline-flex; align-items:center; gap:7px; padding:9px 18px; border-radius:12px; border:none; font-weight:700; font-size:.86rem; cursor:pointer; transition:.2s; }
+    .btn-m:disabled { opacity:.6; cursor:not-allowed; }
+    .btn-m.btn-sm { padding:7px 14px; font-size:.82rem; }
+    .btn-primary { background:linear-gradient(135deg,#1e40af,#2563eb); color:white; }
+    .btn-outline { background:white; color:#475569; border:1.5px solid #e2e8f0; }
+    .btn-ghost { background:transparent; color:#64748b; border:1.5px solid #e2e8f0; }
+    .btn-spin { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:white; border-radius:50%; animation:spin .6s linear infinite; }
+    .toast-wrap { position:fixed; bottom:22px; left:22px; z-index:1050; animation:toastIn .35s ease; }
+    .toast { display:flex; align-items:center; gap:12px; padding:12px 18px; border-radius:14px; box-shadow:0 10px 28px rgba(0,0,0,.12); min-width:300px; font-weight:600; font-size:.86rem; }
+    .t-ok { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+    .t-err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+    .toast button { background:none; border:none; cursor:pointer; color:inherit; opacity:.6; margin-right:auto; }
+    .loading-st { text-align:center; padding:50px; color:#64748b; }
+    .loader { width:36px; height:36px; border:3px solid #e2e8f0; border-top-color:#2563eb; border-radius:50%; animation:spin .7s linear infinite; margin:0 auto 12px; }
+    .no-access { text-align:center; padding:60px; background:white; border-radius:18px; border:1px solid #e2e8f0; }
+    .na-icon { font-size:3rem; margin-bottom:12px; }
+    .btn-inspect { background:linear-gradient(135deg,#1d4ed8,#2563eb); color:white; box-shadow:0 4px 12px rgba(37,99,235,.25); }
+.btn-inspect:hover:not(:disabled) { transform:translateY(-1px); }
+.btn-warning { background:linear-gradient(135deg,#d97706,#f59e0b); color:white; }
+.btn-warning:hover:not(:disabled) { transform:translateY(-1px); }
+    @@keyframes spin { to { transform:rotate(360deg); } }
+    @@keyframes toastIn { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+    @@media (max-width:768px) {
+        .c4,.c3 { grid-template-columns:1fr; }
+        .c2 { grid-template-columns:1fr; }
+        .f-field.c2 { grid-column:span 1; }
+        .doc-header { flex-direction:column; }
+        .source-cards { grid-template-columns:1fr; }
+        .approval-bar { flex-direction:column; }
+    }
+</style>
+@code {
+    [Parameter] public int ReceiptId { get; set; }
+
+    private GoodsReceiptHeaderDto header = new() { GRNDate = DateTime.Today, InspectionStatus = 1 };
+    private List<GoodsReceiptDetailDto> details = new();
+    private ModulePermissionDto? permissions;
+
+    private List<LookupDto>? warehouses;
+    private List<LookupDto>? employees;
+    private List<LookupDto>? units;
+    private List<SearchableItem>? suppliersSearchable;
+    private List<SearchableItem>? purchaseItems;
+    private List<SearchableItem>? availablePOs;
+
+    private List<POLineForGRNDto>? poLines;
+    private int selectedPOId;
+    private bool isPOLoaded = false;
+    private bool isSourceLocked = false;
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string toast = "";
+    private bool toastOk = true;
+
+    private bool showLineForm = false;
+    private bool isEditLine = false;
+    private GoodsReceiptDetailEditDto editLine = new();
+    private bool isSavingLine = false;
+    private string lineMsg = "";
+    private bool lineMsgOk = true;
+
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => ReceiptId == 0;
+
+    private bool canApprove =>
+        !isNewMode && !isViewMode &&
+        header.GRNStatus == 1 &&
+        details.Any() &&
+        (permissions?.CanApprove ?? false);
+
+    private bool isReadOnly
+{
+    get
+    {
+        if (isViewMode) return true;
+        if (isNewMode) return false;
+        return header.GRNStatus != 1;
+    }
+}
+    // ===========================
+// إرسال للفحص
+// ===========================
+private async Task SendForInspection()
+{
+    if (!details.Any())
+    {
+        await ShowToastAsync("أضف أصناف أولاً", false);
+        return;
+    }
+
+    isSaving = true;
+    StateHasChanged();
+
+    try
+    {
+        // حفظ أي تعديلات أولاً
+        await GrnService.UpdateReceiptAsync(header, UserSession.UserID);
+
+        // إرسال إشعار فحص
+        await GrnService.RequestInspectionAsync(ReceiptId, UserSession.UserID);
+
+        await ShowToastAsync("تم إرسال طلب الفحص ✅");
+    }
+    catch (Exception ex)
+    {
+        await ShowToastAsync("خطأ: " + ex.Message, false);
+    }
+    finally
+    {
+        isSaving = false;
+    }
+}
+
+// ===========================
+// إرسال للاعتماد بعد الفحص
+// ===========================
+private async Task SendForApproval()
+{
+    if (!details.Any())
+    {
+        await ShowToastAsync("أضف أصناف أولاً", false);
+        return;
+    }
+
+    if (header.InspectionStatus != 2)
+    {
+        await ShowToastAsync("يجب إتمام الفحص وقبول البضاعة قبل طلب الاعتماد", false);
+        return;
+    }
+
+    isSaving = true;
+    StateHasChanged();
+
+    try
+    {
+        // حفظ أولاً
+        await GrnService.UpdateReceiptAsync(header, UserSession.UserID);
+
+        // إشعار الاعتماد
+        await GrnService.RequestApprovalAsync(ReceiptId, UserSession.UserID);
+
+        await ShowToastAsync("تم إرسال طلب الاعتماد ✅");
+    }
+    catch (Exception ex)
+    {
+        await ShowToastAsync("خطأ: " + ex.Message, false);
+    }
+    finally
+    {
+        isSaving = false;
+    }
+}
+    private string pageTitle
+    {
+        get
+        {
+            if (isNewMode) return "إذن استلام جديد";
+            if (isViewMode) return "عرض إذن استلام";
+            if (canApprove) return "اعتماد إذن استلام";
+            return "تعديل إذن استلام";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_GRN");
+            if (permissions == null || !permissions.CanView) return;
+
+            await LoadLookups();
+
+            if (ReceiptId > 0)
+                await LoadReceiptData();
+            else
+            {
+                var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                var source = query["source"];
+                if (source == "po")
+                {
+                    header.GRNSource = 1;
+                    availablePOs = await LookupService.GetPOsForGRNSearchableAsync();
+                }
+                else if (source == "direct")
+                {
+                    header.GRNSource = 2;
+                    isSourceLocked = true;
+                }
+            }
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private async Task LoadLookups()
+    {
+        warehouses = await LookupService.GetReceivingWarehousesAsync();
+        employees = await LookupService.GetEmployeesAsync();
+        units = await LookupService.GetUnitsAsync();
+        suppliersSearchable = await LookupService.GetSuppliersSearchableAsync();
+        purchaseItems = await LookupService.GetItemsForPurchaseSearchableAsync();
+    }
+
+    private async Task LoadReceiptData()
+    {
+        var loaded = await GrnService.GetReceiptByIdAsync(ReceiptId);
+        if (loaded != null)
+        {
+            header = loaded;
+            details = await GrnService.GetReceiptDetailsAsync(ReceiptId);
+            isSourceLocked = true;
+            isPOLoaded = true;
+        }
+        else
+            await ShowToastAsync("إذن الاستلام غير موجود", false);
+    }
+
+    private void SelectPOSource()
+    {
+        header.GRNSource = 1;
+        _ = Task.Run(async () =>
+        {
+            availablePOs = await LookupService.GetPOsForGRNSearchableAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void SelectDirectSource()
+    {
+        header.GRNSource = 2;
+        isSourceLocked = true;
+        poLines = null;
+        selectedPOId = 0;
+    }
+
+    private async Task OnPOSelected(SearchableItem? item)
+    {
+        if (item == null || item.Id == 0) { poLines = null; return; }
+        selectedPOId = item.Id;
+        header.PurchaseOrderID = item.Id;
+
+        try
+        {
+            poLines = await LookupService.GetPOLinesForGRNAsync(item.Id);
+            foreach (var line in poLines)
+            {
+                line.IsSelected = true;
+                line.QtyToReceive = line.RemainingToReceive;
+            }
+
+            var poInfo = (await LookupService.GetPOsForGRNAsync())
+                .FirstOrDefault(p => p.PurchaseOrderID == item.Id);
+
+            if (poInfo != null)
+            {
+                header.SupplierID = poInfo.SupplierID;
+                if (poInfo.WarehouseID.HasValue)
+                    header.WarehouseID = poInfo.WarehouseID.Value;
+            }
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+    }
+
+    private void ToggleAllPOLines(ChangeEventArgs e)
+    {
+        if (poLines == null) return;
+        var val = (bool)(e.Value ?? false);
+        foreach (var l in poLines) l.IsSelected = val;
+    }
+
+    private async Task OnItemSelected(SearchableItem? item)
+    {
+        if (item == null) return;
+        editLine.ItemID = item.Id;
+        var info = await LookupService.GetItemQuickInfoAsync(item.Id);
+        if (info != null)
+        {
+            if (info.UnitID > 0) editLine.UnitID = info.UnitID;
+            if (info.EstimatedPrice > 0) editLine.UnitCost = info.EstimatedPrice;
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveReceipt()
+    {
+        if (header.SupplierID <= 0) { await ShowToastAsync("اختر المورد", false); return; }
+        if (header.WarehouseID <= 0) { await ShowToastAsync("اختر المخزن", false); return; }
+
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (isNewMode)
+            {
+                header.GRNNumber = await GrnService.GenerateGRNNumberAsync();
+                header.GRNStatus = 1;
+                var newId = await GrnService.InsertReceiptAsync(header, UserSession.UserID);
+                ReceiptId = newId;
+                header.GRNID = newId;
+
+                if (header.GRNSource == 1 && poLines != null)
+                {
+                    var selectedLines = poLines.Where(l => l.IsSelected && l.QtyToReceive > 0).ToList();
+                    if (selectedLines.Any())
+                    {
+                        var imported = await GrnService.ImportLinesFromPOAsync(newId, header.PurchaseOrderID ?? 0, selectedLines, UserSession.UserID);
+                        await ShowToastAsync($"تم الإنشاء وتحميل {imported} صنف ✅");
+                    }
+                    else
+                        await ShowToastAsync($"تم الإنشاء: {header.GRNNumber} ✅");
+                }
+                else
+                    await ShowToastAsync($"تم الإنشاء: {header.GRNNumber} ✅");
+
+                isSourceLocked = true;
+                isPOLoaded = true;
+                details = await GrnService.GetReceiptDetailsAsync(newId);
+                header = await GrnService.GetReceiptByIdAsync(newId) ?? header;
+                Navigation.NavigateTo($"/goods-receipts/edit/{newId}", forceLoad: false);
+            }
+            else
+            {
+                await GrnService.UpdateReceiptAsync(header, UserSession.UserID);
+                header = await GrnService.GetReceiptByIdAsync(ReceiptId) ?? header;
+                await ShowToastAsync("تم الحفظ ✅");
+            }
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+        finally { isSaving = false; }
+    }
+
+    private async Task ExecuteApprove()
+{
+    if (!details.Any())
+    {
+        toast = "لا يمكن اعتماد إذن استلام بدون أصناف";
+        toastOk = false;
+        StateHasChanged();
+        return;
+    }
+
+    try
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            "هل تريد اعتماد إذن الاستلام؟");
+        if (!confirmed) return;
+    }
+    catch { return; }
+
+    isSaving = true;
+    toast = "";
+    StateHasChanged();
+
+    try
+    {
+        await GrnService.ApproveAsync(
+            ReceiptId,
+            UserSession.CurrentUserID,
+            UserSession.CurrentEmployeeID);
+
+        header.GRNStatus = 2;
+        toast = "تم اعتماد إذن الاستلام بنجاح ✅";
+        toastOk = true;
+        isSaving = false;
+        StateHasChanged();
+
+        await Task.Delay(2000);
+        Navigation.NavigateTo("/goods-receipts");
+    }
+    catch (Exception ex)
+    {
+        isSaving = false;
+        toast = "خطأ في الاعتماد: " + ex.Message;
+        toastOk = false;
+        StateHasChanged();
+    }
+}
+
+    private async Task ExecuteCancel()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "هل تريد إلغاء إذن الاستلام؟");
+        if (!confirmed) return;
+
+        try
+        {
+            await GrnService.CancelAsync(ReceiptId, UserSession.UserID);
+            header.GRNStatus = 4;
+            await ShowToastAsync("تم الإلغاء");
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/goods-receipts");
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+    }
+
+    private void ShowAddLine()
+    {
+        isEditLine = false;
+        editLine = new() { GRNID = ReceiptId, QualityStatus = 1 };
+        lineMsg = ""; showLineForm = true;
+    }
+
+    private void ShowEditLine(GoodsReceiptDetailDto line)
+    {
+        isEditLine = true;
+        editLine = new()
+        {
+            GRNDetailID = line.GRNDetailID, GRNID = line.GRNID,
+            ItemID = line.ItemID, UnitID = line.UnitID,
+            OrderedQty = line.OrderedQty,
+            ReceivedQty = line.ReceivedQty,
+            AcceptedQty = line.AcceptedQty,
+            RejectedQty = line.RejectedQty,
+            BatchNumber = line.BatchNumber,
+            ExpiryDate = line.ExpiryDate,
+            ManufactureDate = line.ManufactureDate,
+            UnitCost = line.UnitCost,
+            QualityStatus = line.QualityStatus,
+            QualityNotes = line.QualityNotes,
+            StorageLocation = line.StorageLocation,
+            Notes = line.Notes,
+            PODetailID = line.PODetailID
+        };
+        lineMsg = ""; showLineForm = true;
+    }
+
+    private void CloseLineForm() { showLineForm = false; lineMsg = ""; }
+
+    private async Task SaveLine()
+    {
+        lineMsg = "";
+        if (editLine.ItemID == 0) { lineMsg = "اختر الصنف"; lineMsgOk = false; return; }
+        if (editLine.UnitID == 0) { lineMsg = "اختر الوحدة"; lineMsgOk = false; return; }
+        if (editLine.ReceivedQty <= 0) { lineMsg = "أدخل الكمية المستلمة"; lineMsgOk = false; return; }
+
+        if (isNewMode && ReceiptId == 0)
+        {
+            await SaveReceipt();
+            if (ReceiptId == 0) return;
+            editLine.GRNID = ReceiptId;
+        }
+
+        isSavingLine = true; StateHasChanged();
+        try
+        {
+            if (isEditLine) await GrnService.UpdateDetailAsync(editLine, UserSession.UserID);
+            else await GrnService.InsertDetailAsync(editLine, UserSession.UserID);
+
+            details = await GrnService.GetReceiptDetailsAsync(ReceiptId);
+            showLineForm = false;
+            await ShowToastAsync(isEditLine ? "تم التحديث ✅" : "تم الإضافة ✅");
+        }
+        catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
+        finally { isSavingLine = false; }
+    }
+
+    private async Task DeleteLine(int detailId)
+    {
+        try
+        {
+            await GrnService.DeleteDetailAsync(detailId, UserSession.UserID);
+            details = await GrnService.GetReceiptDetailsAsync(ReceiptId);
+            await ShowToastAsync("تم الحذف ✅");
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+    }
+
+    private async Task PrintDoc()
+    {
+        try
+        {
+            var html = await GrnService.GenerateReportHtmlAsync(ReceiptId, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/goods-receipts");
+
+    private async Task ShowToastAsync(string message, bool ok = true)
+    {
+        toast = message; toastOk = ok; StateHasChanged();
+        await Task.Delay(4000);
+        toast = ""; StateHasChanged();
+    }
+}

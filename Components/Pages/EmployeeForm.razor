@@ -1,0 +1,812 @@
+﻿@page "/employees/new"
+@page "/employees/edit/{EmployeeId:int}"
+@page "/employees/view/{EmployeeId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject EmployeeService EmployeeService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !HasAccess())
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/employees")'>العودة</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else
+{
+    <div class="form-page" dir="rtl">
+
+        <div class="page-header">
+            <div>
+                <div class="breadcrumb-line">
+                    <span class="crumb-link" @onclick='() => Navigation.NavigateTo("/employees")'>الموظفين</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@PageTitleText</span>
+                </div>
+                <h2 class="page-title">@PageTitleText</h2>
+                @if (!isNewMode)
+                {
+                    <p class="page-subtitle">@model.EmployeeCode — @model.FirstNameAr @model.LastNameAr</p>
+                }
+            </div>
+
+            <div class="header-actions">
+                @if (!isNewMode)
+                {
+                    <span class="status-badge @(model.IsActive ? "status-active" : "status-inactive")">
+                        @(model.IsActive ? "نشط" : "غير نشط")
+                    </span>
+                }
+
+                @if (isViewMode && permissions.CanPrint)
+{
+    <button class="btn-modern btn-secondary-modern" @onclick="GoToPrint">طباعة / PDF</button>
+}
+
+@if (isViewMode && permissions.CanEdit && EmployeeId > 0)
+{
+    <button class="btn-modern btn-primary-modern" @onclick="GoToEdit">تعديل</button>
+}
+
+                @if (!isViewMode)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveEmployee" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري الحفظ...</span> }
+                        else { <span>@(isNewMode ? "حفظ الموظف" : "حفظ التعديلات")</span> }
+                    </button>
+                }
+
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/employees")'>رجوع</button>
+            </div>
+        </div>
+
+        <div class="summary-strip">
+            <div class="summary-item">
+                <div class="summary-label">الكود</div>
+                <div class="summary-value">@(string.IsNullOrWhiteSpace(model.EmployeeCode) ? "تلقائي" : model.EmployeeCode)</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">القسم</div>
+                <div class="summary-value">@GetLookupName(departments, model.DepartmentID)</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">المسمى</div>
+                <div class="summary-value">@GetLookupName(jobTitles, model.JobTitleID)</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">إجمالي الراتب</div>
+                <div class="summary-value">@TotalSalary.ToString("#,##0.00")</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">نوع العقد</div>
+                <div class="summary-value">@EmployeeService.GetContractTypeName(model.ContractType)</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">الحالة</div>
+                <div class="summary-value">@EmployeeService.GetEmployeeStatusName(model.EmployeeStatus)</div>
+            </div>
+        </div>
+
+        <div class="tabs-bar">
+            <button class="tab-btn @(activeTab == "personal" ? "active" : "")" @onclick='() => activeTab = "personal"'>البيانات الشخصية</button>
+            <button class="tab-btn @(activeTab == "contact" ? "active" : "")" @onclick='() => activeTab = "contact"'>التواصل</button>
+            <button class="tab-btn @(activeTab == "job" ? "active" : "")" @onclick='() => activeTab = "job"'>البيانات الوظيفية</button>
+            <button class="tab-btn @(activeTab == "finance" ? "active" : "")" @onclick='() => activeTab = "finance"'>المالية</button>
+            <button class="tab-btn @(activeTab == "insurance" ? "active" : "")" @onclick='() => activeTab = "insurance"'>التأمينات</button>
+            <button class="tab-btn @(activeTab == "bank" ? "active" : "")" @onclick='() => activeTab = "bank"'>البنك</button>
+            <button class="tab-btn @(activeTab == "notes" ? "active" : "")" @onclick='() => activeTab = "notes"'>ملاحظات</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(formMessage))
+        {
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+        }
+
+        <div class="form-card">
+
+            @if (activeTab == "personal")
+            {
+                <div>
+                    <div class="section-title">البيانات الشخصية</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">كود الموظف</label>
+                            <input type="text" class="field-input" @bind="model.EmployeeCode" dir="ltr"
+                                   disabled="@isNewMode || isViewMode" placeholder="تلقائي" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">الاسم الأول (عربي)</label>
+                            <input type="text" class="field-input" @bind="model.FirstNameAr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الاسم الثاني</label>
+                            <input type="text" class="field-input" @bind="model.SecondNameAr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الاسم الثالث</label>
+                            <input type="text" class="field-input" @bind="model.ThirdNameAr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">اسم العائلة (عربي)</label>
+                            <input type="text" class="field-input" @bind="model.LastNameAr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الاسم الأول (إنجليزي)</label>
+                            <input type="text" class="field-input" @bind="model.FirstNameEn" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">اسم العائلة (إنجليزي)</label>
+                            <input type="text" class="field-input" @bind="model.LastNameEn" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الرقم القومي</label>
+                            <input type="text" class="field-input" @bind="model.NationalID" @bind:event="oninput" @bind:after="OnNationalIDChanged" dir="ltr" disabled="@isViewMode" maxlength="14" placeholder="14 رقم" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">تاريخ الميلاد</label>
+                            <input type="date" class="field-input" @bind="model.BirthDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">الجنس</label>
+                            <select class="field-select" @bind="model.Gender" disabled="@isViewMode">
+                                <option value="M">ذكر</option>
+                                <option value="F">أنثى</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الحالة الاجتماعية</label>
+                            <select class="field-select" @bind="model.MaritalStatus" disabled="@isViewMode">
+                                <option value="1">أعزب</option>
+                                <option value="2">متزوج</option>
+                                <option value="3">مطلق</option>
+                                <option value="4">أرمل</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">عدد الأطفال</label>
+                            <input type="number" class="field-input" @bind="model.NumberOfChildren" disabled="@isViewMode" min="0" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الجنسية</label>
+                            <input type="text" class="field-input" @bind="model.Nationality" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الديانة</label>
+                            <input type="text" class="field-input" @bind="model.Religion" disabled="@isViewMode" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "contact")
+            {
+                <div>
+                    <div class="section-title">بيانات التواصل</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">الهاتف</label>
+                            <input type="text" class="field-input" @bind="model.Phone" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الموبايل</label>
+                            <input type="text" class="field-input" @bind="model.Mobile" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">البريد الشخصي</label>
+                            <input type="email" class="field-input" @bind="model.PersonalEmail" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">البريد الوظيفي</label>
+                            <input type="email" class="field-input" @bind="model.WorkEmail" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">المدينة</label>
+                            <input type="text" class="field-input" @bind="model.City" disabled="@isViewMode" />
+                        </div>
+                    </div>
+                    <div class="form-field full-width" style="margin-top:14px">
+                        <label class="field-label">العنوان</label>
+                        <textarea class="field-input" rows="2" @bind="model.Address" disabled="@isViewMode"></textarea>
+                    </div>
+
+                    <div class="section-title" style="margin-top:20px">جهة اتصال الطوارئ</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">الاسم</label>
+                            <input type="text" class="field-input" @bind="model.EmergencyContactName" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">الهاتف</label>
+                            <input type="text" class="field-input" @bind="model.EmergencyContactPhone" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">صلة القرابة</label>
+                            <input type="text" class="field-input" @bind="model.EmergencyContactRelation" disabled="@isViewMode" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "job")
+            {
+                <div>
+                    <div class="section-title">البيانات الوظيفية</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label required-field">القسم</label>
+                            <select class="field-select" @bind="model.DepartmentID" disabled="@isViewMode">
+                                <option value="0">— اختر —</option>
+                                @if (departments != null) { @foreach (var d in departments) { <option value="@d.Id">@d.Name</option> } }
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">المسمى الوظيفي</label>
+                            <select class="field-select" @bind="model.JobTitleID" disabled="@isViewMode">
+                                <option value="0">— اختر —</option>
+                                @if (jobTitles != null) { @foreach (var j in jobTitles) { <option value="@j.Id">@j.Name</option> } }
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">المدير المباشر</label>
+                            <select class="field-select" @bind="model.ManagerID" disabled="@isViewMode">
+                                <option value="0">— بدون —</option>
+                                @if (managers != null) { @foreach (var m in managers) { <option value="@m.Id">@m.Name</option> } }
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">تاريخ التعيين</label>
+                            <input type="date" class="field-input" @bind="model.HireDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label required-field">نوع العقد</label>
+                            <select class="field-select" @bind="model.ContractType" disabled="@isViewMode">
+                                <option value="1">دائم</option>
+                                <option value="2">مؤقت</option>
+                                <option value="3">يومي</option>
+                                <option value="4">تدريب</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بداية العقد</label>
+                            <input type="date" class="field-input" @bind="model.ContractStartDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">نهاية العقد</label>
+                            <input type="date" class="field-input" @bind="model.ContractEndDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">نهاية فترة الاختبار</label>
+                            <input type="date" class="field-input" @bind="model.ProbationEndDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">حالة الموظف</label>
+                            <select class="field-select" @bind="model.EmployeeStatus" disabled="@isViewMode">
+                                <option value="1">نشط</option>
+                                <option value="2">إجازة طويلة</option>
+                                <option value="3">موقوف</option>
+                                <option value="4">مستقيل</option>
+                                <option value="5">مفصول</option>
+                                <option value="6">متقاعد</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (!isNewMode && model.EmployeeStatus >= 4)
+                    {
+                        <div class="form-grid cols-2" style="margin-top:14px">
+                            <div class="form-field">
+                                <label class="field-label">تاريخ إنهاء الخدمة</label>
+                                <input type="date" class="field-input" @bind="model.TerminationDate" disabled="@isViewMode" />
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">سبب إنهاء الخدمة</label>
+                                <input type="text" class="field-input" @bind="model.TerminationReason" disabled="@isViewMode" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (activeTab == "finance")
+            {
+                <div>
+                    <div class="section-title">البيانات المالية</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label required-field">الراتب الأساسي</label>
+                            <input type="number" class="field-input" @bind="model.BasicSalary" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بدل نقل</label>
+                            <input type="number" class="field-input" @bind="model.TransportAllowance" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بدل سكن</label>
+                            <input type="number" class="field-input" @bind="model.HousingAllowance" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بدل هاتف</label>
+                            <input type="number" class="field-input" @bind="model.PhoneAllowance" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بدل طعام</label>
+                            <input type="number" class="field-input" @bind="model.FoodAllowance" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">بدلات أخرى</label>
+                            <input type="number" class="field-input" @bind="model.OtherAllowances" step="0.01" disabled="@isViewMode" />
+                        </div>
+                    </div>
+
+                    <div class="total-salary-box">
+                        <span class="total-label">إجمالي الراتب الشهري</span>
+                        <span class="total-value">@TotalSalary.ToString("#,##0.00")</span>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "insurance")
+            {
+                <div>
+                    <div class="section-title">بيانات التأمينات</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">مؤمن عليه</label>
+                            <select class="field-select" @bind="model.IsInsured" disabled="@isViewMode">
+                                <option value="true">نعم</option>
+                                <option value="false">لا</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">رقم التأمين</label>
+                            <input type="text" class="field-input" @bind="model.InsuranceNumber" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">تاريخ بدء التأمين</label>
+                            <input type="date" class="field-input" @bind="model.InsuranceStartDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">أجر التأمين</label>
+                            <input type="number" class="field-input" @bind="model.InsuranceSalary" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">نسبة الموظف %</label>
+                            <input type="number" class="field-input" @bind="model.InsurancePercEmployee" step="0.01" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">نسبة الشركة %</label>
+                            <input type="number" class="field-input" @bind="model.InsurancePercCompany" step="0.01" disabled="@isViewMode" />
+                        </div>
+                    </div>
+
+                    @if (model.IsInsured && model.InsuranceSalary > 0)
+                    {
+                        <div class="insurance-summary">
+                            <div class="ins-item">
+                                <span class="ins-label">خصم الموظف</span>
+                                <span class="ins-value">@InsuranceEmployeeDeduction.ToString("#,##0.00")</span>
+                            </div>
+                            <div class="ins-item">
+                                <span class="ins-label">مساهمة الشركة</span>
+                                <span class="ins-value">@InsuranceCompanyDeduction.ToString("#,##0.00")</span>
+                            </div>
+                            <div class="ins-item">
+                                <span class="ins-label">إجمالي التأمينات</span>
+                                <span class="ins-value total">@TotalInsurance.ToString("#,##0.00")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (activeTab == "bank")
+            {
+                <div>
+                    <div class="section-title">البيانات البنكية</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">اسم البنك</label>
+                            <input type="text" class="field-input" @bind="model.BankName" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">رقم الحساب</label>
+                            <input type="text" class="field-input" @bind="model.BankAccountNumber" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">IBAN</label>
+                            <input type="text" class="field-input" @bind="model.IBAN" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">طريقة الدفع</label>
+                            <select class="field-select" @bind="model.PaymentMethod" disabled="@isViewMode">
+                                <option value="1">تحويل بنكي</option>
+                                <option value="2">كاش</option>
+                                <option value="3">شيك</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "notes")
+            {
+                <div>
+                    <div class="section-title">ملاحظات وإعدادات</div>
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">ساعات العمل / يوم</label>
+                            <input type="number" class="field-input" @bind="model.WorkingHoursPerDay" step="0.5" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">يوم الراحة الأسبوعية</label>
+                            <select class="field-select" @bind="model.WeeklyDaysOff" disabled="@isViewMode">
+                                <option value="1">الجمعة</option>
+                                <option value="2">السبت</option>
+                                <option value="3">الأحد</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">رصيد الإجازة السنوية</label>
+                            <input type="number" class="field-input" @bind="model.AnnualLeaveBalance" step="0.5" disabled="@isViewMode" />
+                        </div>
+                    </div>
+                    <div class="form-field full-width" style="margin-top:14px">
+                        <label class="field-label">ملاحظات</label>
+                        <textarea class="field-input" rows="5" @bind="model.Notes" disabled="@isViewMode"></textarea>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!isViewMode)
+        {
+            <div class="footer-actions">
+                <button class="btn-modern btn-primary-modern" @onclick="SaveEmployee" disabled="@isSaving">
+                    @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري الحفظ...</span> }
+                    else { <span>@(isNewMode ? "حفظ الموظف" : "حفظ التعديلات")</span> }
+                </button>
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/employees")'>إلغاء</button>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .form-page{display:flex;flex-direction:column;gap:18px}
+    .page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+    .page-title{margin:0;color:#1f2937;font-weight:800}
+    .page-subtitle{color:#6b7280;font-size:.88rem;margin:4px 0 0}
+    .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .breadcrumb-line{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem}
+    .crumb-link{color:#1d4ed8;font-weight:700;cursor:pointer}
+    .crumb-sep{color:#9ca3af}
+    .crumb-current{color:#6b7280}
+    .status-badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:.78rem;font-weight:800}
+    .status-active{background:#ecfdf5;color:#059669}
+    .status-inactive{background:#fef2f2;color:#dc2626}
+
+    .summary-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+    .summary-item{background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:14px;box-shadow:0 4px 12px rgba(15,23,42,.04)}
+    .summary-label{font-size:.76rem;color:#6b7280;font-weight:700;margin-bottom:4px}
+    .summary-value{font-size:.95rem;color:#1f2937;font-weight:800}
+
+    .tabs-bar{display:flex;gap:8px;flex-wrap:wrap}
+    .tab-btn{border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;padding:10px 16px;border-radius:14px;font-weight:700;cursor:pointer;transition:.2s}
+    .tab-btn.active{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(37,99,235,.22)}
+
+    .form-card{background:#fff;border-radius:24px;padding:24px;border:1px solid #eef2f7;box-shadow:0 8px 22px rgba(15,23,42,.05)}
+    .section-title{font-size:.95rem;font-weight:800;color:#1d4ed8;margin-bottom:16px}
+    .form-grid{display:grid;gap:14px}
+    .cols-3{grid-template-columns:repeat(3,1fr)}
+    .cols-2{grid-template-columns:repeat(2,1fr)}
+    .form-field{display:flex;flex-direction:column;gap:6px}
+    .full-width{grid-column:1/-1}
+    .field-label{font-size:.82rem;font-weight:700;color:#374151}
+    .required-field::after{content:" *";color:#ef4444}
+    .field-input,.field-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none;transition:.2s}
+    .field-input:focus,.field-select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+
+    .total-salary-box{margin-top:18px;background:linear-gradient(135deg,#faf5ff,#f3e8ff);border:1.5px solid #e9d5ff;border-radius:16px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+    .total-label{font-weight:700;color:#1d4ed8;font-size:.9rem}
+    .total-value{font-size:1.3rem;font-weight:800;color:#1f2937}
+
+    .insurance-summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .ins-item{background:#f8f9fc;border:1px solid #eef2f7;border-radius:14px;padding:14px;text-align:center}
+    .ins-label{display:block;font-size:.78rem;color:#6b7280;font-weight:700;margin-bottom:6px}
+    .ins-value{font-size:1rem;font-weight:800;color:#1f2937}
+    .ins-value.total{color:#1d4ed8}
+
+    .form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
+    .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+    .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+    .footer-actions{display:flex;gap:10px;justify-content:flex-end}
+
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+    .btn-modern:disabled{opacity:.6;cursor:not-allowed}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;box-shadow:0 4px 16px rgba(37,99,235,.25)}
+    .btn-secondary-modern{background:#f3f4f6;color:#374151}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+    .btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:1024px){.cols-3{grid-template-columns:repeat(2,1fr)} .insurance-summary{grid-template-columns:1fr}}
+    @@media(max-width:768px){
+        .page-header{flex-direction:column}
+        .tabs-bar{flex-direction:column}.tab-btn{width:100%}
+        .cols-3,.cols-2{grid-template-columns:1fr}
+        .header-actions,.footer-actions{width:100%;flex-direction:column}
+        .btn-modern{width:100%}
+        .summary-strip{grid-template-columns:repeat(2,1fr)}
+    }
+        @@media print {
+        .page-header, .tabs-bar, .footer-actions, .breadcrumb-line { display: none !important; }
+        .form-card { box-shadow: none; border: none; padding: 0; }
+        .summary-strip { break-inside: avoid; }
+        body { background: white !important; }
+    }
+</style>
+
+@code {
+    [Parameter] public int EmployeeId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private EmployeeEditDto model = new();
+
+    private List<LookupDto>? departments;
+    private List<LookupDto>? jobTitles;
+    private List<LookupDto>? managers;
+
+    private bool isLoading = true, isSaving = false;
+    private string activeTab = "personal";
+
+    private string currentMode = "new";
+    private bool isNewMode => currentMode == "new";
+    private bool isEditMode => currentMode == "edit";
+    private bool isViewMode => currentMode == "view";
+
+    private string PageTitleText =>
+        isNewMode ? "إضافة موظف" :
+        isEditMode ? "تعديل موظف" :
+        "عرض موظف";
+
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    private decimal TotalSalary =>
+        model.BasicSalary + model.TransportAllowance + model.HousingAllowance
+        + model.PhoneAllowance + model.FoodAllowance + model.OtherAllowances;
+
+    private decimal InsuranceEmployeeDeduction =>
+        model.IsInsured ? Math.Round(model.InsuranceSalary * model.InsurancePercEmployee / 100, 2) : 0;
+
+    private decimal InsuranceCompanyDeduction =>
+        model.IsInsured ? Math.Round(model.InsuranceSalary * model.InsurancePercCompany / 100, 2) : 0;
+
+    private decimal TotalInsurance => InsuranceEmployeeDeduction + InsuranceCompanyDeduction;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_EMP");
+        DetectMode();
+        if (permissions == null || !HasAccess()) { isLoading = false; return; }
+        await LoadPageAsync();
+    }
+
+    private void DetectMode()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();
+        if (path.StartsWith("employees/edit/")) currentMode = "edit";
+        else if (path.StartsWith("employees/view/")) currentMode = "view";
+        else currentMode = "new";
+    }
+
+    private bool HasAccess()
+    {
+        if (permissions == null) return false;
+        if (isNewMode) return permissions.CanAdd;
+        if (isEditMode) return permissions.CanEdit;
+        return permissions.CanView;
+    }
+
+            private async Task LoadPageAsync()
+    {
+        isLoading = true;
+        formMessage = "";
+
+        try
+        {
+            departments = await LookupService.GetDepartmentsLookupAsync();
+            jobTitles = await LookupService.GetJobTitlesLookupAsync();
+            managers = await LookupService.GetManagersLookupAsync();
+
+            if (isNewMode)
+            {
+                model = new EmployeeEditDto
+                {
+                    Gender = "M",
+                    MaritalStatus = 1,
+                    Nationality = "مصري",
+                    HireDate = DateTime.Today,
+                    ContractType = 1,
+                    EmployeeStatus = 1,
+                    PaymentMethod = 1,
+                    WorkingHoursPerDay = 8.00m,
+                    WeeklyDaysOff = 1,
+                    AnnualLeaveBalance = 21.00m,
+                    IsInsured = true,
+                    InsurancePercEmployee = 11.00m,
+                    InsurancePercCompany = 18.75m,
+                    IsActive = true
+                };
+            }
+            else
+            {
+                var loaded = await EmployeeService.GetEmployeeByIdAsync(EmployeeId);
+                if (loaded == null)
+                {
+                    formMessage = "الموظف غير موجود";
+                    formSuccess = false;
+                    model = new EmployeeEditDto();
+                }
+                else
+                {
+                    model = loaded;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            formMessage = "خطأ في تحميل البيانات، حاول مرة أخرى";
+            formSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveEmployee()
+    {
+        if (isViewMode) return;
+        formMessage = "";
+
+        if (string.IsNullOrWhiteSpace(model.FirstNameAr))
+        { formMessage = "الاسم الأول مطلوب"; formSuccess = false; activeTab = "personal"; return; }
+        if (string.IsNullOrWhiteSpace(model.LastNameAr))
+        { formMessage = "اسم العائلة مطلوب"; formSuccess = false; activeTab = "personal"; return; }
+        if (model.HireDate == null)
+        { formMessage = "تاريخ التعيين مطلوب"; formSuccess = false; activeTab = "job"; return; }
+        if ((model.DepartmentID ?? 0) == 0)
+        { formMessage = "يجب اختيار القسم"; formSuccess = false; activeTab = "job"; return; }
+        if ((model.JobTitleID ?? 0) == 0)
+        { formMessage = "يجب اختيار المسمى الوظيفي"; formSuccess = false; activeTab = "job"; return; }
+        if (model.BasicSalary < 0)
+        { formMessage = "الراتب لا يمكن أن يكون سالباً"; formSuccess = false; activeTab = "finance"; return; }
+
+        isSaving = true;
+        try
+        {
+            if (isNewMode)
+            {
+                var newId = await EmployeeService.InsertEmployeeAsync(model, UserSession.UserID);
+                formMessage = "تم إضافة الموظف بنجاح ✅"; formSuccess = true;
+                currentMode = "edit";
+EmployeeId = newId;
+formMessage = "تم إضافة الموظف بنجاح ✅";
+formSuccess = true;
+                return;
+            }
+            else
+            {
+                await EmployeeService.UpdateEmployeeAsync(model, UserSession.UserID);
+                formMessage = "تم حفظ التعديلات بنجاح ✅"; formSuccess = true;
+            }
+        }
+        catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
+        finally { isSaving = false; }
+    }
+
+    private void GoToEdit()
+{
+    currentMode = "edit";
+    formMessage = "";
+}
+
+    private string GetLookupName(List<LookupDto>? source, int? id)
+    {
+        if (source == null || (id ?? 0) == 0) return "—";
+        return source.FirstOrDefault(x => x.Id == id)?.Name ?? "—";
+    }
+        private void OnNationalIDChanged()
+    {
+        var nid = model.NationalID?.Trim() ?? "";
+        if (nid.Length == 14 && nid.All(char.IsDigit))
+        {
+            try
+            {
+                // استخراج تاريخ الميلاد
+                var centuryDigit = nid[0];
+                var yearPart = int.Parse(nid.Substring(1, 2));
+                var month = int.Parse(nid.Substring(3, 2));
+                var day = int.Parse(nid.Substring(5, 2));
+
+                int year = centuryDigit >= '2' ? 1900 + yearPart : 2000 + yearPart;
+
+                if (month >= 1 && month <= 12 && day >= 1 && day <= 31)
+                {
+                    try { model.BirthDate = new DateTime(year, month, day); } catch { }
+                }
+
+                // استخراج النوع (الرقم 13 - فهرس 12)
+                var genderDigit = int.Parse(nid[12].ToString());
+                model.Gender = genderDigit % 2 == 1 ? "M" : "F";
+
+                // استخراج المحافظة (الرقمين 8-9 - فهرس 7-8)
+                var govCode = int.Parse(nid.Substring(7, 2));
+                model.City = GetGovernorateName(govCode);
+            }
+            catch { }
+        }
+    }
+    private void GoToPrint()
+{
+    if (EmployeeId > 0)
+        Navigation.NavigateTo($"/employees/print/{EmployeeId}");
+}
+
+    private string GetGovernorateName(int code) => code switch
+    {
+        1 => "القاهرة",
+    2 => "الإسكندرية",
+    3 => "بورسعيد",
+    4 => "السويس",
+    11 => "دمياط",
+    12 => "الدقهلية",
+    13 => "الشرقية",
+    14 => "القليوبية",
+    15 => "كفر الشيخ",
+    16 => "الغربية",
+    17 => "المنوفية",
+    18 => "البحيرة",
+    19 => "الإسماعيلية",
+    21 => "الجيزة",
+    22 => "بني سويف",
+    23 => "الفيوم",
+    24 => "المنيا",
+    25 => "أسيوط",
+    26 => "سوهاج",
+    27 => "قنا",
+    28 => "أسوان",
+    29 => "الأقصر",
+    31 => "البحر الأحمر",
+    32 => "الوادي الجديد",
+    33 => "مطروح",
+    34 => "شمال سيناء",
+    35 => "جنوب سيناء",
+    88 => "خارج الجمهورية",
+    _ => ""
+    };
+}

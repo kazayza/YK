@@ -1,0 +1,340 @@
+﻿@page "/purchase-invoices"
+@page "/purchase-invoice"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PurchaseInvoiceService InvService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>فواتير المشتريات - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-m btn-ghost" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <div class="page-wrap" dir="rtl">
+        <div class="page-hdr">
+            <div>
+                <h2 class="page-title">فواتير المشتريات</h2>
+                <p class="page-sub">إدارة فواتير الموردين والمدفوعات</p>
+            </div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count فاتورة</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-m btn-export" @onclick="ExportExcel" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spin"></div> } else { <span>📥</span> }
+                        Excel
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <div class="add-dropdown-wrap">
+                        <button class="btn-m btn-primary" @onclick="ToggleAddMenu">
+                            ➕ فاتورة جديدة ▾
+                        </button>
+                        @if (showAddMenu)
+                        {
+                            <div class="add-dropdown">
+                                <div class="add-opt" @onclick="AddFromGRN">
+                                    <span class="add-opt-icon" style="background:#ecfeff;color:#0891b2;">📦</span>
+                                    <div>
+                                        <div class="add-opt-title">من إذن استلام</div>
+                                        <div class="add-opt-desc">إنشاء فاتورة من إذن استلام معتمد</div>
+                                    </div>
+                                </div>
+                                <div class="add-opt" @onclick="AddDirect">
+                                    <span class="add-opt-icon" style="background:#fff7ed;color:#f97316;">✏️</span>
+                                    <div>
+                                        <div class="add-opt-title">فاتورة مباشرة</div>
+                                        <div class="add-opt-desc">إنشاء فاتورة بدون إذن استلام</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (invoices != null)
+        {
+            <div class="stats-row">
+                <div class="stat-box" style="border-top-color:#64748b">
+                    <div class="stat-n">@invoices.Count(i => i.InvoiceStatus == 1)</div><div class="stat-l">مسودة</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#f59e0b">
+                    <div class="stat-n">@invoices.Count(i => i.InvoiceStatus == 2)</div><div class="stat-l">انتظار اعتماد</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#10b981">
+                    <div class="stat-n">@invoices.Count(i => i.InvoiceStatus == 3)</div><div class="stat-l">معتمدة</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#6366f1">
+                    <div class="stat-n">@invoices.Where(i => i.PaymentStatus == 2).Count()</div><div class="stat-l">مدفوعة جزئياً</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#14b8a6">
+                    <div class="stat-n">@invoices.Where(i => i.PaymentStatus == 3).Count()</div><div class="stat-l">مدفوعة</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#ef4444">
+                    <div class="stat-n">@invoices.Count(i => i.IsOverdue)</div><div class="stat-l">متأخرة ⚠️</div>
+                </div>
+            </div>
+        }
+
+        <div class="filter-row">
+            <div class="search-wrap">
+                <svg class="search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <input class="search-inp" type="text" placeholder="بحث برقم الفاتورة أو المورد..."
+                       @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+                @if (!string.IsNullOrEmpty(searchText))
+                { <button class="search-clr" @onclick="ClearSearch">✕</button> }
+            </div>
+            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
+                <option value="0">كل الحالات</option>
+                <option value="1">مسودة</option>
+                <option value="2">انتظار اعتماد</option>
+                <option value="3">معتمدة</option>
+                <option value="4">مدفوعة جزئياً</option>
+                <option value="5">مدفوعة بالكامل</option>
+                <option value="6">متأخرة</option>
+                <option value="7">ملغية</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">🔄 تحديث</button>
+        </div>
+
+        @if (invoices == null)
+        {
+            <div class="loading-st"><div class="loader"></div><p>جاري التحميل...</p></div>
+        }
+        else if (!filtered.Any())
+        {
+            <div class="empty-st"><h4>لا توجد فواتير</h4></div>
+        }
+        else
+        {
+            <div class="tbl-card">
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th>#</th><th>رقم الفاتورة</th><th>التاريخ</th><th>المورد</th>
+                            <th>فاتورة المورد</th><th>إذن الاستلام</th>
+                            <th class="tc">أصناف</th><th class="tl">الإجمالي</th>
+                            <th class="tl">المدفوع</th><th class="tl">المتبقي</th>
+                            <th>الاستحقاق</th><th class="tc">الدفع</th>
+                            <th class="tc">الحالة</th><th class="tc">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int n = 0; }
+                        @foreach (var inv in filtered)
+                        {
+                            n++;
+                            <tr class="@(inv.InvoiceStatus == 1 ? "tr-draft" : "") @(inv.IsOverdue ? "tr-overdue" : "")">
+                                <td class="td-n">@n</td>
+                                <td><span class="doc-num" @onclick="() => ViewInvoice(inv.InvoiceID)" style="cursor:pointer">@inv.InvoiceNumber</span></td>
+                                <td>@inv.InvoiceDate.ToString("dd/MM/yyyy")</td>
+                                <td class="td-bold">@(inv.SupplierNameAr ?? "—")</td>
+                                <td class="td-muted">@(inv.SupplierInvoiceNo ?? "—")</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(inv.LinkedGRNNumber))
+                                    { <code class="grn-link">@inv.LinkedGRNNumber</code> }
+                                    else { <span class="td-muted">مباشرة</span> }
+                                </td>
+                                <td class="tc"><span class="cnt-badge">@inv.ItemCount</span></td>
+                                <td class="tl"><span class="amount-cell">@inv.TotalAmount.ToString("#,##0.00")</span></td>
+                                <td class="tl num-cell">@inv.PaidAmount.ToString("#,##0.00")</td>
+                                <td class="tl">
+                                    <span class="@(inv.RemainingAmount > 0 ? "remaining-amount" : "")">
+                                        @inv.RemainingAmount.ToString("#,##0.00")
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (inv.DueDate.HasValue)
+                                    {
+                                        <span class="@(inv.IsOverdue ? "overdue-date" : "")">
+                                            @inv.DueDate.Value.ToString("dd/MM/yyyy")
+                                            @if (inv.IsOverdue)
+                                            { <span class="overdue-badge">@inv.DaysOverdue يوم</span> }
+                                        </span>
+                                    }
+                                    else { <span class="td-muted">—</span> }
+                                </td>
+                                <td class="tc">
+                                    <span class="payment-badge" style="--pc:@PurchaseInvoiceService.GetPaymentStatusColor(inv.PaymentStatus)">
+                                        @PurchaseInvoiceService.GetPaymentStatusName(inv.PaymentStatus)
+                                    </span>
+                                </td>
+                                <td class="tc">
+                                    <span class="status-badge" style="--sc:@PurchaseInvoiceService.GetStatusColor(inv.InvoiceStatus)">
+                                        @PurchaseInvoiceService.GetStatusName(inv.InvoiceStatus)
+                                    </span>
+                                </td>
+                                <td class="tc">
+                                    <div class="actions-wrap">
+                                        @if (permissions.CanEdit && inv.InvoiceStatus == 1)
+                                        { <button class="act-btn edit" title="تعديل" @onclick="() => EditInvoice(inv.InvoiceID)">✏️</button> }
+                                        else
+                                        { <button class="act-btn view" title="عرض" @onclick="() => ViewInvoice(inv.InvoiceID)">👁️</button> }
+                                        @if (permissions.CanPrint)
+                                        { <button class="act-btn print" title="طباعة" @onclick="() => PrintInvoice(inv.InvoiceID)">🖨️</button> }
+                                        @if (permissions.CanApprove && inv.InvoiceStatus == 2)
+                                        { <button class="act-btn approve" title="اعتماد" @onclick="() => EditInvoice(inv.InvoiceID)">✅</button> }
+                                        @if (permissions.CanDelete && inv.InvoiceStatus == 1)
+                                        { <button class="act-btn del" title="حذف" @onclick="() => ShowDeleteDialog(inv)">🗑️</button> }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-ov" @onclick="CloseDeleteDialog">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <h4>تأكيد الحذف</h4>
+                <p>هل أنت متأكد من حذف الفاتورة: <strong>@deleteInvoice?.InvoiceNumber</strong>؟</p>
+                @if (!string.IsNullOrEmpty(deleteMsg))
+                { <div class="form-msg err">@deleteMsg</div> }
+                <div class="modal-btns">
+                    <button class="btn-m btn-danger" @onclick="ConfirmDelete">تأكيد الحذف</button>
+                    <button class="btn-m btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast))
+    {
+        <div class="toast-wrap">
+            <div class="toast @(toastOk ? "t-ok" : "t-err")">
+                <span>@toast</span><button @onclick='() => toast = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+@if (showAddMenu) { <div class="add-overlay" @onclick="CloseAddMenu"></div> }
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem;margin:3px 0 0}.hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}.stat-box{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:16px;text-align:center;border-top:3px solid;transition:.2s}.stat-box:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(15,23,42,.06)}.stat-n{font-size:1.6rem;font-weight:900;color:#0f172a}.stat-l{font-size:.78rem;color:#64748b;margin-top:3px}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-ic{position:absolute;right:12px;color:#94a3b8;pointer-events:none}.search-inp{width:100%;padding:10px 38px 10px 36px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none;transition:.2s}.search-inp:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}.search-clr{position:absolute;left:10px;background:#f1f5f9;border:none;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:.7rem;display:flex;align-items:center;justify-content:center}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white;outline:none}
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 16px rgba(15,23,42,.04);overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1300px}.tbl thead{background:#f8fafc}.tbl th{padding:13px 14px;font-size:.8rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:12px 14px;font-size:.86rem;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:middle}.tbl tbody tr{transition:.15s}.tbl tbody tr:hover{background:#f8fafc}.tr-draft{opacity:.8}.tr-overdue{background:#fef2f2 !important}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;font-size:.8rem;text-align:center}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.doc-num{color:#2563eb;font-weight:700;font-size:.88rem;text-decoration:underline}.cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}.amount-cell{font-family:monospace;font-weight:700;color:#0f172a}.num-cell{font-family:monospace;font-weight:600}.remaining-amount{color:#dc2626;font-weight:700;font-family:monospace}.grn-link{background:#ecfeff;color:#0891b2;padding:2px 8px;border-radius:6px;font-size:.75rem;font-weight:600}
+    .overdue-date{color:#dc2626;font-weight:600}.overdue-badge{display:inline-block;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:700;margin-right:4px}
+    .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.payment-badge{display:inline-block;padding:4px 10px;border-radius:8px;font-size:.72rem;font-weight:700;background:color-mix(in srgb,var(--pc) 10%,white);color:var(--pc);border:1px solid color-mix(in srgb,var(--pc) 20%,white)}
+    .add-dropdown-wrap{position:relative}.add-dropdown{position:absolute;top:calc(100% + 6px);left:0;background:white;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.12);z-index:600;min-width:280px;animation:ddIn .15s ease;overflow:hidden}.add-opt{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;transition:.15s}.add-opt:hover{background:#f8fafc}.add-opt-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}.add-opt-title{font-weight:700;font-size:.88rem;color:#0f172a}.add-opt-desc{font-size:.76rem;color:#64748b;margin-top:2px}.add-overlay{position:fixed;inset:0;z-index:500}
+    .actions-wrap{display:flex;gap:5px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s;font-size:.8rem}.act-btn.view:hover{background:#eff6ff}.act-btn.edit:hover{background:#f5f3ff}.act-btn.print:hover{background:#ecfeff}.act-btn.approve:hover{background:#ecfdf5}.act-btn.del:hover{background:#fef2f2}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer;transition:.2s}.btn-m:disabled{opacity:.6;cursor:not-allowed}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white;box-shadow:0 4px 14px rgba(37,99,235,.25)}.btn-export{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}.modal-box{background:white;border-radius:22px;padding:32px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 48px rgba(0,0,0,.15)}.modal-box h4{font-weight:800;color:#0f172a;margin:0 0 8px}.modal-box p{color:#475569;font-size:.9rem;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;font-weight:600;margin-top:10px}.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.12);min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.empty-st h4{color:#64748b;margin:0}.no-access{text-align:center;padding:60px;background:white;border-radius:20px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@@keyframes ddIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}.stats-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+@code {
+    private List<PurchaseInvoiceListDto>? invoices;
+    private List<PurchaseInvoiceListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private int filterStatus = 0;
+    private bool isExporting = false;
+    private string toast = ""; private bool toastOk = true;
+    private bool showAddMenu = false;
+    private bool showDeleteDialog = false;
+    private PurchaseInvoiceListDto? deleteInvoice;
+    private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_PINV");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData() { invoices = await InvService.GetInvoicesListAsync(); Filter(); }
+
+    private void Filter()
+    {
+        if (invoices == null) return;
+        filtered = invoices.Where(i =>
+            (filterStatus == 0 || i.InvoiceStatus == filterStatus) &&
+            (string.IsNullOrEmpty(searchText) ||
+             ArabicSearchHelper.Contains(i.InvoiceNumber, searchText) ||
+             ArabicSearchHelper.Contains(i.SupplierNameAr, searchText) ||
+             ArabicSearchHelper.Contains(i.SupplierInvoiceNo, searchText))
+        ).ToList();
+    }
+
+    private void ClearSearch() { searchText = ""; Filter(); }
+    private void ToggleAddMenu() { showAddMenu = !showAddMenu; }
+    private void CloseAddMenu() { showAddMenu = false; }
+    private void AddFromGRN() { showAddMenu = false; Navigation.NavigateTo("/purchase-invoices/new?source=grn"); }
+    private void AddDirect() { showAddMenu = false; Navigation.NavigateTo("/purchase-invoices/new?source=direct"); }
+
+    private void ViewInvoice(int id)
+    {
+        var inv = invoices?.FirstOrDefault(i => i.InvoiceID == id);
+        if (inv != null && inv.InvoiceStatus == 2 && permissions != null && permissions.CanApprove)
+            Navigation.NavigateTo($"/purchase-invoices/edit/{id}");
+        else
+            Navigation.NavigateTo($"/purchase-invoices/view/{id}");
+    }
+
+    private void EditInvoice(int id) => Navigation.NavigateTo($"/purchase-invoices/edit/{id}");
+
+    private async Task PrintInvoice(int id)
+    {
+        try { var html = await InvService.GenerateReportHtmlAsync(id, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", html); }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+    }
+
+    private async Task ExportExcel()
+    {
+        if (!filtered.Any()) return;
+        isExporting = true; StateHasChanged();
+        try
+        {
+            var bytes = await InvService.ExportToExcelAsync(filtered, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile", $"PurchaseInvoices_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isExporting = false; }
+    }
+
+    private void ShowDeleteDialog(PurchaseInvoiceListDto inv) { deleteInvoice = inv; deleteMsg = ""; showDeleteDialog = true; }
+    private void CloseDeleteDialog() { showDeleteDialog = false; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteInvoice == null) return;
+        try
+        {
+            var result = await InvService.DeleteInvoiceAsync(deleteInvoice.InvoiceID, UserSession.UserID);
+            if (result.Success) { toast = result.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+            else { deleteMsg = result.Message; }
+        }
+        catch (Exception ex) { deleteMsg = "خطأ: " + ex.Message; }
+    }
+}

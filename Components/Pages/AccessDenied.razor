@@ -1,0 +1,131 @@
+﻿@page "/access-denied"
+@layout Layout.MainLayout
+@inject NavigationManager Navigation
+
+<div class="access-denied-container">
+    <div class="access-denied-card">
+
+        <!-- أيقونة -->
+        <div class="ad-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M4.93 4.93l14.14 14.14"/>
+            </svg>
+        </div>
+
+        <!-- العنوان -->
+        <h2 class="ad-title">غير مصرح بالدخول</h2>
+
+        <!-- الوصف -->
+        <p class="ad-message">
+            عذراً، ليس لديك صلاحية للوصول إلى هذه الصفحة.
+            <br />
+            تواصل مع مدير النظام إذا كنت تعتقد أن هذا خطأ.
+        </p>
+
+        <!-- زر العودة -->
+        <button class="ad-btn" @onclick="GoHome">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/>
+            </svg>
+            <span>العودة للرئيسية</span>
+        </button>
+
+    </div>
+</div>
+
+<style>
+    .access-denied-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: calc(100vh - 200px);
+        padding: 40px 20px;
+    }
+
+    .access-denied-card {
+        text-align: center;
+        background: white;
+        border-radius: 20px;
+        padding: 60px 50px;
+        max-width: 480px;
+        width: 100%;
+        box-shadow: 0 4px 24px rgba(15, 23, 42, .08);
+        border: 1px solid #e2e8f0;
+    }
+
+    .ad-icon {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 24px;
+        background: #fef2f2;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #fecaca;
+    }
+
+    .ad-icon svg {
+        width: 40px;
+        height: 40px;
+        color: #dc2626;
+    }
+
+    .ad-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 12px;
+    }
+
+    .ad-message {
+        font-size: .9rem;
+        color: #64748b;
+        line-height: 1.8;
+        margin-bottom: 32px;
+    }
+
+    .ad-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 28px;
+        background: linear-gradient(135deg, #2563eb, #2563eb);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: .9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .25s ease;
+        box-shadow: 0 4px 12px rgba(37,99,235, .3);
+    }
+
+    .ad-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(37,99,235, .4);
+    }
+
+    .ad-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    @@media (max-width: 640px) {
+        .access-denied-card {
+            padding: 40px 24px;
+        }
+
+        .ad-title {
+            font-size: 1.2rem;
+        }
+    }
+</style>
+
+@code {
+    private void GoHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

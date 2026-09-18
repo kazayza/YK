@@ -1,0 +1,1148 @@
+﻿@page "/items/new"
+@page "/items/edit/{ItemId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject ItemService ItemService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>@(ItemId == 0 ? "إضافة صنف جديد" : "تعديل صنف") - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+        <button class="btn-modern btn-primary-modern" @onclick='() => Navigation.NavigateTo("/login")'>
+            تسجيل الدخول
+        </button>
+    </div>
+}
+else if (permissions == null || (ItemId == 0 && !permissions.CanAdd) || (ItemId > 0 && !permissions.CanEdit))
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية للوصول لهذه الشاشة</h4>
+        <p class="no-access-text">
+            @if (ItemId == 0)
+            {
+                <span>أنت لا تملك صلاحية إضافة أصناف جديدة</span>
+            }
+            else
+            {
+                <span>أنت لا تملك صلاحية تعديل الأصناف</span>
+            }
+        </p>
+        <button class="btn-modern btn-secondary-modern" @onclick="GoBack">
+            العودة لقائمة الأصناف
+        </button>
+    </div>
+}
+else
+{
+    <div class="edit-page" dir="rtl">
+
+        <!-- ===== العنوان ===== -->
+        <div class="page-header">
+            <div>
+                @if (ItemId == 0)
+                {
+                    <h2 class="page-title">إضافة صنف جديد</h2>
+                    <p class="page-subtitle">أدخل بيانات الصنف الجديد في النظام</p>
+                }
+                else
+                {
+                    <h2 class="page-title">تعديل صنف</h2>
+                    <p class="page-subtitle">
+                        تعديل بيانات الصنف: <strong class="code-highlight">@(item.ItemCode ?? "")</strong>
+                    </p>
+                }
+            </div>
+            <button class="btn-modern btn-ghost" @onclick="GoBack">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5"/>
+                    <path d="m12 19 7-7-7-7"/>
+                </svg>
+                رجوع للقائمة
+            </button>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="loader"></div>
+                <p>جاري تحميل البيانات...</p>
+            </div>
+        }
+        else
+        {
+            <!-- ═══════════════════════════════════════ -->
+            <!-- القسم 1: البيانات الأساسية -->
+            <!-- ═══════════════════════════════════════ -->
+            <div class="form-section">
+                <div class="section-header">
+                    <div class="section-icon basic-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                    </div>
+                    <h3 class="section-title">البيانات الأساسية</h3>
+                </div>
+
+                <div class="form-grid cols-4">
+                    <!-- كود الصنف -->
+                    <div class="form-field">
+                        <label class="field-label">كود الصنف</label>
+                        <input type="text" class="field-input disabled-field"
+                               value="@(item.ItemCode ?? "سيتم التوليد تلقائياً")"
+                               disabled />
+                    </div>
+
+                    <!-- الباركود -->
+                    <div class="form-field">
+                        <label class="field-label">الباركود</label>
+                        <input type="text" class="field-input" @bind="item.Barcode"
+                               placeholder="اختياري" />
+                    </div>
+
+                    <!-- اسم الصنف عربي -->
+                    <div class="form-field">
+                        <label class="field-label required-field">اسم الصنف (عربي)</label>
+                        <input type="text" class="field-input" @bind="item.ItemNameAr"
+                               placeholder="أدخل اسم الصنف" />
+                    </div>
+
+                    <!-- اسم الصنف إنجليزي -->
+                    <div class="form-field">
+                        <label class="field-label">اسم الصنف (إنجليزي)</label>
+                        <input type="text" class="field-input" @bind="item.ItemNameEn"
+                               dir="ltr" placeholder="Item Name" />
+                    </div>
+                </div>
+
+                <div class="form-grid cols-4">
+                    <!-- نوع الصنف -->
+                    <div class="form-field">
+                        <label class="field-label required-field">نوع الصنف</label>
+                        <select class="field-select" @bind="item.ItemType" @bind:after="OnItemTypeChanged">
+                            <option value="0">-- اختر النوع --</option>
+                            <option value="1">مادة خام</option>
+                            <option value="2">مادة تعبئة</option>
+                            <option value="3">نصف مصنع</option>
+                            <option value="4">منتج تام</option>
+                        </select>
+                    </div>
+
+                    <!-- التصنيف -->
+                    <!-- التصنيف -->
+                    <div class="form-field">
+                        <label class="field-label required-field">التصنيف</label>
+                        <select class="field-select" @bind="item.CategoryID">
+                            <option value="0">-- اختر التصنيف --</option>
+                            @foreach (var cat in filteredCategories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                        @if (item.ItemType == 0)
+                        {
+                            <span class="field-hint">اختر نوع الصنف أولاً لتصفية التصنيفات</span>
+                        }
+                        else if (!filteredCategories.Any())
+                        {
+                            <span class="field-hint" style="color:#ef4444;">لا توجد تصنيفات لهذا النوع</span>
+                        }
+                    </div>
+
+                    <!-- الوحدة الأساسية -->
+                    <div class="form-field">
+                        <label class="field-label required-field">الوحدة الأساسية</label>
+                        <select class="field-select" @bind="item.PrimaryUnitID">
+                            <option value="0">-- اختر الوحدة --</option>
+                            @if (units != null)
+                            {
+                                @foreach (var unit in units)
+                                {
+                                    <option value="@unit.Id">@unit.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+
+                    <!-- الوحدة الثانوية -->
+                    <div class="form-field">
+                        <label class="field-label">الوحدة الثانوية</label>
+                        <select class="field-select" @bind="item.SecondaryUnitID">
+                            <option value="0">-- بدون --</option>
+                            @if (units != null)
+                            {
+                                @foreach (var unit in units)
+                                {
+                                    <option value="@unit.Id">@unit.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-grid cols-4">
+                    <!-- معامل التحويل -->
+                    <div class="form-field">
+                        <label class="field-label">معامل التحويل</label>
+                        <input type="number" class="field-input @(item.SecondaryUnitID == 0 ? "disabled-field" : "")"
+                               @bind="item.ConversionFactor" step="0.01"
+                               disabled="@(item.SecondaryUnitID == 0)" />
+                    </div>
+
+                    <!-- مدة الصلاحية -->
+                    <div class="form-field">
+                        <label class="field-label">مدة الصلاحية (يوم)</label>
+                        <input type="number" class="field-input" @bind="item.ShelfLifeDays" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════ -->
+            <!-- القسم 2: التكاليف والأسعار -->
+            <!-- ═══════════════════════════════════════ -->
+            <div class="form-section">
+                <div class="section-header">
+                    <div class="section-icon price-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="1" x2="12" y2="23"/>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                    </div>
+                    <h3 class="section-title">التكاليف والأسعار</h3>
+                </div>
+
+                <div class="form-grid cols-4">
+                    <!-- التكلفة المعيارية -->
+                    <div class="form-field">
+                        <label class="field-label">التكلفة المعيارية</label>
+                        <div class="input-with-suffix">
+                            <input type="number" class="field-input" @bind="item.StandardCost" step="0.01" />
+                            <span class="field-suffix">ج.م</span>
+                        </div>
+                    </div>
+
+                    <!-- آخر سعر شراء -->
+                    <div class="form-field">
+                        <label class="field-label">آخر سعر شراء</label>
+                        <div class="input-with-suffix">
+                            <input type="number" class="field-input" @bind="item.LastPurchasePrice" step="0.01" />
+                            <span class="field-suffix">ج.م</span>
+                        </div>
+                    </div>
+
+                    <!-- متوسط التكلفة -->
+                    <div class="form-field">
+                        <label class="field-label">متوسط التكلفة</label>
+                        <div class="input-with-suffix">
+                            <input type="number" class="field-input disabled-field"
+                                   @bind="item.AverageCost" step="0.01" disabled />
+                            <span class="field-suffix">ج.م</span>
+                        </div>
+                    </div>
+
+                    <!-- سعر البيع -->
+                    <div class="form-field">
+                        <label class="field-label">سعر البيع الافتراضي</label>
+                        <div class="input-with-suffix">
+                            <input type="number"
+                                   class="field-input @(item.ItemType != 4 ? "disabled-field" : "")"
+                                   @bind="item.DefaultSellingPrice" step="0.01"
+                                   disabled="@(item.ItemType != 4)" />
+                            <span class="field-suffix">ج.م</span>
+                        </div>
+                        @if (item.ItemType != 4)
+                        {
+                            <span class="field-hint">متاح فقط للمنتج التام</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="form-grid cols-4">
+                    <!-- خاضع للضريبة -->
+                    <div class="form-field">
+                        <label class="field-label">الضريبة</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" @bind="item.IsTaxable" />
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">@(item.IsTaxable ? "خاضع للضريبة" : "معفي")</span>
+                        </label>
+                    </div>
+
+                    <!-- نسبة الضريبة -->
+                    <div class="form-field">
+                        <label class="field-label">نسبة الضريبة</label>
+                        <div class="input-with-suffix">
+                            <input type="number"
+                                   class="field-input @(!item.IsTaxable ? "disabled-field" : "")"
+                                   @bind="item.TaxRate" step="0.01"
+                                   disabled="@(!item.IsTaxable)" />
+                            <span class="field-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════ -->
+            <!-- القسم 3: المخزون والمواصفات -->
+            <!-- ═══════════════════════════════════════ -->
+            <div class="form-section">
+                <div class="section-header">
+                    <div class="section-icon stock-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                    </div>
+                    <h3 class="section-title">المخزون والمواصفات</h3>
+                </div>
+
+                <div class="form-grid cols-5">
+                    <div class="form-field">
+                        <label class="field-label">حد أدنى</label>
+                        <input type="number" class="field-input" @bind="item.MinStockLevel" step="0.01" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">حد أقصى</label>
+                        <input type="number" class="field-input" @bind="item.MaxStockLevel" step="0.01" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">حد إعادة الطلب</label>
+                        <input type="number" class="field-input" @bind="item.ReorderLevel" step="0.01" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">الوزن (كجم)</label>
+                        <input type="number" class="field-input" @bind="item.Weight" step="0.001" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">الحجم (لتر)</label>
+                        <input type="number" class="field-input" @bind="item.Volume" step="0.001" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════ -->
+            <!-- القسم 4: الوصف والملاحظات -->
+            <!-- ═══════════════════════════════════════ -->
+            <div class="form-section">
+                <div class="section-header">
+                    <div class="section-icon notes-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </div>
+                    <h3 class="section-title">الوصف والملاحظات</h3>
+                </div>
+
+                <div class="form-grid cols-2">
+                    <div class="form-field">
+                        <label class="field-label">الوصف</label>
+                        <textarea class="field-textarea" rows="3" @bind="item.Description"
+                                  placeholder="وصف تفصيلي للصنف..."></textarea>
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">ملاحظات</label>
+                        <textarea class="field-textarea" rows="3" @bind="item.Notes"
+                                  placeholder="ملاحظات إضافية..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════ -->
+            <!-- معلومات الإنشاء والتعديل -->
+            <!-- ═══════════════════════════════════════ -->
+            @if (ItemId > 0)
+            {
+                <div class="audit-bar">
+                    <div class="audit-item">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <span>أنشئ بواسطة: <strong>@createdByName</strong></span>
+                        @if (!string.IsNullOrEmpty(createdDate))
+                        {
+                            <span class="audit-date">@createdDate</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(modifiedByName))
+                    {
+                        <div class="audit-item">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <path d="M21 2v6h-6"/>
+                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                            </svg>
+                            <span>آخر تعديل: <strong>@modifiedByName</strong></span>
+                            @if (!string.IsNullOrEmpty(modifiedDate))
+                            {
+                                <span class="audit-date">@modifiedDate</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- ═══════════════════════════════════════ -->
+            <!-- أزرار الحفظ -->
+            <!-- ═══════════════════════════════════════ -->
+            <div class="actions-bar">
+                <div class="actions-right">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveItem" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <div class="btn-spinner"></div>
+                            <span>جاري الحفظ...</span>
+                        }
+                        else
+                        {
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                                <polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            <span>@(ItemId == 0 ? "حفظ" : "حفظ التعديلات")</span>
+                        }
+                    </button>
+
+                    @if (ItemId == 0)
+                    {
+                        <button class="btn-modern btn-success-modern" @onclick="SaveAndNew" disabled="@isSaving">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            حفظ وجديد
+                        </button>
+                    }
+                </div>
+
+                <button class="btn-modern btn-ghost" @onclick="GoBack">
+                    رجوع
+                </button>
+            </div>
+        }
+    </div>
+}
+
+<!-- ===== Toast ===== -->
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="toast-container">
+        <div class="toast-card @(isSuccess ? "toast-success" : "toast-error")">
+            <div class="toast-icon">
+                @if (isSuccess)
+                {
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                }
+                else
+                {
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                }
+            </div>
+            <span class="toast-text">@message</span>
+            <button class="toast-close" @onclick='() => message = ""'>✕</button>
+        </div>
+    </div>
+}
+
+<!-- ===== الأنماط ===== -->
+<style>
+    .edit-page {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        max-width: 1200px;
+    }
+
+    /* === Header === */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .page-title {
+        font-weight: 800;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .page-subtitle {
+        color: #6b7280;
+        font-size: .88rem;
+        margin: 4px 0 0;
+    }
+
+    .code-highlight {
+        color: #1d4ed8;
+        background: #f5f3ff;
+        padding: 2px 8px;
+        border-radius: 6px;
+    }
+
+    /* === Sections === */
+    .form-section {
+        background: white;
+        border-radius: 20px;
+        padding: 24px;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 4px 12px rgba(15,23,42,.04);
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+    .section-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .basic-icon { background: #eff6ff; color: #2563eb; }
+    .price-icon { background: #ecfdf5; color: #10b981; }
+    .stock-icon { background: #fef3c7; color: #f59e0b; }
+    .notes-icon { background: #f3f4f6; color: #6b7280; }
+
+    .section-title {
+        font-weight: 800;
+        color: #1f2937;
+        font-size: 1.05rem;
+        margin: 0;
+    }
+
+    /* === Form Grid === */
+    .form-grid {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .form-grid:last-child {
+        margin-bottom: 0;
+    }
+
+    .cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .cols-5 { grid-template-columns: repeat(5, 1fr); }
+
+    /* === Fields === */
+    .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .field-label {
+        font-size: .82rem;
+        font-weight: 700;
+        color: #374151;
+    }
+
+    .required-field::after {
+        content: ' *';
+        color: #ef4444;
+    }
+
+    .field-input,
+    .field-select,
+    .field-textarea {
+        padding: 10px 14px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 12px;
+        font-size: .9rem;
+        background: white;
+        transition: .2s ease;
+        outline: none;
+        width: 100%;
+    }
+
+    .field-input:focus,
+    .field-select:focus,
+    .field-textarea:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+
+    .disabled-field {
+        background: #f9fafb !important;
+        color: #9ca3af;
+    }
+
+    .field-hint {
+        font-size: .75rem;
+        color: #9ca3af;
+    }
+
+    .input-with-suffix {
+        display: flex;
+        align-items: center;
+        position: relative;
+    }
+
+    .input-with-suffix .field-input {
+        padding-left: 50px;
+    }
+
+    .field-suffix {
+        position: absolute;
+        left: 1px;
+        top: 1px;
+        bottom: 1px;
+        width: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f3f4f6;
+        border-radius: 0 11px 11px 0;
+        font-size: .82rem;
+        font-weight: 700;
+        color: #6b7280;
+    }
+
+    /* === Toggle Switch === */
+    .toggle-switch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        padding: 8px 0;
+    }
+
+    .toggle-switch input {
+        display: none;
+    }
+
+    .toggle-slider {
+        width: 44px;
+        height: 24px;
+        background: #d1d5db;
+        border-radius: 999px;
+        position: relative;
+        transition: .3s ease;
+        flex-shrink: 0;
+    }
+
+    .toggle-slider::after {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        right: 3px;
+        transition: .3s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+        background: #1d4ed8;
+    }
+
+    .toggle-switch input:checked + .toggle-slider::after {
+        right: 23px;
+    }
+
+    .toggle-text {
+        font-size: .85rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    /* === Audit Bar === */
+    .audit-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 14px 20px;
+        background: #f9fafb;
+        border-radius: 14px;
+        border: 1px solid #f3f4f6;
+    }
+
+    .audit-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: .82rem;
+        color: #6b7280;
+    }
+
+    .audit-date {
+        color: #9ca3af;
+        margin-right: 4px;
+    }
+
+    /* === Actions Bar === */
+    .actions-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        background: white;
+        border-radius: 18px;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 4px 12px rgba(15,23,42,.04);
+    }
+
+    .actions-right {
+        display: flex;
+        gap: 10px;
+    }
+
+    /* === Buttons === */
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 700;
+        font-size: .88rem;
+        cursor: pointer;
+        transition: .2s ease;
+    }
+
+    .btn-modern:disabled {
+        opacity: .6;
+        cursor: not-allowed;
+    }
+
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        box-shadow: 0 4px 16px rgba(37,99,235,.25);
+    }
+
+    .btn-primary-modern:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(37,99,235,.35);
+    }
+
+    .btn-success-modern {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+        box-shadow: 0 4px 16px rgba(16,185,129,.25);
+    }
+
+    .btn-success-modern:hover:not(:disabled) {
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary-modern {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .btn-ghost {
+        background: transparent;
+        color: #6b7280;
+        border: 1.5px solid #e5e7eb;
+    }
+
+    .btn-ghost:hover {
+        background: #f9fafb;
+    }
+
+    .btn-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+    }
+
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* === Toast === */
+    .toast-container {
+        position: fixed;
+        bottom: 24px;
+        left: 24px;
+        z-index: 1050;
+        animation: toastIn .4s ease;
+    }
+
+    @@keyframes toastIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .toast-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-radius: 16px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.12);
+        min-width: 320px;
+    }
+
+    .toast-success {
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        color: #065f46;
+    }
+
+    .toast-error {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+    }
+
+    .toast-icon {
+        flex-shrink: 0;
+    }
+
+    .toast-text {
+        flex: 1;
+        font-weight: 600;
+        font-size: .88rem;
+    }
+
+    .toast-close {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        color: inherit;
+        opacity: .6;
+    }
+
+    /* === States === */
+    .loading-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6b7280;
+    }
+
+    .loader {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #e5e7eb;
+        border-top-color: #1d4ed8;
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+        margin: 0 auto 16px;
+    }
+
+    .no-access-card {
+        text-align: center;
+        padding: 80px 20px;
+        background: white;
+        border-radius: 24px;
+        border: 1px solid #eef2f7;
+    }
+
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .no-access-text { color: #6b7280; margin-bottom: 16px; }
+
+    /* === Responsive === */
+    @@media (max-width: 992px) {
+        .cols-4 { grid-template-columns: repeat(2, 1fr); }
+        .cols-5 { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @@media (max-width: 576px) {
+        .cols-2,
+        .cols-4,
+        .cols-5 { grid-template-columns: 1fr; }
+
+        .page-header { flex-direction: column; }
+        .actions-bar { flex-direction: column; gap: 12px; }
+        .actions-right { width: 100%; flex-direction: column; }
+    }
+</style>
+
+@code {
+    [Parameter]
+    public int ItemId { get; set; }
+
+    private ItemEditDto item = new();
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? categories;
+    
+    private List<LookupDto> filteredCategories = new();
+    private List<LookupDto>? units;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string message = "";
+    private bool isSuccess = true;
+
+    // معلومات الإنشاء
+    private string createdByName = "";
+    private string createdDate = "";
+    private string modifiedByName = "";
+    private string modifiedDate = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        // تحميل الصلاحيات
+        if (!PermissionService.IsLoaded)
+        {
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        }
+
+        permissions = PermissionService.GetModule("SCR_ITEMS");
+
+        // التحقق من الصلاحية
+        if (permissions == null) return;
+        if (ItemId == 0 && !permissions.CanAdd) return;
+        if (ItemId > 0 && !permissions.CanEdit) return;
+
+        // تحميل القوائم المنسدلة
+        categories = await LookupService.GetCategoriesAsync();
+        units = await LookupService.GetUnitsAsync();
+        FilterCategories();
+
+        if (ItemId > 0)
+        {
+            var loaded = await ItemService.GetItemByIdAsync(ItemId);
+            if (loaded != null)
+            {
+                item = loaded;
+                FilterCategories();
+                await LoadAuditInfo();
+            }
+            else
+            {
+                message = "لم يتم العثور على الصنف";
+                isSuccess = false;
+            }
+        }
+        else
+        {
+            item.IsTaxable = true;
+            item.TaxRate = 14;
+            item.IsActive = true;
+        }
+
+        isLoading = false;
+    }
+
+    private async Task LoadAuditInfo()
+    {
+        var audit = await ItemService.GetItemAuditAsync(ItemId);
+        if (audit != null)
+        {
+            createdByName = audit.CreatedByName ?? "غير محدد";
+            createdDate = audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            modifiedByName = audit.ModifiedByName ?? "";
+            modifiedDate = audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+        }
+    }
+
+      private void OnItemTypeChanged()
+    {
+        if (item.ItemType != 4)
+            item.DefaultSellingPrice = 0;
+
+        FilterCategories();
+    }
+
+    private async Task SaveItem()
+    {
+        if (!ValidateItem()) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            if (ItemId == 0)
+            {
+                item.ItemCode = await ItemService.GenerateItemCodeAsync(item.ItemType);
+                var newId = await ItemService.InsertItemAsync(item, UserSession.UserID);
+                message = $"تم إضافة الصنف بنجاح — الكود: {item.ItemCode}";
+                isSuccess = true;
+                Navigation.NavigateTo($"/items/edit/{newId}");
+            }
+            else
+            {
+                await ItemService.UpdateItemAsync(item, UserSession.UserID);
+                message = "تم حفظ التعديلات بنجاح";
+                isSuccess = true;
+                await LoadAuditInfo();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            message = "خطأ: " + ex.Message;
+            isSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task SaveAndNew()
+    {
+        if (!ValidateItem()) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            item.ItemCode = await ItemService.GenerateItemCodeAsync(item.ItemType);
+            await ItemService.InsertItemAsync(item, UserSession.UserID);
+
+            var savedCode = item.ItemCode;
+
+            item = new ItemEditDto
+            {
+                IsTaxable = true,
+                TaxRate = 14,
+                IsActive = true
+            };
+
+            message = $"تم حفظ الصنف ({savedCode}) — يمكنك إضافة صنف جديد";
+            isSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            message = "خطأ: " + ex.Message;
+            isSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private bool ValidateItem()
+    {
+        if (string.IsNullOrWhiteSpace(item.ItemNameAr))
+        {
+            message = "يجب إدخال اسم الصنف بالعربي";
+            isSuccess = false;
+            return false;
+        }
+
+        if (item.ItemType == 0)
+        {
+            message = "يجب اختيار نوع الصنف";
+            isSuccess = false;
+            return false;
+        }
+
+        if (item.CategoryID == 0)
+        {
+            message = "يجب اختيار التصنيف";
+            isSuccess = false;
+            return false;
+        }
+
+        if (item.PrimaryUnitID == 0)
+        {
+            message = "يجب اختيار الوحدة الأساسية";
+            isSuccess = false;
+            return false;
+        }
+
+        if (item.ItemType == 4 && item.DefaultSellingPrice <= 0)
+        {
+            message = "المنتج التام يجب أن يحتوي على سعر بيع أكبر من صفر";
+            isSuccess = false;
+            return false;
+        }
+
+        return true;
+    }
+        private void FilterCategories()
+    {
+        if (categories == null)
+        {
+            filteredCategories = new();
+            return;
+        }
+
+        // تحديد كود التصنيف الأب حسب نوع الصنف
+        string? parentCode = item.ItemType switch
+        {
+            1 => "RAW",
+            2 => "PKG",
+            3 => "SEMI",
+            4 => "FIN",
+            _ => null
+        };
+
+        if (parentCode == null)
+        {
+            // لو ما اختارش نوع، أظهر كل التصنيفات الفرعية
+            filteredCategories = categories
+                .Where(c => c.ParentId != null)
+                .ToList();
+        }
+        else
+        {
+            // أظهر التصنيفات الفرعية التابعة للنوع المختار فقط
+            filteredCategories = categories
+                .Where(c => c.ParentCode == parentCode)
+                .ToList();
+        }
+
+        // لو التصنيف المختار حالياً مش ضمن الفلتر الجديد، صفّره
+        if (item.CategoryID > 0 && !filteredCategories.Any(c => c.Id == item.CategoryID))
+        {
+            item.CategoryID = 0;
+        }
+    }
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/items");
+    }
+}

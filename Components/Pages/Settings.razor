@@ -1,0 +1,617 @@
+﻿@page "/settings"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SettingService SettingService
+@inject NavigationManager Navigation
+
+<PageTitle>الإعدادات - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>
+            العودة للرئيسية
+        </button>
+    </div>
+}
+else
+{
+    <div class="settings-page" dir="rtl">
+
+        <!-- العنوان -->
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">إعدادات النظام</h2>
+                <p class="page-subtitle">إدارة إعدادات وتهيئة نظام واي كي كوتينج ERP</p>
+            </div>
+            @if (hasChanges && permissions.CanEdit)
+            {
+                <button class="btn-modern btn-primary-modern" @onclick="SaveAllChanges" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <div class="btn-spinner-sm"></div>
+                        <span>جاري الحفظ...</span>
+                    }
+                    else
+                    {
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                        <span>حفظ التغييرات (@changedCount)</span>
+                    }
+                </button>
+            }
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="loader"></div>
+                <p>جاري تحميل الإعدادات...</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var group in settingGroups)
+            {
+                var groupSettings = settings.Where(s => s.SettingGroup == group).ToList();
+                var groupColor = SettingService.GetGroupColor(group);
+
+                <div class="settings-group">
+                    <div class="group-header" style="border-right-color: @groupColor;">
+                        <span class="group-icon">@SettingService.GetGroupIcon(group)</span>
+                        <div>
+                            <div class="group-name">@SettingService.GetGroupNameAr(group)</div>
+                            <div class="group-count">@groupSettings.Count إعداد</div>
+                        </div>
+                    </div>
+
+                    <div class="settings-list">
+                        @foreach (var setting in groupSettings)
+                        {
+                            <div class="setting-row @(IsChanged(setting) ? "setting-changed" : "")">
+                                <div class="setting-info">
+                                    <div class="setting-desc">
+                                        @(setting.SettingDescription ?? setting.SettingKey)
+                                    </div>
+                                    <code class="setting-key">@setting.SettingKey</code>
+                                </div>
+                                <div class="setting-input-wrap">
+                                    @if (permissions.CanEdit)
+                                    {
+                                        @if (setting.SettingKey == "CostingMethod")
+                                        {
+                                            <select class="setting-input setting-select"
+                                                    value="@GetEditValue(setting)"
+                                                    @onchange="(e) => OnSelectChanged(setting, e)">
+                                                <option value="WeightedAverage">المتوسط المرجح</option>
+                                                <option value="FIFO">الوارد أولاً صادر أولاً</option>
+                                                <option value="LIFO">الوارد أخيراً صادر أولاً</option>
+                                                <option value="StandardCost">التكلفة المعيارية</option>
+                                            </select>
+                                        }
+                                        else if (setting.SettingKey == "AllowNegativeStock")
+                                        {
+                                            <label class="toggle-switch">
+                                                <input type="checkbox"
+                                                       checked="@IsToggleChecked(setting)"
+                                                       @onchange="(e) => OnToggleChanged(setting, e)" />
+                                                <span class="toggle-slider"></span>
+                                                <span class="toggle-text">
+                                                    @(IsToggleChecked(setting) ? "مسموح" : "غير مسموح")
+                                                </span>
+                                            </label>
+                                        }
+                                        else if (IsNumberField(setting))
+                                        {
+                                            <input type="number" class="setting-input"
+                                                   value="@GetEditValue(setting)"
+                                                   @onchange="(e) => OnSelectChanged(setting, e)" />
+                                        }
+                                        else
+                                        {
+                                            <input type="text" class="setting-input"
+                                                   value="@GetEditValue(setting)"
+                                                   @onchange="(e) => OnSelectChanged(setting, e)" />
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="setting-value-readonly">
+                                            @(setting.SettingValue ?? "—")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Toast -->
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .settings-page {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        max-width: 900px;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .page-title {
+        font-weight: 800;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .page-subtitle {
+        color: #6b7280;
+        font-size: .88rem;
+        margin: 4px 0 0;
+    }
+
+    /* === مجموعات الإعدادات === */
+    .settings-group {
+        background: white;
+        border-radius: 20px;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 4px 16px rgba(15,23,42,.04);
+        overflow: hidden;
+    }
+
+    .group-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 18px 24px;
+        background: #f8f9fc;
+        border-bottom: 1px solid #eef2f7;
+        border-right: 4px solid #1d4ed8;
+    }
+
+    .group-icon {
+        font-size: 1.5rem;
+    }
+
+    .group-name {
+        font-weight: 800;
+        color: #1f2937;
+        font-size: .95rem;
+    }
+
+    .group-count {
+        font-size: .78rem;
+        color: #9ca3af;
+        margin-top: 2px;
+    }
+
+    /* === صف الإعداد === */
+    .settings-list {
+        padding: 8px 0;
+    }
+
+    .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 24px;
+        border-bottom: 1px solid #f9fafb;
+        transition: .2s;
+        gap: 16px;
+    }
+
+    .setting-row:last-child {
+        border-bottom: none;
+    }
+
+    .setting-row:hover {
+        background: #faf9ff;
+    }
+
+    .setting-changed {
+        background: #fffbeb !important;
+        border-right: 3px solid #f59e0b;
+    }
+
+    .setting-info {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .setting-desc {
+        font-weight: 700;
+        color: #1f2937;
+        font-size: .88rem;
+        margin-bottom: 2px;
+    }
+
+    .setting-key {
+        background: #f3f4f6;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: .72rem;
+        color: #1d4ed8;
+        font-weight: 600;
+    }
+
+    /* === حقول الإدخال === */
+    .setting-input-wrap {
+        min-width: 280px;
+        max-width: 350px;
+    }
+
+    .setting-input {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 12px;
+        font-size: .88rem;
+        background: white;
+        outline: none;
+        transition: .2s;
+    }
+
+    .setting-input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+
+    .setting-select {
+        cursor: pointer;
+    }
+
+    .setting-value-readonly {
+        font-size: .88rem;
+        color: #6b7280;
+        font-weight: 600;
+    }
+
+    /* === Toggle === */
+    .toggle-switch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+    }
+
+    .toggle-switch input {
+        display: none;
+    }
+
+    .toggle-slider {
+        width: 44px;
+        height: 24px;
+        background: #d1d5db;
+        border-radius: 999px;
+        position: relative;
+        transition: .3s;
+        flex-shrink: 0;
+    }
+
+    .toggle-slider::after {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        right: 3px;
+        transition: .3s;
+        box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+        background: #1d4ed8;
+    }
+
+    .toggle-switch input:checked + .toggle-slider::after {
+        right: 23px;
+    }
+
+    .toggle-text {
+        font-size: .85rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    /* === الأزرار === */
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 700;
+        font-size: .88rem;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+    .btn-modern:disabled {
+        opacity: .6;
+        cursor: not-allowed;
+    }
+
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        box-shadow: 0 4px 16px rgba(37,99,235,.25);
+    }
+
+    .btn-primary-modern:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(37,99,235,.35);
+    }
+
+    .btn-secondary-modern {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .btn-spinner-sm {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+    }
+
+    /* === Toast === */
+    .toast-container {
+        position: fixed;
+        bottom: 24px;
+        left: 24px;
+        z-index: 1050;
+        animation: toastIn .4s ease;
+    }
+
+    .toast-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-radius: 16px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.12);
+        min-width: 320px;
+    }
+
+    .toast-success {
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        color: #065f46;
+    }
+
+    .toast-error {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+    }
+
+    .toast-text {
+        flex: 1;
+        font-weight: 600;
+        font-size: .88rem;
+    }
+
+    .toast-close {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        color: inherit;
+        opacity: .6;
+    }
+
+    @@keyframes toastIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* === States === */
+    .loading-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6b7280;
+    }
+
+    .loader {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #e5e7eb;
+        border-top-color: #1d4ed8;
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+        margin: 0 auto 16px;
+    }
+
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .no-access-card {
+        text-align: center;
+        padding: 80px 20px;
+        background: white;
+        border-radius: 24px;
+        border: 1px solid #eef2f7;
+    }
+
+    .no-access-icon {
+        font-size: 3.5rem;
+        margin-bottom: 16px;
+    }
+
+    /* === Responsive === */
+    @@media (max-width: 768px) {
+        .page-header {
+            flex-direction: column;
+        }
+
+        .setting-row {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .setting-input-wrap {
+            min-width: 100%;
+            max-width: 100%;
+        }
+    }
+</style>
+
+@code {
+    private List<SettingDto> settings = new();
+    private List<string> settingGroups = new();
+    private Dictionary<int, string?> editedValues = new();
+    private ModulePermissionDto? permissions;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    private bool hasChanges => editedValues.Any();
+    private int changedCount => editedValues.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_SETTINGS");
+
+        if (permissions != null && permissions.CanView)
+            await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        settings = await SettingService.GetAllSettingsAsync();
+        settingGroups = settings
+            .Select(s => s.SettingGroup ?? "General")
+            .Distinct()
+            .ToList();
+        editedValues.Clear();
+        isLoading = false;
+    }
+
+    private string? GetEditValue(SettingDto setting)
+    {
+        return editedValues.ContainsKey(setting.SettingID)
+            ? editedValues[setting.SettingID]
+            : setting.SettingValue;
+    }
+
+    private bool IsChanged(SettingDto setting)
+    {
+        return editedValues.ContainsKey(setting.SettingID);
+    }
+
+    private bool IsToggleChecked(SettingDto setting)
+    {
+        var val = GetEditValue(setting);
+        return val == "1" || val == "true" || val == "True";
+    }
+
+    private bool IsNumberField(SettingDto setting)
+    {
+        return setting.DataType == "Number" ||
+               setting.SettingKey.Contains("Rate") ||
+               setting.SettingKey.Contains("Percent") ||
+               setting.SettingKey.Contains("Length") ||
+               setting.SettingKey.Contains("Timeout") ||
+               setting.SettingKey.Contains("Days");
+    }
+
+    private void OnValueChanged(SettingDto setting, string? newValue)
+    {
+        if (newValue == setting.SettingValue)
+            editedValues.Remove(setting.SettingID);
+        else
+            editedValues[setting.SettingID] = newValue;
+    }
+
+    private void OnSelectChanged(SettingDto setting, ChangeEventArgs e)
+    {
+        OnValueChanged(setting, e.Value?.ToString());
+    }
+
+    private void OnToggleChanged(SettingDto setting, ChangeEventArgs e)
+    {
+        bool isChecked = (bool)(e.Value ?? false);
+        OnValueChanged(setting, isChecked ? "1" : "0");
+    }
+
+    private async Task SaveAllChanges()
+    {
+        if (!editedValues.Any()) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            int count = 0;
+            foreach (var kvp in editedValues)
+            {
+                await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID);
+                count++;
+            }
+
+            resultMessage = $"تم حفظ {count} إعداد بنجاح ✅";
+            resultSuccess = true;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            resultMessage = "خطأ: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

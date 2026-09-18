@@ -1,0 +1,486 @@
+﻿@page "/production-batches"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject ProductionBatchService BatchService
+@inject NavigationManager NavigationManager
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>دفعات الإنتاج - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions is null || !Perms.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <div class="pb-page">
+
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <i class="bi bi-layers-fill"></i>
+                    دفعات الإنتاج
+                </h1>
+                <p class="header-subtitle">Production Batches Management</p>
+            </div>
+            <div class="header-actions">
+                @if (Perms.CanExport)
+                {
+                    <button class="btn-success-modern" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting)
+                        {
+                            <span class="spinner-tiny"></span><span>جاري التصدير...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-file-earmark-excel-fill"></i><span>تصدير إكسيل</span>
+                        }
+                    </button>
+                }
+                @if (Perms.CanAdd)
+                {
+                    <button class="btn-primary-modern" @onclick="NavigateToAdd">
+                        <i class="bi bi-plus-lg"></i><span>دفعة جديدة</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon-wrap primary"><i class="bi bi-collection-fill"></i></div>
+                <div class="stat-info"><div class="stat-value">@batches.Count</div><div class="stat-label">إجمالي الدفعات</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap warning"><i class="bi bi-gear-wide-connected"></i></div>
+                <div class="stat-info"><div class="stat-value">@batches.Count(x => x.BatchStatus == 2)</div><div class="stat-label">قيد التصنيع</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap info"><i class="bi bi-search"></i></div>
+                <div class="stat-info"><div class="stat-value">@batches.Count(x => x.BatchStatus == 4)</div><div class="stat-label">فحص الجودة</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap success"><i class="bi bi-check-circle-fill"></i></div>
+                <div class="stat-info"><div class="stat-value">@batches.Count(x => x.BatchStatus == 5)</div><div class="stat-label">مقبول</div></div>
+            </div>
+        </div>
+
+        <div class="filter-card">
+            <div class="filter-header"><i class="bi bi-funnel-fill"></i>خيارات التصفية والبحث</div>
+            <div class="filter-body">
+                <div class="filter-group" style="flex:2;min-width:220px;">
+                    <label class="filter-label">بحث سريع</label>
+                    <div class="search-wrap">
+                        <i class="bi bi-search search-ico"></i>
+                        <input type="text" class="filter-input" placeholder="رقم الباتش أو أمر التصنيع أو المنتج..."
+                               @bind="searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
+                    </div>
+                </div>
+                <div class="filter-group" style="flex:1;min-width:140px;">
+                    <label class="filter-label">الحالة</label>
+                    <select class="filter-select" @bind="statusFilter">
+                        <option value="">— الكل —</option>
+                        <option value="1">📝 مسودة</option>
+                        <option value="2">⚙️ قيد التصنيع</option>
+                        <option value="3">🏭 اكتمل التصنيع</option>
+                        <option value="4">🔬 فحص الجودة</option>
+                        <option value="5">✅ مقبول</option>
+                        <option value="6">❌ مرفوض</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="flex:1;min-width:140px;">
+                    <label class="filter-label">من تاريخ</label>
+                    <input type="date" class="filter-input" @bind="fromDate" />
+                </div>
+                <div class="filter-group" style="flex:1;min-width:140px;">
+                    <label class="filter-label">إلى تاريخ</label>
+                    <input type="date" class="filter-input" @bind="toDate" />
+                </div>
+                <div class="filter-group" style="flex:.6;min-width:100px;">
+                    <label class="filter-label" style="visibility:hidden;">.</label>
+                    <button class="btn-primary-modern" @onclick="LoadData">
+                        <i class="bi bi-search"></i><span>تصفية</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <div class="table-card-header">
+                <div class="table-card-title">
+                    <i class="bi bi-table"></i>
+                    قائمة دفعات الإنتاج
+                    @if (!isLoading)
+                    {
+                        <span class="count-badge">@batches.Count دفعة</span>
+                    }
+                </div>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="state-box"><div class="spinner-md"></div><span class="state-text">جاري تحميل البيانات...</span></div>
+            }
+            else if (!batches.Any())
+            {
+                <div class="state-box">
+                    <div class="empty-icon-circle"><i class="bi bi-inbox"></i></div>
+                    <p class="empty-title">لا توجد دفعات مطابقة</p>
+                    <p class="empty-sub">جرّب تغيير معايير البحث أو أضف دفعة جديدة</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="pb-table">
+                        <thead>
+                            <tr>
+                                <th>رقم الباتش</th>
+                                <th>التاريخ</th>
+                                <th>أمر التصنيع</th>
+                                <th>المنتج</th>
+                                <th class="tc">المخطط</th>
+                                <th class="tc">الصالح</th>
+                                <th class="tc">الهالك %</th>
+                                <th class="tr">التكلفة</th>
+                                <th class="tc">الحالة</th>
+                                <th class="tc">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var batch in batches)
+                            {
+                                <tr>
+                                    <td><span class="code-chip">@batch.BatchNumber</span></td>
+                                    <td><span class="date-txt">@batch.BatchDate.ToString("dd/MM/yyyy")</span></td>
+                                    <td><span class="order-chip">@batch.ProductionOrderNumber</span></td>
+                                    <td>
+                                        <div class="prod-name">@batch.ProductName</div>
+                                        <div class="prod-code">@batch.ProductCode</div>
+                                    </td>
+                                    <td class="tc">@batch.PlannedQty.ToString("N2") @batch.UnitName</td>
+                                    <td class="tc"><span class="good-val">@batch.GoodQty.ToString("N2")</span></td>
+                                    <td class="tc"><span class="waste-chip">@batch.WastePercent%</span></td>
+                                    <td class="tr"><span class="cost-val">@batch.TotalCost.ToString("N2")</span></td>
+                                    <td class="tc">
+                                        <span class="status-chip @GetStatusClass(batch.BatchStatus)">
+                                            @batch.StatusName
+                                        </span>
+                                    </td>
+                                    <td class="tc">
+                                        <div class="actions-wrap">
+                                            @if ((batch.BatchStatus == 1 || batch.BatchStatus == 2 || batch.BatchStatus == 3 || batch.BatchStatus == 4) && Perms.CanEdit)
+                                            {
+                                                <button class="ico-btn edit-btn" title="تعديل"
+                                                        @onclick="() => NavigateToEdit(batch.BatchID)">
+                                                    <i class="bi bi-pencil-fill"></i>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="ico-btn view-btn" title="عرض"
+                                                        @onclick="() => NavigateToEdit(batch.BatchID)">
+                                                    <i class="bi bi-eye-fill"></i>
+                                                </button>
+                                            }
+
+                                            @if (Perms.CanPrint)
+                                            {
+                                                <button class="ico-btn print-btn" title="طباعة"
+                                                        @onclick="() => PrintBatch(batch.BatchID)">
+                                                    <i class="bi bi-printer-fill"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    :root {
+        --c-primary:#0f766e; --c-primary-lt:#f0fdfa; --c-primary-dk:#115e59;
+        --c-success:#10b981; --c-success-lt:#ecfdf5;
+        --c-warning:#f59e0b; --c-warning-lt:#fffbeb;
+        --c-danger:#ef4444; --c-danger-lt:#fef2f2;
+        --c-info:#0ea5e9; --c-info-lt:#f0f9ff;
+        --c-secondary:#64748b; --c-secondary-lt:#f1f5f9;
+        --c-surface:#fff; --c-bg:#f8fafc; --c-border:#e2e8f0;
+        --c-text:#0f172a; --c-text-2:#64748b; --c-text-3:#94a3b8;
+        --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px;
+        --sh-sm:0 1px 3px rgba(0,0,0,.06); --sh-md:0 4px 16px rgba(0,0,0,.08);
+    }
+
+    .pb-page { direction:rtl; padding:1.75rem 1.5rem; background:var(--c-bg); min-height:100vh; font-family:'Segoe UI',system-ui,sans-serif; display:flex; flex-direction:column; gap:1.5rem; }
+    .no-access-card { text-align:center; padding:80px 20px; background:white; border-radius:var(--r-xl); border:1px solid var(--c-border); max-width:480px; margin:80px auto; box-shadow:var(--sh-sm); }
+    .no-access-icon { font-size:3.5rem; margin-bottom:16px; }
+    .btn-back-dash { background:var(--c-secondary-lt); color:var(--c-secondary); border:none; padding:.6rem 1.4rem; border-radius:var(--r-sm); font-weight:600; cursor:pointer; }
+
+    .page-header { background:linear-gradient(135deg,var(--c-primary),var(--c-primary-dk)); border-radius:var(--r-xl); padding:1.75rem 2rem; display:flex; justify-content:space-between; align-items:center; box-shadow:0 8px 32px rgba(15,118,110,.25); position:relative; overflow:hidden; flex-wrap:wrap; gap:1rem; }
+    .page-header::before { content:''; position:absolute; top:-40px; left:-40px; width:180px; height:180px; background:rgba(255,255,255,.06); border-radius:50%; }
+    .header-content { position:relative; z-index:1; }
+    .header-title { color:#fff; font-size:1.5rem; font-weight:700; margin:0 0 .25rem; display:flex; align-items:center; gap:.6rem; }
+    .header-subtitle { color:rgba(255,255,255,.75); font-size:.85rem; margin:0; }
+    .header-actions { display:flex; gap:.75rem; position:relative; z-index:1; flex-wrap:wrap; }
+
+    .btn-primary-modern, .btn-success-modern {
+        color:#fff; border:none; border-radius:var(--r-sm); padding:.6rem 1.25rem; font-size:.88rem; font-weight:600;
+        display:inline-flex; align-items:center; gap:.45rem; cursor:pointer; transition:all .2s; white-space:nowrap;
+    }
+    .btn-primary-modern { background:linear-gradient(135deg,#4f46e5,#3730a3); box-shadow:0 4px 12px rgba(79,70,229,.3); }
+    .btn-success-modern { background:linear-gradient(135deg,var(--c-success),#059669); box-shadow:0 4px 12px rgba(16,185,129,.25); }
+    .btn-primary-modern:hover:not(:disabled), .btn-success-modern:hover:not(:disabled) { transform:translateY(-1px); }
+    .btn-primary-modern:disabled, .btn-success-modern:disabled { opacity:.65; cursor:not-allowed; }
+
+    .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; }
+    .stat-card { background:var(--c-surface); border-radius:var(--r-md); padding:1.2rem 1.4rem; box-shadow:var(--sh-sm); border:1px solid var(--c-border); display:flex; gap:1rem; align-items:center; }
+    .stat-icon-wrap { width:48px; height:48px; border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center; font-size:1.3rem; }
+    .stat-icon-wrap.primary { background:var(--c-primary-lt); color:var(--c-primary); }
+    .stat-icon-wrap.warning { background:var(--c-warning-lt); color:var(--c-warning); }
+    .stat-icon-wrap.info { background:var(--c-info-lt); color:var(--c-info); }
+    .stat-icon-wrap.success { background:var(--c-success-lt); color:var(--c-success); }
+    .stat-value { font-size:1.6rem; font-weight:800; color:var(--c-text); line-height:1; }
+    .stat-label { font-size:.78rem; color:var(--c-text-3); margin-top:.2rem; }
+
+    .filter-card, .table-card { background:var(--c-surface); border-radius:var(--r-md); box-shadow:var(--sh-sm); border:1px solid var(--c-border); overflow:hidden; }
+    .filter-header, .table-card-header { padding:.9rem 1.4rem; background:#fafafa; border-bottom:1px solid var(--c-border); }
+    .filter-header { font-size:.82rem; font-weight:700; color:var(--c-text-2); display:flex; gap:.5rem; align-items:center; }
+    .filter-body { padding:1.2rem 1.4rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; }
+    .filter-group { display:flex; flex-direction:column; gap:.4rem; }
+    .filter-label { font-size:.8rem; font-weight:600; color:var(--c-text-2); }
+    .filter-input, .filter-select { border:1.5px solid var(--c-border); border-radius:var(--r-sm); padding:.55rem .9rem; font-size:.88rem; color:var(--c-text); background:#fafafa; outline:none; width:100%; }
+    .filter-input:focus, .filter-select:focus { border-color:var(--c-primary); background:#fff; box-shadow:0 0 0 3px rgba(15,118,110,.1); }
+    .search-wrap { position:relative; }
+    .search-ico { position:absolute; right:.85rem; top:50%; transform:translateY(-50%); color:var(--c-text-3); }
+    .search-wrap .filter-input { padding-right:2.4rem; }
+    .table-card-title { font-size:.9rem; font-weight:700; color:var(--c-text); display:flex; align-items:center; gap:.5rem; }
+    .count-badge { background:var(--c-primary-lt); color:var(--c-primary); font-size:.75rem; font-weight:700; padding:.2rem .65rem; border-radius:20px; }
+
+    .table-scroll { overflow-x:auto; }
+    .pb-table { width:100%; border-collapse:collapse; }
+    .pb-table thead th { background:#f8fafc; padding:.85rem 1rem; font-size:.76rem; font-weight:700; color:var(--c-text-3); border-bottom:2px solid var(--c-border); white-space:nowrap; text-align:right; }
+    .pb-table thead th.tc { text-align:center; }
+    .pb-table thead th.tr { text-align:left; }
+    .pb-table tbody td { padding:.85rem 1rem; font-size:.875rem; color:var(--c-text); border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .pb-table tbody td.tc { text-align:center; }
+    .pb-table tbody td.tr { text-align:left; }
+    .pb-table tbody tr:hover { background:var(--c-primary-lt); }
+
+    .code-chip { font-family:'Courier New',monospace; font-weight:700; color:var(--c-primary); background:var(--c-primary-lt); padding:.2rem .55rem; border-radius:6px; font-size:.82rem; }
+    .date-txt { color:var(--c-text-2); }
+    .order-chip { font-weight:600; color:var(--c-text-2); }
+    .prod-name { font-weight:600; }
+    .prod-code { font-size:.75rem; color:var(--c-text-3); margin-top:.1rem; }
+    .good-val { color:var(--c-success); font-weight:700; }
+    .waste-chip { background:var(--c-warning-lt); color:#b45309; font-weight:700; padding:.2rem .55rem; border-radius:20px; font-size:.75rem; }
+    .cost-val { color:var(--c-success); font-weight:700; direction:ltr; display:inline-block; }
+
+    .status-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.28rem .75rem; border-radius:20px; font-size:.75rem; font-weight:700; white-space:nowrap; }
+    .status-chip::before { content:''; width:6px; height:6px; border-radius:50%; display:inline-block; }
+    .s-draft{background:#f1f5f9;color:#64748b;} .s-draft::before{background:#94a3b8;}
+    .s-work{background:#fed7aa;color:#c2410c;} .s-work::before{background:#f97316;}
+    .s-done{background:#dbeafe;color:#1d4ed8;} .s-done::before{background:#2563eb;}
+    .s-qc{background:#e0e7ff;color:#4338ca;} .s-qc::before{background:#6366f1;}
+    .s-accepted{background:var(--c-success-lt);color:#059669;} .s-accepted::before{background:var(--c-success);}
+    .s-rejected{background:var(--c-danger-lt);color:#dc2626;} .s-rejected::before{background:var(--c-danger);}
+
+    .actions-wrap { display:flex; justify-content:center; gap:.4rem; }
+    .ico-btn { width:32px; height:32px; border:none; border-radius:8px; background:transparent; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
+    .ico-btn:hover { transform:scale(1.12); }
+    .edit-btn{color:#4f46e5;} .edit-btn:hover{background:#eef2ff;}
+    .view-btn{color:#0ea5e9;} .view-btn:hover{background:#f0f9ff;}
+    .print-btn{color:#10b981;} .print-btn:hover{background:#ecfdf5;}
+
+    .state-box { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4rem 2rem; gap:1rem; }
+    .spinner-md { width:44px; height:44px; border:3px solid var(--c-border); border-top-color:var(--c-primary); border-radius:50%; animation:spin .7s linear infinite; }
+    .spinner-tiny { width:14px; height:14px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; display:inline-block; }
+    .empty-icon-circle { width:80px; height:80px; background:var(--c-primary-lt); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--c-primary); }
+    .empty-title { font-size:1.05rem; font-weight:700; color:var(--c-text); margin:0; }
+    .empty-sub { font-size:.85rem; color:var(--c-text-3); margin:0; }
+    @@keyframes spin { to { transform:rotate(360deg); } }
+
+    @@media (max-width:992px) { .stats-row { grid-template-columns:repeat(2,1fr);} }
+    @@media (max-width:768px) {
+        .pb-page { padding:1rem; }
+        .page-header { flex-direction:column; align-items:flex-start; }
+        .filter-body { flex-direction:column; }
+        .filter-group { width:100% !important; }
+        .stats-row { grid-template-columns:repeat(2,1fr); }
+    }
+</style>
+
+@code {
+    private List<ProductionBatchListDto> batches = new();
+    private bool isLoading = true;
+    private bool isExporting = false;
+    private ModulePermissionDto? permissions;
+    private ModulePermissionDto Perms => permissions!;
+
+    private string? searchQuery;
+    private string? statusFilter;
+    private DateTime? fromDate;
+    private DateTime? toDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_BATCH");
+
+        if (permissions is not null && Perms.CanView)
+            await LoadData();
+        else
+            isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            int? status = int.TryParse(statusFilter, out var s) ? s : null;
+            batches = await BatchService.GetListAsync(searchQuery, status, fromDate, toDate);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await LoadData();
+    }
+
+    private void NavigateToAdd() => NavigationManager.NavigateTo("/production-batches/edit/0");
+    private void NavigateToEdit(int id) => NavigationManager.NavigateTo($"/production-batches/edit/{id}");
+
+    private string GetStatusClass(int status) => status switch
+    {
+        1 => "s-draft",
+        2 => "s-work",
+        3 => "s-done",
+        4 => "s-qc",
+        5 => "s-accepted",
+        6 => "s-rejected",
+        _ => "s-draft"
+    };
+
+    private async Task ExportToExcel()
+    {
+        if (!Perms.CanExport) return;
+
+        isExporting = true;
+        try
+        {
+            var fileBytes = await BatchService.ExportToExcelAsync(batches, UserSession.UserID);
+            var fileName = $"ProductionBatches_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            var base64 = Convert.ToBase64String(fileBytes);
+
+            await JS.InvokeVoidAsync("downloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private async Task PrintBatch(int batchId)
+{
+    if (!Perms.CanPrint) return;
+
+    var batch = await BatchService.GetByIdAsync(batchId);
+    if (batch is null) return;
+
+    var stages = await BatchService.GetStagesAsync(batchId);
+
+    var rowsBuilder = new System.Text.StringBuilder();
+
+    for (int i = 0; i < stages.Count; i++)
+    {
+        var s = stages[i];
+
+        rowsBuilder.Append("<tr>");
+        rowsBuilder.Append($"<td style='padding:10px;border-bottom:1px solid #eee;text-align:center'>{i + 1}</td>");
+        rowsBuilder.Append($"<td style='padding:10px;border-bottom:1px solid #eee'>{s.StageName}</td>");
+        rowsBuilder.Append($"<td style='padding:10px;border-bottom:1px solid #eee;text-align:center'>{s.StageStatusName}</td>");
+        rowsBuilder.Append($"<td style='padding:10px;border-bottom:1px solid #eee;text-align:center'>{(s.StartTime?.ToString("dd/MM HH:mm") ?? "—")}</td>");
+        rowsBuilder.Append($"<td style='padding:10px;border-bottom:1px solid #eee;text-align:center'>{(s.EndTime?.ToString("dd/MM HH:mm") ?? "—")}</td>");
+        rowsBuilder.Append("</tr>");
+    }
+
+    var html =
+        "<!DOCTYPE html>" +
+        "<html lang='ar' dir='rtl'>" +
+        "<head>" +
+        "<meta charset='UTF-8'>" +
+        $"<title>دفعة إنتاج - {batch.BatchNumber}</title>" +
+        "<style>" +
+        "body{font-family:'Segoe UI',sans-serif;direction:rtl;padding:30px;color:#1f2937}" +
+        "table{width:100%;border-collapse:collapse;margin-top:20px}" +
+        "th{background:#f8fafc;padding:10px;text-align:right;border-bottom:2px solid #e5e7eb}" +
+        ".no-print{margin-bottom:20px;display:flex;gap:10px;justify-content:flex-end}" +
+        "@media print{.no-print{display:none!important}}" +
+        "</style>" +
+        "</head>" +
+        "<body>" +
+        "<div class='no-print'>" +
+        "<button onclick='window.print()' style='background:#0f766e;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;'>طباعة</button>" +
+        "<button onclick='window.close()' style='background:#64748b;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;'>إغلاق</button>" +
+        "</div>" +
+        $"<h2 style='border-bottom:3px solid #0f766e;padding-bottom:10px'>دفعة إنتاج رقم {batch.BatchNumber}</h2>" +
+        "<div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:20px 0'>" +
+        $"<div><strong>أمر التصنيع:</strong> {batch.ProductionOrderNumber}</div>" +
+        $"<div><strong>المنتج:</strong> {batch.ProductName}</div>" +
+        $"<div><strong>تاريخ الباتش:</strong> {batch.BatchDate:dd/MM/yyyy}</div>" +
+        $"<div><strong>الحالة:</strong> {GetStatusName(batch.BatchStatus)}</div>" +
+        $"<div><strong>الكمية المخططة:</strong> {batch.PlannedQty:N2} {batch.UnitName}</div>" +
+        $"<div><strong>الكمية الصالحة:</strong> {batch.GoodQty:N2}</div>" +
+        $"<div><strong>التكلفة:</strong> {batch.TotalCost:N2}</div>" +
+        $"<div><strong>المخزن:</strong> {batch.TargetWarehouseName}</div>" +
+        "</div>" +
+        "<table>" +
+        "<thead><tr><th>#</th><th>المرحلة</th><th>الحالة</th><th>البداية</th><th>النهاية</th></tr></thead>" +
+        $"<tbody>{rowsBuilder}</tbody>" +
+        "</table>" +
+        "</body></html>";
+
+    await JS.InvokeVoidAsync("printHtml", html);
+}
+
+    private string GetStatusName(int status) => status switch
+    {
+        1 => "مسودة",
+        2 => "قيد التصنيع",
+        3 => "اكتمل التصنيع",
+        4 => "في فحص الجودة",
+        5 => "مقبول",
+        6 => "مرفوض",
+        _ => "—"
+    };
+}

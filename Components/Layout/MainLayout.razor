@@ -1,0 +1,1470 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@using YKCoatings.Services
+@using YKCoatings.Helpers
+@using YKCoatings.Models
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject NotificationService NotificationService
+@inject IJSRuntime JS
+@inject SettingService SettingService
+@inject LoginHistoryService LoginHistoryService
+
+@* ═══ بوابة الجلسة ═══
+   لا نُظهر الهيكل أو الصفحة الحالية قبل معرفة حالة تسجيل الدخول،
+   حتى لا يرى فحص الصفحات (OnInitializedAsync) أن IsLoggedIn=false
+   عند عمل Refresh فيقوم بطرد المستخدم إلى /login. *@
+@if (!sessionReady)
+{
+    <div class="app-boot" dir="rtl">
+        <img src="/images/yk-logo.svg" alt="واي كي كوتينج" class="app-boot-logo" />
+        <div class="app-boot-spinner"></div>
+        <div class="app-boot-text">جاري تجهيز النظام…</div>
+    </div>
+}
+else
+{
+<div class="app-shell @(isCollapsed ? "sidebar-collapsed" : "")" dir="rtl">
+    
+    <!-- Mobile Overlay -->
+    <div class="mobile-overlay @(isMobileOpen ? "visible" : "")" @onclick="CloseMobile"></div>
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="app-sidebar @(isMobileOpen ? "mobile-open" : "")">
+        
+        <!-- Logo Header -->
+        <div class="sb-header">
+            <div class="sb-brand">
+                <div class="sb-logo">
+                    @if (!isCollapsed)
+                    {
+                        <img src="/images/yk-logo.svg" alt="واي كي كوتينج" class="sb-logo-full" />
+                    }
+                    else
+                    {
+                        <img src="/images/yk-icon.svg" alt="YK" class="sb-logo-icon" />
+                    }
+                </div>
+                
+                <!-- الاسم التجاري مدمج داخل الشعار — لا تكرار للنص -->
+            </div>
+
+            <!-- Collapse Button Desktop -->
+            <button class="sb-collapse-btn desktop-only" 
+                    @onclick="ToggleCollapse" 
+                    title="@(isCollapsed ? "توسيع القائمة" : "طي القائمة")">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    @if (isCollapsed)
+                    {
+                        <path d="M9 18l6-6-6-6"/>
+                    }
+                    else
+                    {
+                        <path d="M15 18l-6-6 6-6"/>
+                    }
+                </svg>
+            </button>
+
+            <!-- Close Button Mobile -->
+            <button class="sb-collapse-btn mobile-only" @onclick="CloseMobile">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"/><path d="M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- User Info -->
+        <div class="sb-user">
+            <div class="sb-avatar" title="@UserSession.FullName">
+                @GetInitials()
+            </div>
+            <div class="sb-user-text">
+                <span class="sb-user-name">@UserSession.FullName</span>
+                <span class="sb-user-role">
+                    <span class="online-dot"></span>
+                    @UserSession.RoleName
+                </span>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="sb-nav-area">
+            <NavMenu IsCollapsed="@isCollapsed"/>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="sb-footer">
+            <div class="sb-footer-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+            </div>
+            <div class="sb-footer-text">
+                <span>الإصدار 2.0</span>
+                <span class="sb-footer-status">● متصل</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="app-main">
+        
+        <!-- Top Bar -->
+        <header class="app-topbar">
+            <div class="tb-right">
+                <!-- Mobile Menu Button -->
+                <button class="tb-menu-btn" @onclick="OpenMobile" title="القائمة">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>
+                    </svg>
+                </button>
+
+                <!-- Page Info -->
+                <div class="tb-page-info">
+                    <h1 class="tb-title">@GetPageTitle()</h1>
+                    <p class="tb-breadcrumb">
+                        <span>الرئيسية</span>
+                        <span class="breadcrumb-sep">›</span>
+                        <span>@GetPageTitle()</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="tb-left">
+                
+                <!-- Notifications -->
+                <div class="notif-wrap">
+                    @if (showNotifications)
+                    {
+                        <div class="notif-bg" @onclick="@(() => showNotifications = false)"></div>
+                    }
+
+                    <button class="tb-icon-btn" 
+                            @onclick="ToggleNotifications" 
+                            title="الإشعارات">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        @if (unreadCount > 0)
+                        {
+                            <span class="notif-badge">@(unreadCount > 9 ? "9+" : unreadCount.ToString())</span>
+                        }
+                    </button>
+
+                    @if (showNotifications)
+                    {
+                        <div class="notif-panel">
+                            <div class="notif-panel-head">
+                                <span class="notif-panel-title">
+                                    🔔 الإشعارات
+                                    @if (unreadCount > 0)
+                                    {
+                                        <span class="notif-count-chip">@unreadCount</span>
+                                    }
+                                </span>
+                                @if (unreadCount > 0)
+                                {
+                                    <button class="notif-read-all" 
+                                            @onclick="MarkAllRead" 
+                                            @onclick:stopPropagation="true">
+                                        تحديد الكل كمقروء ✓
+                                    </button>
+                                }
+                            </div>
+
+                            <div class="notif-panel-body">
+                                @if (notifications == null || !notifications.Any())
+                                {
+                                    <div class="notif-empty">
+                                        <div class="notif-empty-icon">🔕</div>
+                                        <span>لا توجد إشعارات جديدة</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    @foreach (var notif in notifications)
+                                    {
+                                        <button class="notif-item @(!notif.IsRead ? "unread" : "") @(notif.IsActioned ? "actioned" : "")"
+                                                @onclick="@(() => OnNotifClick(notif))"
+                                                @onclick:stopPropagation="true">
+                                            <div class="notif-item-icon">
+                                                @NotificationService.GetTypeIcon(notif.NotificationType)
+                                            </div>
+                                            <div class="notif-item-body">
+                                                <div class="notif-item-title">@notif.Title</div>
+                                                <div class="notif-item-msg">@notif.Message</div>
+                                                <div class="notif-item-time">
+                                                    🕐 @GetTimeAgo(notif.NotificationDate)
+                                                </div>
+                                            </div>
+                                            @if (!notif.IsRead)
+                                            {
+                                                <div class="notif-unread-dot" 
+                                                     style="background:@NotificationService.GetPriorityColor(notif.Priority)">
+                                                </div>
+                                            }
+                                        </button>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Date -->
+                <div class="tb-date hide-sm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2"/>
+                        <path d="M16 2v4M8 2v4M3 10h18"/>
+                    </svg>
+                    <span>@DateTime.Now.ToString("dd/MM/yyyy")</span>
+                </div>
+
+                <!-- Role Badge -->
+                <div class="tb-role hide-sm">@UserSession.RoleName</div>
+
+                <!-- Logout -->
+                <button class="tb-logout" @onclick="@(async () => await DoLogout())" title="تسجيل الخروج">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <path d="M16 17l5-5-5-5"/>
+                        <path d="M21 12H9"/>
+                    </svg>
+                    <span class="logout-text">خروج</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <div class="app-body">
+            <div class="app-body-inner">
+                @Body
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+    <span>© @DateTime.Now.Year واي كي كوتينج ERP</span>
+    <span class="footer-sep">·</span>
+    <span>الإصدار 2.0</span>
+    <span class="footer-sep">·</span>
+    <span class="footer-status">
+        <span class="status-dot"></span>
+        جميع الأنظمة تعمل
+    </span>
+    <span class="footer-sep">·</span>
+    <span class="footer-dev-main">
+        تصميم وتطوير : أحمد محمد الرفاعى | للتواصل : 01122050119
+    </span>
+</footer>
+    </main>
+    @if (showSessionWarning)
+{
+    <div class="session-timeout-overlay">
+        <div class="session-timeout-modal">
+            <div class="session-timeout-icon">⏳</div>
+
+            <div class="session-timeout-title">ستنتهي الجلسة قريبًا</div>
+
+            <div class="session-timeout-text">
+    لم يتم اكتشاف أي نشاط على النظام.
+    <br />
+    سيتم تسجيل الخروج تلقائيًا إذا لم تقم بأي تفاعل.
+</div>
+
+            <div class="session-timeout-actions">
+                <button class="session-btn session-btn-primary" @onclick="StayLoggedIn">
+                    البقاء متصلاً
+                </button>
+
+                <button class="session-btn session-btn-danger" @onclick="@(async () => await DoLogout())">
+                    تسجيل الخروج الآن
+                </button>
+            </div>
+        </div>
+    </div>
+}
+</div>
+}
+
+<style>
+    /* ===== CSS VARIABLES ===== */
+    :root {
+        --sb-width: 280px;
+        --sb-mini: 72px;
+        --sb-bg: #0f172a;
+        --sb-bg2: #1e293b;
+        --sb-border: rgba(148,163,184,.12);
+        --sb-text: #cbd5e1;
+        --sb-text-dim: #64748b;
+        --sb-accent: #2563eb;
+        --sb-accent-soft: rgba(37,99,235,.14);
+        --yk-primary: #2563eb;
+        --yk-primary-dark: #1d4ed8;
+        --yk-accent: #f97316;
+        --yk-accent-soft: rgba(249,115,22,.14);
+        --topbar-h: 64px;
+        --body-bg: #eef2f7;
+        --card-bg: #ffffff;
+        --text-primary: #0f172a;
+        --text-secondary: #475569;
+        --border-color: #e2e8f0;
+        --shadow-sm: 0 2px 8px rgba(15,23,42,.06);
+        --shadow-md: 0 4px 20px rgba(15,23,42,.08);
+        --shadow-lg: 0 8px 32px rgba(15,23,42,.12);
+        --radius: 12px;
+        --radius-lg: 16px;
+        --transition: .25s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* ===== RESET ===== */
+    *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* ===== APP SHELL ===== */
+    .app-shell {
+        display: flex;
+        min-height: 100vh;
+        background: var(--body-bg);
+        font-family: 'Cairo', 'Segoe UI', sans-serif;
+    }
+
+    /* ===== MOBILE OVERLAY ===== */
+    .mobile-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,.6);
+        backdrop-filter: blur(4px);
+        z-index: 200;
+        opacity: 0;
+        transition: opacity var(--transition);
+        pointer-events: none;
+    }
+    .mobile-overlay.visible {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .app-sidebar {
+        width: var(--sb-width);
+        min-width: var(--sb-width);
+        background: var(--sb-bg);
+        color: var(--sb-text);
+        display: flex;
+        flex-direction: column;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        z-index: 210;
+        transition: width var(--transition), min-width var(--transition);
+        overflow: hidden;
+        border-left: 1px solid var(--sb-border);
+        box-shadow: 4px 0 24px rgba(0,0,0,.15);
+    }
+
+    .sidebar-collapsed .app-sidebar {
+        width: var(--sb-mini);
+        min-width: var(--sb-mini);
+    }
+
+    /* ===== SIDEBAR HEADER / LOGO ===== */
+    .sb-header {
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--sb-border);
+        min-height: 76px;
+        background: rgba(0,0,0,.1);
+        gap: 8px;
+    }
+
+    .sidebar-collapsed .sb-header {
+        padding: 14px 8px;
+    }
+
+    .sb-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1;
+    }
+
+    /* ===== الشعار ===== */
+    .sb-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        transition: var(--transition);
+    }
+
+    /* الشعار الكامل (يظهر عند التوسيع) — بألوان الهوية الأصلية */
+    .sb-logo-full {
+        height: 40px;
+        width: auto;
+        max-width: 172px;
+        object-fit: contain;
+    }
+
+    /* الأيقونة المختصرة (تظهر عند الطي) */
+    .sb-logo-icon {
+        width: 36px;
+        height: 36px;
+        object-fit: contain;
+    }
+
+    .sb-logo-fallback svg {
+        width: 100%;
+        height: 100%;
+    }
+
+    .sb-brand-name-fallback {
+        font-weight: 800;
+        font-size: .92rem;
+        color: #f1f5f9;
+        white-space: nowrap;
+    }
+
+    .sb-brand-desc {
+        font-size: .7rem;
+        color: var(--sb-text-dim);
+        margin-top: 2px;
+        white-space: nowrap;
+    }
+
+    /* Collapse Button */
+    .sb-collapse-btn {
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--sb-border);
+        background: rgba(255,255,255,.05);
+        color: var(--sb-text-dim);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: var(--transition);
+        margin-right: 4px;
+    }
+    .sb-collapse-btn:hover {
+        background: var(--sb-accent-soft);
+        color: var(--sb-accent);
+        border-color: rgba(37,99,235,.3);
+    }
+    .sb-collapse-btn svg { width: 16px; height: 16px; }
+
+    .desktop-only { display: flex; }
+    .mobile-only { display: none; }
+
+    /* ===== USER SECTION ===== */
+    .sb-user {
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid var(--sb-border);
+        background: rgba(255,255,255,.02);
+    }
+
+    .sb-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #1e40af, #2563eb);
+        border: 2px solid rgba(37,99,235,.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        color: #fff;
+        font-size: .88rem;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(37,99,235,.3);
+        cursor: default;
+    }
+
+    .sb-user-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+        transition: opacity var(--transition);
+    }
+
+    .sidebar-collapsed .sb-user-text {
+        opacity: 0;
+        width: 0;
+        pointer-events: none;
+    }
+
+    .sb-user-name {
+        font-weight: 700;
+        font-size: .86rem;
+        color: #e2e8f0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sb-user-role {
+        font-size: .74rem;
+        color: var(--sb-text-dim);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 3px;
+    }
+
+    .online-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 3px rgba(34,197,94,.2);
+        animation: pulse 2s infinite;
+    }
+
+    @@keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+        50% { box-shadow: 0 0 0 6px rgba(34,197,94,.1); }
+    }
+
+    /* ===== NAV AREA ===== */
+    .sb-nav-area {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 12px 10px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148,163,184,.15) transparent;
+    }
+    .sb-nav-area::-webkit-scrollbar { width: 4px; }
+    .sb-nav-area::-webkit-scrollbar-thumb {
+        background: rgba(148,163,184,.15);
+        border-radius: 99px;
+    }
+
+    /* ===== SIDEBAR FOOTER ===== */
+    .sb-footer {
+        padding: 12px 16px;
+        border-top: 1px solid var(--sb-border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(0,0,0,.1);
+    }
+
+    .sb-footer-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: rgba(255,255,255,.05);
+        color: var(--sb-text-dim);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .sb-footer-icon svg { width: 15px; height: 15px; }
+
+    .sb-footer-text {
+        display: flex;
+        flex-direction: column;
+        font-size: .72rem;
+        color: var(--sb-text-dim);
+        white-space: nowrap;
+        transition: opacity var(--transition);
+    }
+
+    .sidebar-collapsed .sb-footer-text {
+        opacity: 0;
+        width: 0;
+        pointer-events: none;
+    }
+
+    .sb-footer-status {
+        color: #22c55e;
+        margin-top: 2px;
+        font-weight: 600;
+    }
+
+    /* ===== MAIN ===== */
+    .app-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    /* ===== TOPBAR ===== */
+    .app-topbar {
+         position: sticky;
+    top: 0;
+    z-index: 50;
+    background: linear-gradient(135deg, #0b1526 0%, #123a6b 60%, #0f1f38 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(37,99,235,.22);
+        padding: 0 24px;
+        height: var(--topbar-h);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .tb-right, .tb-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .tb-menu-btn {
+    display: none;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(249,115,22,.2);
+    background: rgba(255,255,255,.05);
+    border-radius: var(--radius);
+    color: #cbd5e1;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: var(--transition);
+    }
+    .tb-menu-btn:hover { 
+    background: rgba(249,115,22,.15); 
+    color: #f97316;
+}
+    .tb-menu-btn svg { width: 18px; height: 18px; }
+
+    .tb-page-info { display: flex; flex-direction: column; }
+
+    .tb-title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #f1f5f9;
+    line-height: 1.2;
+}
+
+.tb-breadcrumb {
+    font-size: .74rem;
+    color: rgba(249,115,22,.7);
+        margin-top: 2px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .breadcrumb-sep {
+        opacity: .4;
+        font-size: .8rem;
+    }
+
+    /* Icon Button */
+    .tb-icon-btn {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(249,115,22,.2);
+    background: rgba(255,255,255,.05);
+    border-radius: var(--radius);
+    color: #cbd5e1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: var(--transition);
+        z-index: 210;
+    }
+    .tb-icon-btn:hover {
+    background: rgba(249,115,22,.15);
+    color: #f97316;
+    border-color: rgba(249,115,22,.4);
+}
+    .tb-icon-btn svg { width: 18px; height: 18px; }
+
+    /* Notification Badge */
+    .notif-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #ef4444;
+        color: white;
+        font-size: .58rem;
+        font-weight: 800;
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        border: 2px solid white;
+        line-height: 1;
+    }
+
+    /* Date & Role */
+    .tb-date {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(249,115,22,.2);
+    border-radius: var(--radius);
+    font-size: .8rem;
+    color: #cbd5e1;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .tb-date svg { width: 14px; height: 14px; }
+
+    .tb-role {
+    padding: 8px 14px;
+    background: rgba(249,115,22,.12);
+    color: #fdba74;
+    border: 1px solid rgba(249,115,22,.3);
+        border-radius: var(--radius);
+        font-size: .78rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    /* Logout */
+    .tb-logout {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 16px;
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+        border-radius: var(--radius);
+        font-weight: 700;
+        font-size: .82rem;
+        cursor: pointer;
+        transition: var(--transition);
+        white-space: nowrap;
+    }
+    .tb-logout:hover {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        transform: translateY(-1px);
+    }
+    .tb-logout svg { width: 16px; height: 16px; }
+
+    /* ===== APP BODY ===== */
+    .app-body {
+        flex: 1;
+        padding: 24px;
+        background: #eef2f7;
+        min-height: calc(100vh - var(--topbar-h) - 48px);
+        overflow-x: hidden;
+    }
+
+    .app-body-inner {
+        max-width: 1600px;
+        margin: 0 auto;
+        width: 100%;
+    }
+
+    /* ===== APP FOOTER ===== */
+    .app-footer {
+        padding: 12px 24px;
+        border-top: 1px solid var(--border-color);
+        background: rgba(255,255,255,.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: .72rem;
+        color: #94a3b8;
+        font-weight: 600;
+    }
+
+    .footer-sep { opacity: .4; }
+    .footer-dev-main {
+    color: #082280;
+    font-weight: 600;
+    font-size: 0.72rem;
+    opacity: 0.6;
+}
+
+    .footer-status {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #22c55e;
+    }
+
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #22c55e;
+        animation: pulse 2s infinite;
+    }
+
+    /* ===== NOTIFICATIONS PANEL ===== */
+    .notif-wrap {
+        position: relative;
+        z-index: 100;
+    }
+
+    .notif-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: transparent;
+    }
+
+    .notif-panel {
+        position: absolute;
+        top: calc(100% + 10px);
+        left: 0;
+        width: 400px;
+        background: white;
+        border-radius: 20px;
+        box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,.05);
+        border: 1px solid var(--border-color);
+        z-index: 300;
+        animation: notifIn .2s cubic-bezier(.4,0,.2,1);
+        overflow: hidden;
+    }
+
+    @@keyframes notifIn {
+        from { opacity: 0; transform: translateY(-8px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .notif-panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 18px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #fafafa;
+    }
+
+    .notif-panel-title {
+        font-weight: 800;
+        color: var(--text-primary);
+        font-size: .9rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .notif-count-chip {
+        background: #ef4444;
+        color: white;
+        font-size: .68rem;
+        font-weight: 800;
+        padding: 2px 7px;
+        border-radius: 999px;
+    }
+
+    .notif-read-all {
+        background: none;
+        border: 1px solid #e2e8f0;
+        color: var(--sb-accent);
+        font-size: .74rem;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 5px 10px;
+        border-radius: 8px;
+        transition: var(--transition);
+    }
+    .notif-read-all:hover {
+        background: #eff6ff;
+        border-color: rgba(37,99,235,.3);
+    }
+
+    .notif-panel-body {
+        max-height: 420px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #e2e8f0 transparent;
+    }
+
+    .notif-empty {
+        padding: 50px 20px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: .84rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .notif-empty-icon {
+        font-size: 2.5rem;
+        opacity: .5;
+    }
+
+    .notif-item {
+        display: flex;
+        gap: 12px;
+        padding: 14px 18px;
+        border: none;
+        border-bottom: 1px solid #f8fafc;
+        cursor: pointer;
+        transition: background .15s;
+        align-items: flex-start;
+        width: 100%;
+        background: transparent;
+        text-align: right;
+    }
+    .notif-item:hover { background: #f8fafc; }
+    .notif-item.unread {
+        background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+        border-right: 3px solid var(--sb-accent);
+    }
+    .notif-item.actioned {
+        opacity: .5;
+        background: #f8fafc;
+    }
+    .notif-item.actioned .notif-item-title {
+        text-decoration: line-through;
+        color: #94a3b8;
+    }
+    .notif-item:last-child { border-bottom: none; }
+
+    .notif-item-icon {
+        font-size: 1.3rem;
+        flex-shrink: 0;
+        width: 38px;
+        height: 38px;
+        background: #f1f5f9;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .notif-item-body { flex: 1; min-width: 0; }
+
+    .notif-item-title {
+        font-weight: 700;
+        color: var(--text-primary);
+        font-size: .84rem;
+        line-height: 1.3;
+    }
+
+    .notif-item-msg {
+        color: #64748b;
+        font-size: .76rem;
+        margin-top: 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 260px;
+    }
+
+    .notif-item-time {
+        color: #94a3b8;
+        font-size: .7rem;
+        margin-top: 5px;
+        font-weight: 600;
+    }
+
+    .notif-unread-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 5px;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+    }
+
+    /* ===== HIDE HELPERS ===== */
+    .hide-sm { }
+        /* ===== SESSION TIMEOUT MODAL ===== */
+    .session-timeout-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 5000;
+        padding: 20px;
+    }
+
+    .session-timeout-modal {
+        width: 100%;
+        max-width: 420px;
+        background: #ffffff;
+        border-radius: 20px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+        border: 1px solid #e2e8f0;
+        padding: 28px 24px;
+        text-align: center;
+        animation: sessionModalIn .25s ease;
+    }
+
+    @@keyframes sessionModalIn {
+        from {
+            opacity: 0;
+            transform: translateY(12px) scale(.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    .session-timeout-icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 14px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #f59e0b, #f97316);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        box-shadow: 0 8px 24px rgba(245, 158, 11, .25);
+    }
+
+    .session-timeout-title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 10px;
+    }
+
+    .session-timeout-text {
+        font-size: .9rem;
+        line-height: 1.8;
+        color: #475569;
+        font-weight: 600;
+    }
+
+    .session-timeout-text strong {
+        color: #dc2626;
+        font-size: 1rem;
+        margin-right: 4px;
+    }
+
+    .session-timeout-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 20px;
+        flex-wrap: wrap;
+    }
+
+    .session-btn {
+        min-width: 140px;
+        height: 42px;
+        border: none;
+        border-radius: 12px;
+        font-size: .85rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .2s ease;
+        padding: 0 18px;
+    }
+
+    .session-btn-primary {
+        background: linear-gradient(135deg, #2563eb, #2563eb);
+        color: white;
+        box-shadow: 0 6px 18px rgba(37, 99, 235, .18);
+    }
+
+    .session-btn-primary:hover {
+        transform: translateY(-2px);
+    }
+
+    .session-btn-danger {
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .session-btn-danger:hover {
+        background: #fee2e2;
+    }
+
+    @@media (max-width: 520px) {
+        .session-timeout-modal {
+            padding: 22px 18px;
+            border-radius: 18px;
+        }
+
+        .session-btn {
+            width: 100%;
+        }
+
+        .session-timeout-actions {
+            flex-direction: column;
+        }
+    }
+    /* ===== RESPONSIVE ===== */
+    @@media (max-width: 1024px) {
+        .app-sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            transform: translateX(105%);
+            transition: transform var(--transition);
+            width: var(--sb-width) !important;
+            min-width: var(--sb-width) !important;
+            box-shadow: none;
+        }
+        .app-sidebar.mobile-open {
+            transform: translateX(0);
+            box-shadow: -4px 0 32px rgba(0,0,0,.2);
+        }
+        .mobile-overlay { display: block; }
+        .desktop-only { display: none !important; }
+        .mobile-only { display: flex !important; }
+        .tb-menu-btn { display: flex; }
+        .sidebar-collapsed .app-sidebar {
+            width: var(--sb-width) !important;
+            min-width: var(--sb-width) !important;
+        }
+    }
+
+    @@media (max-width: 768px) {
+        .app-topbar { padding: 0 16px; height: 58px; }
+        .app-body { padding: 14px; }
+        .notif-panel { width: 340px; }
+    }
+
+    @@media (max-width: 640px) {
+        .app-topbar { padding: 0 12px; }
+        .app-body { padding: 10px; }
+        .hide-sm { display: none !important; }
+        .logout-text { display: none; }
+        .tb-logout { padding: 0 12px; }
+        .notif-panel { width: 300px; left: auto; right: -50px; }
+        .app-footer { display: none; }
+    }
+</style>
+
+@code {
+    private bool isCollapsed;
+    private bool isMobileOpen;
+    private bool showNotifications = false;
+    private List<NotificationDto>? notifications;
+    private int unreadCount = 0;
+    private int _lastUnreadCount = -1;
+    private System.Threading.Timer? _notifTimer;
+    private bool _initialized = false;
+    // بوابة الجلسة: لا نُظهر الهيكل/الصفحة قبل معرفة حالة تسجيل الدخول،
+    // وإلا فإن فحص الصفحات (OnInitializedAsync) يرى IsLoggedIn=false عند Refresh
+    // فيطرد المستخدم إلى /login — وهي مشكلة "تسجيل الخروج عند كل تحديث".
+    private bool sessionReady = false;
+        private DotNetObjectReference<MainLayout>? _sessionTimeoutRef;
+    private bool showSessionWarning = false;
+    
+    private int _sessionTimeoutMinutes = 30;
+    private int _sessionWarningMinutes = 2;
+    
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_initialized)
+        {
+            _initialized = true;
+            UserSession.OnChange += Refresh;
+            Navigation.LocationChanged += OnLocationChanged;
+
+            // ═══ استرجاع الجلسة أولاً — قبل السماح لأي صفحة/قائمة بالرندر ═══
+            // EnsureRestoredAsync مرة واحدة فقط لكل دائرة (single-flight) وآمنة للتزامن
+            var restored = await UserSession.EnsureRestoredAsync();
+
+            // نفتح البوابة في كل الأحوال حتى لا تبقى شاشة التحميل عالقة
+            sessionReady = true;
+
+            if (!restored)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            // تحميل الصلاحيات — محمي حتى لا تُسقط الواجهة عند تعذّر الاتصال بقاعدة البيانات
+            if (!PermissionService.IsLoaded)
+            {
+                try
+                {
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                }
+                catch
+                {
+                    // تبقى الصلاحيات فارغة (قوائم مختصرة) بدلاً من تعطّل النظام بالكامل
+                }
+            }
+            // حارس إجبار تغيير كلمة المرور
+if (UserSession.RequiresPasswordChange)
+{
+    var currentPath = Navigation.ToBaseRelativePath(Navigation.Uri)
+        .Split('?')[0].Trim('/').ToLower();
+
+    if (currentPath != "change-password")
+    {
+        Navigation.NavigateTo("/change-password");
+        return;
+    }
+}
+
+                        await LoadNotifications();
+            await InitializeSessionTimeoutAsync();
+
+            _notifTimer = new System.Threading.Timer(async _ =>
+            {
+                if (UserSession.IsLoggedIn)
+                {
+                    try
+                    {
+                        await LoadNotifications();
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    catch { }
+                }
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
+            StateHasChanged();
+        }
+    }
+
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+
+    private async void OnLocationChanged(object? s, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        isMobileOpen = false;
+        showNotifications = false;
+
+        if (UserSession.IsLoggedIn)
+        {
+            try { await LoadNotifications(); }
+            catch { }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleCollapse() => isCollapsed = !isCollapsed;
+    private void OpenMobile() => isMobileOpen = true;
+    private void CloseMobile() => isMobileOpen = false;
+
+    private string GetPageTitle()
+    {
+        var uri = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/').ToLower();
+
+        return uri switch
+        {
+            "" or "dashboard" => "لوحة التحكم",
+            "suppliers" or "supplier" => "الموردين",
+            "items" => "الأصناف",
+            "warehouses" => "المخازن",
+            "purchase-requests" => "طلبات الشراء",
+            "purchase-orders" => "أوامر الشراء",
+            "stock-balances" => "أرصدة المخزون",
+            "users" => "المستخدمين",
+            "roles" => "الصلاحيات",
+            "audit" => "سجل العمليات",
+            _ => "واي كي كوتينج ERP"
+        };
+    }
+
+    private string GetInitials()
+    {
+        if (string.IsNullOrWhiteSpace(UserSession.FullName)) return "U";
+        var parts = UserSession.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpper()
+            : parts[0][0].ToString().ToUpper();
+    }
+
+        private async Task DoLogout(bool isAutoLogout = false)
+    {
+        // تسجيل وقت الخروج في LoginHistory
+        try
+        {
+            if (UserSession.UserID > 0)
+                await LoginHistoryService.RecordLogoutAsync(UserSession.UserID);
+        }
+        catch { }
+
+        try
+        {
+            await JS.InvokeVoidAsync("sessionTimeoutManager.stop");
+        }
+        catch { }
+        
+        showSessionWarning = false;
+        
+
+        PermissionService.Clear();
+        await UserSession.LogoutAsync();
+
+        if (isAutoLogout)
+            Navigation.NavigateTo("/login", true);
+        else
+            Navigation.NavigateTo("/login");
+    }
+
+    private async Task LoadNotifications()
+    {
+        try
+        {
+            notifications = await NotificationService.GetUserNotificationsAsync(
+                UserSession.UserID, UserSession.RoleID);
+
+            var newCount = await NotificationService.GetUnreadCountAsync(
+                UserSession.UserID, UserSession.RoleID);
+
+            if (newCount > _lastUnreadCount && _lastUnreadCount >= 0)
+            {
+                try { await JS.InvokeVoidAsync("playNotificationSound"); }
+                catch { }
+            }
+
+            _lastUnreadCount = newCount;
+            unreadCount = newCount;
+        }
+        catch { }
+    }
+
+    private async Task ToggleNotifications()
+    {
+        showNotifications = !showNotifications;
+        if (showNotifications)
+            await LoadNotifications();
+    }
+
+    private async Task MarkAllRead()
+    {
+        await NotificationService.MarkAllAsReadAsync(UserSession.UserID, UserSession.RoleID);
+        await LoadNotifications();
+        StateHasChanged();
+    }
+
+    private async Task OnNotifClick(NotificationDto notif)
+    {
+        if (!notif.IsRead)
+        {
+            await NotificationService.MarkAsReadAsync(notif.NotificationID);
+            notif.IsRead = true;
+            unreadCount = Math.Max(0, unreadCount - 1);
+        }
+
+        showNotifications = false;
+
+        if (!string.IsNullOrEmpty(notif.RelatedModule) && notif.RelatedRecordID > 0)
+        {
+            var route = ModuleRouteHelper.GetRoute(notif.RelatedModule);
+            Navigation.NavigateTo($"{route}/view/{notif.RelatedRecordID}");
+        }
+        else if (!string.IsNullOrEmpty(notif.RelatedModule))
+        {
+            Navigation.NavigateTo(ModuleRouteHelper.GetRoute(notif.RelatedModule));
+        }
+    }
+
+    private string GetTimeAgo(DateTime date)
+    {
+        var diff = DateTime.Now - date;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} دقيقة";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} ساعة";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return date.ToString("dd/MM/yyyy");
+    }
+        private async Task InitializeSessionTimeoutAsync()
+{
+    try
+    {
+        var timeoutValue = await SettingService.GetSettingValueAsync("SessionTimeout");
+
+        if (!int.TryParse(timeoutValue, out _sessionTimeoutMinutes) || _sessionTimeoutMinutes < 2)
+            _sessionTimeoutMinutes = 30;
+
+        _sessionWarningMinutes = _sessionTimeoutMinutes > 2 ? 2 : 1;
+
+        _sessionTimeoutRef?.Dispose();
+        _sessionTimeoutRef = DotNetObjectReference.Create(this);
+
+        await JS.InvokeVoidAsync(
+            "sessionTimeoutManager.init",
+            _sessionTimeoutRef,
+            _sessionTimeoutMinutes,
+            _sessionWarningMinutes);
+    }
+    catch { }
+}
+
+    private async Task StayLoggedIn()
+{
+    showSessionWarning = false;
+    
+
+    try
+    {
+        await JS.InvokeVoidAsync("sessionTimeoutManager.stayAlive");
+    }
+    catch { }
+
+    StateHasChanged();
+}
+
+    [JSInvokable]
+public async Task ShowSessionWarning()
+{
+    showSessionWarning = true;
+    await InvokeAsync(StateHasChanged);
+}
+
+    [JSInvokable]
+public async Task HideSessionWarning()
+{
+    showSessionWarning = false;
+    
+    await InvokeAsync(StateHasChanged);
+}
+
+   
+
+    [JSInvokable]
+public async Task ForceLogoutFromIdle()
+{
+    await DoLogout(true);
+}
+
+ 
+
+
+        public void Dispose()
+{
+    UserSession.OnChange -= Refresh;
+    Navigation.LocationChanged -= OnLocationChanged;
+    _notifTimer?.Dispose();
+    _sessionTimeoutRef?.Dispose();
+    
+}
+}

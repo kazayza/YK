@@ -1,0 +1,314 @@
+﻿@page "/stock-counts/new"
+@page "/stock-counts/edit/{CountId:int}"
+@page "/stock-counts/view/{CountId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject InventoryService InvService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="doc-page" dir="rtl">
+        <div class="doc-header">
+            <div class="doc-header-right">
+                <button class="btn-m btn-ghost" @onclick="GoBack">→ رجوع</button>
+                <div>
+                    <h2 class="doc-title">@pageTitle</h2>
+                    @if (!string.IsNullOrEmpty(header.CountNumber))
+                    {
+                        <div class="doc-num-wrap">
+                            <code class="doc-number">@header.CountNumber</code>
+                            <span class="status-chip" style="--sc:@InventoryService.GetCountStatusColor(header.CountStatus)">@InventoryService.GetCountStatusName(header.CountStatus)</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (isLoading) { <div class="loading-st"><div class="loader"></div></div> }
+        else
+        {
+            <div class="doc-section">
+                <div class="sec-head"><div class="sec-icon blue">📋</div><h3 class="sec-title">بيانات الجرد</h3></div>
+                <div class="form-grid c4">
+                    <div class="f-field"><label class="f-label">الرقم</label><input type="text" class="f-input" value="@(header.CountNumber ?? "تلقائي")" disabled /></div>
+                    <div class="f-field"><label class="f-label required">التاريخ</label><input type="date" class="f-input" @bind="header.CountDate" disabled="@isReadOnly" /></div>
+                    <div class="f-field"><label class="f-label required">المخزن</label>
+                        <select class="f-input" @bind="header.WarehouseID" disabled="@(isReadOnly || CountId > 0)">
+                            <option value="0">-- اختر --</option>
+                            @if (warehouses != null) { @foreach (var w in warehouses) { <option value="@w.Id">@w.Name</option> } }
+                        </select></div>
+                    <div class="f-field"><label class="f-label required">النوع</label>
+                        <select class="f-input" @bind="header.CountType" disabled="@(isReadOnly || CountId > 0)">
+                            <option value="1">جرد شامل</option><option value="2">جرد جزئي</option><option value="3">جرد عشوائي</option>
+                        </select></div>
+                    @if (header.CountType == 2)
+                    {
+                        <div class="f-field"><label class="f-label">التصنيف</label>
+                            <select class="f-input" @bind="header.CategoryID" disabled="@(isReadOnly || CountId > 0)">
+                                <option value="0">الكل</option>
+                                @if (categories != null) { @foreach (var c in categories) { <option value="@c.Id">@c.Name</option> } }
+                            </select></div>
+                    }
+                    <div class="f-field"><label class="f-label">القائم بالعد والجرد</label>
+                        <select class="f-input" @bind="header.CountedBy" disabled="@isReadOnly">
+                            <option value="0">--</option>
+                            @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
+                        </select></div>
+                    <div class="f-field"><label class="f-label">المشرف</label>
+                        <select class="f-input" @bind="header.SupervisorID" disabled="@isReadOnly">
+                            <option value="0">--</option>
+                            @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
+                        </select></div>
+                    <div class="f-field"><label class="f-label">ملاحظات</label><input type="text" class="f-input" @bind="header.Notes" disabled="@isReadOnly" /></div>
+                </div>
+            </div>
+
+            @if (CountId > 0 && details.Any())
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon green">📦</div><h3 class="sec-title">أصناف الجرد</h3>
+                        <span class="sec-badge">@details.Count صنف | تم جرد @details.Count(d => d.CountedQty.HasValue)</span>
+                    </div>
+
+                    <div class="tbl-card"><table class="tbl">
+                        <thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th>
+                            <th class="tc">الدفتري</th>
+                            <th class="tc">الفعلي</th>
+                            <th class="tc">الفرق</th><th class="tl">قيمة الفرق</th>
+                            @if (header.CountStatus == 3 && permissions.CanApprove) { <th class="tc">اعتماد</th> }
+                        </tr></thead>
+                        <tbody>
+                            @{ int n = 0; }
+                            @foreach (var d in details)
+                            {
+                                n++;
+                                var variance = (d.CountedQty ?? 0) - d.SystemQty;
+                                <tr class="@(variance != 0 ? (variance > 0 ? "tr-surplus" : "tr-shortage") : "")">
+                                    <td class="td-n">@n</td>
+                                    <td><code class="code-tag">@d.ItemCode</code></td>
+                                    <td class="td-bold">@d.ItemNameAr</td>
+                                    <td>@d.UnitName</td>
+                                    <td class="tc num-cell">@d.SystemQty.ToString("#,##0.##")</td>
+                                    <td class="tc">
+                                        @if (!isReadOnly && header.CountStatus <= 2)
+                                        {
+                                            <input type="number" class="count-input" value="@d.CountedQty"
+                                                   @onchange="(e) => OnCountedQtyChanged(d.CountDetailID, e)" step="0.01" />
+                                        }
+                                        else
+                                        {
+                                            <span class="num-cell">@(d.CountedQty?.ToString("#,##0.##") ?? "—")</span>
+                                        }
+                                    </td>
+                                    <td class="tc num-cell">
+                                        @if (d.CountedQty.HasValue)
+                                        {
+                                            <strong class="@(variance > 0 ? "var-surplus" : variance < 0 ? "var-shortage" : "")">
+                                                @variance.ToString("+#,##0.##;-#,##0.##;0")
+                                            </strong>
+                                        }
+                                        else { <span>—</span> }
+                                    </td>
+                                    <td class="tl num-cell">@(d.CountedQty.HasValue ? d.VarianceValue.ToString("#,##0.00") : "—")</td>
+                                    @if (header.CountStatus == 3 && permissions.CanApprove)
+                                    {
+                                        <td class="tc">
+                                            @if (variance != 0)
+                                            { <input type="checkbox" checked="@d.AdjustmentApproved" @onchange="(e) => OnApprovalChanged(d.CountDetailID, e)" /> }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot><tr class="total-row">
+                            <td colspan="6" class="tl"><strong>الإجمالي</strong></td>
+                            <td class="tc num-cell"><strong>@details.Where(d => d.CountedQty.HasValue).Sum(d => (d.CountedQty ?? 0) - d.SystemQty).ToString("+#,##0.##;-#,##0.##;0")</strong></td>
+                            <td class="tl num-cell"><strong>@details.Sum(d => d.VarianceValue).ToString("#,##0.00") ج.م</strong></td>
+                            @if (header.CountStatus == 3 && permissions.CanApprove) { <td></td> }
+                        </tr></tfoot>
+                    </table></div>
+                </div>
+            }
+
+            <div class="doc-actions">
+                <div class="doc-actions-right">
+                    @if (isNewMode)
+                    {
+                        <button class="btn-m btn-primary" @onclick="CreateCount" disabled="@isSaving">
+                            @if (isSaving) { <div class="btn-spin"></div> } إنشاء وتحميل الأصناف
+                        </button>
+                    }
+                    else if (header.CountStatus <= 2 && !isViewMode)
+                    {
+                        <button class="btn-m btn-primary" @onclick="SaveCountedQties" disabled="@isSaving">
+                            @if (isSaving) { <div class="btn-spin"></div> } حفظ الكميات الفعلية
+                        </button>
+                    }
+                    else if (header.CountStatus == 3 && permissions.CanApprove && !isViewMode)
+                    {
+                        <button class="btn-m btn-success" @onclick="ApproveAdjustments" disabled="@isSaving">
+                            @if (isSaving) { <div class="btn-spin"></div> } ✅ اعتماد التسويات
+                        </button>
+                    }
+                </div>
+                <button class="btn-m btn-ghost" @onclick="GoBack">رجوع</button>
+            </div>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(toast)) { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+}
+
+<style>
+    .doc-page{display:flex;flex-direction:column;gap:18px;max-width:1200px}.doc-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.doc-header-right{display:flex;align-items:flex-start;gap:14px}.doc-title{font-weight:800;color:#0f172a;margin:0;font-size:1.2rem}.doc-num-wrap{display:flex;align-items:center;gap:10px;margin-top:6px}.doc-number{background:#f1f5f9;padding:4px 14px;border-radius:8px;font-size:.88rem;color:#2563eb;font-weight:700}.status-chip{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
+    .doc-section{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:22px}.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}.sec-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}.sec-icon.blue{background:#eff6ff}.sec-icon.green{background:#ecfdf5}.sec-title{font-weight:800;color:#0f172a;margin:0;font-size:.98rem}.sec-badge{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.78rem;font-weight:700}
+    .form-grid{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.f-field{display:flex;flex-direction:column;gap:5px}.f-label{font-size:.8rem;font-weight:700;color:#334155}.required::after{content:' *';color:#ef4444}.f-input{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.88rem;background:white;outline:none;width:100%}.f-input:focus{border-color:#2563eb}.f-input:disabled{background:#f8fafc;color:#64748b}
+    .tbl-card{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:900px}.tbl thead{background:#f8fafc}.tbl th{padding:11px 12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}
+    .tr-surplus{background:#ecfdf5!important}.tr-shortage{background:#fef2f2!important}
+    .tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#94a3b8}.td-bold{font-weight:700;color:#0f172a}.num-cell{font-family:monospace;font-weight:600}.code-tag{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.78rem;color:#2563eb;font-weight:600}.total-row{background:#f8fafc!important}.total-row td{border-top:2px solid #e2e8f0;padding:12px}
+    .count-input{width:100px;padding:6px 8px;border:1.5px solid #2563eb;border-radius:8px;font-size:.86rem;text-align:center;background:#eff6ff;font-weight:700}.count-input:focus{box-shadow:0 0 0 2px rgba(37,99,235,.2)}
+    .var-surplus{color:#059669}.var-shortage{color:#dc2626}
+    .doc-actions{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:white;border:1px solid #e2e8f0;border-radius:16px}.doc-actions-right{display:flex;gap:10px}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-m:disabled{opacity:.6}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-success{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}@@media(max-width:768px){.c4{grid-template-columns:1fr}.doc-header{flex-direction:column}}
+</style>
+
+@code {
+    [Parameter] public int CountId { get; set; }
+
+    private StockCountHeaderDto header = new() { CountDate = DateTime.Today, CountType = 1 };
+    private List<StockCountDetailDto> details = new();
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? warehouses, employees, categories;
+
+    private bool isLoading = true, isSaving = false;
+    private string toast = ""; private bool toastOk = true;
+
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => CountId == 0;
+    private bool isReadOnly => isViewMode || header.CountStatus >= 4;
+    private string pageTitle => isNewMode ? "جرد جديد" : isViewMode ? "عرض الجرد" : header.CountStatus == 3 ? "اعتماد الجرد" : "إدخال الجرد";
+
+    // تتبع التغييرات المحلية
+    private Dictionary<int, decimal?> countedChanges = new();
+    private HashSet<int> approvedIds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_COUNT");
+            if (permissions == null || !permissions.CanView) return;
+            warehouses = await LookupService.GetWarehousesAsync();
+            employees = await LookupService.GetEmployeesAsync();
+            categories = await LookupService.GetCategoriesAsync();
+            if (CountId > 0)
+            {
+                var loaded = await InvService.GetCountByIdAsync(CountId);
+                if (loaded != null) { header = loaded; details = await InvService.GetCountDetailsAsync(CountId); }
+                else { toast = "أمر الجرد غير موجود"; toastOk = false; }
+            }
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private void OnCountedQtyChanged(int detailId, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), out var qty))
+        {
+            countedChanges[detailId] = qty;
+            var item = details.FirstOrDefault(d => d.CountDetailID == detailId);
+            if (item != null) { item.CountedQty = qty; item.VarianceValue = (qty - item.SystemQty) * item.UnitCost; }
+        }
+        else
+        {
+            countedChanges[detailId] = null;
+            var item = details.FirstOrDefault(d => d.CountDetailID == detailId);
+            if (item != null) { item.CountedQty = null; item.VarianceValue = 0; }
+        }
+        StateHasChanged();
+    }
+
+    private void OnApprovalChanged(int detailId, ChangeEventArgs e)
+    {
+        var val = (bool)(e.Value ?? false);
+        if (val) approvedIds.Add(detailId); else approvedIds.Remove(detailId);
+        var item = details.FirstOrDefault(d => d.CountDetailID == detailId);
+        if (item != null) item.AdjustmentApproved = val;
+    }
+
+    private async Task CreateCount()
+    {
+        if (header.WarehouseID <= 0) { toast = "اختر المخزن"; toastOk = false; StateHasChanged(); return; }
+        isSaving = true; StateHasChanged();
+        try
+        {
+            header.CountNumber = await InvService.GenerateCountNumberAsync();
+            var newId = await InvService.InsertCountAsync(header, UserSession.UserID);
+            CountId = newId; header.CountID = newId;
+            header = await InvService.GetCountByIdAsync(newId) ?? header;
+            details = await InvService.GetCountDetailsAsync(newId);
+            toast = $"تم الإنشاء وتحميل {details.Count} صنف ✅"; toastOk = true;
+            Navigation.NavigateTo($"/stock-counts/edit/{newId}", forceLoad: false);
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private async Task SaveCountedQties()
+    {
+        isSaving = true; StateHasChanged();
+        try
+        {
+            var items = details.Select(d => (d.CountDetailID, d.CountedQty)).ToList();
+            await InvService.UpdateCountedQtiesBulkAsync(CountId, items, UserSession.UserID);
+            header = await InvService.GetCountByIdAsync(CountId) ?? header;
+            details = await InvService.GetCountDetailsAsync(CountId);
+            toast = "تم حفظ الكميات ✅"; toastOk = true;
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private async Task ApproveAdjustments()
+    {
+        var idsToApprove = details
+            .Where(d => d.AdjustmentApproved && d.CountedQty.HasValue && ((d.CountedQty ?? 0) - d.SystemQty) != 0)
+            .Select(d => d.CountDetailID).ToList();
+
+        if (!idsToApprove.Any()) { toast = "حدد التسويات المطلوب اعتمادها"; toastOk = false; StateHasChanged(); return; }
+
+        try { var c = await JS.InvokeAsync<bool>("confirm", $"هل تريد اعتماد {idsToApprove.Count} تسوية وتحديث الأرصدة؟"); if (!c) return; } catch { return; }
+
+        isSaving = true; toast = ""; StateHasChanged();
+        try
+        {
+            await InvService.ApproveAdjustmentsAsync(CountId, idsToApprove, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header = await InvService.GetCountByIdAsync(CountId) ?? header;
+            details = await InvService.GetCountDetailsAsync(CountId);
+            isSaving = false; toast = "تم اعتماد التسويات وتحديث الأرصدة ✅"; toastOk = true; StateHasChanged();
+            await Task.Delay(2000); Navigation.NavigateTo("/stock-counts");
+        }
+        catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/stock-counts");
+}

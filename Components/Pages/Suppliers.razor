@@ -1,0 +1,210 @@
+﻿@page "/suppliers"
+@page "/supplier"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SupplierService SupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>الموردين - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="page-wrap" dir="rtl">
+        <div class="page-hdr">
+            <div><h2 class="page-title">الموردين</h2><p class="page-sub">إدارة بيانات الموردين والتعاملات</p></div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count مورد</span>
+                @if (permissions.CanPrint)
+                { <button class="btn-m btn-print" @onclick="ExportExcel" disabled="@isExporting">@if(isExporting){<div class="btn-spin"></div>}else{<span>📥</span>} Excel</button> }
+                @if (permissions.CanAdd)
+                { <button class="btn-m btn-primary" @onclick='() => Navigation.NavigateTo("/suppliers/new")'>➕ مورد جديد</button> }
+            </div>
+        </div>
+
+        @if (suppliers != null)
+        {
+            <div class="stats-row">
+                <div class="stat-box" style="border-top-color:#2563eb"><div class="stat-n">@suppliers.Count</div><div class="stat-l">إجمالي الموردين</div></div>
+                <div class="stat-box" style="border-top-color:#1d4ed8"><div class="stat-n">@suppliers.Count(s => s.SupplierType == 1)</div><div class="stat-l">موردين خامات</div></div>
+                <div class="stat-box" style="border-top-color:#0891b2"><div class="stat-n">@suppliers.Count(s => s.SupplierType == 2)</div><div class="stat-l">موردين تعبئة</div></div>
+                <div class="stat-box" style="border-top-color:#ef4444"><div class="stat-n">@suppliers.Sum(s => s.CurrentBalance).ToString("#,##0")</div><div class="stat-l">إجمالي الأرصدة</div></div>
+                <div class="stat-box" style="border-top-color:#f59e0b"><div class="stat-n">@suppliers.Sum(s => s.UnpaidInvoices)</div><div class="stat-l">فواتير معلقة</div></div>
+            </div>
+        }
+
+        <div class="filter-row">
+            <div class="search-wrap">
+                <input class="search-inp" type="text" placeholder="بحث بالاسم أو الكود أو المدينة..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+                @if (!string.IsNullOrEmpty(searchText)) { <button class="search-clr" @onclick="ClearSearch">✕</button> }
+            </div>
+            <select class="filter-sel" @bind="filterType" @bind:after="Filter">
+                <option value="0">كل الأنواع</option>
+                <option value="1">مورد خامات</option>
+                <option value="2">مورد تعبئة</option>
+                <option value="3">مورد خدمات</option>
+                <option value="4">مورد عام</option>
+            </select>
+            <select class="filter-sel" @bind="filterRating" @bind:after="Filter">
+                <option value="0">كل التقييمات</option>
+                <option value="5">⭐⭐⭐⭐⭐</option>
+                <option value="4">⭐⭐⭐⭐</option>
+                <option value="3">⭐⭐⭐</option>
+                <option value="2">⭐⭐</option>
+                <option value="1">⭐</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">🔄</button>
+        </div>
+
+        @if (suppliers == null)
+        { <div class="loading-st"><div class="loader"></div></div> }
+        else if (!filtered.Any())
+        { <div class="empty-st"><h4>لا يوجد موردين</h4></div> }
+        else
+        {
+            <div class="tbl-card"><table class="tbl">
+                <thead><tr>
+                    <th>#</th><th>الكود</th><th>المورد</th><th>النوع</th><th>الهاتف</th><th>المدينة</th>
+                    <th class="tc">أصناف</th><th class="tl">حد الائتمان</th><th class="tl">الرصيد</th>
+                    <th class="tc">فواتير معلقة</th><th class="tc">التقييم</th><th class="tc">إجراءات</th>
+                </tr></thead>
+                <tbody>
+                    @{ int n = 0; }
+                    @foreach (var s in filtered)
+                    {
+                        n++;
+                        <tr>
+                            <td class="td-n">@n</td>
+                            <td><code class="code-tag">@s.SupplierCode</code></td>
+                            <td class="td-name">@s.SupplierNameAr</td>
+                            <td><span class="type-tag" style="--tc:@SupplierService.GetTypeColor(s.SupplierType)">@(s.SupplierTypeName ?? SupplierService.GetTypeName(s.SupplierType))</span></td>
+                            <td class="td-muted">@(s.Phone1 ?? s.Mobile ?? "—")</td>
+                            <td class="td-muted">@(s.City ?? "—")</td>
+                            <td class="tc"><span class="cnt-badge">@s.ItemCount</span></td>
+                            <td class="tl num-cell">@s.CreditLimit.ToString("#,##0.00")</td>
+                            <td class="tl num-cell @(s.CurrentBalance > 0 ? "bal-danger" : "")"><strong>@s.CurrentBalance.ToString("#,##0.00")</strong></td>
+                            <td class="tc">@if(s.UnpaidInvoices > 0){<span class="unpaid-badge">@s.UnpaidInvoices</span>}else{<span class="td-muted">0</span>}</td>
+                            <td class="tc"><span class="rating">@(new string('⭐', s.Rating))</span></td>
+                            <td class="tc">
+                                <div class="actions-wrap">
+                                    <button class="act-btn" title="عرض" @onclick='() => Navigation.NavigateTo($"/suppliers/view/{s.SupplierID}")'>👁️</button>
+                                    @if (permissions.CanEdit)
+                                    { <button class="act-btn" title="تعديل" @onclick='() => Navigation.NavigateTo($"/suppliers/edit/{s.SupplierID}")'>✏️</button> }
+                                    @if (permissions.CanPrint)
+                                    { <button class="act-btn" title="طباعة" @onclick='() => PrintCard(s.SupplierID)'>🖨️</button> }
+                                    @if (permissions.CanDelete)
+                                    { <button class="act-btn" title="حذف" @onclick="() => ShowDelete(s)">🗑️</button> }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        }
+    </div>
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-ov" @onclick="() => showDeleteDialog = false"><div class="modal-box" @onclick:stopPropagation="true">
+            <h4>حذف المورد</h4><p>هل تريد حذف: <strong>@deleteItem?.SupplierNameAr</strong>؟</p>
+            @if (!string.IsNullOrEmpty(deleteMsg)) { <div class="form-msg msg-err">@deleteMsg</div> }
+            <div class="modal-btns"><button class="btn-m btn-danger" @onclick="ConfirmDelete">حذف</button><button class="btn-m btn-ghost" @onclick="() => showDeleteDialog = false">إلغاء</button></div>
+        </div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast))
+    { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+}
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem;margin:3px 0 0}.hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}.stat-box{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:16px;text-align:center;border-top:3px solid;transition:.2s}.stat-box:hover{transform:translateY(-2px)}.stat-n{font-size:1.5rem;font-weight:900;color:#0f172a}.stat-l{font-size:.78rem;color:#64748b;margin-top:3px;font-weight:600}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:260px;position:relative}.search-inp{width:100%;padding:10px 14px 10px 36px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.search-inp:focus{border-color:#2563eb}.search-clr{position:absolute;left:10px;top:50%;transform:translateY(-50%);background:#f1f5f9;border:none;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:.7rem;display:flex;align-items:center;justify-content:center}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1200px}.tbl thead{background:#f8fafc}.tbl th{padding:12px 14px;font-size:.82rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:11px 14px;font-size:.88rem;color:#334155;border-bottom:1px solid #f1f5f9;line-height:1.5}.tbl tbody tr:hover{background:#f8fafc}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;text-align:center;font-size:.82rem}.td-name{font-weight:800;color:#0f172a;font-size:.9rem}.td-muted{color:#64748b}
+    .num-cell{font-family:monospace;font-weight:700}.bal-danger{color:#dc2626!important}
+    .code-tag{background:#f1f5f9;padding:3px 10px;border-radius:6px;font-size:.82rem;color:#2563eb;font-weight:700}
+    .type-tag{display:inline-block;padding:4px 12px;border-radius:8px;font-size:.76rem;font-weight:800;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc);border:1px solid color-mix(in srgb,var(--tc) 20%,white)}
+    .cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}
+    .unpaid-badge{background:#fef2f2;color:#dc2626;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700;border:1px solid #fecaca}
+    .rating{font-size:.8rem}
+    .actions-wrap{display:flex;gap:4px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:.2s}.act-btn:hover{background:#f8fafc}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer;transition:.2s}.btn-m:disabled{opacity:.6}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-print{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}.modal-box{background:white;border-radius:20px;padding:28px;max-width:420px;width:100%;text-align:center}.modal-box h4{font-weight:800;margin:0 0 8px}.modal-box p{color:#475569;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:8px;font-size:.82rem;font-weight:600;margin-top:10px}.msg-err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.empty-st h4{color:#64748b}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}.stats-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+@code {
+    private List<SupplierListDto>? suppliers;
+    private List<SupplierListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private int filterType = 0, filterRating = 0;
+    private bool isExporting = false;
+    private string toast = ""; private bool toastOk = true;
+    private bool showDeleteDialog = false;
+    private SupplierListDto? deleteItem; private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_SUPPLIERS");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData() { suppliers = await SupService.GetSuppliersListAsync(); Filter(); }
+
+    private void Filter()
+    {
+        if (suppliers == null) return;
+        filtered = suppliers.Where(s =>
+            (filterType == 0 || s.SupplierType == filterType) &&
+            (filterRating == 0 || s.Rating == filterRating) &&
+            (string.IsNullOrEmpty(searchText) ||
+             ArabicSearchHelper.Contains(s.SupplierCode, searchText) ||
+             ArabicSearchHelper.Contains(s.SupplierNameAr, searchText) ||
+             ArabicSearchHelper.Contains(s.City, searchText) ||
+             ArabicSearchHelper.Contains(s.Phone1, searchText))
+        ).ToList();
+    }
+
+    private void ClearSearch() { searchText = ""; Filter(); }
+
+    private async Task PrintCard(int id)
+    {
+        try { var html = await SupService.GenerateSupplierCardHtmlAsync(id, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", html); }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+    }
+
+    private async Task ExportExcel()
+    {
+        if (!filtered.Any()) return; isExporting = true; StateHasChanged();
+        try { var b = await SupService.ExportToExcelAsync(filtered, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile", $"Suppliers_{DateTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(b));
+            toast = "تم التصدير ✅"; toastOk = true; }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isExporting = false; StateHasChanged(); }
+    }
+
+    private void ShowDelete(SupplierListDto s) { deleteItem = s; deleteMsg = ""; showDeleteDialog = true; }
+    private async Task ConfirmDelete()
+    {
+        if (deleteItem == null) return;
+        var r = await SupService.DeleteSupplierAsync(deleteItem.SupplierID, UserSession.UserID);
+        if (r.Success) { toast = r.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+        else { deleteMsg = r.Message; }
+    }
+}

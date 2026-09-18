@@ -1,0 +1,1298 @@
+﻿@page "/holidays"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PublicHolidayService HolidayService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>العطلات الرسمية - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية</h4>
+    </div>
+}
+else
+{
+    <div class="items-page" dir="rtl">
+
+        <!-- Header -->
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">العطلات الرسمية</h2>
+                <p class="page-subtitle">إدارة العطلات الرسمية والمناسبات</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@filteredHolidays.Count عطلة</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>📎 تصدير</span> }
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="GoToAdd">
+                        <span>+ إضافة عطلة</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-total">🎉</div>
+                <div class="stat-content">
+                    <div class="stat-value">@holidays.Count</div>
+                    <div class="stat-label">إجمالي العطلات</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-recurring">🔄</div>
+                <div class="stat-content">
+                    <div class="stat-value">@holidays.Count(h => h.IsRecurring)</div>
+                    <div class="stat-label">متكررة سنوياً</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-upcoming">📅</div>
+                <div class="stat-content">
+                    <div class="stat-value">@GetUpcomingHolidaysCount()</div>
+                    <div class="stat-label">عطلات قادمة</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-current">🗓️</div>
+                <div class="stat-content">
+                    <div class="stat-value">@GetCurrentYearHolidaysCount()</div>
+                    <div class="stat-label">عطلات @DateTime.Now.Year</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Bar - Single Row -->
+        <div class="filter-bar">
+            <div class="filter-row">
+                <div class="filter-field search-field">
+                    <span class="field-icon">🔍</span>
+                    <input type="text" class="filter-input" placeholder="بحث باسم العطلة..."
+                           @bind="searchText" @bind:event="oninput" @bind:after="ApplyFilters" />
+                    @if (!string.IsNullOrEmpty(searchText))
+                    {
+                        <button class="clear-search" @onclick="ClearSearch">✕</button>
+                    }
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="selectedYear" @bind:after="ApplyFilters">
+                        <option value="0">📅 كل السنوات</option>
+                        <option value="@DateTime.Now.Year">@DateTime.Now.Year (هذه السنة)</option>
+                        <option value="@(DateTime.Now.Year + 1)">@(DateTime.Now.Year + 1) (القادمة)</option>
+                        <option value="@(DateTime.Now.Year - 1)">@(DateTime.Now.Year - 1) (السابقة)</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="recurringFilter" @bind:after="ApplyFilters">
+                        <option value="all">📋 كل العطلات</option>
+                        <option value="recurring">🔄 متكررة سنوياً</option>
+                        <option value="once">📅 مرة واحدة</option>
+                    </select>
+                </div>
+                <div class="filter-actions-inline">
+                    <button class="btn-sm btn-sm-ghost" @onclick="ResetFilters">🔄 تحديث</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Filters Chips -->
+        @if (HasActiveFilters())
+        {
+            <div class="chips-bar">
+                @if (!string.IsNullOrEmpty(searchText))
+                {
+                    <div class="chip">
+                        <span>بحث: "@searchText"</span>
+                        <button class="chip-remove" @onclick="ClearSearch">✕</button>
+                    </div>
+                }
+                @if (selectedYear > 0)
+                {
+                    <div class="chip">
+                        <span>السنة: @selectedYear</span>
+                        <button class="chip-remove" @onclick='() => { selectedYear = 0; ApplyFilters(); }'>✕</button>
+                    </div>
+                }
+                @if (recurringFilter != "all")
+                {
+                    <div class="chip">
+                        <span>@(recurringFilter == "recurring" ? "متكررة سنوياً" : "مرة واحدة")</span>
+                        <button class="chip-remove" @onclick='() => { recurringFilter = "all"; ApplyFilters(); }'>✕</button>
+                    </div>
+                }
+                <button class="chip-clear-all" @onclick="ResetFilters">مسح الكل</button>
+            </div>
+        }
+
+        <!-- Calendar Toggle -->
+        <div class="calendar-toggle">
+            <button class="calendar-toggle-btn @(showCalendar ? "active" : "")" @onclick="() => ToggleCalendar(true)">
+                📅 عرض التقويم
+            </button>
+            <button class="calendar-toggle-btn @(!showCalendar ? "active" : "")" @onclick="() => ToggleCalendar(false)">
+                📋 عرض الجدول
+            </button>
+        </div>
+
+        @if (showCalendar)
+        {
+            <!-- Calendar View -->
+            <div class="calendar-container">
+                <div class="calendar-header">
+                    <button class="calendar-nav" @onclick="() => ChangeMonth(-1)">‹</button>
+                    <h3 class="calendar-month">@currentMonth.ToString("MMMM yyyy")</h3>
+                    <button class="calendar-nav" @onclick="() => ChangeMonth(1)">›</button>
+                </div>
+                <div class="calendar-weekdays">
+                    <div class="weekday">الأحد</div>
+                    <div class="weekday">الاثنين</div>
+                    <div class="weekday">الثلاثاء</div>
+                    <div class="weekday">الأربعاء</div>
+                    <div class="weekday">الخميس</div>
+                    <div class="weekday">الجمعة</div>
+                    <div class="weekday">السبت</div>
+                </div>
+                <div class="calendar-days">
+                    @foreach (var day in GetCalendarDays())
+                    {
+                        var isHoliday = IsHolidayDate(day.Date);
+                        <div class="calendar-day @(day.IsCurrentMonth ? "" : "other-month") @(isHoliday ? "holiday" : "")">
+                            <span class="day-number">@day.Date.Day</span>
+                            @if (isHoliday)
+                            {
+                                <span class="holiday-indicator" title="@GetHolidayName(day.Date)">🎉</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Loading State -->
+            @if (isLoading)
+            {
+                <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+            }
+            else if (!filteredHolidays.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">🎉</div>
+                    <h4>لا توجد عطلات</h4>
+                    <p>لا توجد عطلات مطابقة لمعايير البحث الحالية</p>
+                </div>
+            }
+            else
+            {
+                <!-- Table View -->
+                <div class="table-wrapper">
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-num">#</th>
+                                    <th class="col-name sortable" @onclick='() => SortBy("HolidayNameAr")'>المناسبة @SortIcon("HolidayNameAr")</th>
+                                    <th class="col-date sortable" @onclick='() => SortBy("HolidayDate")'>التاريخ @SortIcon("HolidayDate")</th>
+                                    <th class="col-day">اليوم</th>
+                                    <th class="col-type">النوع</th>
+                                    <th class="col-notes">ملاحظات</th>
+                                    <th class="col-actions"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int rowNum = 0; }
+                                @foreach (var holiday in filteredHolidays)
+                                {
+                                    rowNum++;
+                                    var dayName = GetDayName(holiday.HolidayDate.DayOfWeek);
+                                    <tr>
+                                        <td class="col-num">@rowNum</td>
+                                        <td class="col-name"><strong>@holiday.HolidayNameAr</strong></td>
+                                        <td class="col-date">@holiday.HolidayDate.ToString("dd/MM/yyyy")</td>
+                                        <td class="col-day"><span class="day-badge">@dayName</span></td>
+                                        <td class="col-type">
+                                            @if (holiday.IsRecurring)
+                                            {
+                                                <span class="type-badge type-recurring">🔄 متكررة</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="type-badge type-once">📅 مرة واحدة</span>
+                                            }
+                                        </td>
+                                        <td class="col-notes">@(holiday.Notes ?? "—")</td>
+                                        <td class="col-actions">
+                                            <div class="dropdown">
+                                                <button class="dropdown-btn" @onclick="() => ToggleDropdown(holiday.HolidayID)">⋮</button>
+                                                <div class="dropdown-menu @(activeDropdownId == holiday.HolidayID ? "show" : "")">
+                                                    <button class="dropdown-item" @onclick="() => GoToView(holiday.HolidayID)">👁️ عرض</button>
+                                                    @if (permissions.CanEdit)
+                                                    {
+                                                        <button class="dropdown-item" @onclick="() => GoToEdit(holiday.HolidayID)">✏️ تعديل</button>
+                                                    }
+                                                    @if (permissions.CanDelete)
+                                                    {
+                                                        <button class="dropdown-item dropdown-item-danger" @onclick="() => ShowDeleteConfirm(holiday)">🗑️ حذف</button>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    @if (showDeleteDialog && selectedItem != null)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon modal-icon-danger">🗑️</div>
+                <h4>تأكيد الحذف</h4>
+                <p>هل أنت متأكد من حذف <strong>@selectedItem.HolidayNameAr</strong>؟</p>
+                @if (selectedItem.IsRecurring)
+                {
+                    <div class="warning-message">
+                        ⚠️ هذه العطلة متكررة سنوياً. سيتم حذفها بالكامل من جميع السنوات.
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(dialogMessage))
+                {
+                    <div class="error-msg">@dialogMessage</div>
+                }
+                <div class="modal-buttons">
+                    <button class="btn-modern btn-danger-modern" @onclick="ConfirmDelete" disabled="@isDeleting">
+                        @if (isDeleting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>حذف</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDeleteDialog" disabled="@isDeleting">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast Message -->
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-notification @(resultSuccess ? "toast-success" : "toast-error")">
+            <span>@resultMessage</span>
+            <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+        </div>
+    }
+}
+
+<style>
+    /* ========== BASE STYLES ========== */
+    .items-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 0.25rem;
+    }
+
+    /* ========== HEADER ========== */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #1e293b;
+        margin: 0;
+    }
+    .page-subtitle {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin: 0.25rem 0 0;
+    }
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .result-badge {
+        background: #f1f5f9;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    /* ========== STATS CARDS ========== */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+    .stat-card {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #eef2ff;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+    .stat-card:nth-child(1)::before { background: #1e293b; }
+    .stat-card:nth-child(2)::before { background: #2563eb; }
+    .stat-card:nth-child(3)::before { background: #10b981; }
+    .stat-card:nth-child(4)::before { background: #f59e0b; }
+    
+    .stat-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+    .stat-icon-total { background: #f1f5f9; }
+    .stat-icon-recurring { background: #f5f3ff; }
+    .stat-icon-upcoming { background: #ecfdf5; }
+    .stat-icon-current { background: #fffbeb; }
+    
+    .stat-content { flex: 1; }
+    .stat-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    /* ========== FILTER BAR ========== */
+    .filter-bar {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid #eef2ff;
+    }
+    .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .filter-field {
+        flex: 1 1 auto;
+        min-width: 140px;
+        position: relative;
+    }
+    .search-field {
+        min-width: 200px;
+        flex: 2;
+    }
+    .field-icon {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.9rem;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+    .filter-input {
+        width: 100%;
+        padding: 0.45rem 2rem 0.45rem 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        transition: all 0.2s;
+    }
+    .filter-input:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+        background: white;
+    }
+    .filter-select {
+        width: 100%;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        cursor: pointer;
+    }
+    .clear-search {
+        position: absolute;
+        left: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: #e2e8f0;
+        border: none;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        font-size: 0.7rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+    }
+    .filter-actions-inline {
+        display: flex;
+        gap: 0.4rem;
+    }
+    .btn-sm {
+        padding: 0.45rem 1rem;
+        border-radius: 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-sm-ghost {
+        background: transparent;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-sm-ghost:hover {
+        background: #f8fafc;
+    }
+
+    /* ========== CHIPS BAR ========== */
+    .chips-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+    }
+    .chip {
+        background: #f1f5f9;
+        border-radius: 2rem;
+        padding: 0.3rem 0.8rem;
+        font-size: 0.75rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #475569;
+    }
+    .chip-remove {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+    .chip-clear-all {
+        background: transparent;
+        border: none;
+        color: #ef4444;
+        font-size: 0.7rem;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+
+    /* ========== CALENDAR TOGGLE ========== */
+    .calendar-toggle {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+    .calendar-toggle-btn {
+        padding: 0.5rem 1.5rem;
+        border: 1px solid #e2e8f0;
+        background: white;
+        border-radius: 2rem;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .calendar-toggle-btn.active {
+        background: #2563eb;
+        color: white;
+        border-color: #2563eb;
+    }
+
+    /* ========== CALENDAR VIEW ========== */
+    .calendar-container {
+        background: white;
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid #eef2ff;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    }
+    .calendar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    .calendar-month {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+    .calendar-nav {
+        background: #f1f5f9;
+        border: none;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 0.5rem;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .calendar-nav:hover {
+        background: #e2e8f0;
+    }
+    .calendar-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.25rem;
+        margin-bottom: 0.5rem;
+    }
+    .weekday {
+        text-align: center;
+        padding: 0.5rem;
+        font-weight: 700;
+        color: #64748b;
+        font-size: 0.75rem;
+    }
+    .calendar-days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.25rem;
+    }
+    .calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        background: #f8fafc;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .calendar-day:hover {
+        background: #f1f5f9;
+        transform: scale(1.02);
+    }
+    .calendar-day.other-month {
+        opacity: 0.4;
+    }
+    .calendar-day.holiday {
+        background: #fef2f2;
+        color: #dc2626;
+    }
+    .day-number {
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .holiday-indicator {
+        font-size: 0.7rem;
+        position: absolute;
+        bottom: 2px;
+    }
+
+    /* ========== TABLE ========== */
+    .table-wrapper {
+        background: #ffffff;
+        border-radius: 1rem;
+        border: 1px solid #eef2ff;
+        overflow: hidden;
+    }
+    .table-responsive {
+        overflow-x: auto;
+    }
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+    .data-table thead {
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .data-table th {
+        padding: 0.85rem 0.75rem;
+        font-weight: 700;
+        color: #475569;
+        text-align: right;
+    }
+    .data-table td {
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid #f1f5f9;
+        color: #334155;
+        vertical-align: middle;
+    }
+    .data-table tbody tr:nth-child(even) {
+        background-color: #fafcff;
+    }
+    .data-table tbody tr:hover {
+        background: #f8f7ff;
+    }
+    
+    .sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+    .sortable:hover {
+        color: #2563eb;
+    }
+    
+    .col-num { width: 45px; text-align: center; }
+    .col-name { min-width: 160px; }
+    .col-date { width: 110px; }
+    .col-day { width: 90px; }
+    .col-type { width: 100px; }
+    .col-notes { min-width: 150px; }
+    .col-actions { width: 50px; text-align: center; }
+    
+    .day-badge {
+        background: #eff6ff;
+        color: #2563eb;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+    
+    .type-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 1rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+    .type-recurring { background: #f5f3ff; color: #1d4ed8; }
+    .type-once { background: #ecfdf5; color: #059669; }
+
+    /* ========== DROPDOWN MENU ========== */
+    .dropdown {
+        position: relative;
+        display: inline-block;
+    }
+    .dropdown-btn {
+        background: transparent;
+        border: none;
+        font-size: 1.2rem;
+        cursor: pointer;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+    }
+    .dropdown-btn:hover {
+        background: #f1f5f9;
+    }
+    .dropdown-menu {
+        position: absolute;
+        left: 0;
+        top: 100%;
+        background: white;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        min-width: 120px;
+        z-index: 100;
+        display: none;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+    }
+    .dropdown-menu.show {
+        display: block;
+    }
+    .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        padding: 0.6rem 1rem;
+        border: none;
+        background: transparent;
+        text-align: right;
+        cursor: pointer;
+        font-size: 0.75rem;
+        transition: all 0.2s;
+        color: #334155;
+    }
+    .dropdown-item:hover {
+        background: #f8fafc;
+    }
+    .dropdown-item-danger {
+        color: #dc2626;
+    }
+    .dropdown-item-danger:hover {
+        background: #fef2f2;
+    }
+
+    /* ========== MODAL ========== */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+    .modal-card {
+        background: white;
+        border-radius: 1.25rem;
+        padding: 1.5rem;
+        max-width: 440px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 20px 35px -8px rgba(0,0,0,0.2);
+        animation: modalIn 0.2s ease;
+    }
+    .modal-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+    }
+    .modal-icon-danger { background: #fef2f2; }
+    .modal-buttons {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        margin-top: 1.5rem;
+    }
+    .warning-message {
+        background: #fffbeb;
+        color: #d97706;
+        padding: 0.6rem;
+        border-radius: 0.75rem;
+        font-size: 0.75rem;
+        margin-top: 1rem;
+    }
+    .error-msg {
+        background: #fef2f2;
+        color: #dc2626;
+        padding: 0.6rem;
+        border-radius: 0.75rem;
+        font-size: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    /* ========== TOAST ========== */
+    .toast-notification {
+        position: fixed;
+        bottom: 1.5rem;
+        left: 1.5rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        z-index: 1050;
+        animation: slideIn 0.3s ease;
+    }
+    .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .toast-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .toast-close {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        opacity: 0.6;
+    }
+
+    /* ========== LOADING & EMPTY STATES ========== */
+    .loading-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+    }
+    .loader {
+        width: 36px;
+        height: 36px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+        border: 1px dashed #cbd5e1;
+    }
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+    }
+    .no-access-card {
+        text-align: center;
+        padding: 4rem;
+        background: white;
+        border-radius: 1.5rem;
+    }
+    .no-access-icon {
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
+    }
+
+    /* ========== BUTTONS ========== */
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1.2rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.8rem;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+    }
+    .btn-export {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+    }
+    .btn-danger-modern {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+    }
+    .btn-ghost {
+        background: transparent;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-spinner-sm {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
+    /* ========== ANIMATIONS ========== */
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    @@keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    @@keyframes modalIn {
+        from { opacity: 0; transform: scale(0.95) translateY(10px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @@media (max-width: 900px) {
+        .filter-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .filter-field {
+            min-width: auto;
+        }
+        .stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        }
+        .col-notes {
+            display: none;
+        }
+    }
+    @@media (max-width: 600px) {
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .col-day, .col-type {
+            display: none;
+        }
+        .calendar-days {
+            gap: 2px;
+        }
+        .day-number {
+            font-size: 0.7rem;
+        }
+    }
+    @@media print {
+        .filter-bar, .stats-grid, .header-actions, .calendar-toggle, .dropdown, .col-actions {
+            display: none !important;
+        }
+        .table-wrapper {
+            box-shadow: none;
+            border: none;
+        }
+    }
+</style>
+
+<script>
+    window.downloadFile = (fileName, mimeType, base64Data) => {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = `data:${mimeType};base64,${base64Data}`;
+        link.click();
+    };
+</script>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private List<PublicHolidayListDto> holidays = new();
+    private List<PublicHolidayListDto> filteredHolidays = new();
+    
+    // Filters
+    private string searchText = "";
+    private int selectedYear = 0;
+    private string recurringFilter = "all";
+    private string sortColumn = "HolidayDate";
+    private bool sortAsc = true;
+    
+    // UI State
+    private bool isLoading = true;
+    private bool isDeleting = false;
+    private bool isExporting = false;
+    private bool showCalendar = false;
+    
+    // Calendar
+    private DateTime currentMonth = DateTime.Today;
+    
+    // Dropdown
+    private int? activeDropdownId = null;
+    
+    // Delete Dialog
+    private bool showDeleteDialog = false;
+    private PublicHolidayListDto? selectedItem;
+    private string dialogMessage = "";
+    
+    // Toast
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_ATTEND");
+        if (permissions == null || !permissions.CanView) { isLoading = false; return; }
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try 
+        { 
+            holidays = await HolidayService.GetHolidaysListAsync();
+            ApplyFilters();
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+        finally { isLoading = false; }
+    }
+
+    private void ApplyFilters()
+    {
+        var query = holidays.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var search = searchText.Trim();
+            query = query.Where(h => 
+                (h.HolidayNameAr ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (h.Notes ?? "").Contains(search, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (selectedYear > 0)
+        {
+            query = query.Where(h => h.HolidayDate.Year == selectedYear);
+        }
+
+        query = recurringFilter switch
+        {
+            "recurring" => query.Where(h => h.IsRecurring),
+            "once" => query.Where(h => !h.IsRecurring),
+            _ => query
+        };
+
+        filteredHolidays = ApplySort(query).ToList();
+    }
+
+    private IEnumerable<PublicHolidayListDto> ApplySort(IEnumerable<PublicHolidayListDto> data)
+    {
+        return sortColumn switch
+        {
+            "HolidayNameAr" => sortAsc ? data.OrderBy(h => h.HolidayNameAr) : data.OrderByDescending(h => h.HolidayNameAr),
+            "HolidayDate" => sortAsc ? data.OrderBy(h => h.HolidayDate) : data.OrderByDescending(h => h.HolidayDate),
+            _ => data.OrderBy(h => h.HolidayDate)
+        };
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+            sortAsc = !sortAsc;
+        else
+        {
+            sortColumn = column;
+            sortAsc = true;
+        }
+        ApplyFilters();
+    }
+
+    private string SortIcon(string column)
+    {
+        if (sortColumn != column) return "";
+        return sortAsc ? "▲" : "▼";
+    }
+
+    private void ClearSearch()
+    {
+        searchText = "";
+        ApplyFilters();
+    }
+
+    private void ResetFilters()
+    {
+        searchText = "";
+        selectedYear = 0;
+        recurringFilter = "all";
+        ApplyFilters();
+    }
+
+    private bool HasActiveFilters()
+    {
+        return !string.IsNullOrEmpty(searchText) || selectedYear > 0 || recurringFilter != "all";
+    }
+
+    private int GetUpcomingHolidaysCount()
+    {
+        var today = DateTime.Today;
+        return holidays.Count(h => h.HolidayDate >= today);
+    }
+
+    private int GetCurrentYearHolidaysCount()
+    {
+        var currentYear = DateTime.Now.Year;
+        return holidays.Count(h => h.HolidayDate.Year == currentYear);
+    }
+
+    private void ToggleCalendar(bool show)
+    {
+        showCalendar = show;
+        currentMonth = DateTime.Today;
+    }
+
+    private void ChangeMonth(int delta)
+    {
+        currentMonth = currentMonth.AddMonths(delta);
+    }
+
+    private List<CalendarDay> GetCalendarDays()
+    {
+        var days = new List<CalendarDay>();
+        var firstDayOfMonth = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+        var startDate = firstDayOfMonth.AddDays(-(int)firstDayOfMonth.DayOfWeek);
+        
+        for (int i = 0; i < 42; i++)
+        {
+            var date = startDate.AddDays(i);
+            days.Add(new CalendarDay
+            {
+                Date = date,
+                IsCurrentMonth = date.Month == currentMonth.Month
+            });
+        }
+        return days;
+    }
+
+    private bool IsHolidayDate(DateTime date)
+    {
+        return holidays.Any(h => h.HolidayDate == date || (h.IsRecurring && h.HolidayDate.Day == date.Day && h.HolidayDate.Month == date.Month));
+    }
+
+    private string GetHolidayName(DateTime date)
+    {
+        var holiday = holidays.FirstOrDefault(h => h.HolidayDate == date || (h.IsRecurring && h.HolidayDate.Day == date.Day && h.HolidayDate.Month == date.Month));
+        return holiday?.HolidayNameAr ?? "";
+    }
+
+    private void ToggleDropdown(int id)
+    {
+        activeDropdownId = activeDropdownId == id ? null : id;
+    }
+
+    private void GoToAdd() => Navigation.NavigateTo("/holidays/new");
+    private void GoToEdit(int id) => Navigation.NavigateTo($"/holidays/edit/{id}");
+    private void GoToView(int id) => Navigation.NavigateTo($"/holidays/view/{id}");
+
+    private void ShowDeleteConfirm(PublicHolidayListDto item) 
+    { 
+        selectedItem = item; 
+        dialogMessage = ""; 
+        showDeleteDialog = true; 
+    }
+    
+    private void CloseDeleteDialog() 
+    { 
+        showDeleteDialog = false; 
+        selectedItem = null; 
+        dialogMessage = ""; 
+    }
+
+    // ========== FIXED METHOD ==========
+    private async Task ConfirmDelete()
+    {
+        if (selectedItem == null) return;
+        isDeleting = true; 
+        dialogMessage = "";
+        
+        try 
+        {
+            // Execute delete without blocking (fire and forget)
+            _ = Task.Run(() => HolidayService.DeleteHolidayAsync(selectedItem.HolidayID, UserSession.UserID));
+            
+            resultMessage = $"تم حذف العطلة: {selectedItem.HolidayNameAr} ✅"; 
+            resultSuccess = true;
+            showDeleteDialog = false; 
+            selectedItem = null;
+            
+            // Small delay to allow delete to complete
+            await Task.Delay(300);
+            await LoadData();
+        } 
+        catch (Exception ex) 
+        { 
+            dialogMessage = "خطأ: " + ex.Message; 
+        }
+        finally 
+        { 
+            isDeleting = false; 
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (!filteredHolidays.Any()) 
+        {
+            resultMessage = "لا توجد بيانات للتصدير";
+            resultSuccess = false;
+            return;
+        }
+
+        isExporting = true;
+        try
+        {
+            using var stream = new MemoryStream();
+            using var writer = new StreamWriter(stream);
+            
+            await writer.WriteLineAsync("المناسبة,التاريخ,اليوم,النوع,ملاحظات");
+            
+            foreach (var holiday in filteredHolidays)
+            {
+                var dayName = GetDayName(holiday.HolidayDate.DayOfWeek);
+                var type = holiday.IsRecurring ? "متكررة سنوياً" : "مرة واحدة";
+                var notes = holiday.Notes ?? "";
+            await writer.WriteLineAsync($"\"{holiday.HolidayNameAr}\",{holiday.HolidayDate:yyyy-MM-dd},{dayName},{type},\"{notes}\"");
+            }
+            
+            await writer.FlushAsync();
+            var bytes = stream.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            
+            await JS.InvokeVoidAsync("downloadFile", $"Holidays_{DateTime.Now:yyyyMMdd_HHmmss}.csv", "text/csv", base64);
+            resultMessage = $"تم تصدير {filteredHolidays.Count} عطلة بنجاح ✅";
+            resultSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            resultMessage = "خطأ في التصدير: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private string GetDayName(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Sunday => "الأحد",
+        DayOfWeek.Monday => "الاثنين",
+        DayOfWeek.Tuesday => "الثلاثاء",
+        DayOfWeek.Wednesday => "الأربعاء",
+        DayOfWeek.Thursday => "الخميس",
+        DayOfWeek.Friday => "الجمعة",
+        DayOfWeek.Saturday => "السبت",
+        _ => ""
+    };
+
+    private class CalendarDay
+    {
+        public DateTime Date { get; set; }
+        public bool IsCurrentMonth { get; set; }
+    }
+}

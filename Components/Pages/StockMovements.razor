@@ -1,0 +1,167 @@
+﻿@page "/stock-movements"
+@page "/stock-movements/{ItemIdParam:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject InventoryService InvService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>حركات المخزون - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="page-wrap" dir="rtl">
+        <div class="page-hdr">
+            <div><h2 class="page-title">@(selectedItemId > 0 ? "كارت صنف" : "حركات المخزون")</h2>
+                <p class="page-sub">@(selectedItemId > 0 ? "جميع حركات الصنف" : "متابعة حركات الدخول والخروج")</p></div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count حركة</span>
+                @if (permissions.CanExport)
+                { <button class="btn-m btn-export" @onclick="ExportExcel" disabled="@isExporting">📥 Excel</button> }
+                @if (selectedItemId > 0)
+                { <button class="btn-m btn-ghost" @onclick="ClearItemFilter">عرض الكل</button> }
+            </div>
+        </div>
+
+        <div class="filter-row">
+            <div class="search-wrap">
+                <input class="search-inp" type="text" placeholder="بحث بالصنف أو المستند..." @bind="searchText" @bind:event="oninput" @onkeyup="FilterLocal" />
+            </div>
+            <select class="filter-sel" @bind="filterWarehouse" @bind:after="LoadMovements">
+                <option value="0">كل المخازن</option>
+                @if(warehouses!=null){@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}}
+            </select>
+            <select class="filter-sel" @bind="filterType" @bind:after="LoadMovements">
+                <option value="0">كل الأنواع</option>
+                <option value="1">استلام مشتريات</option><option value="2">صرف للإنتاج</option>
+                <option value="3">استلام إنتاج</option><option value="4">صرف للبيع</option>
+                <option value="5">مرتجع مشتريات</option><option value="6">مرتجع مبيعات</option>
+                <option value="7">تحويل صادر</option><option value="8">تحويل وارد</option>
+                <option value="9">تسوية زيادة</option><option value="10">تسوية نقص</option>
+            </select>
+            <input type="date" class="filter-sel" @bind="filterFrom" @bind:after="LoadMovements" />
+            <input type="date" class="filter-sel" @bind="filterTo" @bind:after="LoadMovements" />
+            <button class="btn-m btn-ghost" @onclick="LoadMovements">🔄</button>
+        </div>
+
+        @if(movements==null){<div class="loading-st"><div class="loader"></div></div>}
+        else if(!filtered.Any()){<div class="empty-st"><h4>لا توجد حركات</h4></div>}
+        else
+        {
+            <div class="tbl-card"><table class="tbl">
+                <thead><tr><th>#</th><th>التاريخ</th><th>النوع</th><th>الاتجاه</th><th>الكود</th><th>الصنف</th>
+                    <th>المخزن</th><th class="tc">الكمية</th><th class="tl">التكلفة</th>
+                    <th class="tc">قبل</th><th class="tc">بعد</th><th>المستند</th><th>الباتش</th></tr></thead>
+                <tbody>
+                    @{int n=0;}
+                    @foreach(var m in filtered){n++;
+                    <tr class="@(m.Quantity>0?"tr-in":"tr-out")">
+                        <td class="td-n">@n</td>
+                        <td>@m.TransactionDate.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@m.TransactionTypeName</td>
+                        <td class="tc"><span class="dir-badge @(m.Quantity>0?"dir-in":"dir-out")">@m.Direction</span></td>
+                        <td><code class="code-tag">@m.ItemCode</code></td>
+                        <td class="td-bold">@m.ItemNameAr</td>
+                        <td>@m.WarehouseNameAr</td>
+                        <td class="tc num-cell"><strong class="@(m.Quantity>0?"qty-in":"qty-out")">@m.AbsQuantity.ToString("#,##0.##")</strong></td>
+                        <td class="tl num-cell">@m.TotalCost.ToString("#,##0.00")</td>
+                        <td class="tc">@m.BalanceBefore.ToString("#,##0.##")</td>
+                        <td class="tc"><strong>@m.BalanceAfter.ToString("#,##0.##")</strong></td>
+                        <td class="td-muted">@(m.SourceDocNumber ?? "—")</td>
+                        <td class="td-muted">@(m.BatchNumber ?? "—")</td>
+                    </tr>}
+                </tbody>
+            </table></div>
+        }
+    </div>
+    @if(!string.IsNullOrEmpty(toast)){<div class="toast-wrap"><div class="toast @(toastOk?"t-ok":"t-err")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem}.hdr-actions{display:flex;align-items:center;gap:10px}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:200px}.search-inp{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.search-inp:focus{border-color:#2563eb}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1300px}.tbl thead{background:#f8fafc}.tbl th{padding:12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}
+    .tr-in{border-right:3px solid #10b981}.tr-out{border-right:3px solid #ef4444}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;font-size:.8rem;text-align:center}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.num-cell{font-family:monospace;font-weight:600}.code-tag{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.78rem;color:#2563eb;font-weight:600}
+    .dir-badge{padding:3px 10px;border-radius:6px;font-size:.75rem;font-weight:700}.dir-in{background:#ecfdf5;color:#059669}.dir-out{background:#fef2f2;color:#dc2626}.qty-in{color:#059669}.qty-out{color:#dc2626}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-m:disabled{opacity:.6}.btn-export{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.empty-st h4{color:#64748b}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}}
+</style>
+
+@code {
+    [Parameter] public int ItemIdParam { get; set; }
+
+    private List<StockMovementDto>? movements;
+    private List<StockMovementDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? warehouses;
+    private string searchText = "";
+    private int filterWarehouse = 0, filterType = 0;
+    private DateTime? filterFrom, filterTo;
+    private int selectedItemId = 0;
+    private bool isExporting = false;
+    private string toast = ""; private bool toastOk = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_TRANS");
+        if (permissions == null || !permissions.CanView) return;
+        warehouses = await LookupService.GetWarehousesAsync();
+
+        if (ItemIdParam > 0) selectedItemId = ItemIdParam;
+        else
+        {
+            var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (int.TryParse(query["itemId"], out var qid)) selectedItemId = qid;
+        }
+        await LoadMovements();
+    }
+
+    private async Task LoadMovements()
+    {
+        movements = await InvService.GetMovementsAsync(
+            selectedItemId > 0 ? selectedItemId : null,
+            filterWarehouse > 0 ? filterWarehouse : null,
+            filterType > 0 ? filterType : null,
+            filterFrom, filterTo);
+        FilterLocal();
+    }
+
+    private void FilterLocal()
+    {
+        if (movements == null) return;
+        filtered = movements.Where(m =>
+            string.IsNullOrEmpty(searchText) ||
+            ArabicSearchHelper.Contains(m.ItemCode, searchText) ||
+            ArabicSearchHelper.Contains(m.ItemNameAr, searchText) ||
+            ArabicSearchHelper.Contains(m.SourceDocNumber, searchText)
+        ).ToList();
+    }
+
+    private void ClearItemFilter() { selectedItemId = 0; _ = LoadMovements(); Navigation.NavigateTo("/stock-movements", forceLoad: false); }
+
+    private async Task ExportExcel()
+    {
+        if (!filtered.Any()) return; isExporting = true; StateHasChanged();
+        try { var b = await InvService.ExportMovementsToExcelAsync(filtered, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile", $"StockMovements_{DateTime.Now:yyyyMMdd}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(b)); }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isExporting = false; }
+    }
+}

@@ -1,0 +1,1158 @@
+﻿@page "/boms"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject BOMService BomService
+@inject NavigationManager NavigationManager
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>إدارة وصفات التصنيع - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>
+            العودة للرئيسية
+        </button>
+    </div>
+}
+else
+{
+    <div class="bom-page">
+
+        <!-- ===== Header ===== -->
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <i class="bi bi-diagram-3-fill"></i>
+                    إدارة وصفات التصنيع
+                </h1>
+                <p class="header-subtitle">Bill of Materials · BOM Management</p>
+            </div>
+            <div class="header-actions">
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-success-modern" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting)
+                        {
+                            <span class="spinner-tiny"></span>
+                            <span>جاري التصدير...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-file-earmark-excel-fill"></i>
+                            <span>تصدير إكسيل</span>
+                        }
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-primary-modern" @onclick="NavigateToAdd">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>وصفة جديدة</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- ===== Stat Cards ===== -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon-wrap primary">
+                    <i class="bi bi-card-list"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value">@boms.Count</div>
+                    <div class="stat-label">إجمالي الوصفات</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap success">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value">@boms.Count(b => b.BOMStatus == 2)</div>
+                    <div class="stat-label">وصفات نشطة</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap warning">
+                    <i class="bi bi-pencil-square"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value">@boms.Count(b => b.BOMStatus == 1)</div>
+                    <div class="stat-label">مسودة</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap secondary">
+                    <i class="bi bi-pause-circle-fill"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value">@boms.Count(b => b.BOMStatus == 3 || b.BOMStatus == 4)</div>
+                    <div class="stat-label">متوقف / ملغي</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== Filters ===== -->
+        <div class="filter-card">
+            <div class="filter-header">
+                <i class="bi bi-funnel-fill"></i>
+                خيارات التصفية والبحث
+            </div>
+            <div class="filter-body">
+                <div class="filter-group" style="flex:2; min-width:220px;">
+                    <label class="filter-label">بحث سريع</label>
+                    <div class="search-wrap">
+                        <i class="bi bi-search search-ico"></i>
+                        <input type="text"
+                               class="filter-input"
+                               placeholder="كود أو اسم الوصفة أو المنتج..."
+                               @bind="searchQuery"
+                               @bind:event="oninput"
+                               @onkeyup="HandleSearch" />
+                    </div>
+                </div>
+                <div class="filter-group" style="flex:1.5; min-width:160px;">
+                    <label class="filter-label">الحالة</label>
+                    <select class="filter-select" @bind="statusFilter">
+                        <option value="">— الكل —</option>
+                        <option value="1">📝 مسودة</option>
+                        <option value="2">✅ نشط</option>
+                        <option value="3">⏸ متوقف</option>
+                        <option value="4">❌ ملغي</option>
+                    </select>
+                </div>
+                <div class="filter-group" style="flex:1.5; min-width:160px;">
+                    <label class="filter-label">خيارات العرض</label>
+                    <label class="toggle-wrap">
+                        <input type="checkbox" class="toggle-chk" @bind="activeOnly" />
+                        <span class="toggle-label-txt">عرض الفعال فقط</span>
+                    </label>
+                </div>
+                <div class="filter-group" style="flex:1; min-width:120px; justify-content:flex-end;">
+                    <label class="filter-label" style="visibility:hidden;">.</label>
+                    <button class="btn-primary-modern" @onclick="LoadData">
+                        <i class="bi bi-search"></i>
+                        <span>تصفية</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== Table ===== -->
+        <div class="table-card">
+            <div class="table-card-header">
+                <div class="table-card-title">
+                    <i class="bi bi-table"></i>
+                    قائمة وصفات التصنيع
+                    @if (!isLoading)
+                    {
+                        <span class="count-badge">@boms.Count وصفة</span>
+                    }
+                </div>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="state-box">
+                    <div class="spinner-md"></div>
+                    <span class="state-text">جاري تحميل البيانات...</span>
+                </div>
+            }
+            else if (!boms.Any())
+            {
+                <div class="state-box">
+                    <div class="empty-icon-circle">
+                        <i class="bi bi-inbox"></i>
+                    </div>
+                    <p class="empty-title">لا توجد وصفات مطابقة</p>
+                    <p class="empty-sub">جرّب تغيير معايير البحث أو أضف وصفة جديدة</p>
+                    @if (permissions.CanAdd)
+                    {
+                        <button class="btn-primary-modern" @onclick="NavigateToAdd">
+                            <i class="bi bi-plus-lg"></i>
+                            <span>إضافة وصفة</span>
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="bom-table">
+                        <thead>
+                            <tr>
+                                <th>الكود</th>
+                                <th>اسم الوصفة</th>
+                                <th>المنتج النهائي</th>
+                                <th class="tc">الإصدار</th>
+                                <th class="tc">حجم الدفعة</th>
+                                <th class="tc">المكونات</th>
+                                <th class="tr">التكلفة المتوقعة</th>
+                                <th class="tc">الحالة</th>
+                                <th class="tc">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var bom in boms)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="code-chip">@bom.BOMCode</span>
+                                    </td>
+                                    <td>
+                                        <span class="bom-name-txt">@bom.BOMName</span>
+                                    </td>
+                                    <td>
+                                        <div class="prod-name">@bom.ProductName</div>
+                                        <div class="prod-code">@bom.ProductCode</div>
+                                    </td>
+                                    <td class="tc">
+                                        <span class="ver-badge">@bom.BOMVersion</span>
+                                    </td>
+                                    <td class="tc">
+                                        <span class="batch-val">@bom.BatchSize.ToString("G")</span>
+                                        <span class="batch-unit">@bom.BatchUnitName</span>
+                                    </td>
+                                    <td class="tc">
+                                        <div class="comp-wrap">
+                                            <span class="comp-chip raw" title="خامات">
+                                                <i class="bi bi-box-fill"></i>
+                                                @bom.RawMaterialCount
+                                            </span>
+                                            <span class="comp-chip pkg" title="تعبئة">
+                                                <i class="bi bi-bag-fill"></i>
+                                                @bom.PackagingMaterialCount
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="tr">
+                                        <span class="cost-val">@bom.TotalBatchCost.ToString("N2")</span>
+                                    </td>
+                                    <td class="tc">
+                                        <span class="status-chip @GetStatusClass(bom.BOMStatus)">
+                                            @bom.StatusName
+                                        </span>
+                                    </td>
+                                    <td class="tc">
+                                        <div class="actions-wrap">
+                                            @if (bom.BOMStatus == 1 || bom.BOMStatus == 3)
+                                            {
+                                                @if (permissions.CanEdit)
+                                                {
+                                                    <button class="ico-btn edit-btn"
+                                                            title="تعديل"
+                                                            @onclick="() => NavigateToEdit(bom.BOMID)">
+                                                        <i class="bi bi-pencil-fill"></i>
+                                                    </button>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <button class="ico-btn view-btn"
+                                                        title="عرض التفاصيل"
+                                                        @onclick="() => NavigateToEdit(bom.BOMID)">
+                                                    <i class="bi bi-eye-fill"></i>
+                                                </button>
+                                            }
+                                            @if (permissions.CanPrint)
+                                            {
+                                                <button class="ico-btn print-btn"
+                                                        title="طباعة الوصفة"
+                                                        @onclick="() => PrintBOM(bom.BOMID)">
+                                                    <i class="bi bi-printer-fill"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+    </div>
+}
+
+<style>
+    /* ===== Variables ===== */
+    :root {
+        --c-primary:      #4f46e5;
+        --c-primary-lt:   #eef2ff;
+        --c-primary-dk:   #3730a3;
+        --c-success:      #10b981;
+        --c-success-lt:   #ecfdf5;
+        --c-warning:      #f59e0b;
+        --c-warning-lt:   #fffbeb;
+        --c-danger:       #ef4444;
+        --c-danger-lt:    #fef2f2;
+        --c-info:         #0ea5e9;
+        --c-info-lt:      #f0f9ff;
+        --c-secondary:    #64748b;
+        --c-secondary-lt: #f1f5f9;
+        --c-surface:      #ffffff;
+        --c-bg:           #f8fafc;
+        --c-border:       #e2e8f0;
+        --c-text:         #0f172a;
+        --c-text-2:       #64748b;
+        --c-text-3:       #94a3b8;
+        --r-sm: 8px;
+        --r-md: 12px;
+        --r-lg: 16px;
+        --r-xl: 20px;
+        --sh-sm: 0 1px 3px rgba(0,0,0,.06);
+        --sh-md: 0 4px 16px rgba(0,0,0,.08);
+    }
+
+    /* ===== Page ===== */
+    .bom-page {
+        direction: rtl;
+        padding: 1.75rem 1.5rem;
+        background: var(--c-bg);
+        min-height: 100vh;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    /* ===== No Access ===== */
+    .no-access-card {
+        text-align: center;
+        padding: 80px 20px;
+        background: white;
+        border-radius: var(--r-xl);
+        border: 1px solid var(--c-border);
+        max-width: 480px;
+        margin: 80px auto;
+        box-shadow: var(--sh-sm);
+    }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .no-access-card h4 { color: var(--c-text); margin-bottom: 20px; }
+    .btn-back-dash {
+        background: var(--c-secondary-lt);
+        color: var(--c-secondary);
+        border: none;
+        padding: .6rem 1.4rem;
+        border-radius: var(--r-sm);
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    /* ===== Page Header ===== */
+    .page-header {
+        background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk));
+        border-radius: var(--r-xl);
+        padding: 1.75rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        position: relative;
+        overflow: hidden;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-header::before {
+        content: '';
+        position: absolute;
+        top: -40px; left: -40px;
+        width: 180px; height: 180px;
+        background: rgba(255,255,255,.06);
+        border-radius: 50%;
+    }
+    .page-header::after {
+        content: '';
+        position: absolute;
+        bottom: -60px; left: 80px;
+        width: 240px; height: 240px;
+        background: rgba(255,255,255,.04);
+        border-radius: 50%;
+    }
+    .header-content { position: relative; z-index: 1; }
+    .header-title {
+        color: #fff;
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0 0 .25rem;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+    }
+    .header-title i { font-size: 1.6rem; opacity: .9; }
+    .header-subtitle { color: rgba(255,255,255,.7); font-size: .85rem; margin: 0; }
+    .header-actions {
+        display: flex;
+        gap: .75rem;
+        position: relative;
+        z-index: 1;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    /* ===== Buttons ===== */
+    .btn-primary-modern {
+        background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk));
+        color: #fff;
+        border: none;
+        border-radius: var(--r-sm);
+        padding: .6rem 1.25rem;
+        font-size: .88rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        cursor: pointer;
+        transition: all .2s;
+        box-shadow: 0 4px 12px rgba(79,70,229,.3);
+        white-space: nowrap;
+    }
+    .btn-primary-modern:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(79,70,229,.4);
+    }
+    .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
+
+    .btn-success-modern {
+        background: linear-gradient(135deg, var(--c-success), #059669);
+        color: #fff;
+        border: none;
+        border-radius: var(--r-sm);
+        padding: .6rem 1.25rem;
+        font-size: .88rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        cursor: pointer;
+        transition: all .2s;
+        box-shadow: 0 4px 12px rgba(16,185,129,.25);
+        white-space: nowrap;
+    }
+    .btn-success-modern:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(16,185,129,.35);
+    }
+    .btn-success-modern:disabled { opacity: .65; cursor: not-allowed; }
+
+    /* ===== Stats ===== */
+    .stats-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+    }
+    .stat-card {
+        background: var(--c-surface);
+        border-radius: var(--r-md);
+        padding: 1.2rem 1.4rem;
+        box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transition: all .2s;
+    }
+    .stat-card:hover { box-shadow: var(--sh-md); transform: translateY(-2px); }
+    .stat-icon-wrap {
+        width: 48px; height: 48px;
+        border-radius: var(--r-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        flex-shrink: 0;
+    }
+    .stat-icon-wrap.primary   { background: var(--c-primary-lt);   color: var(--c-primary); }
+    .stat-icon-wrap.success   { background: var(--c-success-lt);   color: var(--c-success); }
+    .stat-icon-wrap.warning   { background: var(--c-warning-lt);   color: var(--c-warning); }
+    .stat-icon-wrap.secondary { background: var(--c-secondary-lt); color: var(--c-secondary); }
+    .stat-info { flex: 1; }
+    .stat-value { font-size: 1.6rem; font-weight: 800; color: var(--c-text); line-height: 1; }
+    .stat-label { font-size: .78rem; color: var(--c-text-3); font-weight: 500; margin-top: .2rem; }
+
+    /* ===== Filter Card ===== */
+    .filter-card {
+        background: var(--c-surface);
+        border-radius: var(--r-md);
+        box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border);
+        overflow: hidden;
+    }
+    .filter-header {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .85rem 1.4rem;
+        background: #fafafa;
+        border-bottom: 1px solid var(--c-border);
+        font-size: .82rem;
+        font-weight: 700;
+        color: var(--c-text-2);
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .filter-body {
+        padding: 1.2rem 1.4rem;
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: .4rem;
+    }
+    .filter-label {
+        font-size: .8rem;
+        font-weight: 600;
+        color: var(--c-text-2);
+    }
+    .filter-input,
+    .filter-select {
+        border: 1.5px solid var(--c-border);
+        border-radius: var(--r-sm);
+        padding: .55rem .9rem;
+        font-size: .88rem;
+        color: var(--c-text);
+        background: #fafafa;
+        transition: all .2s;
+        outline: none;
+        width: 100%;
+    }
+    .filter-input:focus,
+    .filter-select:focus {
+        border-color: var(--c-primary);
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+    }
+    .search-wrap { position: relative; }
+    .search-ico {
+        position: absolute;
+        right: .85rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--c-text-3);
+        pointer-events: none;
+    }
+    .search-wrap .filter-input { padding-right: 2.4rem; }
+
+    .toggle-wrap {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        background: #fafafa;
+        border: 1.5px solid var(--c-border);
+        border-radius: var(--r-sm);
+        padding: .5rem .9rem;
+        cursor: pointer;
+        transition: all .2s;
+        height: 38px;
+    }
+    .toggle-wrap:hover { border-color: var(--c-primary); }
+    .toggle-chk {
+        width: 36px !important;
+        height: 20px !important;
+        cursor: pointer;
+        accent-color: var(--c-primary);
+    }
+    .toggle-label-txt {
+        font-size: .85rem;
+        color: var(--c-text-2);
+        font-weight: 500;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    /* ===== Table Card ===== */
+    .table-card {
+        background: var(--c-surface);
+        border-radius: var(--r-md);
+        box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border);
+        overflow: hidden;
+    }
+    .table-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: .9rem 1.4rem;
+        border-bottom: 1px solid var(--c-border);
+        background: #fafafa;
+    }
+    .table-card-title {
+        font-size: .9rem;
+        font-weight: 700;
+        color: var(--c-text);
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+    }
+    .table-card-title i { color: var(--c-primary); }
+    .count-badge {
+        background: var(--c-primary-lt);
+        color: var(--c-primary);
+        font-size: .75rem;
+        font-weight: 700;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+    }
+
+    /* ===== Table ===== */
+    .table-scroll { overflow-x: auto; }
+    .bom-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .bom-table thead th {
+        background: #f8fafc;
+        padding: .85rem 1rem;
+        font-size: .76rem;
+        font-weight: 700;
+        color: var(--c-text-3);
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        border-bottom: 2px solid var(--c-border);
+        white-space: nowrap;
+        text-align: right;
+    }
+    .bom-table thead th.tc { text-align: center; }
+    .bom-table thead th.tr { text-align: left; }
+
+    .bom-table tbody tr {
+        border-bottom: 1px solid #f1f5f9;
+        transition: background .15s;
+    }
+    .bom-table tbody tr:last-child { border-bottom: none; }
+    .bom-table tbody tr:hover { background: var(--c-primary-lt); }
+    .bom-table tbody td {
+        padding: .85rem 1rem;
+        font-size: .875rem;
+        color: var(--c-text);
+        vertical-align: middle;
+    }
+    .bom-table tbody td.tc { text-align: center; }
+    .bom-table tbody td.tr { text-align: left; }
+
+    /* ===== Table Cells ===== */
+    .code-chip {
+        font-family: 'Courier New', monospace;
+        font-weight: 700;
+        color: var(--c-primary);
+        background: var(--c-primary-lt);
+        padding: .2rem .55rem;
+        border-radius: 6px;
+        font-size: .82rem;
+        white-space: nowrap;
+    }
+    .bom-name-txt { font-weight: 600; }
+    .prod-name { font-weight: 600; font-size: .875rem; }
+    .prod-code { font-size: .75rem; color: var(--c-text-3); margin-top: .1rem; }
+
+    .ver-badge {
+        background: var(--c-secondary-lt);
+        color: var(--c-secondary);
+        font-size: .8rem;
+        font-weight: 700;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        border: 1px solid var(--c-border);
+        font-family: monospace;
+    }
+    .batch-val { font-weight: 600; }
+    .batch-unit { font-size: .75rem; color: var(--c-text-3); margin-right: .2rem; }
+
+    .comp-wrap { display: flex; gap: .4rem; justify-content: center; }
+    .comp-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .2rem .55rem;
+        border-radius: 6px;
+        font-size: .76rem;
+        font-weight: 700;
+    }
+    .comp-chip.raw { background: var(--c-info-lt);    color: var(--c-info); }
+    .comp-chip.pkg { background: var(--c-warning-lt); color: #d97706; }
+
+    .cost-val {
+        font-weight: 700;
+        color: var(--c-success);
+        font-size: .9rem;
+        direction: ltr;
+        display: inline-block;
+    }
+
+    /* ===== Status Chips ===== */
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .28rem .75rem;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .status-chip::before {
+        content: '';
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+    .s-draft    { background: #f1f5f9; color: #64748b; }
+    .s-draft::before    { background: #94a3b8; }
+    .s-active   { background: var(--c-success-lt); color: #059669; }
+    .s-active::before   { background: var(--c-success); animation: pulse-dot 1.5s infinite; }
+    .s-paused   { background: var(--c-warning-lt); color: #d97706; }
+    .s-paused::before   { background: var(--c-warning); }
+    .s-cancelled { background: var(--c-danger-lt); color: #dc2626; }
+    .s-cancelled::before { background: var(--c-danger); }
+
+    @@keyframes pulse-dot {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,.5); }
+        50%       { box-shadow: 0 0 0 4px rgba(16,185,129,.0); }
+    }
+
+    /* ===== Action Buttons ===== */
+    .actions-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+    }
+    .ico-btn {
+        width: 34px; height: 34px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all .2s;
+        position: relative;
+    }
+    .ico-btn:hover { transform: scale(1.15); }
+
+    /* Tooltip */
+    .ico-btn::after {
+        content: attr(title);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%) scale(.9);
+        background: #1e293b;
+        color: #fff;
+        font-size: .7rem;
+        font-weight: 600;
+        padding: .3rem .6rem;
+        border-radius: 6px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: all .2s;
+        z-index: 10;
+    }
+    .ico-btn:hover::after {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+    }
+
+    .edit-btn  { color: var(--c-primary); }
+    .edit-btn:hover  { background: var(--c-primary-lt);   color: var(--c-primary-dk); }
+    .view-btn  { color: var(--c-info); }
+    .view-btn:hover  { background: var(--c-info-lt);      color: #0284c7; }
+    .print-btn { color: var(--c-success); }
+    .print-btn:hover { background: var(--c-success-lt);   color: #059669; }
+
+    /* ===== States ===== */
+    .state-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        gap: 1rem;
+    }
+    .spinner-md {
+        width: 44px; height: 44px;
+        border: 3px solid var(--c-border);
+        border-top-color: var(--c-primary);
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+    }
+    .spinner-tiny {
+        width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+        display: inline-block;
+    }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .state-text { color: var(--c-text-3); font-size: .9rem; font-weight: 500; }
+
+    .empty-icon-circle {
+        width: 80px; height: 80px;
+        background: var(--c-primary-lt);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        color: var(--c-primary);
+    }
+    .empty-title { font-size: 1.05rem; font-weight: 700; color: var(--c-text); margin: 0; }
+    .empty-sub   { font-size: .85rem;  color: var(--c-text-3); margin: 0; }
+
+    /* ===== Responsive ===== */
+    @@media (max-width: 992px) {
+        .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+    @@media (max-width: 768px) {
+        .bom-page  { padding: 1rem; }
+        .page-header { flex-direction: column; align-items: flex-start; }
+        .header-actions { width: 100%; justify-content: flex-end; }
+        .stats-row { grid-template-columns: repeat(2, 1fr); }
+        .filter-body { flex-direction: column; }
+        .filter-group { width: 100% !important; }
+    }
+</style>
+
+@code {
+    private List<BOMListDto> boms = new();
+    private bool isLoading  = true;
+    private bool isExporting = false;
+    private ModulePermissionDto? permissions;
+
+    private string? searchQuery;
+    private int?    statusFilter;
+    private bool    activeOnly = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_BOM");
+
+        if (permissions != null && permissions.CanView)
+            await LoadData();
+        else
+            isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            boms = await BomService.GetBOMListAsync(searchQuery, statusFilter, activeOnly);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadData();
+    }
+
+    private void NavigateToAdd()
+    {
+        if (permissions?.CanAdd == true)
+            NavigationManager.NavigateTo("/boms/edit/0");
+    }
+
+    private void NavigateToEdit(int bomId)
+    {
+        NavigationManager.NavigateTo($"/boms/edit/{bomId}");
+    }
+
+    private async Task PrintBOM(int bomId)
+    {
+        if (permissions?.CanPrint != true) return;
+
+        var bom = await BomService.GetBOMByIdAsync(bomId);
+        if (bom == null) return;
+
+        var allDetails        = await BomService.GetBOMDetailsAsync(bomId);
+        var rawMaterials      = allDetails.Where(x => x.MaterialType == 1).ToList();
+        var packagingMaterials = allDetails.Where(x => x.MaterialType == 2).ToList();
+
+        var html = BuildPrintHtml(bom, rawMaterials, packagingMaterials);
+        await JS.InvokeVoidAsync("printHtml", html);
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (permissions?.CanExport != true) return;
+        isExporting = true;
+        try
+        {
+            var fileBytes = await BomService.ExportBOMListToExcelAsync(boms, UserSession.UserID);
+            var fileName  = $"BOM_List_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            var base64    = Convert.ToBase64String(fileBytes);
+            await JS.InvokeVoidAsync("downloadFile", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private string BuildPrintHtml(
+        BOMEditDto bom,
+        List<BOMDetailDto> rawMaterials,
+        List<BOMDetailDto> packagingMaterials)
+    {
+        var thStyle = "padding:11px 14px;text-align:right;font-weight:700;" +
+                      "color:#374151;border-bottom:2px solid #e5e7eb;font-size:13px;";
+        var tdStyle = "padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;";
+
+        // ===== صفوف المواد الخام =====
+        var rawRows = new System.Text.StringBuilder();
+        int i = 1;
+        foreach (var item in rawMaterials)
+        {
+            rawRows.Append($@"
+            <tr>
+                <td style='{tdStyle}text-align:center;color:#94a3b8;'>{i++}</td>
+                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{item.ItemCode}</td>
+                <td style='{tdStyle}font-weight:600;'>{item.ItemName}</td>
+                <td style='{tdStyle}text-align:center;font-weight:600;'>{item.Quantity:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{item.UnitName}</td>
+                <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{item.LineCost:N2}</td>
+            </tr>");
+        }
+
+        // ===== صفوف مواد التعبئة =====
+        var pkgRows = new System.Text.StringBuilder();
+        int j = 1;
+        foreach (var item in packagingMaterials)
+        {
+            pkgRows.Append($@"
+            <tr>
+                <td style='{tdStyle}text-align:center;color:#94a3b8;'>{j++}</td>
+                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{item.ItemCode}</td>
+                <td style='{tdStyle}font-weight:600;'>{item.ItemName}</td>
+                <td style='{tdStyle}text-align:center;font-weight:600;'>{item.Quantity:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{item.UnitName}</td>
+                <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{item.LineCost:N2}</td>
+            </tr>");
+        }
+
+        // ===== Table Header مشترك =====
+        var tHead = $@"
+        <thead>
+            <tr style='background:#f8fafc;'>
+                <th style='{thStyle}text-align:center;width:40px;'>#</th>
+                <th style='{thStyle}'>كود الصنف</th>
+                <th style='{thStyle}'>اسم الصنف</th>
+                <th style='{thStyle}text-align:center;'>الكمية</th>
+                <th style='{thStyle}text-align:center;'>الوحدة</th>
+                <th style='{thStyle}text-align:left;'>التكلفة (ج.م)</th>
+            </tr>
+        </thead>";
+
+        var rawSection = rawMaterials.Any() ? $@"
+        <h3 style='border-right:4px solid #4f46e5;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+            📦 المواد الخام ({rawMaterials.Count} صنف)
+        </h3>
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+                      border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+            {tHead}
+            <tbody>{rawRows}</tbody>
+            <tfoot>
+                <tr style='background:#f8fafc;'>
+                    <td colspan='5' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>
+                        إجمالي المواد الخام
+                    </td>
+                    <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>
+                        {rawMaterials.Sum(x => x.LineCost):N2}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>" : "";
+
+        var pkgSection = packagingMaterials.Any() ? $@"
+        <h3 style='border-right:4px solid #10b981;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+            🎁 مواد التعبئة والتغليف ({packagingMaterials.Count} صنف)
+        </h3>
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+                      border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+            {tHead}
+            <tbody>{pkgRows}</tbody>
+            <tfoot>
+                <tr style='background:#f8fafc;'>
+                    <td colspan='5' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>
+                        إجمالي مواد التعبئة
+                    </td>
+                    <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>
+                        {packagingMaterials.Sum(x => x.LineCost):N2}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>" : "";
+
+        var statusName = bom.BOMStatus switch
+        {
+            1 => "مسودة", 2 => "نشط", 3 => "متوقف", 4 => "ملغي", _ => "—"
+        };
+        var statusBg    = bom.BOMStatus == 2 ? "#d1fae5" : "#f3f4f6";
+        var statusColor = bom.BOMStatus == 2 ? "#065f46" : "#374151";
+
+        var totalMaterial = rawMaterials.Sum(x => x.LineCost)
+                          + packagingMaterials.Sum(x => x.LineCost);
+        var totalBatch    = totalMaterial
+                          + bom.LaborCostPerBatch
+                          + bom.OverheadCostPerBatch;
+
+        var notesSection = !string.IsNullOrWhiteSpace(bom.Notes) ? $@"
+        <div style='background:#fffbeb;border:1px solid #fde68a;border-radius:10px;
+                    padding:14px 18px;margin-top:24px;'>
+            <strong style='color:#92400e;font-size:13px;'>📝 ملاحظات:</strong>
+            <p style='margin:8px 0 0;color:#78350f;font-size:13px;line-height:1.6;'>{bom.Notes}</p>
+        </div>" : "";
+
+        return $@"<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>وصفة التصنيع - {bom.BOMCode}</title>
+<style>
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+        font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+        direction:rtl; background:#fff; color:#1f2937;
+        padding:30px; font-size:14px; line-height:1.6;
+    }}
+    .no-print {{ }}
+    @media print {{
+        .no-print {{ display:none !important; }}
+        body {{ padding:15px; }}
+    }}
+</style>
+</head>
+<body>
+
+<!-- أزرار الطباعة -->
+<div class='no-print' style='margin-bottom:24px;display:flex;gap:10px;justify-content:flex-end;'>
+    <button onclick='window.print()'
+        style='background:#4f46e5;color:#fff;border:none;padding:10px 24px;
+               border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
+        🖨️ طباعة
+    </button>
+    <button onclick='window.close()'
+        style='background:#6b7280;color:#fff;border:none;padding:10px 24px;
+               border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
+        ✕ إغلاق
+    </button>
+</div>
+
+<!-- Header -->
+<div style='text-align:center;border-bottom:3px solid #4f46e5;
+            padding-bottom:20px;margin-bottom:28px;'>
+    <div style='font-size:2.2rem;margin-bottom:8px;'>🏭</div>
+    <h1 style='font-size:1.7rem;font-weight:800;color:#1f2937;margin:0;'>واي كي كوتينج ERP</h1>
+    <p style='color:#6b7280;margin:6px 0 0;'>وصفة التصنيع (Bill of Materials)</p>
+</div>
+
+<!-- BOM Info Grid -->
+<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;
+            background:#f9fafb;padding:20px;border-radius:12px;
+            margin-bottom:28px;border:1px solid #e5e7eb;'>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>كود الوصفة:</span>
+        <span style='font-weight:800;color:#4f46e5;font-size:13px;'>{bom.BOMCode}</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>اسم الوصفة:</span>
+        <span style='font-weight:700;font-size:13px;'>{bom.BOMName}</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>حجم الدفعة:</span>
+        <span style='font-weight:700;font-size:13px;'>{bom.BatchSize:N2}</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>الكمية الناتجة:</span>
+        <span style='font-size:13px;'>{bom.OutputQty:N2}</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>رقم الإصدار:</span>
+        <span style='font-size:13px;'>{bom.BOMVersion}</span>
+    </div>
+    <div style='display:flex;gap:10px;align-items:center;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>الحالة:</span>
+        <span style='background:{statusBg};color:{statusColor};padding:3px 12px;
+                     border-radius:20px;font-size:12px;font-weight:700;'>{statusName}</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>تكلفة العمالة:</span>
+        <span style='font-size:13px;'>{bom.LaborCostPerBatch:N2} ج.م</span>
+    </div>
+    <div style='display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>التكاليف العامة:</span>
+        <span style='font-size:13px;'>{bom.OverheadCostPerBatch:N2} ج.م</span>
+    </div>
+    <!-- Total Row -->
+    <div style='grid-column:span 2;border-top:2px solid #e5e7eb;
+                padding-top:14px;margin-top:6px;display:flex;gap:10px;'>
+        <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>إجمالي التكلفة:</span>
+        <span style='font-weight:800;color:#10b981;font-size:1.1rem;'>{totalBatch:N2} ج.م</span>
+    </div>
+</div>
+
+{rawSection}
+{pkgSection}
+{notesSection}
+
+<!-- Footer -->
+<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e5e7eb;
+            text-align:center;color:#94a3b8;font-size:12px;'>
+    <p>تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd - hh:mm tt}</p>
+    <p style='margin-top:4px;'>واي كي كوتينج ERP — نظام تخطيط موارد المؤسسات</p>
+</div>
+
+</body>
+</html>";
+    }
+
+    private string GetStatusClass(int status) => status switch
+    {
+        1 => "status-chip s-draft",
+        2 => "status-chip s-active",
+        3 => "status-chip s-paused",
+        4 => "status-chip s-cancelled",
+        _ => "status-chip s-draft"
+    };
+}

@@ -1,0 +1,1996 @@
+﻿@page "/boms/edit/{BOMID:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject BOMService BomService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>@PageTitle - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (perms == null || !perms.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-secondary-act" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>
+            <i class="bi bi-house-fill"></i> العودة للرئيسية
+        </button>
+    </div>
+}
+else
+{
+    <div class="edit-page" dir="rtl">
+
+        @if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="loader"></div>
+                <p>جاري تحميل بيانات الوصفة...</p>
+            </div>
+        }
+        else
+        {
+            <!-- ===== Page Header ===== -->
+            <div class="edit-header">
+                <div class="edit-header-info">
+                    <div class="edit-header-title-row">
+                        <div class="edit-header-icon">
+                            <i class="bi bi-diagram-3-fill"></i>
+                        </div>
+                        <div>
+                            <h2 class="edit-title">@PageTitle</h2>
+                            @if (!IsNew)
+                            {
+                                <div class="edit-meta">
+                                    <span class="meta-code">
+                                        <i class="bi bi-hash"></i> @bom.BOMCode
+                                    </span>
+                                    <span class="meta-version">
+                                        <i class="bi bi-layers"></i> إصدار @bom.BOMVersion
+                                    </span>
+                                    <span class="status-chip-header @GetStatusClass(bom.BOMStatus)">
+                                        @GetStatusName(bom.BOMStatus)
+                                    </span>
+                                    <span class="active-chip @(bom.IsActive ? "chip-active" : "chip-inactive")">
+                                        <span class="chip-dot"></span>
+                                        @(bom.IsActive ? "فعال" : "غير فعال")
+                                    </span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="edit-header-actions">
+                    <button class="btn-act btn-ghost-act" @onclick="BackToList" title="رجوع">
+                        <i class="bi bi-arrow-right"></i>
+                        <span>رجوع</span>
+                    </button>
+                    @if (CanEditHeader && perms.CanEdit)
+                    {
+                        <button class="btn-act btn-primary-act" @onclick="SaveHeaderAsync" title="حفظ">
+                            <i class="bi bi-floppy-fill"></i>
+                            <span>حفظ</span>
+                        </button>
+                    }
+                    @if (!IsNew && CanEditHeader && perms.CanEdit)
+                    {
+                        <button class="btn-act btn-outline-act" @onclick="UpdateCostsAsync" title="تحديث التكاليف">
+                            <i class="bi bi-currency-dollar"></i>
+                            <span>تحديث التكاليف</span>
+                        </button>
+                    }
+                    @if (!IsNew && CanActivate && perms.CanEdit)
+                    {
+                        <button class="btn-act btn-success-act" @onclick="ActivateAsync">
+                            <i class="bi bi-check-circle-fill"></i>
+                            <span>@(bom.BOMStatus == 1 ? "تنشيط" : "إعادة تفعيل")</span>
+                        </button>
+                    }
+                    @if (!IsNew && CanStop && perms.CanEdit)
+                    {
+                        <button class="btn-act btn-warning-act" @onclick="StopAsync">
+                            <i class="bi bi-pause-circle-fill"></i>
+                            <span>إيقاف</span>
+                        </button>
+                    }
+                    @if (!IsNew && CanCancel && perms.CanDelete)
+                    {
+                        <button class="btn-act btn-danger-act" @onclick="CancelBomAsync">
+                            <i class="bi bi-x-circle-fill"></i>
+                            <span>إلغاء</span>
+                        </button>
+                    }
+                    @if (!IsNew && perms.CanAdd)
+                    {
+                        <button class="btn-act btn-ghost-act" @onclick="CopyBomAsync">
+                            <i class="bi bi-copy"></i>
+                            <span>نسخ كإصدار جديد</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- ===== Tabs ===== -->
+            <div class="tabs-bar">
+                <button class="tab-item @(currentTab == 1 ? "tab-active" : "")" @onclick="() => SetTab(1)">
+                    <i class="bi bi-card-list"></i>
+                    <span>البيانات الأساسية</span>
+                </button>
+                <button class="tab-item @(currentTab == 2 ? "tab-active" : "")" @onclick="() => SetTab(2)">
+                    <i class="bi bi-puzzle-fill"></i>
+                    <span>المكونات</span>
+                    @if (details.Any())
+                    {
+                        <span class="tab-badge">@details.Count</span>
+                    }
+                </button>
+                <button class="tab-item @(currentTab == 3 ? "tab-active" : "")" @onclick="() => SetTab(3)">
+                    <i class="bi bi-gear-fill"></i>
+                    <span>المراحل</span>
+                    @if (stages.Any())
+                    {
+                        <span class="tab-badge">@stages.Count</span>
+                    }
+                </button>
+                <button class="tab-item @(currentTab == 4 ? "tab-active" : "")" @onclick="() => SetTab(4)">
+                    <i class="bi bi-cash-stack"></i>
+                    <span>التكاليف</span>
+                </button>
+                <button class="tab-item @(currentTab == 5 ? "tab-active" : "")" @onclick="() => SetTab(5)">
+                    <i class="bi bi-journal-text"></i>
+                    <span>الملاحظات</span>
+                </button>
+                <button class="tab-item @(currentTab == 6 ? "tab-active" : "")" @onclick="() => SetTab(6)">
+                    <i class="bi bi-info-circle-fill"></i>
+                    <span>معلومات النظام</span>
+                </button>
+            </div>
+
+            <!-- ===== Tab Content ===== -->
+            <div class="tab-panel">
+
+                <!-- ===== Tab 1: Basic Info ===== -->
+                @if (currentTab == 1)
+                {
+                    <div class="section-card">
+                        <div class="section-card-header">
+                            <i class="bi bi-card-list"></i>
+                            البيانات الأساسية للوصفة
+                        </div>
+                        <div class="form-grid-2">
+                            <div class="form-group-modern">
+                                <label class="flabel required">اسم الوصفة</label>
+                                <input type="text" class="finput"
+                                       @bind="bom.BOMName"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                       placeholder="أدخل اسم الوصفة" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">المنتج النهائي</label>
+                                <select class="fselect"
+                                        @bind="bom.ProductItemID"
+                                        disabled="@(!CanEditHeader || IsProductLocked || !perms.CanEdit)">
+                                    <option value="0">-- اختر المنتج --</option>
+                                    @foreach (var item in productLookup)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                </select>
+                                @if (IsProductLocked)
+                                {
+                                    <span class="field-hint warning">
+                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                        لا يمكن تغيير المنتج بعد إضافة مكونات
+                                    </span>
+                                }
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">حجم الدفعة</label>
+                                <input type="number" step="0.0001" class="finput"
+                                       @bind="bom.BatchSize"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">وحدة الدفعة</label>
+                                <select class="fselect"
+                                        @bind="bom.BatchUnitID"
+                                        disabled="@(!CanEditHeader || !perms.CanEdit)">
+                                    <option value="0">-- اختر الوحدة --</option>
+                                    @foreach (var unit in unitLookup)
+                                    {
+                                        <option value="@unit.Id">@unit.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">الكمية الناتجة</label>
+                                <input type="number" step="0.0001" class="finput"
+                                       @bind="bom.OutputQty"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">وحدة الناتج</label>
+                                <select class="fselect"
+                                        @bind="bom.OutputUnitID"
+                                        disabled="@(!CanEditHeader || !perms.CanEdit)">
+                                    <option value="0">-- اختر الوحدة --</option>
+                                    @foreach (var unit in unitLookup)
+                                    {
+                                        <option value="@unit.Id">@unit.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">نسبة الهالك %</label>
+                                <input type="number" step="0.01" class="finput"
+                                       @bind="bom.WastePercent"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">الوقت المقدر (ساعة)</label>
+                                <input type="number" step="0.01" class="finput"
+                                       @bind="bom.EstimatedTime"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">تاريخ السريان من</label>
+                                <input type="date" class="finput"
+                                       value="@EffectiveFromText"
+                                       @oninput="(ChangeEventArgs e) => EffectiveFromText = e.Value?.ToString() ?? string.Empty"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">تاريخ السريان إلى</label>
+                                <input type="date" class="finput"
+                                       value="@EffectiveToText"
+                                       @oninput="(ChangeEventArgs e) => EffectiveToText = e.Value?.ToString() ?? string.Empty"
+                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- ===== Tab 2: Components ===== -->
+                @if (currentTab == 2)
+                {
+                    @if (IsNew)
+                    {
+                        <div class="alert-box alert-warning">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            يجب حفظ رأس الوصفة أولاً قبل إضافة المكونات
+                        </div>
+                    }
+
+                    <!-- Add/Edit Form -->
+                    <div class="sub-form-card">
+                        <div class="sub-form-header">
+                            <i class="bi bi-@(detailModel.BOMDetailID == 0 ? "plus-circle-fill" : "pencil-fill")"></i>
+                            @(detailModel.BOMDetailID == 0 ? "إضافة مكون جديد" : "تعديل مكون")
+                        </div>
+                        <div class="form-grid-3">
+                            <div class="form-group-modern">
+                                <label class="flabel">نوع المادة</label>
+                                <select class="fselect" @bind="detailModel.MaterialType"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="1">خامة</option>
+                                    <option value="2">تعبئة</option>
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">الصنف</label>
+                                <select class="fselect" @bind="detailModel.ItemID"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="0">-- اختر الصنف --</option>
+                                    @foreach (var item in materialLookup)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">الوحدة</label>
+                                <select class="fselect" @bind="detailModel.UnitID"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="0">-- اختر الوحدة --</option>
+                                    @foreach (var unit in unitLookup)
+                                    {
+                                        <option value="@unit.Id">@unit.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">الكمية</label>
+                                <input type="number" step="0.000001" class="finput"
+                                       @bind="detailModel.Quantity"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">الهالك %</label>
+                                <input type="number" step="0.01" class="finput"
+                                       @bind="detailModel.WastePercent"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">بديل الصنف</label>
+                                <select class="fselect" @bind="SubstituteItemIdValue"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="0">-- لا يوجد --</option>
+                                    @foreach (var item in materialLookup)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">الترتيب</label>
+                                <input type="number" class="finput"
+                                       @bind="detailModel.Sequence"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">رقم المرحلة</label>
+                                <input type="number" class="finput"
+                                       @bind="detailModel.StageNumber"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern center-content">
+                                <label class="flabel">خيارات</label>
+                                <label class="toggle-check">
+                                    <input type="checkbox"
+                                           @bind="detailModel.IsOptional"
+                                           disabled="@(!CanEditLines || !perms.CanEdit)" />
+                                    <span class="toggle-check-label">اختياري</span>
+                                </label>
+                            </div>
+                            <div class="form-group-modern fg-full">
+                                <label class="flabel">ملاحظات</label>
+                                <input class="finput" @bind="detailModel.Notes"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)"
+                                       placeholder="ملاحظات اختيارية..." />
+                            </div>
+                        </div>
+                        @if (CanEditLines && perms.CanEdit)
+                        {
+                            <div class="sub-form-actions">
+                                <button class="btn-act btn-success-act" @onclick="SaveDetailAsync">
+                                    <i class="bi bi-@(detailModel.BOMDetailID == 0 ? "plus-lg" : "check-lg")"></i>
+                                    @(detailModel.BOMDetailID == 0 ? "إضافة المكون" : "حفظ التعديل")
+                                </button>
+                                @if (detailModel.BOMDetailID != 0)
+                                {
+                                    <button class="btn-act btn-ghost-act" @onclick="ResetDetailForm">
+                                        <i class="bi bi-arrow-counterclockwise"></i> إلغاء
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Components Table -->
+                    <div class="data-card">
+                        <div class="data-card-header">
+                            <span>
+                                <i class="bi bi-list-ul" style="color:var(--c-primary)"></i>
+                                قائمة المكونات
+                            </span>
+                            <span class="count-badge-sm">@details.Count عنصر</span>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>النوع</th>
+                                        <th>الصنف</th>
+                                        <th class="tc">الوحدة</th>
+                                        <th class="tc">الكمية</th>
+                                        <th class="tc">الهالك%</th>
+                                        <th class="tc">الصافي</th>
+                                        <th class="tl">تكلفة الوحدة</th>
+                                        <th class="tl">تكلفة السطر</th>
+                                        <th class="tc">المرحلة</th>
+                                        <th class="tc">اختياري</th>
+                                        <th class="tc">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (details.Any())
+                                    {
+                                        @foreach (var row in details)
+                                        {
+                                            <tr>
+                                                <td class="row-num">@row.LineNumber</td>
+                                                <td>
+                                                    <span class="type-chip @(row.MaterialType == 1 ? "chip-raw" : "chip-pkg")">
+                                                        <i class="bi bi-@(row.MaterialType == 1 ? "box-fill" : "bag-fill")"></i>
+                                                        @row.MaterialTypeName
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="item-name">@row.ItemName</div>
+                                                    <div class="item-code">@row.ItemCode</div>
+                                                </td>
+                                                <td class="tc">@row.UnitName</td>
+                                                <td class="tc fw-600">@row.Quantity.ToString("N4")</td>
+                                                <td class="tc">@row.WastePercent.ToString("N2")%</td>
+                                                <td class="tc">@row.NetQuantity.ToString("N4")</td>
+                                                <td class="tl mono">@row.UnitCost.ToString("N4")</td>
+                                                <td class="tl">
+                                                    <span class="cost-chip">@row.LineCost.ToString("N2")</span>
+                                                </td>
+                                                <td class="tc">
+                                                    <span class="stage-num">@row.StageNumber</span>
+                                                </td>
+                                                <td class="tc">
+                                                    @if (row.IsOptional)
+                                                    {
+                                                        <span class="bool-yes"><i class="bi bi-check-circle-fill"></i></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="bool-no"><i class="bi bi-dash-circle"></i></span>
+                                                    }
+                                                </td>
+                                                <td class="tc">
+                                                    @if (CanEditLines && perms.CanEdit)
+                                                    {
+                                                        <div class="row-actions">
+                                                            <button class="row-btn edit-row-btn"
+                                                                    title="تعديل"
+                                                                    @onclick="() => EditDetail(row)">
+                                                                <i class="bi bi-pencil-fill"></i>
+                                                            </button>
+                                                            <button class="row-btn delete-row-btn"
+                                                                    title="حذف"
+                                                                    @onclick="() => DeleteDetailAsync(row.BOMDetailID)">
+                                                                <i class="bi bi-trash-fill"></i>
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="12" class="empty-row">
+                                                <i class="bi bi-inbox" style="font-size:1.5rem; display:block; margin-bottom:.5rem;"></i>
+                                                لا توجد مكونات بعد
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                <!-- ===== Tab 3: Stages ===== -->
+                @if (currentTab == 3)
+                {
+                    @if (IsNew)
+                    {
+                        <div class="alert-box alert-warning">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            يجب حفظ رأس الوصفة أولاً قبل إضافة المراحل
+                        </div>
+                    }
+
+                    <!-- Add/Edit Stage Form -->
+                    <div class="sub-form-card">
+                        <div class="sub-form-header">
+                            <i class="bi bi-@(stageModel.BOMStageID == 0 ? "plus-circle-fill" : "pencil-fill")"></i>
+                            @(stageModel.BOMStageID == 0 ? "إضافة مرحلة جديدة" : "تعديل مرحلة")
+                        </div>
+                        <div class="form-grid-3">
+                            <div class="form-group-modern">
+                                <label class="flabel required">المرحلة</label>
+                                <select class="fselect" @bind="stageModel.StageID"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="0">-- اختر المرحلة --</option>
+                                    @foreach (var st in stageLookup)
+                                    {
+                                        <option value="@st.Id">@st.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel required">الترتيب</label>
+                                <input type="number" class="finput" @bind="stageModel.StageOrder"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">المدة (ساعة)</label>
+                                <input type="number" step="0.01" class="finput" @bind="stageModel.Duration"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">درجة الحرارة</label>
+                                <input class="finput" @bind="stageModel.Temperature"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)"
+                                       placeholder="مثال: 180°C" />
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">السرعة</label>
+                                <input class="finput" @bind="stageModel.Speed"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)"
+                                       placeholder="مثال: 500 RPM" />
+                            </div>
+                            <div class="form-group-modern center-content">
+                                <label class="flabel">فحص الجودة</label>
+                                <label class="toggle-check">
+                                    <input type="checkbox"
+                                           @bind="stageModel.QualityCheckRequired"
+                                           disabled="@(!CanEditLines || !perms.CanEdit)" />
+                                    <span class="toggle-check-label">فحص جودة مطلوب</span>
+                                </label>
+                            </div>
+                            <div class="form-group-modern fg-full">
+                                <label class="flabel">ملاحظات فحص الجودة</label>
+                                <input class="finput" @bind="stageModel.QualityCheckNotes"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern fg-full">
+                                <label class="flabel">تعليمات المرحلة</label>
+                                <input class="finput" @bind="stageModel.Instructions"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                            <div class="form-group-modern fg-full">
+                                <label class="flabel">ملاحظات</label>
+                                <input class="finput" @bind="stageModel.Notes"
+                                       disabled="@(!CanEditLines || !perms.CanEdit)" />
+                            </div>
+                        </div>
+                        @if (CanEditLines && perms.CanEdit)
+                        {
+                            <div class="sub-form-actions">
+                                <button class="btn-act btn-success-act" @onclick="SaveStageAsync">
+                                    <i class="bi bi-@(stageModel.BOMStageID == 0 ? "plus-lg" : "check-lg")"></i>
+                                    @(stageModel.BOMStageID == 0 ? "إضافة المرحلة" : "حفظ التعديل")
+                                </button>
+                                @if (stageModel.BOMStageID != 0)
+                                {
+                                    <button class="btn-act btn-ghost-act" @onclick="ResetStageForm">
+                                        <i class="bi bi-arrow-counterclockwise"></i> إلغاء
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Stages Table -->
+                    <div class="data-card">
+                        <div class="data-card-header">
+                            <span>
+                                <i class="bi bi-list-ol" style="color:var(--c-primary)"></i>
+                                مراحل التصنيع
+                            </span>
+                            <span class="count-badge-sm">@stages.Count مرحلة</span>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th class="tc">الترتيب</th>
+                                        <th>المرحلة</th>
+                                        <th class="tc">المدة</th>
+                                        <th class="tc">الحرارة</th>
+                                        <th class="tc">السرعة</th>
+                                        <th class="tc">فحص جودة</th>
+                                        <th>ملاحظات الفحص</th>
+                                        <th class="tc">تحريك</th>
+                                        <th class="tc">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (stages.Any())
+                                    {
+                                        @foreach (var row in stages.OrderBy(x => x.StageOrder))
+                                        {
+                                            <tr>
+                                                <td class="tc">
+                                                    <span class="stage-order-badge">@row.StageOrder</span>
+                                                </td>
+                                                <td class="fw-600">@row.StageName</td>
+                                                <td class="tc">
+                                                    @if (row.Duration.HasValue)
+                                                    {
+                                                        <span class="duration-chip">@row.Duration.Value.ToString("N2") س</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted-sm">—</span>
+                                                    }
+                                                </td>
+                                                <td class="tc small-txt">@(row.Temperature ?? "—")</td>
+                                                <td class="tc small-txt">@(row.Speed ?? "—")</td>
+                                                <td class="tc">
+                                                    @if (row.QualityCheckRequired)
+                                                    {
+                                                        <span class="bool-yes"><i class="bi bi-check-circle-fill"></i></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="bool-no"><i class="bi bi-dash-circle"></i></span>
+                                                    }
+                                                </td>
+                                                <td class="small-txt">@(row.QualityCheckNotes ?? "—")</td>
+                                                <td class="tc">
+                                                    @if (CanEditLines && perms.CanEdit)
+                                                    {
+                                                        <div class="row-actions">
+                                                            <button class="row-btn move-btn"
+                                                                    title="أعلى"
+                                                                    disabled="@(row.StageOrder == 1)"
+                                                                    @onclick="() => MoveStageUpAsync(row)">
+                                                                <i class="bi bi-chevron-up"></i>
+                                                            </button>
+                                                            <button class="row-btn move-btn"
+                                                                    title="أسفل"
+                                                                    disabled="@(row.StageOrder == stages.Max(x => x.StageOrder))"
+                                                                    @onclick="() => MoveStageDownAsync(row)">
+                                                                <i class="bi bi-chevron-down"></i>
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                </td>
+                                                <td class="tc">
+                                                    @if (CanEditLines && perms.CanEdit)
+                                                    {
+                                                        <div class="row-actions">
+                                                            <button class="row-btn edit-row-btn"
+                                                                    title="تعديل"
+                                                                    @onclick="() => EditStage(row)">
+                                                                <i class="bi bi-pencil-fill"></i>
+                                                            </button>
+                                                            <button class="row-btn delete-row-btn"
+                                                                    title="حذف"
+                                                                    @onclick="() => DeleteStageAsync(row.BOMStageID)">
+                                                                <i class="bi bi-trash-fill"></i>
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="9" class="empty-row">
+                                                <i class="bi bi-inbox" style="font-size:1.5rem; display:block; margin-bottom:.5rem;"></i>
+                                                لا توجد مراحل بعد
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                <!-- ===== Tab 4: Costs ===== -->
+                @if (currentTab == 4)
+                {
+                    <div class="costs-summary-grid">
+                        <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:#eff6ff; color:#2563eb;">
+                                <i class="bi bi-box-fill"></i>
+                            </div>
+                            <div class="csc-label">تكلفة المواد الخام</div>
+                            <div class="csc-value" style="color:#2563eb;">@costs.RawMaterialCost.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:#fffbeb; color:#f59e0b;">
+                                <i class="bi bi-bag-fill"></i>
+                            </div>
+                            <div class="csc-label">تكلفة مواد التعبئة</div>
+                            <div class="csc-value" style="color:#f59e0b;">@costs.PackagingCost.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:#ecfdf5; color:#10b981;">
+                                <i class="bi bi-collection-fill"></i>
+                            </div>
+                            <div class="csc-label">إجمالي تكلفة المواد</div>
+                            <div class="csc-value" style="color:#10b981;">@costs.TotalMaterialCost.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:#f5f3ff; color:#2563eb;">
+                                <i class="bi bi-people-fill"></i>
+                            </div>
+                            <div class="csc-label">تكلفة العمالة</div>
+                            <div class="csc-value" style="color:#2563eb;">@bom.LaborCostPerBatch.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:#f5f3ff; color:#1d4ed8;">
+                                <i class="bi bi-gear-wide-connected"></i>
+                            </div>
+                            <div class="csc-label">المصاريف غير المباشرة</div>
+                            <div class="csc-value" style="color:#1d4ed8;">@bom.OverheadCostPerBatch.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card highlight-card">
+                            <div class="csc-icon" style="background:#d1fae5; color:#059669;">
+                                <i class="bi bi-cash-stack"></i>
+                            </div>
+                            <div class="csc-label">إجمالي تكلفة الدفعة</div>
+                            <div class="csc-value" style="color:#059669; font-size:1.6rem;">@costs.TotalBatchCost.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card highlight-card">
+                            <div class="csc-icon" style="background:#eef2ff; color:#4f46e5;">
+                                <i class="bi bi-tag-fill"></i>
+                            </div>
+                            <div class="csc-label">تكلفة الوحدة</div>
+                            <div class="csc-value" style="color:#4f46e5; font-size:1.6rem;">@costs.UnitCost.ToString("N4")</div>
+                            <div class="csc-currency">ج.م / وحدة</div>
+                        </div>
+                    </div>
+
+                    @if (CanEditHeader && perms.CanEdit)
+                    {
+                        <div class="section-card" style="margin-top:1.5rem;">
+                            <div class="section-card-header">
+                                <i class="bi bi-pencil-square"></i>
+                                تعديل تكاليف الدفعة
+                            </div>
+                            <div class="form-grid-2">
+                                <div class="form-group-modern">
+                                    <label class="flabel">تكلفة العمالة للدفعة (ج.م)</label>
+                                    <input type="number" step="0.01" class="finput"
+                                           @bind="bom.LaborCostPerBatch" />
+                                </div>
+                                <div class="form-group-modern">
+                                    <label class="flabel">المصاريف غير المباشرة للدفعة (ج.م)</label>
+                                    <input type="number" step="0.01" class="finput"
+                                           @bind="bom.OverheadCostPerBatch" />
+                                </div>
+                            </div>
+                            <div style="margin-top:1rem;">
+                                <button class="btn-act btn-primary-act" @onclick="SaveHeaderAndReloadCostsAsync">
+                                    <i class="bi bi-floppy-fill"></i>
+                                    حفظ بيانات التكاليف
+                                </button>
+                            </div>
+                        </div>
+                    }
+                }
+
+                <!-- ===== Tab 5: Notes ===== -->
+                @if (currentTab == 5)
+                {
+                    <div class="section-card">
+                        <div class="section-card-header">
+                            <i class="bi bi-journal-text"></i>
+                            الملاحظات والتعليمات
+                        </div>
+                        <div class="form-grid-1">
+                            <div class="form-group-modern">
+                                <label class="flabel">
+                                    <i class="bi bi-list-check" style="color:var(--c-primary)"></i>
+                                    تعليمات التصنيع
+                                </label>
+                                <textarea rows="3" class="ftextarea"
+                                          @bind="bom.Instructions"
+                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          placeholder="أدخل تعليمات التصنيع..."></textarea>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">
+                                    <i class="bi bi-shield-fill-exclamation" style="color:#ef4444"></i>
+                                    ملاحظات السلامة
+                                </label>
+                                <textarea rows="3" class="ftextarea"
+                                          @bind="bom.SafetyNotes"
+                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          placeholder="أدخل ملاحظات السلامة..."></textarea>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">
+                                    <i class="bi bi-patch-check-fill" style="color:#10b981"></i>
+                                    ملاحظات الجودة
+                                </label>
+                                <textarea rows="3" class="ftextarea"
+                                          @bind="bom.QualityNotes"
+                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          placeholder="أدخل ملاحظات الجودة..."></textarea>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">
+                                    <i class="bi bi-chat-text-fill" style="color:var(--c-secondary)"></i>
+                                    ملاحظات عامة
+                                </label>
+                                <textarea rows="3" class="ftextarea"
+                                          @bind="bom.Notes"
+                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          placeholder="أدخل أي ملاحظات إضافية..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- ===== Tab 6: Audit ===== -->
+                @if (currentTab == 6)
+                {
+                    <div class="audit-row">
+                        <div class="audit-card-modern">
+                            <div class="audit-card-icon primary">
+                                <i class="bi bi-person-fill-add"></i>
+                            </div>
+                            <div class="audit-card-content">
+                                <div class="audit-card-label">أنشئ بواسطة</div>
+                                <div class="audit-card-value">
+                                    @(auditInfo?.CreatedByName ?? "—")
+                                </div>
+                                <div class="audit-card-date">
+                                    <i class="bi bi-calendar3"></i>
+                                    @(auditInfo?.CreatedDate?.ToString("yyyy/MM/dd hh:mm tt") ?? "—")
+                                </div>
+                            </div>
+                        </div>
+                        <div class="audit-card-modern">
+                            <div class="audit-card-icon warning">
+                                <i class="bi bi-person-fill-gear"></i>
+                            </div>
+                            <div class="audit-card-content">
+                                <div class="audit-card-label">آخر تعديل بواسطة</div>
+                                <div class="audit-card-value">
+                                    @(string.IsNullOrWhiteSpace(auditInfo?.ModifiedByName) ? "—" : auditInfo.ModifiedByName)
+                                </div>
+                                <div class="audit-card-date">
+                                    <i class="bi bi-calendar3"></i>
+                                    @(auditInfo?.ModifiedDate?.ToString("yyyy/MM/dd hh:mm tt") ?? "—")
+                                </div>
+                            </div>
+                        </div>
+                        <div class="audit-card-modern">
+                            <div class="audit-card-icon success">
+                                <i class="bi bi-person-fill-check"></i>
+                            </div>
+                            <div class="audit-card-content">
+                                <div class="audit-card-label">اعتمد بواسطة</div>
+                                <div class="audit-card-value">
+                                    @(string.IsNullOrWhiteSpace(auditInfo?.ApprovedByName) ? "—" : auditInfo.ApprovedByName)
+                                </div>
+                                <div class="audit-card-date">
+                                    <i class="bi bi-calendar3"></i>
+                                    @(auditInfo?.ApprovedDate?.ToString("yyyy/MM/dd hh:mm tt") ?? "—")
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+            </div>
+        }
+    </div>
+}
+
+<style>
+    /* ===== Variables ===== */
+    :root {
+        --c-primary:      #4f46e5;
+        --c-primary-lt:   #eef2ff;
+        --c-primary-dk:   #3730a3;
+        --c-success:      #10b981;
+        --c-success-lt:   #ecfdf5;
+        --c-warning:      #f59e0b;
+        --c-warning-lt:   #fffbeb;
+        --c-danger:       #ef4444;
+        --c-danger-lt:    #fef2f2;
+        --c-info:         #0ea5e9;
+        --c-info-lt:      #f0f9ff;
+        --c-secondary:    #64748b;
+        --c-secondary-lt: #f1f5f9;
+        --c-surface:      #ffffff;
+        --c-bg:           #f8fafc;
+        --c-border:       #e2e8f0;
+        --c-text:         #0f172a;
+        --c-text-2:       #64748b;
+        --c-text-3:       #94a3b8;
+        --r-sm: 8px;
+        --r-md: 12px;
+        --r-lg: 16px;
+        --r-xl: 20px;
+        --sh-sm: 0 1px 3px rgba(0,0,0,.06);
+        --sh-md: 0 4px 16px rgba(0,0,0,.08);
+    }
+
+    /* ===== Page ===== */
+    .edit-page {
+        direction: rtl;
+        padding: 1.5rem;
+        background: var(--c-bg);
+        min-height: 100vh;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+
+    /* ===== No Access ===== */
+    .no-access-card {
+        text-align: center;
+        padding: 80px 20px;
+        background: white;
+        border-radius: var(--r-xl);
+        border: 1px solid var(--c-border);
+        max-width: 480px;
+        margin: 80px auto;
+        box-shadow: var(--sh-sm);
+    }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .no-access-card h4 { color: var(--c-text); margin-bottom: 20px; }
+    .btn-secondary-act {
+        background: var(--c-secondary-lt);
+        color: var(--c-secondary);
+        border: none;
+        padding: .6rem 1.4rem;
+        border-radius: var(--r-sm);
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+    }
+
+    /* ===== Loading ===== */
+    .loading-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: var(--r-lg);
+        box-shadow: var(--sh-sm);
+    }
+    .loader {
+        width: 40px; height: 40px;
+        border: 3px solid var(--c-border);
+        border-top-color: var(--c-primary);
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Edit Header ===== */
+    .edit-header {
+        background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk));
+        border-radius: var(--r-xl);
+        padding: 1.5rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        position: relative;
+        overflow: hidden;
+    }
+    .edit-header::before {
+        content: '';
+        position: absolute;
+        top: -50px; left: -50px;
+        width: 200px; height: 200px;
+        background: rgba(255,255,255,.05);
+        border-radius: 50%;
+    }
+    .edit-header-info { position: relative; z-index: 1; }
+    .edit-header-title-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .edit-header-icon {
+        width: 52px; height: 52px;
+        background: rgba(255,255,255,.15);
+        border-radius: var(--r-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: white;
+        flex-shrink: 0;
+    }
+    .edit-title {
+        color: white;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin: 0 0 .4rem;
+    }
+    .edit-meta {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        flex-wrap: wrap;
+    }
+    .meta-code {
+        background: rgba(255,255,255,.15);
+        color: white;
+        font-size: .78rem;
+        font-weight: 700;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        font-family: monospace;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+    }
+    .meta-version {
+        background: rgba(255,255,255,.1);
+        color: rgba(255,255,255,.85);
+        font-size: .78rem;
+        font-weight: 600;
+        padding: .2rem .65rem;
+        border-radius: 20px;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+    }
+    .status-chip-header {
+        font-size: .75rem;
+        font-weight: 700;
+        padding: .22rem .7rem;
+        border-radius: 20px;
+    }
+    .s-draft-h    { background: rgba(255,255,255,.2);  color: white; }
+    .s-active-h   { background: #d1fae5; color: #065f46; }
+    .s-paused-h   { background: #fef3c7; color: #92400e; }
+    .s-cancelled-h { background: #fee2e2; color: #991b1b; }
+
+    .active-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        font-size: .75rem;
+        font-weight: 600;
+        padding: .22rem .65rem;
+        border-radius: 20px;
+    }
+    .chip-active   { background: #d1fae5; color: #065f46; }
+    .chip-inactive { background: #fee2e2; color: #991b1b; }
+    .chip-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .chip-active .chip-dot   { background: #10b981; animation: pulse-dot 1.5s infinite; }
+    .chip-inactive .chip-dot { background: #ef4444; }
+
+    @@keyframes pulse-dot {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,.5); }
+        50%       { box-shadow: 0 0 0 4px rgba(16,185,129,0); }
+    }
+
+    .edit-header-actions {
+        display: flex;
+        gap: .6rem;
+        flex-wrap: wrap;
+        position: relative;
+        z-index: 1;
+        align-items: center;
+    }
+
+    /* ===== Action Buttons ===== */
+    .btn-act {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .55rem 1.1rem;
+        border-radius: var(--r-sm);
+        font-size: .82rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all .2s ease;
+        white-space: nowrap;
+    }
+    .btn-act:hover { transform: translateY(-1px); }
+    .btn-act:active { transform: translateY(0); }
+
+    .btn-primary-act {
+        background: white;
+        color: var(--c-primary);
+        box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    }
+    .btn-primary-act:hover { background: var(--c-primary-lt); }
+
+    .btn-success-act {
+        background: linear-gradient(135deg, var(--c-success), #059669);
+        color: white;
+        box-shadow: 0 3px 10px rgba(16,185,129,.3);
+    }
+
+    .btn-warning-act {
+        background: linear-gradient(135deg, var(--c-warning), #d97706);
+        color: white;
+        box-shadow: 0 3px 10px rgba(245,158,11,.3);
+    }
+
+    .btn-danger-act {
+        background: linear-gradient(135deg, var(--c-danger), #dc2626);
+        color: white;
+        box-shadow: 0 3px 10px rgba(239,68,68,.3);
+    }
+
+    .btn-outline-act {
+        background: rgba(255,255,255,.12);
+        color: white;
+        border: 1.5px solid rgba(255,255,255,.3);
+    }
+    .btn-outline-act:hover { background: rgba(255,255,255,.2); }
+
+    .btn-ghost-act {
+        background: rgba(255,255,255,.1);
+        color: white;
+        border: 1.5px solid rgba(255,255,255,.2);
+    }
+    .btn-ghost-act:hover { background: rgba(255,255,255,.18); }
+
+    /* ===== Tabs ===== */
+    .tabs-bar {
+        background: var(--c-surface);
+        border-radius: var(--r-md);
+        padding: .5rem;
+        display: flex;
+        gap: .3rem;
+        flex-wrap: wrap;
+        box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border);
+    }
+    .tab-item {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .55rem 1rem;
+        border: none;
+        background: transparent;
+        border-radius: var(--r-sm);
+        font-size: .83rem;
+        font-weight: 600;
+        color: var(--c-text-2);
+        cursor: pointer;
+        transition: all .2s;
+        position: relative;
+    }
+    .tab-item:hover { background: var(--c-primary-lt); color: var(--c-primary); }
+    .tab-item.tab-active {
+        background: var(--c-primary);
+        color: white;
+        box-shadow: 0 3px 10px rgba(79,70,229,.3);
+    }
+    .tab-badge {
+        background: rgba(255,255,255,.25);
+        color: white;
+        font-size: .68rem;
+        font-weight: 700;
+        padding: .1rem .45rem;
+        border-radius: 20px;
+        min-width: 20px;
+        text-align: center;
+    }
+    .tab-item:not(.tab-active) .tab-badge {
+        background: var(--c-primary-lt);
+        color: var(--c-primary);
+    }
+
+    /* ===== Tab Panel ===== */
+    .tab-panel {
+        background: var(--c-surface);
+        border-radius: var(--r-md);
+        box-shadow: var(--sh-sm);
+        border: 1px solid var(--c-border);
+        overflow: hidden;
+    }
+
+    /* ===== Section Card ===== */
+    .section-card { padding: 1.5rem; }
+    .section-card-header {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        font-size: .88rem;
+        font-weight: 700;
+        color: var(--c-text);
+        margin-bottom: 1.25rem;
+        padding-bottom: .85rem;
+        border-bottom: 2px solid var(--c-primary-lt);
+    }
+    .section-card-header i { color: var(--c-primary); font-size: 1rem; }
+
+    /* ===== Form Grids ===== */
+    .form-grid-1 { display: flex; flex-direction: column; gap: 1rem; }
+    .form-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    .form-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .form-group-modern { display: flex; flex-direction: column; gap: .4rem; }
+    .fg-full { grid-column: 1 / -1; }
+    .center-content { justify-content: center; }
+
+    .flabel {
+        font-size: .78rem;
+        font-weight: 700;
+        color: var(--c-text-2);
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+    }
+    .flabel.required::after { content: ' *'; color: var(--c-danger); }
+
+    .finput,
+    .fselect,
+    .ftextarea {
+        border: 1.5px solid var(--c-border);
+        border-radius: var(--r-sm);
+        padding: .55rem .85rem;
+        font-size: .85rem;
+        color: var(--c-text);
+        background: #fafafa;
+        transition: all .2s;
+        outline: none;
+        width: 100%;
+        font-family: inherit;
+    }
+    .finput:focus, .fselect:focus, .ftextarea:focus {
+        border-color: var(--c-primary);
+        background: white;
+        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+    }
+    .finput:disabled, .fselect:disabled, .ftextarea:disabled {
+        background: #f1f5f9;
+        color: #94a3b8;
+        cursor: not-allowed;
+        border-color: #e2e8f0;
+    }
+    .ftextarea { resize: vertical; min-height: 90px; }
+
+    .field-hint {
+        font-size: .74rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+    }
+    .field-hint.warning { color: #d97706; }
+
+    .toggle-check {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        cursor: pointer;
+        padding: .5rem .85rem;
+        border: 1.5px solid var(--c-border);
+        border-radius: var(--r-sm);
+        background: #fafafa;
+        transition: all .2s;
+    }
+    .toggle-check:hover { border-color: var(--c-primary); }
+    .toggle-check input[type="checkbox"] {
+        width: 16px; height: 16px;
+        accent-color: var(--c-primary);
+        cursor: pointer;
+    }
+    .toggle-check-label { font-size: .83rem; color: var(--c-text-2); font-weight: 500; cursor: pointer; }
+
+    /* ===== Sub Form Card ===== */
+    .sub-form-card {
+        background: #f9fafb;
+        border: 1.5px solid var(--c-border);
+        border-radius: var(--r-md);
+        margin: 1.25rem;
+        overflow: hidden;
+    }
+    .sub-form-header {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .9rem 1.25rem;
+        background: var(--c-primary-lt);
+        color: var(--c-primary);
+        font-size: .88rem;
+        font-weight: 700;
+        border-bottom: 1px solid #c7d2fe;
+    }
+    .sub-form-card .form-grid-3 { padding: 1.25rem; }
+    .sub-form-actions {
+        display: flex;
+        gap: .6rem;
+        padding: .9rem 1.25rem;
+        border-top: 1px solid var(--c-border);
+        background: white;
+        justify-content: flex-end;
+    }
+    .sub-form-actions .btn-act { font-size: .83rem; }
+
+    /* ===== Data Card (Table) ===== */
+    .data-card {
+        margin: 0 1.25rem 1.25rem;
+        border: 1px solid var(--c-border);
+        border-radius: var(--r-md);
+        overflow: hidden;
+    }
+    .data-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: .8rem 1.2rem;
+        background: #fafafa;
+        border-bottom: 1px solid var(--c-border);
+        font-size: .85rem;
+        font-weight: 700;
+        color: var(--c-text);
+    }
+    .count-badge-sm {
+        background: var(--c-primary-lt);
+        color: var(--c-primary);
+        font-size: .73rem;
+        font-weight: 700;
+        padding: .18rem .55rem;
+        border-radius: 20px;
+    }
+
+    /* ===== Modern Table ===== */
+    .table-scroll { overflow-x: auto; }
+    .modern-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .modern-table thead th {
+        background: #f8fafc;
+        padding: .75rem 1rem;
+        font-size: .74rem;
+        font-weight: 700;
+        color: var(--c-text-3);
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        border-bottom: 2px solid var(--c-border);
+        text-align: right;
+        white-space: nowrap;
+    }
+    .modern-table thead th.tc { text-align: center; }
+    .modern-table thead th.tl { text-align: left; }
+    .modern-table tbody tr {
+        border-bottom: 1px solid #f1f5f9;
+        transition: background .15s;
+    }
+    .modern-table tbody tr:last-child { border-bottom: none; }
+    .modern-table tbody tr:hover { background: var(--c-primary-lt); }
+    .modern-table tbody td {
+        padding: .78rem 1rem;
+        font-size: .84rem;
+        color: var(--c-text);
+        vertical-align: middle;
+    }
+    .modern-table tbody td.tc { text-align: center; }
+    .modern-table tbody td.tl { text-align: left; }
+
+    /* ===== Table Cell Styles ===== */
+    .row-num { color: var(--c-text-3); font-weight: 600; font-size: .8rem; }
+    .fw-600 { font-weight: 600; }
+    .mono { font-family: monospace; }
+    .small-txt { font-size: .8rem; color: var(--c-text-2); }
+    .text-muted-sm { color: var(--c-text-3); font-size: .8rem; }
+
+    .type-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .22rem .6rem;
+        border-radius: 6px;
+        font-size: .75rem;
+        font-weight: 700;
+    }
+    .chip-raw { background: var(--c-info-lt);    color: var(--c-info); }
+    .chip-pkg { background: var(--c-warning-lt); color: #d97706; }
+
+    .item-name { font-weight: 600; font-size: .84rem; }
+    .item-code { font-size: .73rem; color: var(--c-text-3); font-family: monospace; margin-top: .1rem; }
+
+    .cost-chip {
+        background: var(--c-success-lt);
+        color: var(--c-success);
+        font-weight: 700;
+        font-size: .84rem;
+        padding: .18rem .55rem;
+        border-radius: 6px;
+        font-family: monospace;
+    }
+
+    .stage-num {
+        background: var(--c-secondary-lt);
+        color: var(--c-secondary);
+        font-weight: 700;
+        font-size: .8rem;
+        padding: .18rem .5rem;
+        border-radius: 6px;
+    }
+    .stage-order-badge {
+        background: var(--c-primary-lt);
+        color: var(--c-primary);
+        font-weight: 800;
+        font-size: .85rem;
+        padding: .25rem .65rem;
+        border-radius: 8px;
+        display: inline-block;
+    }
+    .duration-chip {
+        background: var(--c-info-lt);
+        color: var(--c-info);
+        font-size: .78rem;
+        font-weight: 600;
+        padding: .18rem .55rem;
+        border-radius: 6px;
+    }
+
+    .bool-yes { color: var(--c-success); font-size: 1rem; }
+    .bool-no  { color: var(--c-text-3);  font-size: 1rem; }
+
+    /* ===== Row Action Buttons ===== */
+    .row-actions { display: flex; gap: .35rem; justify-content: center; }
+    .row-btn {
+        width: 30px; height: 30px;
+        border-radius: 7px;
+        border: none;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .85rem;
+        cursor: pointer;
+        transition: all .2s;
+    }
+    .row-btn:disabled { opacity: .35; cursor: not-allowed; transform: none !important; }
+
+    .edit-row-btn   { color: var(--c-primary); }
+    .edit-row-btn:hover   { background: var(--c-primary-lt); transform: scale(1.1); }
+    .delete-row-btn { color: var(--c-danger); }
+    .delete-row-btn:hover { background: var(--c-danger-lt);  transform: scale(1.1); }
+    .move-btn       { color: var(--c-secondary); }
+    .move-btn:hover:not(:disabled) { background: var(--c-secondary-lt); transform: scale(1.1); }
+
+    /* ===== Alerts ===== */
+    .alert-box {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .85rem 1.25rem;
+        border-radius: var(--r-sm);
+        font-size: .85rem;
+        font-weight: 500;
+        margin: 1.25rem;
+    }
+    .alert-warning {
+        background: var(--c-warning-lt);
+        border: 1px solid #fde68a;
+        color: #92400e;
+    }
+
+    /* ===== Costs Summary ===== */
+    .costs-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        padding: 1.5rem;
+    }
+    .cost-summary-card {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--r-md);
+        padding: 1.25rem;
+        text-align: center;
+        transition: all .2s;
+        box-shadow: var(--sh-sm);
+    }
+    .cost-summary-card:hover { box-shadow: var(--sh-md); transform: translateY(-2px); }
+    .highlight-card { border-width: 2px; border-color: var(--c-border); }
+
+    .csc-icon {
+        width: 44px; height: 44px;
+        border-radius: var(--r-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        margin: 0 auto .85rem;
+    }
+    .csc-label {
+        font-size: .73rem;
+        font-weight: 600;
+        color: var(--c-text-3);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        margin-bottom: .5rem;
+    }
+    .csc-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        line-height: 1;
+        margin-bottom: .3rem;
+        font-family: monospace;
+    }
+    .csc-currency {
+        font-size: .72rem;
+        color: var(--c-text-3);
+        font-weight: 500;
+    }
+
+    /* ===== Audit Cards ===== */
+    .audit-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        padding: 1.5rem;
+    }
+    .audit-card-modern {
+        background: var(--c-surface);
+        border: 1px solid var(--c-border);
+        border-radius: var(--r-md);
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: .5rem;
+        box-shadow: var(--sh-sm);
+        transition: all .2s;
+    }
+    .audit-card-modern:hover { box-shadow: var(--sh-md); transform: translateY(-2px); }
+
+    .audit-card-icon {
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        margin-bottom: .5rem;
+    }
+    .audit-card-icon.primary   { background: var(--c-primary-lt);   color: var(--c-primary); }
+    .audit-card-icon.warning   { background: var(--c-warning-lt);   color: var(--c-warning); }
+    .audit-card-icon.success   { background: var(--c-success-lt);   color: var(--c-success); }
+
+    .audit-card-label {
+        font-size: .72rem;
+        font-weight: 700;
+        color: var(--c-text-3);
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .audit-card-value {
+        font-size: .95rem;
+        font-weight: 700;
+        color: var(--c-text);
+    }
+    .audit-card-date {
+        font-size: .74rem;
+        color: var(--c-text-3);
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+    }
+
+    /* ===== Status Classes ===== */
+    .s-draft     { background: #f1f5f9; color: #64748b; }
+    .s-active    { background: var(--c-success-lt); color: #059669; }
+    .s-paused    { background: var(--c-warning-lt); color: #d97706; }
+    .s-cancelled { background: var(--c-danger-lt);  color: #dc2626; }
+
+    /* ===== Responsive ===== */
+    @@media (max-width: 1024px) {
+        .form-grid-3 { grid-template-columns: repeat(2, 1fr); }
+        .audit-row   { grid-template-columns: 1fr 1fr; }
+    }
+    @@media (max-width: 768px) {
+        .edit-page { padding: 1rem; }
+        .edit-header { flex-direction: column; align-items: flex-start; }
+        .edit-header-actions { width: 100%; }
+        .form-grid-2 { grid-template-columns: 1fr; }
+        .form-grid-3 { grid-template-columns: 1fr; }
+        .audit-row   { grid-template-columns: 1fr; }
+        .costs-summary-grid { grid-template-columns: repeat(2,1fr); }
+        .tabs-bar { overflow-x: auto; flex-wrap: nowrap; padding: .35rem; }
+        .tab-item { padding: .5rem .85rem; white-space: nowrap; font-size: .78rem; }
+    }
+</style>
+
+@code {
+    [Parameter] public int BOMID { get; set; }
+
+    private ModulePermissionDto? perms;
+    private BOMEditDto bom = new();
+    private List<BOMDetailDto> details = new();
+    private List<BOMStageDto> stages = new();
+    private BOMCostSummaryDto costs = new();
+    private BOMAuditDto? auditInfo;
+
+    private List<BOMLookupDto> productLookup  = new();
+    private List<BOMLookupDto> unitLookup     = new();
+    private List<BOMLookupDto> stageLookup    = new();
+    private List<BOMLookupDto> materialLookup = new();
+
+    private BOMDetailDto detailModel = new();
+    private BOMStageDto  stageModel  = new();
+
+    private bool isLoading     = true;
+    private bool lookupsLoaded = false;
+    private int  currentTab    = 1;
+
+    private bool IsNew         => BOMID == 0;
+    private bool IsReadOnly    => !IsNew && (bom.BOMStatus == 2 || bom.BOMStatus == 4);
+    private bool CanEditHeader => IsNew || bom.BOMStatus == 1 || bom.BOMStatus == 3;
+    private bool CanEditLines  => !IsNew && (bom.BOMStatus == 1 || bom.BOMStatus == 3);
+    private bool CanActivate   => !IsNew && (bom.BOMStatus == 1 || bom.BOMStatus == 3);
+    private bool CanStop       => !IsNew && bom.BOMStatus == 2;
+    private bool CanCancel     => !IsNew && (bom.BOMStatus == 1 || bom.BOMStatus == 3);
+    private bool IsProductLocked => !IsNew && details.Any();
+
+    private int  CurrentUserId     => UserSession.CurrentUserID;
+    private int? CurrentEmployeeId => UserSession.CurrentEmployeeID;
+
+    private string PageTitle => IsNew ? "إضافة وصفة تصنيع"
+                              : IsReadOnly ? "عرض وصفة تصنيع"
+                              : "تعديل وصفة تصنيع";
+
+    private string EffectiveFromText
+{
+    get => bom.EffectiveFrom?.ToString("yyyy-MM-dd") ?? "";
+    set
+    {
+        var v = value ?? "";
+        if (string.IsNullOrWhiteSpace(v)) bom.EffectiveFrom = null;
+        else if (DateTime.TryParse(v, out var d)) bom.EffectiveFrom = d;
+    }
+}
+
+    private string EffectiveToText
+{
+    get => bom.EffectiveTo?.ToString("yyyy-MM-dd") ?? "";
+    set
+    {
+        var v = value ?? "";
+        if (string.IsNullOrWhiteSpace(v)) bom.EffectiveTo = null;
+        else if (DateTime.TryParse(v, out var d)) bom.EffectiveTo = d;
+    }
+}
+
+    private int SubstituteItemIdValue
+    {
+        get => detailModel.SubstituteItemID ?? 0;
+        set => detailModel.SubstituteItemID = value == 0 ? null : value;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        perms = PermissionService.GetModule("SCR_BOM");
+
+        if (perms == null || !perms.CanView) { isLoading = false; return; }
+
+        if (!lookupsLoaded) { await LoadLookupsAsync(); lookupsLoaded = true; }
+
+        await LoadPageAsync();
+        isLoading = false;
+    }
+
+    private void SetTab(int t) => currentTab = t;
+
+    private async Task LoadLookupsAsync()
+    {
+        productLookup  = await BomService.GetProductItemsLookupAsync();
+        unitLookup     = await BomService.GetUnitsLookupAsync();
+        stageLookup    = await BomService.GetStagesLookupAsync();
+        materialLookup = await BomService.GetMaterialItemsLookupAsync();
+    }
+
+    private async Task LoadPageAsync()
+    {
+        if (IsNew)
+        {
+            bom = new BOMEditDto
+            {
+                BOMVersion    = 1,
+                BOMStatus     = 1,
+                WastePercent  = 3,
+                IsActive      = true,
+                EffectiveFrom = DateTime.Today
+            };
+            details   = new();
+            stages    = new();
+            costs     = new();
+            auditInfo = null;
+            ResetDetailForm();
+            ResetStageForm();
+            return;
+        }
+
+        var data = await BomService.GetBOMByIdAsync(BOMID);
+        if (data == null) { await Alert("الوصفة غير موجودة"); BackToList(); return; }
+
+        bom = data;
+        await ReloadDetailsAsync();
+        await ReloadStagesAsync();
+        await ReloadCostsAsync();
+        await ReloadAuditAsync();
+        ResetDetailForm();
+        ResetStageForm();
+    }
+
+    private async Task ReloadDetailsAsync() =>
+        details = IsNew ? new() : await BomService.GetBOMDetailsAsync(BOMID);
+
+    private async Task ReloadStagesAsync() =>
+        stages = IsNew ? new() : await BomService.GetBOMStagesAsync(BOMID);
+
+    private async Task ReloadCostsAsync() =>
+        costs = IsNew ? new() : await BomService.GetBOMCostSummaryAsync(BOMID);
+
+    private async Task ReloadAuditAsync() =>
+        auditInfo = IsNew ? null : await BomService.GetBOMAuditAsync(BOMID);
+
+    private async Task SaveHeaderAsync()
+    {
+        if (!await ValidateHeaderAsync()) return;
+        if (IsNew)
+        {
+            var newId = await BomService.InsertBOMAsync(bom, CurrentUserId);
+            await Alert("تم حفظ الوصفة بنجاح ✅");
+            NavigationManager.NavigateTo($"/boms/edit/{newId}", true);
+            return;
+        }
+        await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        await ReloadCostsAsync();
+        await ReloadAuditAsync();
+        await Alert("تم حفظ التعديلات بنجاح ✅");
+    }
+
+    private async Task SaveHeaderAndReloadCostsAsync()
+    {
+        if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        if (!await ValidateHeaderAsync()) return;
+        await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        await ReloadCostsAsync();
+        await ReloadAuditAsync();
+        await Alert("تم حفظ بيانات التكاليف بنجاح ✅");
+    }
+
+    private async Task<bool> ValidateHeaderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(bom.BOMName))  { currentTab = 1; await Alert("يجب إدخال اسم الوصفة");             return false; }
+        if (bom.ProductItemID <= 0)                   { currentTab = 1; await Alert("يجب اختيار المنتج");               return false; }
+        if (bom.BatchSize     <= 0)                   { currentTab = 1; await Alert("يجب إدخال حجم دفعة أكبر من صفر"); return false; }
+        if (bom.BatchUnitID   <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الدفعة");          return false; }
+        if (bom.OutputQty     <= 0)                   { currentTab = 1; await Alert("يجب إدخال كمية ناتجة أكبر من صفر"); return false; }
+        if (bom.OutputUnitID  <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الناتج");          return false; }
+        return true;
+    }
+
+    private async Task SaveDetailAsync()
+    {
+        if (IsNew)                    { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        if (detailModel.ItemID <= 0)  { await Alert("يجب اختيار الصنف");     return; }
+        if (detailModel.UnitID <= 0)  { await Alert("يجب اختيار الوحدة");    return; }
+        if (detailModel.Quantity <= 0){ await Alert("يجب إدخال كمية أكبر من صفر"); return; }
+        if (detailModel.StageNumber <= 0) detailModel.StageNumber = 1;
+
+        var dup = await BomService.IsDuplicateItemAsync(BOMID, detailModel.ItemID, detailModel.BOMDetailID);
+        if (dup) { await Alert("هذا الصنف موجود بالفعل داخل الوصفة"); return; }
+
+        detailModel.BOMID = BOMID;
+
+        if (detailModel.BOMDetailID == 0)
+            await BomService.InsertBOMDetailAsync(detailModel, CurrentUserId);
+        else
+            await BomService.UpdateBOMDetailAsync(detailModel, CurrentUserId);
+
+        await ReloadDetailsAsync();
+        await ReloadCostsAsync();
+        ResetDetailForm();
+    }
+
+    private void EditDetail(BOMDetailDto row)
+    {
+        detailModel = new BOMDetailDto
+        {
+            BOMDetailID       = row.BOMDetailID,
+            BOMID             = row.BOMID,
+            LineNumber        = row.LineNumber,
+            ItemID            = row.ItemID,
+            ItemCode          = row.ItemCode,
+            ItemName          = row.ItemName,
+            MaterialType      = row.MaterialType,
+            MaterialTypeName  = row.MaterialTypeName,
+            UnitID            = row.UnitID,
+            UnitName          = row.UnitName,
+            Quantity          = row.Quantity,
+            WastePercent      = row.WastePercent,
+            NetQuantity       = row.NetQuantity,
+            UnitCost          = row.UnitCost,
+            LineCost          = row.LineCost,
+            IsOptional        = row.IsOptional,
+            SubstituteItemID  = row.SubstituteItemID,
+            SubstituteItemName = row.SubstituteItemName,
+            Sequence          = row.Sequence,
+            StageNumber       = row.StageNumber,
+            Notes             = row.Notes
+        };
+    }
+
+    private async Task DeleteDetailAsync(int id)
+    {
+        if (!await Confirm("هل تريد حذف هذا المكون؟")) return;
+        await BomService.DeleteBOMDetailAsync(id, CurrentUserId);
+        await ReloadDetailsAsync();
+        await ReloadCostsAsync();
+        ResetDetailForm();
+    }
+
+    private void ResetDetailForm() =>
+        detailModel = new BOMDetailDto
+        {
+            BOMID       = BOMID,
+            MaterialType = 1,
+            WastePercent = 0,
+            StageNumber  = 1,
+            Sequence     = 0,
+            IsOptional   = false
+        };
+
+    private async Task SaveStageAsync()
+    {
+        if (IsNew)                     { await Alert("يجب حفظ الوصفة أولاً");          return; }
+        if (stageModel.StageID <= 0)   { await Alert("يجب اختيار المرحلة");            return; }
+        if (stageModel.StageOrder <= 0){ await Alert("يجب إدخال ترتيب أكبر من صفر");  return; }
+
+        var dupStage = await BomService.IsDuplicateStageAsync(BOMID, stageModel.StageID, stageModel.BOMStageID);
+        if (dupStage) { await Alert("هذه المرحلة موجودة بالفعل داخل الوصفة"); return; }
+
+        var dupOrder = await BomService.IsDuplicateStageOrderAsync(BOMID, stageModel.StageOrder, stageModel.BOMStageID);
+        if (dupOrder) { await Alert("رقم الترتيب مستخدم مسبقاً"); return; }
+
+        stageModel.BOMID = BOMID;
+
+        if (stageModel.BOMStageID == 0)
+            await BomService.InsertBOMStageAsync(stageModel, CurrentUserId);
+        else
+            await BomService.UpdateBOMStageAsync(stageModel, CurrentUserId);
+
+        await ReloadStagesAsync();
+        ResetStageForm();
+    }
+
+    private void EditStage(BOMStageDto row) =>
+        stageModel = new BOMStageDto
+        {
+            BOMStageID           = row.BOMStageID,
+            BOMID                = row.BOMID,
+            StageID              = row.StageID,
+            StageName            = row.StageName,
+            StageOrder           = row.StageOrder,
+            Duration             = row.Duration,
+            Temperature          = row.Temperature,
+            Speed                = row.Speed,
+            QualityCheckRequired = row.QualityCheckRequired,
+            QualityCheckNotes    = row.QualityCheckNotes,
+            Instructions         = row.Instructions,
+            Notes                = row.Notes
+        };
+
+    private async Task DeleteStageAsync(int id)
+    {
+        if (!await Confirm("هل تريد حذف هذه المرحلة؟")) return;
+        await BomService.DeleteBOMStageAsync(id, CurrentUserId);
+        await ReloadStagesAsync();
+        ResetStageForm();
+    }
+
+    private void ResetStageForm() =>
+        stageModel = new BOMStageDto
+        {
+            BOMID      = BOMID,
+            StageOrder = stages.Any() ? stages.Max(x => x.StageOrder) + 1 : 1
+        };
+
+    private async Task MoveStageUpAsync(BOMStageDto row)
+    {
+        var other = stages.FirstOrDefault(x => x.StageOrder == row.StageOrder - 1);
+        if (other == null) return;
+        await BomService.SwapStageOrderAsync(BOMID, row.BOMStageID, row.StageOrder, other.BOMStageID, other.StageOrder);
+        await ReloadStagesAsync();
+    }
+
+    private async Task MoveStageDownAsync(BOMStageDto row)
+    {
+        var other = stages.FirstOrDefault(x => x.StageOrder == row.StageOrder + 1);
+        if (other == null) return;
+        await BomService.SwapStageOrderAsync(BOMID, row.BOMStageID, row.StageOrder, other.BOMStageID, other.StageOrder);
+        await ReloadStagesAsync();
+    }
+
+    private async Task ActivateAsync()
+    {
+        if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        var existing = await BomService.CheckActiveVersionExistsAsync(bom.ProductItemID, bom.BOMID);
+        if (existing.Exists)
+        {
+            if (!await Confirm($"يوجد إصدار نشط ({existing.ExistingBOMCode}). هل تريد إيقافه وتنشيط هذا الإصدار؟"))
+                return;
+            var r = await BomService.ActivateAndDeactivateOldAsync(bom.BOMID, existing.ExistingBOMID, CurrentUserId, CurrentEmployeeId);
+            await Alert(r.Message);
+            if (r.Success) await LoadPageAsync();
+            return;
+        }
+        var result = await BomService.ChangeStatusAsync(bom.BOMID, 2, CurrentUserId, CurrentEmployeeId);
+        await Alert(result.Message);
+        if (result.Success) await LoadPageAsync();
+    }
+
+    private async Task StopAsync()
+    {
+        if (!await Confirm("هل تريد إيقاف هذه الوصفة؟")) return;
+        var r = await BomService.ChangeStatusAsync(bom.BOMID, 3, CurrentUserId, CurrentEmployeeId);
+        await Alert(r.Message);
+        if (r.Success) await LoadPageAsync();
+    }
+
+    private async Task CancelBomAsync()
+    {
+        if (!await Confirm("هل تريد إلغاء هذه الوصفة؟")) return;
+        var r = await BomService.SoftDeleteBOMAsync(bom.BOMID, CurrentUserId);
+        await Alert(r.Message);
+        if (r.Success) await LoadPageAsync();
+    }
+
+    private async Task CopyBomAsync()
+    {
+        if (!await Confirm("سيتم إنشاء نسخة جديدة. هل تريد المتابعة؟")) return;
+        var r = await BomService.CopyBOMAsync(bom.BOMID, CurrentUserId);
+        await Alert(r.Message);
+        if (r.Success) NavigationManager.NavigateTo($"/boms/edit/{r.NewBOMID}", true);
+    }
+
+    private async Task UpdateCostsAsync()
+    {
+        if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        if (!await Confirm("سيتم تحديث تكاليف المكونات من أسعار المواد الحالية. هل تريد المتابعة؟")) return;
+        await BomService.UpdateBOMCostsAsync(BOMID, CurrentUserId);
+        await ReloadDetailsAsync();
+        await ReloadCostsAsync();
+        await Alert("تم تحديث التكاليف بنجاح ✅");
+        currentTab = 4;
+    }
+
+    private void BackToList() => NavigationManager.NavigateTo("/boms");
+    private async Task Alert(string msg) => await JS.InvokeVoidAsync("alert", msg);
+    private async Task<bool> Confirm(string msg) => await JS.InvokeAsync<bool>("confirm", msg);
+
+    private string GetStatusName(int s) => s switch
+    {
+        1 => "مسودة", 2 => "نشط", 3 => "متوقف", 4 => "ملغي", _ => "—"
+    };
+
+    private string GetStatusClass(int s) => s switch
+    {
+        1 => "s-draft", 2 => "s-active", 3 => "s-paused", 4 => "s-cancelled", _ => "s-draft"
+    };
+}

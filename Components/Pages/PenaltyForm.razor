@@ -1,0 +1,271 @@
+﻿@page "/penalties/new"
+@page "/penalties/edit/{RecordId:int}"
+@page "/penalties/view/{RecordId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PenaltyService PenaltyService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !HasAccess())
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/penalties")'>العودة</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else
+{
+    <div class="form-page" dir="rtl">
+        <div class="page-header">
+            <div>
+                <div class="breadcrumb-line">
+                    <span class="crumb-link" @onclick='() => Navigation.NavigateTo("/penalties")'>الجزاءات والمكافآت</span>
+                    <span class="crumb-sep">/</span><span class="crumb-current">@PageTitleText</span>
+                </div>
+                <h2 class="page-title">@PageTitleText</h2>
+            </div>
+            <div class="header-actions">
+                @if (isViewMode && permissions.CanEdit && RecordId > 0)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SwitchToEdit">تعديل</button>
+                }
+                @if (!isViewMode)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveItem" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري الحفظ...</span> } else { <span>حفظ</span> }
+                    </button>
+                }
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/penalties")'>رجوع</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(formMessage))
+        {
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+        }
+
+        <div class="form-card">
+            <div class="section-title">بيانات الجزاء / المكافأة</div>
+            <div class="form-grid cols-3">
+                <div class="form-field">
+                    <label class="field-label required-field">الموظف</label>
+                    <select class="field-select" @bind="model.EmployeeID" disabled="@DisableField">
+                        <option value="0">— اختر —</option>
+                        @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="field-label required-field">النوع</label>
+                    <select class="field-select" @bind="model.RecordType" disabled="@isViewMode">
+                        <option value="1">جزاء</option>
+                        <option value="2">مكافأة</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="field-label required-field">التاريخ</label>
+                    <input type="date" class="field-input" @bind="model.RecordDate" disabled="@isViewMode" />
+                </div>
+                <div class="form-field">
+                    <label class="field-label">التصنيف</label>
+                    <select class="field-select" @bind="model.Category" disabled="@isViewMode">
+                        <option value="">— اختر —</option>
+                        @if (model.RecordType == 1) {
+                            <option value="تأخير">تأخير</option>
+                            <option value="غياب">غياب</option>
+                            <option value="إهمال">إهمال</option>
+                            <option value="مخالفة">مخالفة</option>
+                            <option value="أخرى">أخرى</option>
+                        } else {
+                            <option value="تميز">تميز</option>
+                            <option value="إنتاجية">إنتاجية</option>
+                            <option value="أداء متميز">أداء متميز</option>
+                            <option value="مبادرة">مبادرة</option>
+                            <option value="أخرى">أخرى</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="field-label required-field">طريقة الحساب</label>
+                    <select class="field-select" @bind="model.DeductionType" disabled="@isViewMode">
+                        <option value="1">مبلغ ثابت</option>
+                        <option value="2">نسبة من الراتب</option>
+                        <option value="3">أيام</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    @if (model.DeductionType == 1) {
+                        <label class="field-label required-field">المبلغ</label>
+                        <input type="number" class="field-input" @bind="model.Amount" step="0.01" disabled="@isViewMode" />
+                    } else if (model.DeductionType == 2) {
+                        <label class="field-label required-field">النسبة %</label>
+                        <input type="number" class="field-input" @bind="model.Percentage" step="0.01" disabled="@isViewMode" />
+                    } else {
+                        <label class="field-label required-field">عدد الأيام</label>
+                        <input type="number" class="field-input" @bind="model.Days" step="0.5" disabled="@isViewMode" />
+                    }
+                </div>
+                <div class="form-field">
+                    <label class="field-label">شهر التطبيق</label>
+                    <input type="date" class="field-input" @bind="model.EffectiveMonth" disabled="@isViewMode" />
+                </div>
+                <div class="form-field">
+                    <label class="field-label">الصادر من</label>
+                    <select class="field-select" @bind="model.IssuedBy" disabled="@isViewMode">
+                        <option value="">— اختر —</option>
+                        @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
+                    </select>
+                </div>
+                <div class="form-field"></div>
+                <div class="form-field full-span">
+                    <label class="field-label required-field">الوصف</label>
+                    <textarea class="field-input" rows="2" @bind="model.Description" disabled="@isViewMode"></textarea>
+                </div>
+                <div class="form-field full-span">
+                    <label class="field-label">ملاحظات</label>
+                    <textarea class="field-input" rows="2" @bind="model.Notes" disabled="@isViewMode"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .form-page{display:flex;flex-direction:column;gap:18px}
+    .page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+    .page-title{margin:0;color:#1f2937;font-weight:800}
+    .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .breadcrumb-line{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem}
+    .crumb-link{color:#1d4ed8;font-weight:700;cursor:pointer}.crumb-sep{color:#9ca3af}.crumb-current{color:#6b7280}
+    .form-card{background:#fff;border-radius:24px;padding:24px;border:1px solid #eef2f7;box-shadow:0 8px 22px rgba(15,23,42,.05)}
+    .section-title{font-size:.95rem;font-weight:800;color:#1d4ed8;margin-bottom:16px}
+    .form-grid{display:grid;gap:14px}.cols-3{grid-template-columns:repeat(3,1fr)}
+    .form-field{display:flex;flex-direction:column;gap:6px}
+    .full-span{grid-column:1/-1}
+    .field-label{font-size:.82rem;font-weight:700;color:#374151}
+    .required-field::after{content:" *";color:#ef4444}
+    .field-input,.field-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none;transition:.2s}
+    .field-input:focus,.field-select:focus{border-color:#2563eb}
+    .form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
+    .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+    .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+    .btn-modern:disabled{opacity:.6;cursor:not-allowed}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+    .btn-secondary-modern{background:#f3f4f6;color:#374151}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+    .btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:768px){.cols-3{grid-template-columns:1fr}.page-header{flex-direction:column}.btn-modern{width:100%}}
+</style>
+
+@code {
+    [Parameter] public int RecordId { get; set; }
+    private ModulePermissionDto? permissions;
+    private PenaltyEditDto model = new();
+    private List<LookupDto>? employees;
+    private bool isLoading = true, isSaving = false;
+    private string currentMode = "new";
+    private bool isNewMode => currentMode == "new";
+    private bool isViewMode => currentMode == "view";
+    private bool DisableField => !isNewMode || isViewMode;
+    private string PageTitleText => isNewMode ? "إضافة جزاء / مكافأة" : isViewMode ? "عرض جزاء / مكافأة" : "تعديل جزاء / مكافأة";
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_PENALTY");
+        DetectMode();
+        if (permissions == null || !HasAccess()) { isLoading = false; return; }
+        await LoadPageAsync();
+    }
+
+    private void DetectMode()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();
+        if (path.StartsWith("penalties/edit/")) currentMode = "edit";
+        else if (path.StartsWith("penalties/view/")) currentMode = "view";
+        else currentMode = "new";
+    }
+
+    private bool HasAccess()
+    {
+        if (permissions == null) return false;
+        if (isNewMode) return permissions.CanAdd;
+        if (currentMode == "edit") return permissions.CanEdit;
+        return permissions.CanView;
+    }
+
+    private async Task LoadPageAsync()
+    {
+        isLoading = true; formMessage = "";
+        try
+        {
+            employees = await LookupService.GetEmployeesAsync();
+            if (isNewMode)
+            {
+                model = new PenaltyEditDto
+                {
+                    RecordDate = DateTime.Today,
+                    EffectiveMonth = DateTime.Today,
+                    RecordType = 1,
+                    DeductionType = 1
+                };
+            }
+            else
+            {
+                var loaded = await PenaltyService.GetPenaltyByIdAsync(RecordId);
+                if (loaded == null) { formMessage = "غير موجود"; formSuccess = false; model = new(); }
+                else { model = loaded; }
+            }
+        }
+        catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
+        finally { isLoading = false; }
+    }
+
+    private void SwitchToEdit() { currentMode = "edit"; formMessage = ""; }
+
+    private async Task SaveItem()
+    {
+        if (isViewMode) return;
+        formMessage = "";
+        if (model.EmployeeID <= 0) { formMessage = "يجب اختيار الموظف"; formSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(model.Description)) { formMessage = "الوصف مطلوب"; formSuccess = false; return; }
+        isSaving = true;
+        try
+        {
+            if (isNewMode)
+            {
+                var newId = await PenaltyService.InsertPenaltyAsync(model, UserSession.UserID);
+                currentMode = "edit"; RecordId = newId;
+                formMessage = "تم الإضافة بنجاح ✅"; formSuccess = true;
+            }
+            else
+            {
+                await PenaltyService.UpdatePenaltyAsync(model, UserSession.UserID);
+                formMessage = "تم الحفظ بنجاح ✅"; formSuccess = true;
+            }
+        }
+        catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
+        finally { isSaving = false; }
+    }
+}

@@ -1,0 +1,296 @@
+﻿@using YKCoatings.Services
+@using YKCoatings.Helpers
+
+<div class="ss-wrap" @onclick:stopPropagation="true">
+    <div class="ss-input-wrap @(isOpen ? "focused" : "") @(IsDisabled ? "disabled" : "")">
+        @if (hasSelection)
+        {
+            <div class="ss-selected">
+                <span class="ss-selected-text">@GetSelectedName()</span>
+                @if (!IsDisabled)
+                {
+                    <button class="ss-clear" @onclick="ClearSelection" type="button">✕</button>
+                }
+            </div>
+        }
+        else
+        {
+            <input type="text" class="ss-input" placeholder="@Placeholder"
+                   @bind="searchText" @bind:event="oninput"
+                   @onfocus="Open" @onkeyup="OnKeyUp"
+                   disabled="@IsDisabled" />
+            <svg class="ss-search-icon" width="16" height="16" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+        }
+    </div>
+
+    @if (isOpen && filteredItems.Any())
+    {
+        <div class="ss-dropdown">
+            @foreach (var item in filteredItems)
+            {
+                <div class="ss-option" @onclick="() => Select(item)">
+                    <span class="ss-opt-name">@item.Name</span>
+                    @if (!string.IsNullOrEmpty(item.Code))
+                    {
+                        <code class="ss-opt-code">@item.Code</code>
+                    }
+                </div>
+            }
+            @if (filteredItems.Count >= MaxResults)
+            {
+                <div class="ss-more">اكتب للمزيد من النتائج...</div>
+            }
+        </div>
+    }
+    else if (isOpen && !string.IsNullOrEmpty(searchText) && searchText.Length >= MinChars)
+    {
+        <div class="ss-dropdown">
+            <div class="ss-empty">لا توجد نتائج مطابقة</div>
+        </div>
+    }
+</div>
+
+@if (isOpen)
+{
+    <div class="ss-overlay" @onclick="Close"></div>
+}
+
+<style>
+    .ss-wrap { position: relative; width: 100%; }
+
+    .ss-input-wrap {
+        display: flex;
+        align-items: center;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        background: white;
+        transition: .2s;
+        position: relative;
+        min-height: 42px;
+    }
+
+    .ss-input-wrap.focused {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+
+    .ss-input-wrap.disabled {
+        background: #f8fafc;
+        opacity: .7;
+        pointer-events: none;
+    }
+
+    .ss-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        padding: 10px 36px 10px 12px;
+        font-size: .88rem;
+        background: transparent;
+        width: 100%;
+    }
+
+    .ss-search-icon {
+        position: absolute;
+        right: 12px;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+
+    .ss-selected {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        margin: 4px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        flex: 1;
+    }
+
+    .ss-selected-text {
+        flex: 1;
+        font-size: .86rem;
+        font-weight: 600;
+        color: #1e40af;
+    }
+
+    .ss-clear {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        border: none;
+        background: #dbeafe;
+        color: #2563eb;
+        font-size: .7rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: .2s;
+    }
+    .ss-clear:hover { background: #bfdbfe; }
+
+    .ss-dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        left: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.12);
+        z-index: 500;
+        max-height: 280px;
+        overflow-y: auto;
+        animation: ssIn .15s ease;
+    }
+
+    @@keyframes ssIn {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ss-option {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: .15s;
+        border-bottom: 1px solid #f8fafc;
+    }
+
+    .ss-option:last-child { border-bottom: none; }
+    .ss-option:hover { background: #eff6ff; }
+
+    .ss-opt-name {
+        font-size: .86rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .ss-opt-code {
+        background: #f1f5f9;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: .75rem;
+        color: #2563eb;
+        font-weight: 600;
+        direction: ltr;
+    }
+
+    .ss-empty, .ss-more {
+        padding: 14px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: .84rem;
+    }
+
+    .ss-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+    }
+</style>
+
+@code {
+    [Parameter] public List<SearchableItem>? Items { get; set; }
+    [Parameter] public int SelectedId { get; set; }
+    [Parameter] public EventCallback<int> SelectedIdChanged { get; set; }
+    [Parameter] public EventCallback<SearchableItem?> OnSelected { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "ابحث واختر...";
+    [Parameter] public bool IsDisabled { get; set; } = false;
+    [Parameter] public int MaxResults { get; set; } = 15;
+    [Parameter] public int MinChars { get; set; } = 1;
+
+    private string searchText = "";
+    private bool isOpen = false;
+    private SearchableItem? selectedItem;
+    private List<SearchableItem> filteredItems = new();
+
+    private bool hasSelection => selectedItem is not null && selectedItem.Id > 0;
+
+    private string GetSelectedName()
+    {
+        if (selectedItem is not null)
+            return selectedItem.Name;
+        return "";
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (SelectedId > 0 && Items is not null)
+        {
+            var found = Items.FirstOrDefault(i => i.Id == SelectedId);
+            if (found is not null)
+                selectedItem = found;
+        }
+        else if (SelectedId == 0)
+        {
+            selectedItem = null;
+        }
+    }
+
+    private void Open()
+    {
+        if (IsDisabled) return;
+        isOpen = true;
+        DoSearch();
+    }
+
+    private void Close()
+    {
+        isOpen = false;
+        searchText = "";
+    }
+
+    private void OnKeyUp()
+    {
+        if (!isOpen) isOpen = true;
+        DoSearch();
+    }
+
+    private void DoSearch()
+    {
+        if (Items is null)
+        {
+            filteredItems = new();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(searchText) || searchText.Length < MinChars)
+        {
+            filteredItems = Items.Take(MaxResults).ToList();
+            return;
+        }
+
+        filteredItems = Items
+            .Where(i =>
+                ArabicSearchHelper.Contains(i.Name, searchText) ||
+                ArabicSearchHelper.Contains(i.Code, searchText))
+            .Take(MaxResults)
+            .ToList();
+    }
+
+    private async Task Select(SearchableItem item)
+    {
+        selectedItem = item;
+        searchText = "";
+        isOpen = false;
+        await SelectedIdChanged.InvokeAsync(item.Id);
+        await OnSelected.InvokeAsync(item);
+    }
+
+    private async Task ClearSelection()
+    {
+        selectedItem = null;
+        searchText = "";
+        await SelectedIdChanged.InvokeAsync(0);
+        await OnSelected.InvokeAsync(null);
+    }
+}

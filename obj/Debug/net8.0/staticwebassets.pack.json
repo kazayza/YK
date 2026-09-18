@@ -1,0 +1,61 @@
+{
+  "Files": [
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\obj\\Debug\\net8.0\\scopedcss\\projectbundle\\YKCoatings.bundle.scp.css",
+      "PackagePath": "staticwebassets\\YKCoatings.bundle.scp.css"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\app.css",
+      "PackagePath": "staticwebassets\\app.css"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\bootstrap\\bootstrap.min.css",
+      "PackagePath": "staticwebassets\\bootstrap\\bootstrap.min.css"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\bootstrap\\bootstrap.min.css.map",
+      "PackagePath": "staticwebassets\\bootstrap\\bootstrap.min.css.map"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-icon.svg",
+      "PackagePath": "staticwebassets\\images\\yk-icon.svg"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo.svg",
+      "PackagePath": "staticwebassets\\images\\yk-logo.svg"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\js\\app.js",
+      "PackagePath": "staticwebassets\\js\\app.js"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\js\\auth.js",
+      "PackagePath": "staticwebassets\\js\\auth.js"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\sounds\\notification.mp3",
+      "PackagePath": "staticwebassets\\sounds\\notification.mp3"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\yk-theme.css",
+      "PackagePath": "staticwebassets\\yk-theme.css"
+    },
+    {
+      "Id": "obj\\Debug\\net8.0\\staticwebassets\\msbuild.YKCoatings.Microsoft.AspNetCore.StaticWebAssets.props",
+      "PackagePath": "build\\Microsoft.AspNetCore.StaticWebAssets.props"
+    },
+    {
+      "Id": "obj\\Debug\\net8.0\\staticwebassets\\msbuild.build.YKCoatings.props",
+      "PackagePath": "build\\YKCoatings.props"
+    },
+    {
+      "Id": "obj\\Debug\\net8.0\\staticwebassets\\msbuild.buildMultiTargeting.YKCoatings.props",
+      "PackagePath": "buildMultiTargeting\\YKCoatings.props"
+    },
+    {
+      "Id": "obj\\Debug\\net8.0\\staticwebassets\\msbuild.buildTransitive.YKCoatings.props",
+      "PackagePath": "buildTransitive\\YKCoatings.props"
+    }
+  ],
+  "ElementsToRemove": []
+}

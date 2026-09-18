@@ -1,0 +1,879 @@
+﻿@page "/jobtitles"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject JobTitleService JobTitleService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>المسميات الوظيفية - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>
+            العودة للرئيسية
+        </button>
+    </div>
+}
+else
+{
+    <div class="items-page" dir="rtl">
+
+        <!-- Header -->
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">المسميات الوظيفية</h2>
+                <p class="page-subtitle">عرض وإدارة المسميات الوظيفية ومستوياتها</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@filteredItems.Count مسمى</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting || !filteredItems.Any()">
+                        @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>📎 تصدير</span> }
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="GoToAdd">
+                        <span>+ إضافة مسمى</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-total">💼</div>
+                <div class="stat-content">
+                    <div class="stat-value">@jobTitles.Count</div>
+                    <div class="stat-label">إجمالي المسميات</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-active">✅</div>
+                <div class="stat-content">
+                    <div class="stat-value">@jobTitles.Count(j => j.IsActive)</div>
+                    <div class="stat-label">نشط</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-inactive">⛔</div>
+                <div class="stat-content">
+                    <div class="stat-value">@jobTitles.Count(j => !j.IsActive)</div>
+                    <div class="stat-label">غير نشط</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-employees">👥</div>
+                <div class="stat-content">
+                    <div class="stat-value">@jobTitles.Sum(j => j.EmployeeCount)</div>
+                    <div class="stat-label">إجمالي الموظفين</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <div class="filter-row">
+                <div class="filter-field search-field">
+                    <span class="field-icon">🔍</span>
+                    <input type="text" class="filter-input" placeholder="بحث بالاسم أو الكود..."
+                           @bind="searchText" @bind:event="oninput" @bind:after="FilterData" />
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="levelFilter" @bind:after="FilterData">
+                        <option value="0">📊 كل المستويات</option>
+                        <option value="1">🔧 عمال</option>
+                        <option value="2">⚙️ فنيين</option>
+                        <option value="3">📋 متخصصين</option>
+                        <option value="4">👔 مشرفين</option>
+                        <option value="5">👨‍💼 مدراء</option>
+                        <option value="6">👑 إدارة عليا</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="statusFilter" @bind:after="FilterData">
+                        <option value="all">📋 كل الحالات</option>
+                        <option value="1">🟢 نشط</option>
+                        <option value="0">🔴 غير نشط</option>
+                    </select>
+                </div>
+                <div class="filter-actions-inline">
+                    <button class="btn-sm btn-sm-ghost" @onclick="ClearFilters">مسح</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table -->
+        @if (isLoading)
+        {
+            <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+        }
+        else if (!filteredItems.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon">💼</div>
+                <h4>لا توجد مسميات مطابقة</h4>
+                <p>حاول تغيير معايير البحث</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="col-num">#</th>
+                                <th class="col-code">الكود</th>
+                                <th class="col-name">المسمى (عربي)</th>
+                                <th class="col-level">المستوى</th>
+                                <th class="col-salary-min">الحد الأدنى</th>
+                                <th class="col-salary-max">الحد الأقصى</th>
+                                <th class="col-count">الموظفين</th>
+                                <th class="col-status">الحالة</th>
+                                <th class="col-actions">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var job in filteredItems.Select((j, i) => new { j, Index = i + 1 }))
+                            {
+                                <tr>
+                                    <td class="col-num">@job.Index</td>
+                                    <td class="col-code"><span class="code-badge">@job.j.JobTitleCode</span></td>
+                                    <td class="col-name"><strong>@job.j.JobTitleNameAr</strong></td>
+                                    <td class="col-level">
+                                        <span class="level-badge level-@job.j.JobLevel">
+                                            @job.j.JobLevelName
+                                        </span>
+                                    </td>
+                                    <td class="col-salary-min">@job.j.MinSalary.ToString("#,##0")</td>
+                                    <td class="col-salary-max">@job.j.MaxSalary.ToString("#,##0")</td>
+                                    <td class="col-count">
+                                        <span class="emp-count-badge">@job.j.EmployeeCount</span>
+                                    </td>
+                                    <td class="col-status">
+                                        <span class="status-dot @(job.j.IsActive ? "dot-active" : "dot-inactive")"></span>
+                                        <span class="status-text">@(job.j.IsActive ? "نشط" : "غير نشط")</span>
+                                    </td>
+                                    <td class="col-actions">
+                                        <div class="action-icons">
+                                            <button class="action-icon view-icon" @onclick="() => GoToView(job.j.JobTitleID)" title="عرض">👁️</button>
+                                            @if (permissions.CanEdit)
+                                            {
+                                                <button class="action-icon edit-icon" @onclick="() => GoToEdit(job.j.JobTitleID)" title="تعديل">✏️</button>
+                                            }
+                                            @if (permissions.CanDelete)
+                                            {
+                                                <button class="action-icon @(job.j.IsActive ? "delete-icon" : "restore-icon")" 
+                                                        @onclick="() => ShowStatusConfirm(job.j)" 
+                                                        title="@(job.j.IsActive ? "تعطيل" : "تفعيل")">@(job.j.IsActive ? "🔴" : "🟢")</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Status Dialog -->
+    @if (showStatusDialog && selectedItem != null)
+    {
+        <div class="modal-overlay" @onclick="CloseStatusDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon @(selectedItem.IsActive ? "modal-icon-danger" : "modal-icon-success")">
+                    @(selectedItem.IsActive ? "⚠️" : "✅")
+                </div>
+                <h4>@(selectedItem.IsActive ? "تعطيل مسمى وظيفي" : "إعادة تفعيل مسمى وظيفي")</h4>
+                <p>هل أنت متأكد من <strong>@(selectedItem.IsActive ? "تعطيل" : "إعادة تفعيل")</strong> المسمى: <strong>@selectedItem.JobTitleNameAr</strong>؟</p>
+                @if (!string.IsNullOrEmpty(dialogMessage))
+                {
+                    <div class="error-msg">@dialogMessage</div>
+                }
+                <div class="modal-buttons">
+                    <button class="btn-modern @(selectedItem.IsActive ? "btn-danger-modern" : "btn-success-modern")" 
+                            @onclick="ConfirmStatusChange" 
+                            disabled="@isChangingStatus">
+                        @if (isChangingStatus) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>@(selectedItem.IsActive ? "تعطيل" : "تفعيل")</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseStatusDialog" disabled="@isChangingStatus">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast Message -->
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-notification @(resultSuccess ? "toast-success" : "toast-error")">
+            <span>@resultMessage</span>
+            <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+        </div>
+    }
+}
+
+<style>
+    /* ========== BASE STYLES ========== */
+    .items-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 0.25rem;
+    }
+
+    /* ========== HEADER ========== */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #1e293b;
+        margin: 0;
+    }
+    .page-subtitle {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin: 0.25rem 0 0;
+    }
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .result-badge {
+        background: #f1f5f9;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    /* ========== STATS CARDS ========== */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+    .stat-card {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #eef2ff;
+        position: relative;
+        overflow: hidden;
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+    .stat-card:nth-child(1)::before { background: #1e293b; }
+    .stat-card:nth-child(2)::before { background: #10b981; }
+    .stat-card:nth-child(3)::before { background: #ef4444; }
+    .stat-card:nth-child(4)::before { background: #2563eb; }
+    
+    .stat-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+    .stat-icon-total { background: #f1f5f9; }
+    .stat-icon-active { background: #ecfdf5; }
+    .stat-icon-inactive { background: #fef2f2; }
+    .stat-icon-employees { background: #f5f3ff; }
+    
+    .stat-content { flex: 1; }
+    .stat-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    /* ========== FILTER BAR ========== */
+    .filter-bar {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid #eef2ff;
+    }
+    .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .filter-field {
+        flex: 1 1 auto;
+        min-width: 150px;
+        position: relative;
+    }
+    .search-field {
+        min-width: 200px;
+        flex: 2;
+    }
+    .field-icon {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.9rem;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+    .filter-input {
+        width: 100%;
+        padding: 0.45rem 2rem 0.45rem 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        transition: all 0.2s;
+    }
+    .filter-input:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+        background: white;
+    }
+    .filter-select {
+        width: 100%;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        cursor: pointer;
+    }
+    .filter-select:focus {
+        outline: none;
+        border-color: #2563eb;
+    }
+    .filter-actions-inline {
+        display: flex;
+        gap: 0.4rem;
+    }
+    .btn-sm {
+        padding: 0.45rem 1rem;
+        border-radius: 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-sm-ghost {
+        background: transparent;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-sm-ghost:hover:not(:disabled) {
+        background: #f8fafc;
+    }
+
+    /* ========== TABLE ========== */
+    .table-wrapper {
+        background: #ffffff;
+        border-radius: 1rem;
+        border: 1px solid #eef2ff;
+        overflow: hidden;
+    }
+    .table-responsive {
+        overflow-x: auto;
+    }
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+    .data-table thead {
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .data-table th {
+        padding: 0.85rem 0.75rem;
+        font-weight: 700;
+        color: #475569;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .data-table td {
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid #f1f5f9;
+        color: #334155;
+    }
+    .data-table tbody tr:nth-child(even) {
+        background-color: #fafcff;
+    }
+    .data-table tbody tr:hover {
+        background: #f8f7ff;
+    }
+    
+    .col-num { width: 45px; text-align: center; }
+    .col-code { width: 90px; }
+    .col-name { min-width: 160px; }
+    .col-level { width: 100px; }
+    .col-salary-min { width: 100px; text-align: left; font-family: monospace; }
+    .col-salary-max { width: 100px; text-align: left; font-family: monospace; }
+    .col-count { width: 85px; text-align: center; }
+    .col-status { width: 85px; }
+    .col-actions { width: 100px; text-align: center; }
+    
+    .code-badge {
+        background: #f1f5f9;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.4rem;
+        font-family: monospace;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #1d4ed8;
+    }
+    
+    .level-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 1rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+    .level-1 { background: #fef3c7; color: #d97706; }
+    .level-2 { background: #ecfeff; color: #0891b2; }
+    .level-3 { background: #eff6ff; color: #2563eb; }
+    .level-4 { background: #f3f4f6; color: #6b7280; }
+    .level-5 { background: #faf5ff; color: #1d4ed8; }
+    .level-6 { background: #fef2f2; color: #dc2626; }
+    
+    .emp-count-badge {
+        display: inline-block;
+        background: #eff6ff;
+        color: #2563eb;
+        padding: 0.2rem 0.6rem;
+        border-radius: 1rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+    
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-left: 0.5rem;
+    }
+    .dot-active { background: #10b981; box-shadow: 0 0 0 2px #d1fae5; }
+    .dot-inactive { background: #ef4444; box-shadow: 0 0 0 2px #fee2e2; }
+    
+    .status-text {
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .action-icons {
+        display: flex;
+        gap: 0.4rem;
+        justify-content: center;
+    }
+    .action-icon {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 0.3rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .view-icon:hover { background: #eff6ff; transform: scale(1.05); }
+    .edit-icon:hover { background: #f5f3ff; transform: scale(1.05); }
+    .delete-icon:hover { background: #fef2f2; transform: scale(1.05); }
+    .restore-icon:hover { background: #ecfdf5; transform: scale(1.05); }
+
+    /* ========== MODAL ========== */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+    .modal-card {
+        background: white;
+        border-radius: 1.25rem;
+        padding: 1.5rem;
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 20px 35px -8px rgba(0,0,0,0.2);
+    }
+    .modal-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+    }
+    .modal-icon-danger { background: #fef2f2; }
+    .modal-icon-success { background: #ecfdf5; }
+    .modal-buttons {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        margin-top: 1.5rem;
+    }
+    .error-msg {
+        background: #fef2f2;
+        color: #dc2626;
+        padding: 0.6rem;
+        border-radius: 0.75rem;
+        font-size: 0.75rem;
+        margin-top: 1rem;
+    }
+
+    /* ========== TOAST ========== */
+    .toast-notification {
+        position: fixed;
+        bottom: 1.5rem;
+        left: 1.5rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        z-index: 1050;
+        animation: slideIn 0.3s ease;
+    }
+    .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .toast-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .toast-close {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        opacity: 0.6;
+    }
+
+    /* ========== LOADING & EMPTY STATES ========== */
+    .loading-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+    }
+    .loader {
+        width: 36px;
+        height: 36px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+        border: 1px dashed #cbd5e1;
+    }
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+    }
+    .no-access-card {
+        text-align: center;
+        padding: 4rem;
+        background: white;
+        border-radius: 1.5rem;
+    }
+    .no-access-icon {
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
+    }
+
+    /* ========== BUTTONS ========== */
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1.2rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.8rem;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+    }
+    .btn-export {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+    }
+    .btn-danger-modern {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+    }
+    .btn-success-modern {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+    }
+    .btn-secondary-modern {
+        background: #f3f4f6;
+        color: #374151;
+    }
+    .btn-ghost {
+        background: transparent;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-spinner-sm {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
+    /* ========== ANIMATIONS ========== */
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    @@keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @@media (max-width: 900px) {
+        .filter-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .filter-field {
+            min-width: auto;
+        }
+        .stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        }
+        .col-salary-min, .col-salary-max {
+            display: none;
+        }
+    }
+    @@media (max-width: 600px) {
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .col-code, .col-level {
+            display: none;
+        }
+    }
+    @@media print {
+        .filter-bar, .stats-grid, .header-actions, .action-icons {
+            display: none !important;
+        }
+        .table-wrapper {
+            box-shadow: none;
+            border: none;
+        }
+    }
+</style>
+
+<script>
+    window.downloadFile = (fileName, mimeType, base64Data) => {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = `data:${mimeType};base64,${base64Data}`;
+        link.click();
+    };
+</script>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private List<JobTitleListDto> jobTitles = new();
+    private List<JobTitleListDto> filteredItems = new();
+
+    private string searchText = "";
+    private string statusFilter = "all";
+    private int levelFilter = 0;
+
+    private bool isLoading = true;
+    private bool isExporting = false;
+    private bool isChangingStatus = false;
+
+    private bool showStatusDialog = false;
+    private JobTitleListDto? selectedItem;
+    private string dialogMessage = "";
+
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_JOBTITLES");
+
+        if (permissions == null || !permissions.CanView) { isLoading = false; return; }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            jobTitles = await JobTitleService.GetJobTitlesListAsync();
+            FilterData();
+        }
+        catch (Exception ex)
+        {
+            resultMessage = "خطأ: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally { isLoading = false; }
+    }
+
+    private void FilterData()
+    {
+        var query = jobTitles.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var s = searchText.Trim();
+            query = query.Where(j =>
+                (j.JobTitleNameAr ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (j.JobTitleNameEn ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                (j.JobTitleCode ?? "").Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (levelFilter > 0)
+            query = query.Where(j => j.JobLevel == levelFilter);
+
+        query = statusFilter switch
+        {
+            "1" => query.Where(j => j.IsActive),
+            "0" => query.Where(j => !j.IsActive),
+            _ => query
+        };
+
+        filteredItems = query.ToList();
+    }
+
+    private void ClearFilters()
+    {
+        searchText = "";
+        statusFilter = "all";
+        levelFilter = 0;
+        FilterData();
+    }
+
+    private void GoToAdd() => Navigation.NavigateTo("/jobtitles/new");
+    private void GoToEdit(int id) => Navigation.NavigateTo($"/jobtitles/edit/{id}");
+    private void GoToView(int id) => Navigation.NavigateTo($"/jobtitles/view/{id}");
+
+    private void ShowStatusConfirm(JobTitleListDto item) { selectedItem = item; dialogMessage = ""; showStatusDialog = true; }
+    private void CloseStatusDialog() { showStatusDialog = false; selectedItem = null; dialogMessage = ""; }
+
+    private async Task ConfirmStatusChange()
+    {
+        if (selectedItem == null) return;
+        isChangingStatus = true; dialogMessage = "";
+
+        try
+        {
+            var newStatus = !selectedItem.IsActive;
+            var result = await JobTitleService.SetJobTitleActiveStatusAsync(selectedItem.JobTitleID, newStatus, UserSession.UserID);
+
+            if (result.Success)
+            {
+                resultMessage = result.Message; resultSuccess = true;
+                showStatusDialog = false; selectedItem = null;
+                await LoadData();
+            }
+            else { dialogMessage = result.Message; }
+        }
+        catch (Exception ex) { dialogMessage = "خطأ: " + ex.Message; }
+        finally { isChangingStatus = false; }
+    }
+
+    private async Task ExportData()
+    {
+        if (!filteredItems.Any()) return;
+        isExporting = true;
+
+        try
+        {
+            var bytes = await JobTitleService.ExportJobTitlesToExcelAsync(filteredItems, UserSession.UserID);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFile", $"JobTitles_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+            resultMessage = "تم التصدير بنجاح ✅"; resultSuccess = true;
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+        finally { isExporting = false; }
+    }
+}

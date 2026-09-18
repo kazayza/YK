@@ -1,0 +1,674 @@
+﻿@page "/material-issues/edit/{Id:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject MaterialIssueService IssueService
+@inject NavigationManager NavigationManager
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>@(Id == 0 ? "إذن صرف جديد" : isViewMode ? "عرض إذن الصرف" : "تعديل إذن الصرف") - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions is null || !Perms.CanView)
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-page"><div class="spinner-lg"></div><span>جاري التحميل...</span></div>
+}
+else
+{
+    <div class="mi-edit-page">
+
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    @if (Id == 0) { <span>إنشاء إذن صرف خامات</span> }
+                    else if (isViewMode) { <span>عرض إذن الصرف</span> }
+                    else { <span>تعديل إذن الصرف</span> }
+                </h1>
+                @if (Id > 0)
+                {
+                    <p class="header-subtitle">
+                        رقم الإذن: @header.IssueNumber
+                        <span class="status-chip-header @GetStatusClass(header.IssueStatus)">@GetStatusName(header.IssueStatus)</span>
+                    </p>
+                }
+            </div>
+            <div class="header-actions">
+                <button class="btn-outline-light" @onclick="GoBack"><i class="bi bi-arrow-right"></i><span>رجوع</span></button>
+            </div>
+        </div>
+
+        <!-- رأس الإذن -->
+        <div class="form-card">
+            <div class="form-card-header"><i class="bi bi-info-circle-fill"></i> بيانات إذن الصرف</div>
+            <div class="form-card-body">
+                <div class="form-row">
+                    <div class="form-group col-3">
+                        <label class="form-lbl required">أمر التصنيع</label>
+                        <select class="form-ctrl" @bind="header.ProductionOrderID"
+                                @bind:after="OnOrderChanged"
+                                disabled="@(isViewMode || Id > 0)">
+                            <option value="0">— اختر أمر التصنيع —</option>
+                            @foreach (var o in orderLookup)
+                            {
+                                <option value="@o.Id">@o.Name</option>
+                            }
+                        </select>
+                        @if (errors.ContainsKey("ProductionOrderID")) { <span class="field-error">@errors["ProductionOrderID"]</span> }
+                    </div>
+                    <div class="form-group col-3">
+                        <label class="form-lbl required">مخزن الصرف</label>
+                        <select class="form-ctrl" @bind="header.SourceWarehouseID" disabled="@isViewMode">
+                            <option value="0">— اختر المخزن —</option>
+                            @foreach (var w in warehouseLookup)
+                            {
+                                <option value="@w.Id">@w.Name</option>
+                            }
+                        </select>
+                        @if (errors.ContainsKey("SourceWarehouseID")) { <span class="field-error">@errors["SourceWarehouseID"]</span> }
+                    </div>
+                     <div class="form-group col-3">
+        <label class="form-lbl">نوع الصرف</label>
+        <select class="form-ctrl" @bind="header.IssueType" disabled="true">
+            <option value="1">عادي</option>
+            <option value="2">إضافي</option>
+        </select>
+    </div>
+
+    <div class="form-group col-3">
+        <label class="form-lbl">صُرف بواسطة</label>
+        <select class="form-ctrl" @bind="header.IssuedBy" disabled="@isViewMode">
+            <option value="">— اختر —</option>
+            @foreach (var e in employeeLookup)
+            {
+                <option value="@e.Id">@e.Name</option>
+            }
+        </select>
+    </div>
+
+    <div class="form-group col-3">
+        <label class="form-lbl">استلم بواسطة</label>
+        <select class="form-ctrl" @bind="header.ReceivedBy" disabled="@isViewMode">
+            <option value="">— اختر —</option>
+            @foreach (var e in employeeLookup)
+            {
+                <option value="@e.Id">@e.Name</option>
+            }
+        </select>
+    </div>
+                    <div class="form-group col-3">
+                        <label class="form-lbl">تاريخ الإذن</label>
+                        <input type="date" class="form-ctrl" @bind="header.IssueDate" disabled="@isViewMode" />
+                    </div>
+                    <div class="form-group col-3">
+                        <label class="form-lbl">الحالة</label>
+                        <input type="text" class="form-ctrl readonly-field" value="@GetStatusName(header.IssueStatus)" readonly />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-12">
+                        <label class="form-lbl">ملاحظات</label>
+                        <textarea class="form-ctrl textarea-ctrl" @bind="header.Notes" rows="2" placeholder="ملاحظات..." disabled="@isViewMode"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- المواد المعلقة -->
+        @if (pendingMaterials.Any())
+        {
+            <div class="form-card">
+                <div class="form-card-header">
+                    <div style="display:flex;align-items:center;gap:.5rem;">
+                        <i class="bi bi-box-seam-fill"></i>
+                        المواد المطلوب صرفها
+                        <span class="mat-count-badge">@pendingMaterials.Count مادة</span>
+                    </div>
+                    @if (!isViewMode)
+                    {
+                        <button class="btn-fill-all" @onclick="FillAll">
+                            <i class="bi bi-check-all"></i> صرف الكل
+                        </button>
+                    }
+                </div>
+
+                <!-- ملخص -->
+                <div class="mat-summary-strip">
+                    <div class="mat-summary-item">
+                        <i class="bi bi-box-fill" style="color:#0ea5e9;"></i>
+                        <span>خامات: <strong>@pendingMaterials.Count(m => m.MaterialType == 1)</strong></span>
+                    </div>
+                    <div class="mat-summary-item">
+                        <i class="bi bi-bag-fill" style="color:#d97706;"></i>
+                        <span>تعبئة: <strong>@pendingMaterials.Count(m => m.MaterialType == 2)</strong></span>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+                    <table class="mat-table">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>كود الصنف</th>
+                                <th>اسم الصنف</th>
+                                <th>النوع</th>
+                                <th class="tc">المطلوب</th>
+                                <th class="tc">مصروف سابقاً</th>
+                                <th class="tc">المتبقي</th>
+                                <th class="tc">الكمية المراد صرفها</th>
+                                <th class="tr">تكلفة الوحدة</th>
+                                <th class="tr">الإجمالي</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int idx = 1; }
+                            @foreach (var mat in pendingMaterials)
+                            {
+                                <tr>
+                                    <td class="tc row-num">@(idx++)</td>
+                                    <td><span class="code-chip">@mat.ItemCode</span></td>
+                                    <td class="item-name-cell">@mat.ItemName</td>
+                                    <td><span class="type-chip @(mat.MaterialType == 1 ? "type-raw" : "type-pkg")">@mat.MaterialTypeName</span></td>
+                                    <td class="tc fw600">@mat.RequiredQty.ToString("N3")</td>
+                                    <td class="tc text-muted">@mat.AlreadyIssuedQty.ToString("N3")</td>
+                                    <td class="tc remaining-val">@mat.RemainingQty.ToString("N3")</td>
+                                    <td class="tc">
+                                        @if (isViewMode)
+                                        {
+                                            <span class="issue-qty-display">@GetIssueQty(mat.POMaterialID).ToString("N3")</span>
+                                        }
+                                        else
+                                        {
+                                            <input type="number"
+                                                   class="issue-input"
+                                                   value="@GetIssueQty(mat.POMaterialID).ToString("N3")"
+                                                   @onchange="@(e => SetIssueQty(mat.POMaterialID, e))"
+                                                   @oninput="@(e => SetIssueQty(mat.POMaterialID, e))"
+                                                   min="0" max="@mat.RemainingQty.ToString("N3")"
+                                                   step="0.001" />
+                                        }
+                                    </td>
+                                    <td class="tr">@mat.UnitCost.ToString("N2")</td>
+                                    <td class="tr fw700 cost-col">
+                                        @((GetIssueQty(mat.POMaterialID) * mat.UnitCost).ToString("N2"))
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td colspan="7"></td>
+                                <td class="tc fw700">الإجمالي</td>
+                                <td></td>
+                                <td class="tr fw800 cost-col">
+                                    @pendingMaterials.Sum(m => GetIssueQty(m.POMaterialID) * m.UnitCost).ToString("N2")
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        }
+        else if (header.ProductionOrderID > 0 && !materialsLoading)
+        {
+            <div class="form-card">
+                <div class="state-box">
+                    <div class="empty-icon-circle"><i class="bi bi-check-circle"></i></div>
+                    <p class="empty-title">تم صرف جميع المواد لهذا الأمر</p>
+                    <p class="empty-sub">لا توجد مواد معلقة للصرف</p>
+                </div>
+            </div>
+        }
+        else if (materialsLoading)
+        {
+            <div class="form-card">
+                <div class="state-box">
+                    <div class="spinner-md"></div>
+                    <span class="state-text">جاري تحميل المواد...</span>
+                </div>
+            </div>
+        }
+
+        <!-- التفاصيل المحفوظة (للعرض) -->
+        @if (Id > 0 && savedDetails.Any())
+        {
+            <div class="form-card">
+                <div class="form-card-header">
+                    <i class="bi bi-list-check"></i>
+                    تفاصيل المواد المصروفة
+                    <span class="mat-count-badge">@savedDetails.Count صنف</span>
+                </div>
+                <div class="table-scroll">
+                    <table class="mat-table">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>كود الصنف</th>
+                                <th>اسم الصنف</th>
+                                <th>النوع</th>
+                                <th class="tc">المطلوب</th>
+                                <th class="tc">المصروف</th>
+                                <th class="tr">تكلفة الوحدة</th>
+                                <th class="tr">الإجمالي</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int si = 1; }
+                            @foreach (var d in savedDetails)
+                            {
+                                <tr>
+                                    <td class="tc row-num">@(si++)</td>
+                                    <td><span class="code-chip">@d.ItemCode</span></td>
+                                    <td class="item-name-cell">@d.ItemName</td>
+                                    <td><span class="type-chip @(d.MaterialType == 1 ? "type-raw" : "type-pkg")">@d.MaterialTypeName</span></td>
+                                    <td class="tc fw600">@d.RequiredQty.ToString("N3")</td>
+                                    <td class="tc issued-val">@d.IssueQty.ToString("N3")</td>
+                                    <td class="tr">@d.UnitCost.ToString("N2")</td>
+                                    <td class="tr fw700 cost-col">@d.LineCost.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="total-row">
+                                <td colspan="7" class="tr fw700">الإجمالي</td>
+                                <td class="tr fw800 cost-col">@header.TotalCost.ToString("N2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+            <div class="action-bar-start">
+                @if (Id > 0 && header.IssueStatus == 1 && Perms.CanApprove)
+                {
+                    <button class="btn-action approve" @onclick="ApproveAndSave" disabled="@isSaving">
+                        <i class="bi bi-check-circle-fill"></i> اعتماد وصرف
+                    </button>
+                }
+            </div>
+            <div class="action-bar-end">
+                @if (!isViewMode && header.IssueStatus == 1)
+                {
+                    <button class="btn-save" @onclick="SaveIssue" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-tiny"></span> <span>جاري الحفظ...</span> }
+                        else { <i class="bi bi-check-lg"></i> <span>@(Id == 0 ? "حفظ الإذن" : "حفظ التعديلات")</span> }
+                    </button>
+                }
+                <button class="btn-back" @onclick="GoBack"><i class="bi bi-arrow-right"></i><span>رجوع</span></button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(resultMessage))
+{
+    <div class="toast-msg @(isSuccess ? "toast-success" : "toast-error")">
+        <i class="bi @(isSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i> @resultMessage
+    </div>
+}
+
+<style>
+    :root {
+        --c-primary: #4f46e5; --c-primary-lt: #eef2ff; --c-primary-dk: #3730a3;
+        --c-success: #10b981; --c-success-lt: #ecfdf5;
+        --c-warning: #f59e0b; --c-warning-lt: #fffbeb;
+        --c-danger: #ef4444;  --c-danger-lt: #fef2f2;
+        --c-info: #0ea5e9;    --c-info-lt: #f0f9ff;
+        --c-secondary: #64748b; --c-secondary-lt: #f1f5f9;
+        --c-surface: #fff;    --c-bg: #f8fafc;
+        --c-border: #e2e8f0;  --c-text: #0f172a;
+        --c-text-2: #64748b;  --c-text-3: #94a3b8;
+        --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+        --sh-sm: 0 1px 3px rgba(0,0,0,.06); --sh-md: 0 4px 16px rgba(0,0,0,.08);
+    }
+
+    .mi-edit-page { direction: rtl; padding: 1.75rem 1.5rem; background: var(--c-bg); min-height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; gap: 1.25rem; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: var(--r-xl); border: 1px solid var(--c-border); max-width: 480px; margin: 80px auto; box-shadow: var(--sh-sm); }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .btn-back-dash { background: var(--c-secondary-lt); color: var(--c-secondary); border: none; padding: .6rem 1.4rem; border-radius: var(--r-sm); font-weight: 600; cursor: pointer; }
+    .loading-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 1rem; color: var(--c-text-3); }
+    .spinner-lg { width: 56px; height: 56px; border: 4px solid var(--c-border); border-top-color: var(--c-primary); border-radius: 50%; animation: spin .7s linear infinite; }
+
+    .page-header { background: linear-gradient(135deg, #4f46e5, #3730a3); border-radius: var(--r-xl); padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 32px rgba(79,70,229,.25); position: relative; overflow: hidden; flex-wrap: wrap; gap: 1rem; }
+    .page-header::before { content: ''; position: absolute; top: -40px; left: -40px; width: 180px; height: 180px; background: rgba(255,255,255,.06); border-radius: 50%; }
+    .header-content { position: relative; z-index: 1; }
+    .header-title { color: #fff; font-size: 1.35rem; font-weight: 700; margin: 0 0 .2rem; display: flex; align-items: center; gap: .5rem; }
+    .header-subtitle { color: rgba(255,255,255,.8); font-size: .85rem; margin: 0; display: flex; align-items: center; gap: .6rem; }
+    .status-chip-header { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .6rem; border-radius: 20px; font-size: .72rem; font-weight: 700; }
+    .header-actions { position: relative; z-index: 1; }
+    .btn-outline-light { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.3); padding: .5rem 1rem; border-radius: var(--r-sm); font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .4rem; transition: all .2s; font-size: .85rem; }
+    .btn-outline-light:hover { background: rgba(255,255,255,.25); }
+
+    .form-card { background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--sh-sm); border: 1px solid var(--c-border); overflow: hidden; }
+    .form-card-header { padding: .9rem 1.4rem; background: #fafafa; border-bottom: 1px solid var(--c-border); font-size: .88rem; font-weight: 700; color: var(--c-text); display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .form-card-header i { color: var(--c-primary); }
+    .form-card-body { padding: 1.4rem; }
+
+    .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: .35rem; }
+    .col-3 { flex: 0 0 calc(25% - .75rem); min-width: 180px; }
+    .col-12 { flex: 0 0 100%; }
+    .form-lbl { font-size: .8rem; font-weight: 600; color: var(--c-text-2); }
+    .form-lbl.required::after { content: ' *'; color: var(--c-danger); font-weight: 700; }
+    .form-ctrl { border: 1.5px solid var(--c-border); border-radius: var(--r-sm); padding: .55rem .9rem; font-size: .88rem; color: var(--c-text); background: #fafafa; transition: all .2s; outline: none; width: 100%; }
+    .form-ctrl:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+    .form-ctrl:disabled { background: #f1f5f9; color: var(--c-text-2); cursor: not-allowed; }
+    .readonly-field { background: #f8fafc !important; color: var(--c-text-2) !important; }
+    .textarea-ctrl { resize: vertical; min-height: 60px; }
+    .field-error { font-size: .75rem; color: var(--c-danger); font-weight: 600; }
+
+    .mat-count-badge { background: var(--c-primary-lt); color: var(--c-primary); padding: .15rem .5rem; border-radius: 12px; font-size: .72rem; font-weight: 700; }
+    .btn-fill-all { background: var(--c-success-lt); color: #059669; border: 1px solid #a7f3d0; padding: .4rem .8rem; border-radius: var(--r-sm); font-size: .8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .3rem; transition: all .2s; }
+    .btn-fill-all:hover { background: #d1fae5; }
+
+    .mat-summary-strip { display: flex; gap: 2rem; padding: .8rem 1.4rem; border-bottom: 1px solid var(--c-border); background: #fafafa; }
+    .mat-summary-item { display: flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--c-text-2); }
+
+    .table-scroll { overflow-x: auto; }
+    .mat-table { width: 100%; border-collapse: collapse; }
+    .mat-table thead th { background: #f8fafc; padding: .7rem .9rem; font-size: .74rem; font-weight: 700; color: var(--c-text-3); text-transform: uppercase; letter-spacing: .05em; border-bottom: 2px solid var(--c-border); text-align: right; white-space: nowrap; }
+    .mat-table thead th.tc { text-align: center; }
+    .mat-table thead th.tr { text-align: left; }
+    .mat-table tbody td { padding: .65rem .9rem; font-size: .84rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .mat-table tbody td.tc { text-align: center; }
+    .mat-table tbody td.tr { text-align: left; }
+    .mat-table tbody tr:hover { background: var(--c-primary-lt); }
+
+    .row-num { color: var(--c-text-3); font-size: .78rem; }
+    .code-chip { font-family: 'Courier New', monospace; font-weight: 700; color: var(--c-primary); background: var(--c-primary-lt); padding: .15rem .45rem; border-radius: 5px; font-size: .8rem; }
+    .item-name-cell { font-weight: 600; }
+    .type-chip { display: inline-flex; padding: .15rem .5rem; border-radius: 12px; font-size: .72rem; font-weight: 700; }
+    .type-raw { background: var(--c-info-lt); color: #0284c7; }
+    .type-pkg { background: var(--c-warning-lt); color: #b45309; }
+    .fw600 { font-weight: 600; }
+    .fw700 { font-weight: 700; }
+    .fw800 { font-weight: 800; }
+    .text-muted { color: var(--c-text-3); }
+    .remaining-val { color: var(--c-primary); font-weight: 700; }
+    .issued-val { color: var(--c-success); font-weight: 600; }
+    .cost-col { color: var(--c-success); }
+    .total-row td { background: #f8fafc; border-top: 2px solid var(--c-border); padding: .8rem .9rem; font-size: .88rem; }
+
+    .issue-input {
+        width: 100px; text-align: center; border: 1.5px solid var(--c-border);
+        border-radius: var(--r-sm); padding: .35rem .5rem; font-size: .85rem;
+        font-weight: 600; color: var(--c-primary); background: #fafafa;
+        transition: all .2s; outline: none;
+    }
+    .issue-input:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+    .issue-qty-display { font-weight: 700; color: var(--c-success); }
+
+    .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 2rem; gap: 1rem; }
+    .spinner-md { width: 44px; height: 44px; border: 3px solid var(--c-border); border-top-color: var(--c-primary); border-radius: 50%; animation: spin .7s linear infinite; }
+    .empty-icon-circle { width: 70px; height: 70px; background: var(--c-success-lt); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; color: var(--c-success); }
+    .empty-title { font-size: 1rem; font-weight: 700; color: var(--c-text); margin: 0; }
+    .empty-sub { font-size: .82rem; color: var(--c-text-3); margin: 0; }
+
+    .action-bar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.4rem; background: var(--c-surface); border-radius: var(--r-md); border: 1px solid var(--c-border); box-shadow: var(--sh-sm); flex-wrap: wrap; gap: .75rem; position: sticky; bottom: 0; z-index: 10; }
+    .action-bar-start { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .action-bar-end { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .btn-action { border: none; border-radius: var(--r-sm); padding: .55rem 1.1rem; font-size: .85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .4rem; transition: all .2s; color: #fff; }
+    .btn-action:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-action.approve { background: #059669; }
+    .btn-action:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+    .btn-save { background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk)); color: #fff; border: none; border-radius: var(--r-sm); padding: .6rem 1.5rem; font-size: .88rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: .45rem; transition: all .2s; box-shadow: 0 4px 12px rgba(79,70,229,.3); }
+    .btn-save:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.4); }
+    .btn-save:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-back { background: var(--c-secondary-lt); color: var(--c-secondary); border: none; border-radius: var(--r-sm); padding: .6rem 1.2rem; font-size: .85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .4rem; }
+
+    .s-draft { background: #f1f5f9; color: #64748b; }
+    .s-issued { background: var(--c-success-lt); color: #059669; }
+    .s-cancelled { background: var(--c-danger-lt); color: #dc2626; }
+
+    .toast-msg { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: var(--r-sm); font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: .5rem; z-index: 2000; animation: slideUp .3s; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+    .toast-success { background: #065f46; color: #fff; }
+    .toast-error { background: #991b1b; color: #fff; }
+    .spinner-tiny { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    @@keyframes slideUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+    @@media (max-width: 768px) {
+        .mi-edit-page { padding: 1rem; }
+        .page-header { flex-direction: column; align-items: flex-start; }
+        .form-row { flex-direction: column; }
+        .col-3, .col-12 { flex: 0 0 100%; min-width: 0; }
+        .action-bar { flex-direction: column; }
+        .action-bar-start, .action-bar-end { width: 100%; justify-content: center; }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private MaterialIssueEditDto header = new();
+    private List<PendingMaterialDto> pendingMaterials = new();
+    private List<MaterialIssueDetailDto> savedDetails = new();
+    private Dictionary<int, decimal> issueQuantities = new();
+    private ModulePermissionDto? permissions;
+    private ModulePermissionDto Perms => permissions!;
+
+    private List<ProductionLookupDto> orderLookup = new();
+    private List<ProductionLookupDto> warehouseLookup = new();
+    private List<ProductionLookupDto> employeeLookup = new();
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool materialsLoading = false;
+    private bool isViewMode = false;
+
+    private Dictionary<string, string> errors = new();
+    private string? resultMessage;
+    private bool isSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { NavigationManager.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_MATISS");
+        if (permissions is null || !Perms.CanView) { isLoading = false; return; }
+
+        try
+        {
+            orderLookup = await IssueService.GetProductionOrdersForIssueAsync();
+            warehouseLookup = await IssueService.GetWarehousesLookupAsync();
+            employeeLookup = await IssueService.GetEmployeesLookupAsync();
+
+            if (Id > 0)
+{
+    var existing = await IssueService.GetByIdAsync(Id);
+    if (existing == null) { NavigationManager.NavigateTo("/material-issues"); return; }
+
+    header = existing;
+    isViewMode = header.IssueStatus != 1 || !Perms.CanEdit;
+    savedDetails = await IssueService.GetDetailsAsync(Id);
+
+    if (header.IssueStatus == 1)
+    {
+        await LoadPendingMaterials(header.ProductionOrderID);
+        ApplySavedDetailsToInputs();
+    }
+}
+            else
+            {
+                if (!Perms.CanAdd) { NavigationManager.NavigateTo("/material-issues"); return; }
+                header = new MaterialIssueEditDto { IssueDate = DateTime.Today };
+            }
+        }
+        finally { isLoading = false; }
+    }
+
+    private async Task OnOrderChanged()
+{
+    if (header.ProductionOrderID > 0)
+    {
+        header.IssueType = await IssueService.GetSuggestedIssueTypeAsync(header.ProductionOrderID, Id);
+        await LoadPendingMaterials(header.ProductionOrderID);
+    }
+    else
+    {
+        header.IssueType = 1;
+        pendingMaterials = new();
+        issueQuantities = new();
+    }
+}
+
+    private async Task LoadPendingMaterials(int orderId)
+    {
+        materialsLoading = true;
+        try
+        {
+            pendingMaterials = await IssueService.GetPendingMaterialsAsync(orderId);
+            issueQuantities = new();
+            foreach (var m in pendingMaterials)
+            {
+                issueQuantities[m.POMaterialID] = 0;
+            }
+        }
+        finally { materialsLoading = false; }
+    }
+    private void ApplySavedDetailsToInputs()
+{
+    if (!savedDetails.Any() || !pendingMaterials.Any())
+        return;
+
+    foreach (var d in savedDetails.Where(x => x.POMaterialID.HasValue))
+    {
+        var poMaterialId = d.POMaterialID!.Value;
+        issueQuantities[poMaterialId] = d.IssueQty;
+    }
+}
+
+    private decimal GetIssueQty(int poMaterialId)
+    {
+        return issueQuantities.TryGetValue(poMaterialId, out var qty) ? qty : 0;
+    }
+
+    private void SetIssueQty(int poMaterialId, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), out var val) && val >= 0)
+        {
+            var mat = pendingMaterials.FirstOrDefault(m => m.POMaterialID == poMaterialId);
+            if (mat != null && val > mat.RemainingQty)
+                val = mat.RemainingQty;
+            issueQuantities[poMaterialId] = val;
+        }
+        else
+        {
+            issueQuantities[poMaterialId] = 0;
+        }
+    }
+
+    private void FillAll()
+    {
+        foreach (var m in pendingMaterials)
+        {
+            issueQuantities[m.POMaterialID] = m.RemainingQty;
+        }
+    }
+
+    private async Task SaveIssue()
+{
+    if (!Validate()) return;
+
+    isSaving = true;
+    try
+    {
+        var details = pendingMaterials
+            .Where(m => GetIssueQty(m.POMaterialID) > 0)
+            .Select(m => new MaterialIssueDetailDto
+            {
+                ItemID = m.ItemID,
+                UnitID = m.UnitID,
+                MaterialType = m.MaterialType,
+                RequiredQty = m.RequiredQty,
+                IssuedQty = m.AlreadyIssuedQty,
+                IssueQty = GetIssueQty(m.POMaterialID),
+                UnitCost = m.UnitCost,
+                POMaterialID = m.POMaterialID
+            }).ToList();
+
+        if (Id == 0)
+        {
+            var newId = await IssueService.InsertAsync(header, details, UserSession.UserID);
+            isSuccess = true;
+            resultMessage = "تم حفظ إذن الصرف بنجاح";
+            NavigationManager.NavigateTo($"/material-issues/edit/{newId}");
+        }
+        else
+        {
+            await IssueService.UpdateAsync(header, details, UserSession.UserID);
+            isSuccess = true;
+            resultMessage = "تم حفظ التعديلات بنجاح";
+
+            savedDetails = await IssueService.GetDetailsAsync(Id);
+            await LoadPendingMaterials(header.ProductionOrderID);
+            ApplySavedDetailsToInputs();
+        }
+    }
+    catch (Exception ex)
+    {
+        isSuccess = false;
+        resultMessage = $"خطأ: {ex.Message}";
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+
+    private async Task ApproveAndSave()
+    {
+        if (Id <= 0) return;
+        isSaving = true;
+        try
+        {
+            var result = await IssueService.ApproveAsync(Id, UserSession.UserID);
+            isSuccess = result.Success;
+            resultMessage = result.Message;
+            if (result.Success)
+            {
+                var updated = await IssueService.GetByIdAsync(Id);
+                if (updated != null) header = updated;
+                savedDetails = await IssueService.GetDetailsAsync(Id);
+                isViewMode = true;
+                pendingMaterials = new();
+            }
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            resultMessage = $"خطأ: {ex.Message}";
+        }
+        finally { isSaving = false; _ = ClearMessage(); }
+    }
+
+    private bool Validate()
+    {
+        errors.Clear();
+        if (header.ProductionOrderID <= 0) errors["ProductionOrderID"] = "يجب اختيار أمر التصنيع";
+        if (header.SourceWarehouseID <= 0) errors["SourceWarehouseID"] = "يجب اختيار المخزن";
+        return !errors.Any();
+    }
+
+    private void GoBack() => NavigationManager.NavigateTo("/material-issues");
+
+    private async Task ClearMessage() { await Task.Delay(4000); resultMessage = null; StateHasChanged(); }
+
+    private string GetStatusClass(int s) => s switch { 1 => "s-draft", 2 => "s-issued", 3 => "s-cancelled", _ => "s-draft" };
+    private string GetStatusName(int s) => s switch { 1 => "مسودة", 2 => "تم الصرف", 3 => "ملغي", _ => "—" };
+}

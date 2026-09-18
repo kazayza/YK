@@ -1,0 +1,510 @@
+﻿@page "/pricelists"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PriceListService PriceListService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>قوائم الأسعار - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+    <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div> }
+else
+{
+    <div class="items-page" dir="rtl">
+
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">قوائم الأسعار</h2>
+                <p class="page-subtitle">إدارة قوائم أسعار المنتجات</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@priceLists.Count قائمة</span>
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="ShowAddDialog">
+                        <span class="btn-icon">+</span> إضافة قائمة
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- بطاقات القوائم -->
+        @if (isLoading)
+        { <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div> }
+        else if (!priceLists.Any())
+        { <div class="empty-state"><div class="empty-icon">💲</div><h4>لا توجد قوائم أسعار</h4></div> }
+        else
+        {
+            <div class="pl-grid">
+                @foreach (var pl in priceLists)
+                {
+                    <div class="pl-card @(pl.IsDefault ? "pl-default" : "") @(selectedPriceListId == pl.PriceListID ? "pl-selected" : "")"
+                         @onclick="() => SelectPriceList(pl.PriceListID)">
+                        <div class="pl-card-header">
+                            <div>
+                                <div class="pl-name">@pl.PriceListNameAr</div>
+                                <code class="pl-code">@pl.PriceListCode</code>
+                            </div>
+                            @if (pl.IsDefault)
+                            { <span class="default-badge">افتراضي</span> }
+                        </div>
+                        <div class="pl-card-body">
+                            <div class="pl-info"><span class="pl-label">النوع</span>
+                                <span class="type-badge type-pl-@pl.PriceListType">@PriceListService.GetPriceListTypeName(pl.PriceListType)</span></div>
+                            <div class="pl-info"><span class="pl-label">العملة</span><span class="pl-value">@(pl.CurrencyName ?? "—")</span></div>
+                            <div class="pl-info"><span class="pl-label">خصم عام</span><span class="pl-value">@pl.DiscountPercent%</span></div>
+                            <div class="pl-info"><span class="pl-label">عدد الأصناف</span><span class="count-badge">@pl.ItemCount</span></div>
+                        </div>
+                        <div class="pl-card-actions">
+                            @if (permissions.CanEdit)
+                            { <button class="action-btn edit-btn" @onclick:stopPropagation="true" @onclick="() => ShowEditDialog(pl.PriceListID)">تعديل</button> }
+                            @if (permissions.CanDelete)
+                            { <button class="action-btn delete-btn" @onclick:stopPropagation="true" @onclick="() => ShowDeleteConfirm(pl)">حذف</button> }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- تفاصيل القائمة المختارة -->
+            @if (selectedPriceListId > 0)
+            {
+                <div class="details-section">
+                    <div class="details-header">
+                        <h3>أسعار الأصناف — @priceLists.FirstOrDefault(p => p.PriceListID == selectedPriceListId)?.PriceListNameAr</h3>
+                        @if (permissions.CanAdd)
+                        {
+                            <button class="btn-modern btn-primary-modern" @onclick="ShowAddDetailDialog">
+                                <span class="btn-icon">+</span> إضافة سعر صنف
+                            </button>
+                        }
+                    </div>
+
+                    @if (details == null || !details.Any())
+                    { <div class="empty-state"><div class="empty-icon">📋</div><h4>لا توجد أصناف في هذه القائمة</h4></div> }
+                    else
+                    {
+                        <div class="table-card">
+                            <div class="table-responsive">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="th-num">#</th>
+                                            <th>كود الصنف</th>
+                                            <th>اسم الصنف</th>
+                                            <th>الوحدة</th>
+                                            <th class="th-number">السعر</th>
+                                            <th class="th-number">أقل كمية</th>
+                                            <th class="th-number">خصم %</th>
+                                            <th class="th-number">أقل سعر بيع</th>
+                                            @if (permissions.CanEdit || permissions.CanDelete)
+                                            { <th class="th-actions">إجراءات</th> }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{ int dNum = 0; }
+                                        @foreach (var d in details)
+                                        {
+                                            dNum++;
+                                            <tr>
+                                                <td class="td-num">@dNum</td>
+                                                <td><code class="item-code">@d.ItemCode</code></td>
+                                                <td class="item-name">@d.ItemNameAr</td>
+                                                <td>@d.UnitName</td>
+                                                <td class="td-number">@d.UnitPrice.ToString("#,##0.00")</td>
+                                                <td class="td-number">@d.MinQty.ToString("#,##0.##")</td>
+                                                <td class="td-number">@d.DiscountPercent%</td>
+                                                <td class="td-number">@d.MinSellingPrice.ToString("#,##0.00")</td>
+                                                @if (permissions.CanEdit || permissions.CanDelete)
+                                                {
+                                                    <td class="td-actions">
+                                                        @if (permissions.CanEdit)
+                                                        { <button class="action-btn edit-btn" @onclick="() => ShowEditDetailDialog(d)">تعديل</button> }
+                                                        @if (permissions.CanDelete)
+                                                        { <button class="action-btn delete-btn" @onclick="() => DeleteDetail(d.PriceDetailID)">حذف</button> }
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <!-- مودال القائمة -->
+    @if (showFormDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-card form-modal" @onclick:stopPropagation="true">
+                <h3 class="modal-title">@(isEditMode ? "تعديل قائمة أسعار" : "إضافة قائمة أسعار")</h3>
+                <div class="form-grid-modal">
+                    <div class="form-field"><label class="field-label required-field">كود القائمة</label>
+                        <input type="text" class="field-input" @bind="editItem.PriceListCode" dir="ltr" /></div>
+                    <div class="form-field"><label class="field-label required-field">اسم القائمة (عربي)</label>
+                        <input type="text" class="field-input" @bind="editItem.PriceListNameAr" /></div>
+                    <div class="form-field"><label class="field-label">اسم القائمة (إنجليزي)</label>
+                        <input type="text" class="field-input" @bind="editItem.PriceListNameEn" dir="ltr" /></div>
+                    <div class="form-field"><label class="field-label required-field">النوع</label>
+                        <select class="field-select" @bind="editItem.PriceListType">
+                            <option value="0">-- اختر --</option>
+                            <option value="1">جملة</option><option value="2">نص جملة</option>
+                            <option value="3">تجزئة</option><option value="4">خاص</option>
+                        </select></div>
+                    <div class="form-field"><label class="field-label">العملة</label>
+                        <select class="field-select" @bind="editItem.CurrencyID">
+                            <option value="0">-- اختر --</option>
+                            @if (currencies != null) { @foreach (var c in currencies) { <option value="@c.Id">@c.Name</option> } }
+                        </select></div>
+                    <div class="form-field"><label class="field-label">خصم عام %</label>
+                        <input type="number" class="field-input" @bind="editItem.DiscountPercent" step="0.01" /></div>
+                </div>
+                <div class="form-field" style="margin-bottom:14px;">
+                    <label class="toggle-switch">
+                        <input type="checkbox" @bind="editItem.IsDefault" />
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">@(editItem.IsDefault ? "قائمة افتراضية ✅" : "ليست افتراضية")</span>
+                    </label>
+                </div>
+                @if (!string.IsNullOrEmpty(formMessage))
+                { <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div> }
+                <div class="modal-buttons-row">
+                    <button class="btn-modern btn-primary-modern" @onclick="SavePriceList" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div> <span>جاري الحفظ...</span> }
+                        else { <span>@(isEditMode ? "حفظ التعديلات" : "حفظ")</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- مودال إضافة/تعديل سعر صنف -->
+    @if (showDetailDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDetailDialog">
+            <div class="modal-card form-modal" @onclick:stopPropagation="true">
+                <h3 class="modal-title">@(isEditDetail ? "تعديل سعر صنف" : "إضافة سعر صنف")</h3>
+                <div class="form-grid-modal">
+                    <div class="form-field"><label class="field-label required-field">الصنف</label>
+                        <select class="field-select" @bind="editDetail.ItemID" disabled="@isEditDetail">
+                            <option value="0">-- اختر الصنف --</option>
+                            @if (finishedItems != null) { @foreach (var item in finishedItems) { <option value="@item.Id">@item.Name</option> } }
+                        </select></div>
+                    <div class="form-field"><label class="field-label required-field">الوحدة</label>
+                        <select class="field-select" @bind="editDetail.UnitID">
+                            <option value="0">-- اختر --</option>
+                            @if (unitsList != null) { @foreach (var u in unitsList) { <option value="@u.Id">@u.Name</option> } }
+                        </select></div>
+                    <div class="form-field"><label class="field-label required-field">السعر</label>
+                        <input type="number" class="field-input" @bind="editDetail.UnitPrice" step="0.01" /></div>
+                    <div class="form-field"><label class="field-label">أقل كمية</label>
+                        <input type="number" class="field-input" @bind="editDetail.MinQty" step="0.01" /></div>
+                    <div class="form-field"><label class="field-label">خصم %</label>
+                        <input type="number" class="field-input" @bind="editDetail.DiscountPercent" step="0.01" /></div>
+                    <div class="form-field"><label class="field-label">أقل سعر بيع</label>
+                        <input type="number" class="field-input" @bind="editDetail.MinSellingPrice" step="0.01" /></div>
+                </div>
+                @if (!string.IsNullOrEmpty(detailMessage))
+                { <div class="form-message @(detailSuccess ? "msg-success" : "msg-error")">@detailMessage</div> }
+                <div class="modal-buttons-row">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveDetail" disabled="@isSavingDetail">
+                        @if (isSavingDetail) { <div class="btn-spinner-sm"></div> <span>جاري الحفظ...</span> }
+                        else { <span>حفظ</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDetailDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- مودال حذف القائمة -->
+    @if (showDeleteDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon delete-modal-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                </div>
+                <h4>تأكيد الحذف</h4>
+                <p>هل أنت متأكد من حذف: <strong>@deletePriceList?.PriceListNameAr</strong>؟</p>
+                @if (!string.IsNullOrEmpty(deleteMessage))
+                { <div class="form-message msg-error">@deleteMessage</div> }
+                <div class="modal-buttons">
+                    <button class="btn-modern btn-danger-modern" @onclick="ConfirmDelete">تأكيد الحذف</button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .items-page { display: flex; flex-direction: column; gap: 20px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+    .page-title { font-weight: 800; color: #1f2937; margin: 0; }
+    .page-subtitle { color: #6b7280; font-size: .88rem; margin: 4px 0 0; }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+    .result-badge { background: #f3f4f6; color: #4b5563; padding: 8px 16px; border-radius: 999px; font-size: .82rem; font-weight: 700; }
+
+    .pl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .pl-card { background: white; border-radius: 20px; border: 2px solid #eef2f7; box-shadow: 0 4px 16px rgba(15,23,42,.04); overflow: hidden; transition: .2s; cursor: pointer; }
+    .pl-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,23,42,.08); }
+    .pl-default { border-color: #93c5fd; }
+    .pl-selected { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    .pl-card-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f3f4f6; }
+    .pl-name { font-weight: 800; color: #1f2937; }
+    .pl-code { background: #f3f4f6; padding: 2px 8px; border-radius: 6px; font-size: .78rem; color: #1d4ed8; font-weight: 600; }
+    .default-badge { background: linear-gradient(135deg, #1d4ed8, #93c5fd); color: white; padding: 4px 12px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+    .pl-card-body { padding: 14px 20px; }
+    .pl-info { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+    .pl-label { font-size: .82rem; color: #9ca3af; font-weight: 600; }
+    .pl-value { font-size: .85rem; color: #374151; font-weight: 600; }
+    .count-badge { background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 8px; font-size: .82rem; font-weight: 700; }
+    .type-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700; }
+    .type-pl-1 { background: #eff6ff; color: #2563eb; } .type-pl-2 { background: #ecfeff; color: #0891b2; }
+    .type-pl-3 { background: #fef3c7; color: #d97706; } .type-pl-4 { background: #f3f4f6; color: #6b7280; }
+    .pl-card-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #f3f4f6; background: #fafbfc; }
+
+    .details-section { background: white; border-radius: 20px; padding: 24px; border: 1px solid #eef2f7; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
+    .details-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .details-header h3 { font-weight: 800; color: #1f2937; margin: 0; font-size: 1rem; }
+
+    .table-card { background: white; border-radius: 16px; overflow: hidden; border: 1px solid #eef2f7; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead { background: #f8f9fc; }
+    .data-table th { padding: 12px 14px; font-size: .82rem; font-weight: 700; color: #6b7280; text-align: right; border-bottom: 2px solid #eef2f7; white-space: nowrap; }
+    .data-table td { padding: 11px 14px; font-size: .88rem; color: #374151; border-bottom: 1px solid #f3f4f6; }
+    .data-table tbody tr:hover { background: #f8f7ff; }
+    .th-num { width: 40px; text-align: center; } .th-center { text-align: center; }
+    .th-number { text-align: left; } .th-actions { width: 120px; text-align: center; }
+    .td-num { text-align: center; color: #9ca3af; } .td-number { text-align: left; font-family: monospace; font-weight: 600; } .td-actions { text-align: center; }
+    .item-code { background: #f3f4f6; padding: 4px 8px; border-radius: 6px; font-size: .8rem; color: #1d4ed8; font-weight: 600; }
+    .item-name { font-weight: 700; color: #1f2937; }
+
+    .action-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 8px; border: 1.5px solid; background: transparent; font-size: .78rem; font-weight: 700; cursor: pointer; transition: .2s; }
+    .edit-btn { color: #1d4ed8; border-color: #e9e0ff; } .edit-btn:hover { background: #f5f3ff; }
+    .delete-btn { color: #ef4444; border-color: #fee2e2; } .delete-btn:hover { background: #fef2f2; }
+    .btn-modern { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 14px; border: none; font-weight: 700; font-size: .88rem; cursor: pointer; transition: .2s; }
+    .btn-modern:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,.25); }
+    .btn-danger-modern { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
+    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+    .btn-icon { font-size: 1.1rem; font-weight: 800; }
+    .btn-spinner-sm { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .6s linear infinite; }
+
+    .toggle-switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .toggle-switch input { display: none; }
+    .toggle-slider { width: 44px; height: 24px; background: #d1d5db; border-radius: 999px; position: relative; transition: .3s; flex-shrink: 0; }
+    .toggle-slider::after { content: ''; position: absolute; width: 18px; height: 18px; background: white; border-radius: 50%; top: 3px; right: 3px; transition: .3s; box-shadow: 0 2px 4px rgba(0,0,0,.15); }
+    .toggle-switch input:checked + .toggle-slider { background: #1d4ed8; }
+    .toggle-switch input:checked + .toggle-slider::after { right: 23px; }
+    .toggle-text { font-size: .85rem; font-weight: 600; color: #374151; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; overflow-y: auto; padding: 20px; }
+    .modal-card { background: white; border-radius: 24px; padding: 36px; max-width: 440px; width: 90%; text-align: center; box-shadow: 0 24px 48px rgba(0,0,0,.15); animation: modalIn .3s ease; }
+    .form-modal { max-width: 600px; text-align: right; }
+    .modal-title { font-weight: 800; color: #1f2937; margin-bottom: 20px; text-align: center; }
+    .modal-icon { width: 64px; height: 64px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+    .delete-modal-icon { background: #fef2f2; color: #ef4444; }
+    .modal-buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+    .modal-buttons-row { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .form-grid-modal { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .field-label { font-size: .82rem; font-weight: 700; color: #374151; }
+    .required-field::after { content: ' *'; color: #ef4444; }
+    .field-input, .field-select { padding: 10px 14px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: .9rem; background: white; outline: none; width: 100%; transition: .2s; }
+    .field-input:focus, .field-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .form-message { padding: 10px 14px; border-radius: 12px; font-size: .85rem; font-weight: 600; margin-top: 12px; }
+    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .toast-container { position: fixed; bottom: 24px; left: 24px; z-index: 1050; animation: toastIn .4s ease; }
+    .toast-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.12); min-width: 320px; }
+    .toast-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .toast-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .toast-text { flex: 1; font-weight: 600; font-size: .88rem; }
+    .toast-close { background: transparent; border: none; font-size: 1rem; cursor: pointer; color: inherit; opacity: .6; }
+    @@keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 40px 20px; background: #fafbfc; border-radius: 16px; border: 1px solid #eef2f7; }
+    .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    @@media (max-width: 768px) { .page-header { flex-direction: column; } .pl-grid { grid-template-columns: 1fr; } .form-grid-modal { grid-template-columns: 1fr; } }
+</style>
+
+@code {
+    private List<PriceListHeaderDto> priceLists = new();
+    private List<PriceListDetailDto>? details;
+    private List<LookupDto>? currencies;
+    private List<LookupDto>? finishedItems;
+    private List<LookupDto>? unitsList;
+    private ModulePermissionDto? permissions;
+    private bool isLoading = true;
+    private int selectedPriceListId = 0;
+
+    // مودال القائمة
+    private bool showFormDialog = false;
+    private bool isEditMode = false;
+    private PriceListEditDto editItem = new();
+    private bool isSaving = false;
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    // مودال التفاصيل
+    private bool showDetailDialog = false;
+    private bool isEditDetail = false;
+    private PriceListDetailEditDto editDetail = new();
+    private bool isSavingDetail = false;
+    private string detailMessage = "";
+    private bool detailSuccess = true;
+
+    // حذف
+    private bool showDeleteDialog = false;
+    private PriceListHeaderDto? deletePriceList;
+    private string deleteMessage = "";
+
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_PRICELISTS");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        priceLists = await PriceListService.GetPriceListsAsync();
+        currencies = await LookupService.GetCurrenciesAsync();
+        finishedItems = await PriceListService.GetFinishedItemsAsync();
+        unitsList = await LookupService.GetUnitsAsync();
+        isLoading = false;
+    }
+
+    private async Task SelectPriceList(int priceListId)
+    {
+        selectedPriceListId = priceListId;
+        details = await PriceListService.GetPriceListDetailsAsync(priceListId);
+    }
+
+    // ===== القائمة =====
+    private void ShowAddDialog()
+    { isEditMode = false; editItem = new PriceListEditDto(); formMessage = ""; showFormDialog = true; }
+
+    private async Task ShowEditDialog(int id)
+    {
+        var loaded = await PriceListService.GetPriceListByIdAsync(id);
+        if (loaded != null) { isEditMode = true; editItem = loaded; formMessage = ""; showFormDialog = true; }
+    }
+
+    private void CloseDialog() { showFormDialog = false; }
+
+    private async Task SavePriceList()
+    {
+        formMessage = "";
+        if (string.IsNullOrWhiteSpace(editItem.PriceListCode)) { formMessage = "يجب إدخال الكود"; formSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(editItem.PriceListNameAr)) { formMessage = "يجب إدخال الاسم"; formSuccess = false; return; }
+        if (editItem.PriceListType == 0) { formMessage = "يجب اختيار النوع"; formSuccess = false; return; }
+
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (isEditMode) { await PriceListService.UpdatePriceListAsync(editItem, UserSession.UserID); resultMessage = "تم التعديل ✅"; }
+            else { await PriceListService.InsertPriceListAsync(editItem, UserSession.UserID); resultMessage = "تم الإضافة ✅"; }
+            resultSuccess = true; showFormDialog = false; await LoadData();
+        }
+        catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
+        finally { isSaving = false; }
+    }
+
+    // ===== التفاصيل =====
+    private void ShowAddDetailDialog()
+    { isEditDetail = false; editDetail = new PriceListDetailEditDto { PriceListID = selectedPriceListId, MinQty = 1 }; detailMessage = ""; showDetailDialog = true; }
+
+    private void ShowEditDetailDialog(PriceListDetailDto d)
+    {
+        isEditDetail = true;
+        editDetail = new PriceListDetailEditDto
+        { PriceDetailID = d.PriceDetailID, PriceListID = d.PriceListID, ItemID = d.ItemID, UnitID = d.UnitID,
+          UnitPrice = d.UnitPrice, MinQty = d.MinQty, DiscountPercent = d.DiscountPercent, MinSellingPrice = d.MinSellingPrice };
+        detailMessage = ""; showDetailDialog = true;
+    }
+
+    private void CloseDetailDialog() { showDetailDialog = false; }
+
+    private async Task SaveDetail()
+    {
+        detailMessage = "";
+        if (editDetail.ItemID == 0) { detailMessage = "اختر الصنف"; detailSuccess = false; return; }
+        if (editDetail.UnitID == 0) { detailMessage = "اختر الوحدة"; detailSuccess = false; return; }
+        if (editDetail.UnitPrice <= 0) { detailMessage = "أدخل السعر"; detailSuccess = false; return; }
+
+        isSavingDetail = true; StateHasChanged();
+        try
+        {
+            if (isEditDetail) await PriceListService.UpdatePriceDetailAsync(editDetail, UserSession.UserID);
+            else await PriceListService.InsertPriceDetailAsync(editDetail, UserSession.UserID);
+            resultMessage = "تم الحفظ ✅"; resultSuccess = true;
+            showDetailDialog = false;
+            details = await PriceListService.GetPriceListDetailsAsync(selectedPriceListId);
+            await LoadData();
+        }
+        catch (Exception ex) { detailMessage = "خطأ: " + ex.Message; detailSuccess = false; }
+        finally { isSavingDetail = false; }
+    }
+
+    private async Task DeleteDetail(int detailId)
+    {
+        await PriceListService.DeletePriceDetailAsync(detailId, UserSession.UserID);
+        resultMessage = "تم الحذف ✅"; resultSuccess = true;
+        details = await PriceListService.GetPriceListDetailsAsync(selectedPriceListId);
+        await LoadData();
+    }
+
+    // ===== حذف القائمة =====
+    private void ShowDeleteConfirm(PriceListHeaderDto pl) { deletePriceList = pl; deleteMessage = ""; showDeleteDialog = true; }
+    private void CloseDeleteDialog() { showDeleteDialog = false; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deletePriceList == null) return;
+        try
+        {
+            var result = await PriceListService.DeletePriceListAsync(deletePriceList.PriceListID, UserSession.UserID);
+            if (result.Success) { resultMessage = result.Message + " ✅"; resultSuccess = true; showDeleteDialog = false; selectedPriceListId = 0; details = null; await LoadData(); }
+            else { deleteMessage = result.Message; }
+        }
+        catch (Exception ex) { deleteMessage = "خطأ: " + ex.Message; }
+    }
+}

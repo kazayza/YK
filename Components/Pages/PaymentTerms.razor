@@ -1,0 +1,523 @@
+﻿@page "/payment-terms"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PaymentTermService PtService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>شروط الدفع - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (perms == null || !perms.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="page-wrap" dir="rtl">
+
+        <!-- Header -->
+        <div class="page-hdr">
+            <div><h2 class="page-title">💳 شروط الدفع</h2><p class="page-sub">إدارة شروط وأيام الاستحقاق والخصومات</p></div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count شرط</span>
+                @if (perms.CanExport)
+                {
+                    <button class="btn-m btn-export" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spin"></div><span>جاري...</span> }
+                        else { <span>📎 تصدير</span> }
+                    </button>
+                }
+                @if (perms.CanAdd)
+                { <button class="btn-m btn-primary" @onclick="ShowAdd">➕ شرط جديد</button> }
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-row">
+            <div class="stat-card"><div class="stat-value">@terms.Count</div><div class="stat-label">إجمالي الشروط</div></div>
+            <div class="stat-card stat-active"><div class="stat-value">@terms.Count(t => t.IsActive)</div><div class="stat-label">نشطة</div></div>
+            <div class="stat-card stat-inactive"><div class="stat-value">@terms.Count(t => !t.IsActive)</div><div class="stat-label">غير نشطة</div></div>
+            <div class="stat-card stat-avg"><div class="stat-value">@GetAvgDueDays()</div><div class="stat-label">متوسط أيام الاستحقاق</div></div>
+        </div>
+
+        <!-- Quick Cards (Active Only) -->
+        @if (terms.Any(t => t.IsActive))
+        {
+            <div class="terms-cards">
+                @foreach (var t in terms.Where(x => x.IsActive).Take(6))
+                {
+                    <div class="pt-card">
+                        <div class="pt-days">@t.DueDays</div>
+                        <div class="pt-label">يوم</div>
+                        <div class="pt-name">@t.TermNameAr</div>
+                        <div class="pt-code">@t.TermCode</div>
+                        @if (t.DiscountPercent > 0)
+                        { <div class="pt-disc">خصم @t.DiscountPercent% خلال @t.DiscountDays يوم</div> }
+                        else
+                        { <div class="pt-disc nodisc">بدون خصم</div> }
+                        <div class="pt-used">مستخدم: @t.UsedCount</div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Filter Row -->
+        <div class="filter-row">
+            <div class="search-wrap">
+                <input class="search-inp" type="text" placeholder="بحث بالاسم أو الكود..." @bind="searchText" @bind:event="oninput" @bind:after="ApplyFilter" />
+                @if (!string.IsNullOrEmpty(searchText)) { <button class="search-clr" @onclick='() => { searchText = ""; ApplyFilter(); }'>✕</button> }
+            </div>
+            <select class="filter-select" @bind="statusFilter" @bind:after="ApplyFilter">
+                <option value="all">الكل</option>
+                <option value="active">نشطة فقط</option>
+                <option value="inactive">غير نشطة فقط</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">🔄 تحديث</button>
+        </div>
+
+        <!-- Table -->
+        @if (!filtered.Any())
+        { <div class="empty-st"><h4>لا توجد شروط دفع</h4></div> }
+        else
+        {
+            <div class="tbl-card"><table class="tbl">
+                <thead><tr>
+                    <th>#</th><th>الكود</th><th>الاسم (عربي)</th><th>الاسم (إنجليزي)</th>
+                    <th class="tc">أيام الاستحقاق</th><th class="tc">نسبة الخصم</th><th class="tc">أيام الخصم</th>
+                    <th class="tc">مستخدم</th><th class="tc">الحالة</th>
+                    @if (perms.CanEdit || perms.CanDelete) { <th class="tc">إجراءات</th> }
+                </tr></thead>
+                <tbody>
+                    @{ int n = 0; }
+                    @foreach (var t in filtered)
+                    {
+                        n++;
+                        <tr>
+                            <td class="td-n">@n</td>
+                            <td><code class="code-tag">@t.TermCode</code></td>
+                            <td class="td-name">@t.TermNameAr</td>
+                            <td class="td-muted">@(t.TermNameEn ?? "—")</td>
+                            <td class="tc"><span class="days-badge">@t.DueDays يوم</span></td>
+                            <td class="tc">@(t.DiscountPercent > 0 ? $"{t.DiscountPercent}%" : "—")</td>
+                            <td class="tc">@(t.DiscountDays > 0 ? $"{t.DiscountDays} يوم" : "—")</td>
+                            <td class="tc"><span class="cnt-badge">@t.UsedCount</span></td>
+                            <td class="tc">
+                                <span class="status-dot @(t.IsActive ? "dot-green" : "dot-red")"></span>
+                                <span class="status-text">@(t.IsActive ? "نشط" : "غير نشط")</span>
+                            </td>
+                            @if (perms.CanEdit || perms.CanDelete)
+                            {
+                                <td class="tc"><div class="actions-wrap">
+                                    @if (perms.CanEdit) { <button class="act-btn edit-btn" @onclick="() => ShowEdit(t)" title="تعديل">✏️</button> }
+                                    @if (!t.IsActive && perms.CanEdit) { <button class="act-btn activate-btn" @onclick="() => ActivateTerm(t)" title="تفعيل">✅</button> }
+                                    @if (perms.CanDelete && t.IsActive) { <button class="act-btn delete-btn" @onclick="() => ShowDel(t)" title="تعطيل">🔴</button> }
+                                </div></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        }
+    </div>
+
+    <!-- Modal: إضافة / تعديل -->
+    @if (showForm)
+    {
+        <div class="modal-ov" @onclick="() => showForm = false"><div class="modal-box" @onclick:stopPropagation="true">
+            <h4 class="modal-title">@(editItem.PaymentTermID == 0 ? "إضافة شرط دفع" : "تعديل شرط دفع")</h4>
+            <div class="form-grid c2">
+                <div class="f-field"><label class="f-label required">الكود</label><input type="text" class="f-input" @bind="editItem.TermCode" placeholder="NET30, CASH..." maxlength="20" /></div>
+                <div class="f-field"><label class="f-label required">الاسم (عربي)</label><input type="text" class="f-input" @bind="editItem.TermNameAr" placeholder="استحقاق 30 يوم..." /></div>
+                <div class="f-field"><label class="f-label">الاسم (إنجليزي)</label><input type="text" class="f-input" @bind="editItem.TermNameEn" placeholder="Net 30 Days..." /></div>
+                <div class="f-field"><label class="f-label required">أيام الاستحقاق</label><input type="number" class="f-input" @bind="editItem.DueDays" min="0" /></div>
+                <div class="f-field"><label class="f-label">نسبة الخصم %</label><input type="number" class="f-input" @bind="editItem.DiscountPercent" step="0.01" min="0" /></div>
+                <div class="f-field"><label class="f-label">أيام الخصم</label><input type="number" class="f-input" @bind="editItem.DiscountDays" min="0" /></div>
+            </div>
+            <div class="form-hint">💡 نسبة الخصم: لو الدفع خلال أيام الخصم، العميل/المورد ياخد الخصم ده</div>
+            @if (!string.IsNullOrEmpty(formMsg)) { <div class="form-msg msg-err">@formMsg</div> }
+            <div class="modal-btns">
+                <button class="btn-m btn-primary" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spin"></div>}حفظ</button>
+                <button class="btn-m btn-ghost" @onclick="() => showForm = false">إلغاء</button>
+            </div>
+        </div></div>
+    }
+
+    <!-- Modal: تعطيل -->
+    @if (showDelete)
+    {
+        <div class="modal-ov" @onclick="() => showDelete = false"><div class="modal-box" @onclick:stopPropagation="true">
+            <h4>تعطيل شرط الدفع</h4>
+            <p>هل تريد تعطيل شرط الدفع: <strong>@deleteItem?.TermNameAr</strong>؟</p>
+            <p class="delete-hint">⚠️ سيتم إيقاف تنشيط الشرط فقط، ويمكن تفعيله لاحقاً</p>
+            @if (!string.IsNullOrEmpty(delMsg)) { <div class="form-msg msg-err">@delMsg</div> }
+            <div class="modal-btns">
+                <button class="btn-m btn-danger" @onclick="ConfirmDelete" disabled="@isDeleting">@if(isDeleting){<div class="btn-spin"></div>}تعطيل</button>
+                <button class="btn-m btn-ghost" @onclick="() => showDelete = false">إلغاء</button>
+            </div>
+        </div></div>
+    }
+
+    <!-- Toast -->
+    @if (!string.IsNullOrEmpty(toast))
+    { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+}
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}
+    .page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}
+    .page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}
+    .page-sub{color:#64748b;font-size:.84rem;margin:3px 0 0}
+    .hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    
+    /* Stats */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+    .stat-card{background:white;border-radius:16px;padding:14px;text-align:center;border:1px solid #e2e8f0;border-top:3px solid #64748b}
+    .stat-active{border-top-color:#22c55e}.stat-inactive{border-top-color:#ef4444}.stat-avg{border-top-color:#2563eb}
+    .stat-value{font-size:1.5rem;font-weight:800;color:#0f172a}.stat-label{font-size:.75rem;color:#64748b;margin-top:4px}
+    
+    /* Terms Cards */
+    .terms-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+    .pt-card{background:white;border:1.5px solid #e2e8f0;border-radius:16px;padding:15px;text-align:center;transition:.2s}
+    .pt-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.04)}
+    .pt-days{font-size:2rem;font-weight:900;color:#0f172a;line-height:1}
+    .pt-label{font-size:.75rem;color:#64748b;font-weight:600}
+    .pt-name{font-size:.85rem;font-weight:800;color:#334155;margin-top:6px}
+    .pt-code{font-size:.7rem;color:#94a3b8;margin-top:2px}
+    .pt-disc{margin-top:8px;padding:3px 8px;border-radius:6px;font-size:.7rem;font-weight:700;background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+    .nodisc{background:#f1f5f9;color:#94a3b8;border-color:#e2e8f0}
+    .pt-used{font-size:.65rem;color:#94a3b8;margin-top:5px}
+    
+    /* Filter */
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .search-wrap{flex:2;min-width:200px;position:relative}
+    .search-inp{width:100%;padding:10px 14px 10px 36px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
+    .search-inp:focus{border-color:#2563eb;outline:none}
+    .search-clr{position:absolute;left:10px;top:50%;transform:translateY(-50%);background:#f1f5f9;border:none;width:22px;height:22px;border-radius:50%;cursor:pointer}
+    .filter-select{padding:9px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white;min-width:130px}
+    
+    /* Table */
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}
+    .tbl{width:100%;border-collapse:collapse}
+    .tbl thead{background:#f8fafc}
+    .tbl th{padding:12px 14px;font-size:.82rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0}
+    .tbl td{padding:10px 12px;font-size:.85rem;color:#334155;border-bottom:1px solid #f1f5f9}
+    .tbl tbody tr:nth-child(even){background:#fafcff}
+    .tbl tbody tr:hover{background:#f8f7ff}
+    .tc{text-align:center}
+    .td-n{color:#94a3b8;text-align:center;width:45px}
+    .td-name{font-weight:700;color:#0f172a}
+    .td-muted{color:#64748b}
+    
+    .code-tag{background:#f1f5f9;padding:3px 10px;border-radius:6px;font-size:.8rem;color:#2563eb;font-weight:600}
+    .days-badge{background:#eff6ff;color:#1e40af;padding:3px 10px;border-radius:6px;font-size:.75rem;font-weight:700}
+    .cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.7rem;font-weight:700}
+    
+    .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%}
+    .dot-green{background:#22c55e;box-shadow:0 0 0 2px #d1fae5}
+    .dot-red{background:#ef4444;box-shadow:0 0 0 2px #fee2e2}
+    .status-text{font-size:.7rem;margin-right:5px}
+    
+    /* Action Buttons */
+    .actions-wrap{display:flex;gap:5px;justify-content:center}
+    .act-btn{width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:white;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.2s}
+    .act-btn:hover{transform:scale(1.05)}
+    .edit-btn{color:#1d4ed8}.edit-btn:hover{background:#f5f3ff}
+    .delete-btn{color:#ef4444}.delete-btn:hover{background:#fef2f2}
+    .activate-btn{color:#22c55e}.activate-btn:hover{background:#ecfdf5}
+    
+    /* Buttons */
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.85rem;cursor:pointer;transition:.2s}
+    .btn-m:disabled{opacity:.6;cursor:not-allowed}
+    .btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}
+    .btn-export{background:linear-gradient(135deg,#059669,#10b981);color:white}
+    .btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}
+    .btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
+    .btn-ghost:hover{background:#f8fafc}
+    .btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    
+    /* Modal */
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal-box{background:white;border-radius:20px;padding:28px;max-width:540px;width:100%}
+    .modal-title{font-weight:800;margin:0 0 18px;font-size:1.1rem}
+    .modal-btns{display:flex;gap:8px;margin-top:18px;justify-content:center}
+    .delete-hint{color:#f59e0b;font-size:.75rem;margin-top:-5px;margin-bottom:12px}
+    
+    /* Form */
+    .form-grid{display:grid;gap:14px}
+    .c2{grid-template-columns:1fr 1fr}
+    .f-field{display:flex;flex-direction:column;gap:5px}
+    .f-label{font-size:.8rem;font-weight:700;color:#334155}
+    .required::after{content:' *';color:#ef4444}
+    .f-input{padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.85rem;background:white;width:100%}
+    .f-input:focus{border-color:#2563eb;outline:none}
+    .form-hint{margin-top:10px;font-size:.75rem;color:#94a3b8}
+    .form-msg{padding:8px 12px;border-radius:8px;font-size:.8rem;font-weight:600;margin-top:10px}
+    .msg-err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    
+    /* Toast */
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}
+    .toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.85rem}
+    .t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+    .t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    
+    /* States */
+    .empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}
+    .empty-st h4{color:#64748b}
+    .no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}
+    .na-icon{font-size:3rem;margin-bottom:12px}
+    
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    
+    @@media(max-width:768px){.c2{grid-template-columns:1fr}.terms-cards{grid-template-columns:repeat(2,1fr)}.stats-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+<script>
+    window.downloadFile = (fileName, mimeType, base64Data) => {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = `data:${mimeType};base64,${base64Data}`;
+        link.click();
+    };
+</script>
+
+@code {
+    private List<PaymentTermListDto> terms = new();
+    private List<PaymentTermListDto> filtered = new();
+    private ModulePermissionDto? perms;
+    private string searchText = "";
+    private string statusFilter = "all";
+    private string toast = ""; 
+    private bool toastOk = true;
+    private bool isExporting = false;
+
+    // Form
+    private bool showForm = false;
+    private PaymentTermEditDto editItem = new();
+    private string formMsg = "";
+    private bool isSaving = false;
+
+    // Delete
+    private bool showDelete = false;
+    private PaymentTermListDto? deleteItem;
+    private string delMsg = "";
+    private bool isDeleting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        perms = PermissionService.GetModule("SCR_PAYTERMS");
+        if (perms != null && perms.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        terms = await PtService.GetAllAsync(true);
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        var query = terms.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(searchText))
+        {
+            query = query.Where(t =>
+                t.TermCode?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true ||
+                t.TermNameAr?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true ||
+                t.TermNameEn?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        query = statusFilter switch
+        {
+            "active" => query.Where(t => t.IsActive),
+            "inactive" => query.Where(t => !t.IsActive),
+            _ => query
+        };
+
+        filtered = query.ToList();
+    }
+
+    private int GetAvgDueDays()
+    {
+        if (!terms.Any()) return 0;
+        return (int)Math.Round(terms.Average(t => t.DueDays));
+    }
+
+    private void ShowAdd()
+    {
+        editItem = new() { DueDays = 30, DiscountPercent = 0, DiscountDays = 0 };
+        formMsg = ""; showForm = true;
+    }
+
+    private void ShowEdit(PaymentTermListDto t)
+    {
+        editItem = new()
+        {
+            PaymentTermID = t.PaymentTermID,
+            TermCode = t.TermCode,
+            TermNameAr = t.TermNameAr,
+            TermNameEn = t.TermNameEn,
+            DueDays = t.DueDays,
+            DiscountPercent = t.DiscountPercent,
+            DiscountDays = t.DiscountDays,
+            IsActive = t.IsActive
+        };
+        formMsg = ""; showForm = true;
+    }
+
+    private async Task ActivateTerm(PaymentTermListDto t)
+    {
+        try
+        {
+            var edit = new PaymentTermEditDto
+            {
+                PaymentTermID = t.PaymentTermID,
+                TermCode = t.TermCode,
+                TermNameAr = t.TermNameAr,
+                TermNameEn = t.TermNameEn,
+                DueDays = t.DueDays,
+                DiscountPercent = t.DiscountPercent,
+                DiscountDays = t.DiscountDays,
+                IsActive = true
+            };
+            await PtService.UpdateAsync(edit, UserSession.UserID);
+            toast = $"تم تفعيل شرط الدفع: {t.TermNameAr} ✅";
+            toastOk = true;
+            await LoadData();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            toast = "خطأ: " + ex.Message;
+            toastOk = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        formMsg = "";
+        if (string.IsNullOrWhiteSpace(editItem.TermCode)) { formMsg = "أدخل الكود"; return; }
+        if (string.IsNullOrWhiteSpace(editItem.TermNameAr)) { formMsg = "أدخل الاسم"; return; }
+        if (editItem.DueDays < 0) { formMsg = "أيام الاستحقاق لازم 0 أو أكتر"; return; }
+
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (editItem.PaymentTermID == 0)
+            {
+                await PtService.InsertAsync(editItem, UserSession.UserID);
+                toast = "تم إضافة شرط الدفع ✅"; toastOk = true;
+            }
+            else
+            {
+                await PtService.UpdateAsync(editItem, UserSession.UserID);
+                toast = "تم تعديل شرط الدفع ✅"; toastOk = true;
+            }
+            showForm = false; 
+            await LoadData();
+            StateHasChanged();
+        }
+        catch (Exception ex) { formMsg = "خطأ: " + ex.Message; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private void ShowDel(PaymentTermListDto t) 
+    { 
+        deleteItem = t; 
+        delMsg = ""; 
+        showDelete = true; 
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteItem == null) return;
+
+        isDeleting = true;
+        delMsg = "";
+        StateHasChanged();
+
+        try
+        {
+            var result = await PtService.DeleteAsync(deleteItem.PaymentTermID, UserSession.UserID);
+            
+            if (result.Success)
+            {
+                toast = result.Message + " ✅";
+                toastOk = true;
+                showDelete = false;
+                deleteItem = null;
+                await LoadData();
+                StateHasChanged();
+            }
+            else
+            {
+                delMsg = result.Message;
+                toast = "فشل: " + result.Message;
+                toastOk = false;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            delMsg = "خطأ: " + ex.Message;
+            toast = "خطأ: " + ex.Message;
+            toastOk = false;
+            StateHasChanged();
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (!filtered.Any())
+        {
+            toast = "لا توجد بيانات للتصدير";
+            toastOk = false;
+            return;
+        }
+
+        isExporting = true;
+        StateHasChanged();
+
+        try
+        {
+            using var stream = new MemoryStream();
+            using var writer = new StreamWriter(stream);
+            
+            await writer.WriteLineAsync("الكود,الاسم (عربي),الاسم (إنجليزي),أيام الاستحقاق,نسبة الخصم,أيام الخصم,عدد مرات الاستخدام,الحالة");
+            
+            foreach (var t in filtered)
+            {
+                await writer.WriteLineAsync($"{t.TermCode},{t.TermNameAr},{t.TermNameEn ?? ""},{t.DueDays},{t.DiscountPercent},{t.DiscountDays},{t.UsedCount},{(t.IsActive ? "نشط" : "غير نشط")}");
+            }
+            
+            writer.Flush();
+            var bytes = stream.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            
+            await JS.InvokeVoidAsync("downloadFile", $"PaymentTerms_{DateTime.Now:yyyyMMdd_HHmmss}.csv", "text/csv", base64);
+            toast = $"تم تصدير {filtered.Count} شرط بنجاح ✅";
+            toastOk = true;
+        }
+        catch (Exception ex)
+        {
+            toast = "خطأ في التصدير: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+}

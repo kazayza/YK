@@ -1,0 +1,138 @@
+﻿@page "/stock-transfers"
+@page "/stock-transfer"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject InventoryService InvService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>تحويلات المخزون - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="page-wrap" dir="rtl">
+        <div class="page-hdr">
+            <div><h2 class="page-title">تحويلات المخزون</h2><p class="page-sub">التحويل بين المخازن</p></div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count تحويل</span>
+                @if (permissions.CanAdd)
+                { <button class="btn-m btn-primary" @onclick='()=>Navigation.NavigateTo("/stock-transfers/new")'>➕ تحويل جديد</button> }
+            </div>
+        </div>
+
+        <div class="filter-row">
+            <div class="search-wrap">
+                <input class="search-inp" type="text" placeholder="بحث..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+            </div>
+            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
+                <option value="0">كل الحالات</option>
+                <option value="1">مسودة</option><option value="2">معتمد</option>
+                <option value="3">تم التحويل</option><option value="4">ملغي</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">🔄</button>
+        </div>
+
+        @if(transfers==null){<div class="loading-st"><div class="loader"></div></div>}
+        else if(!filtered.Any()){<div class="empty-st"><h4>لا توجد تحويلات</h4></div>}
+        else
+        {
+            <div class="tbl-card"><table class="tbl">
+                <thead><tr><th>#</th><th>الرقم</th><th>التاريخ</th><th>من</th><th>إلى</th><th>السبب</th>
+                    <th class="tc">أصناف</th><th class="tl">القيمة</th><th class="tc">الحالة</th><th class="tc">إجراءات</th></tr></thead>
+                <tbody>
+                    @{int n=0;}
+                    @foreach(var t in filtered){n++;
+                    <tr class="@(t.TransferStatus==1?"tr-draft":"")">
+                        <td class="td-n">@n</td>
+                        <td><span class="doc-num" @onclick="()=>ViewTransfer(t.TransferID)" style="cursor:pointer">@t.TransferNumber</span></td>
+                        <td>@t.TransferDate.ToString("dd/MM/yyyy")</td>
+                        <td class="td-bold">@t.FromWarehouseName</td>
+                        <td class="td-bold">@t.ToWarehouseName</td>
+                        <td class="td-muted">@(t.TransferReason ?? "—")</td>
+                        <td class="tc"><span class="cnt-badge">@t.ItemCount</span></td>
+                        <td class="tl num-cell">@t.TotalValue.ToString("#,##0.00")</td>
+                        <td class="tc"><span class="status-badge" style="--sc:@InventoryService.GetTransferStatusColor(t.TransferStatus)">@InventoryService.GetTransferStatusName(t.TransferStatus)</span></td>
+                        <td class="tc"><div class="actions-wrap">
+                            @if(permissions.CanEdit && t.TransferStatus==1){<button class="act-btn" @onclick="()=>EditTransfer(t.TransferID)">✏️</button>}
+                            else{<button class="act-btn" @onclick="()=>ViewTransfer(t.TransferID)">👁️</button>}
+                            @if(permissions.CanApprove && t.TransferStatus==1){<button class="act-btn" @onclick="()=>EditTransfer(t.TransferID)">✅</button>}
+                            @if(permissions.CanDelete && t.TransferStatus==1){<button class="act-btn" @onclick="()=>ShowDelete(t)">🗑️</button>}
+                        </div></td>
+                    </tr>}
+                </tbody>
+            </table></div>
+        }
+    </div>
+
+    @if(showDeleteDialog){<div class="modal-ov" @onclick="()=>showDeleteDialog=false"><div class="modal-box" @onclick:stopPropagation="true">
+        <h4>تأكيد الحذف</h4><p>حذف التحويل: <strong>@deleteItem?.TransferNumber</strong>؟</p>
+        @if(!string.IsNullOrEmpty(deleteMsg)){<div class="form-msg err">@deleteMsg</div>}
+        <div class="modal-btns"><button class="btn-m btn-danger" @onclick="ConfirmDelete">حذف</button><button class="btn-m btn-ghost" @onclick="()=>showDeleteDialog=false">إلغاء</button></div>
+    </div></div>}
+    @if(!string.IsNullOrEmpty(toast)){<div class="toast-wrap"><div class="toast @(toastOk?"t-ok":"t-err")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem}.hdr-actions{display:flex;align-items:center;gap:10px}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:200px}.search-inp{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1000px}.tbl thead{background:#f8fafc}.tbl th{padding:12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}.tr-draft{opacity:.8}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;text-align:center}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.num-cell{font-family:monospace;font-weight:600}.doc-num{color:#2563eb;font-weight:700;text-decoration:underline}.cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}
+    .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
+    .actions-wrap{display:flex;gap:5px;justify-content:center}.act-btn{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem}.act-btn:hover{background:#f8fafc}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000}.modal-box{background:white;border-radius:20px;padding:28px;max-width:400px;width:90%;text-align:center}.modal-box h4{font-weight:800;margin:0 0 8px}.modal-box p{color:#475569;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;margin-top:10px}.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}}
+</style>
+
+@code {
+    private List<StockTransferListDto>? transfers;
+    private List<StockTransferListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = ""; private int filterStatus = 0;
+    private string toast = ""; private bool toastOk = true;
+    private bool showDeleteDialog = false; private StockTransferListDto? deleteItem; private string deleteMsg = "";
+//    private bool isExporting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_TRANSFER");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData() { transfers = await InvService.GetTransfersListAsync(); Filter(); }
+
+    private void Filter()
+    {
+        if (transfers == null) return;
+        filtered = transfers.Where(t =>
+            (filterStatus == 0 || t.TransferStatus == filterStatus) &&
+            (string.IsNullOrEmpty(searchText) || ArabicSearchHelper.Contains(t.TransferNumber, searchText) ||
+             ArabicSearchHelper.Contains(t.FromWarehouseName, searchText) || ArabicSearchHelper.Contains(t.ToWarehouseName, searchText))
+        ).ToList();
+    }
+
+    private void ViewTransfer(int id) => Navigation.NavigateTo($"/stock-transfers/view/{id}");
+    private void EditTransfer(int id) => Navigation.NavigateTo($"/stock-transfers/edit/{id}");
+    private void ShowDelete(StockTransferListDto t) { deleteItem = t; deleteMsg = ""; showDeleteDialog = true; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteItem == null) return;
+        var r = await InvService.DeleteTransferAsync(deleteItem.TransferID, UserSession.UserID);
+        if (r.Success) { toast = r.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+        else { deleteMsg = r.Message; }
+    }
+}

@@ -1,0 +1,151 @@
+﻿@page "/stock-counts"
+@page "/stock-count"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject InventoryService InvService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>الجرد - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="page-wrap" dir="rtl">
+        <div class="page-hdr">
+            <div><h2 class="page-title">أوامر الجرد</h2><p class="page-sub">جرد ومراجعة أرصدة المخزون</p></div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count جرد</span>
+                @if (permissions.CanAdd)
+                { <button class="btn-m btn-primary" @onclick='() => Navigation.NavigateTo("/stock-counts/new")'>➕ جرد جديد</button> }
+            </div>
+        </div>
+
+        @if (counts != null)
+        {
+            <div class="stats-row">
+                <div class="stat-box" style="border-top-color:#64748b"><div class="stat-n">@counts.Count(c => c.CountStatus == 1)</div><div class="stat-l">مسودة</div></div>
+                <div class="stat-box" style="border-top-color:#2563eb"><div class="stat-n">@counts.Count(c => c.CountStatus == 2)</div><div class="stat-l">قيد الجرد</div></div>
+                <div class="stat-box" style="border-top-color:#f59e0b"><div class="stat-n">@counts.Count(c => c.CountStatus == 3)</div><div class="stat-l">مكتمل</div></div>
+                <div class="stat-box" style="border-top-color:#10b981"><div class="stat-n">@counts.Count(c => c.CountStatus == 4)</div><div class="stat-l">معتمد</div></div>
+            </div>
+        }
+
+        <div class="filter-row">
+            <div class="search-wrap">
+                <input class="search-inp" type="text" placeholder="بحث..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+            </div>
+            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
+                <option value="0">كل الحالات</option>
+                <option value="1">مسودة</option><option value="2">قيد الجرد</option>
+                <option value="3">مكتمل</option><option value="4">معتمد</option><option value="5">ملغي</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">🔄</button>
+        </div>
+
+        @if (counts == null) { <div class="loading-st"><div class="loader"></div></div> }
+        else if (!filtered.Any()) { <div class="empty-st"><h4>لا توجد أوامر جرد</h4></div> }
+        else
+        {
+            <div class="tbl-card"><table class="tbl">
+                <thead><tr><th>#</th><th>الرقم</th><th>التاريخ</th><th>النوع</th><th>المخزن</th>
+                    <th class="tc">أصناف</th><th class="tc">تم جرده</th>
+                    <th class="tc">زيادة</th><th class="tc">نقص</th><th class="tl">قيمة الفرق</th>
+                    <th class="tc">الحالة</th><th class="tc">إجراءات</th></tr></thead>
+                <tbody>
+                    @{ int n = 0; }
+                    @foreach (var c in filtered)
+                    {
+                        n++;
+                        <tr class="@(c.CountStatus == 1 ? "tr-draft" : "")">
+                            <td class="td-n">@n</td>
+                            <td><span class="doc-num" @onclick="() => ViewCount(c.CountID)" style="cursor:pointer">@c.CountNumber</span></td>
+                            <td>@c.CountDate.ToString("dd/MM/yyyy")</td>
+                            <td>@c.CountTypeName</td>
+                            <td class="td-bold">@c.WarehouseNameAr</td>
+                            <td class="tc"><span class="cnt-badge">@c.ItemCount</span></td>
+                            <td class="tc">@c.CountedItems</td>
+                            <td class="tc"><span style="color:#059669">@c.SurplusItems</span></td>
+                            <td class="tc"><span style="color:#dc2626">@c.ShortageItems</span></td>
+                            <td class="tl num-cell">@c.TotalVarianceValue.ToString("#,##0.00")</td>
+                            <td class="tc"><span class="status-badge" style="--sc:@InventoryService.GetCountStatusColor(c.CountStatus)">@InventoryService.GetCountStatusName(c.CountStatus)</span></td>
+                            <td class="tc"><div class="actions-wrap">
+                                @if (c.CountStatus <= 3 && permissions.CanEdit) { <button class="act-btn" @onclick="() => EditCount(c.CountID)">✏️</button> }
+                                else { <button class="act-btn" @onclick="() => ViewCount(c.CountID)">👁️</button> }
+                                @if (permissions.CanDelete && c.CountStatus < 4) { <button class="act-btn" @onclick="() => ShowDelete(c)">🗑️</button> }
+                            </div></td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        }
+    </div>
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-ov" @onclick="() => showDeleteDialog = false"><div class="modal-box" @onclick:stopPropagation="true">
+            <h4>حذف الجرد</h4><p>حذف: <strong>@deleteItem?.CountNumber</strong>؟</p>
+            @if (!string.IsNullOrEmpty(deleteMsg)) { <div class="form-msg err">@deleteMsg</div> }
+            <div class="modal-btns"><button class="btn-m btn-danger" @onclick="ConfirmDelete">حذف</button><button class="btn-m btn-ghost" @onclick="() => showDeleteDialog = false">إلغاء</button></div>
+        </div></div>
+    }
+    @if (!string.IsNullOrEmpty(toast)) { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+}
+
+<style>
+    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem}.hdr-actions{display:flex;align-items:center;gap:10px}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}.stat-box{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:16px;text-align:center;border-top:3px solid}.stat-n{font-size:1.5rem;font-weight:900;color:#0f172a}.stat-l{font-size:.78rem;color:#64748b;margin-top:3px}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:200px}.search-inp{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
+    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1100px}.tbl thead{background:#f8fafc}.tbl th{padding:12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}.tr-draft{opacity:.8}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;text-align:center}.td-bold{font-weight:700;color:#0f172a}.num-cell{font-family:monospace;font-weight:600}.doc-num{color:#2563eb;font-weight:700;text-decoration:underline}.cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}
+    .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
+    .actions-wrap{display:flex;gap:5px;justify-content:center}.act-btn{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem}.act-btn:hover{background:#f8fafc}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000}.modal-box{background:white;border-radius:20px;padding:28px;max-width:400px;width:90%;text-align:center}.modal-box h4{font-weight:800;margin:0 0 8px}.modal-box p{color:#475569;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;margin-top:10px}.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}@@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.stats-row{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+@code {
+    private List<StockCountListDto>? counts;
+    private List<StockCountListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = ""; private int filterStatus = 0;
+    private string toast = ""; private bool toastOk = true;
+    private bool showDeleteDialog = false; private StockCountListDto? deleteItem; private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_COUNT");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData() { counts = await InvService.GetCountsListAsync(); Filter(); }
+    private void Filter()
+    {
+        if (counts == null) return;
+        filtered = counts.Where(c => (filterStatus == 0 || c.CountStatus == filterStatus) &&
+            (string.IsNullOrEmpty(searchText) || ArabicSearchHelper.Contains(c.CountNumber, searchText) ||
+             ArabicSearchHelper.Contains(c.WarehouseNameAr, searchText))).ToList();
+    }
+    private void ViewCount(int id) => Navigation.NavigateTo($"/stock-counts/view/{id}");
+    private void EditCount(int id) => Navigation.NavigateTo($"/stock-counts/edit/{id}");
+    private void ShowDelete(StockCountListDto c) { deleteItem = c; deleteMsg = ""; showDeleteDialog = true; }
+    private async Task ConfirmDelete()
+    {
+        if (deleteItem == null) return;
+        var r = await InvService.DeleteCountAsync(deleteItem.CountID, UserSession.UserID);
+        if (r.Success) { toast = r.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+        else { deleteMsg = r.Message; }
+    }
+}

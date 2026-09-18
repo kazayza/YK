@@ -1,0 +1,145 @@
+﻿Layout\MainLayout.razor :: 1178 :: if (!UserSession.IsLoggedIn)
+Layout\MainLayout.razor :: 1180 :: var restored = await UserSession.TryRestoreSessionAsync();
+Layout\MainLayout.razor :: 1208 :: if (UserSession.IsLoggedIn)
+Layout\MainLayout.razor :: 1230 :: if (UserSession.IsLoggedIn)
+Layout\NavMenu.razor :: 495 :: if (!UserSession.IsLoggedIn)
+Pages\Attendance.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\Attendance.razor :: 881 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\AttendanceForm.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\AttendanceForm.razor :: 259 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\AuditLog.razor :: 401 :: if (!UserSession.IsLoggedIn)
+Pages\AuditLog.razor :: 403 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\BOMEdit.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\BOMEdit.razor :: 1676 :: if (!UserSession.IsLoggedIn)
+Pages\BOMList.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\BOMList.razor :: 851 :: if (!UserSession.IsLoggedIn)
+Pages\Categories.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\Categories.razor :: 507 :: if (!UserSession.IsLoggedIn)
+Pages\ChangePassword.razor :: 508 :: if (!UserSession.IsLoggedIn)
+Pages\Currencies.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\Currencies.razor :: 300 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\CustomerForm.razor :: 16 :: @if (!UserSession.IsLoggedIn)
+Pages\CustomerForm.razor :: 873 :: if (!UserSession.IsLoggedIn)
+Pages\Customers.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\Customers.razor :: 553 :: if (!UserSession.IsLoggedIn)
+Pages\CustomersPrint.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\CustomersPrint.razor :: 236 :: if (!UserSession.IsLoggedIn)
+Pages\Dashboard.razor :: 19 :: else if (!UserSession.IsLoggedIn)
+Pages\Dashboard.razor :: 1535 :: if (!UserSession.IsLoggedIn)
+Pages\Dashboard.razor :: 1537 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\DepartmentForm.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\DepartmentForm.razor :: 273 :: if (!UserSession.IsLoggedIn)
+Pages\Departments.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\Departments.razor :: 740 :: if (!UserSession.IsLoggedIn)
+Pages\EmployeeForm.razor :: 16 :: @if (!UserSession.IsLoggedIn)
+Pages\EmployeeForm.razor :: 610 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\EmployeePrint.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\EmployeePrint.razor :: 259 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Employees.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\Employees.razor :: 866 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\GoodsReceiptEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\GoodsReceiptEdit.razor :: 764 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\GoodsReceipts.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\GoodsReceipts.razor :: 419 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Home.razor :: 10 :: if (UserSession.IsLoggedIn)
+Pages\ItemEdit.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\ItemEdit.razor :: 925 :: if (!UserSession.IsLoggedIn)
+Pages\Items.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\Items.razor :: 1105 :: if (!UserSession.IsLoggedIn)
+Pages\JobTitleForm.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\JobTitleForm.razor :: 221 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\JobTitles.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\JobTitles.razor :: 773 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\LeaveBalances.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\LeaveBalances.razor :: 493 :: if (!UserSession.IsLoggedIn)
+Pages\LeaveRequestForm.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\LeaveRequestForm.razor :: 417 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\LeaveRequests.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\LeaveRequests.razor :: 263 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\LeaveTypeForm.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\LeaveTypeForm.razor :: 167 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\LeaveTypes.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\LeaveTypes.razor :: 148 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\LoanForm.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\LoanForm.razor :: 175 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Loans.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\Loans.razor :: 256 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Login.razor :: 781 :: if (UserSession.IsLoggedIn)
+Pages\LoginHistory.razor :: 334 :: if (!UserSession.IsLoggedIn)
+Pages\LoginHistory.razor :: 336 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\MaterialIssueEdit.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\MaterialIssueEdit.razor :: 478 :: if (!UserSession.IsLoggedIn) { NavigationManager.NavigateTo("/login"); return; }
+Pages\MaterialIssues.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\MaterialIssues.razor :: 598 :: if (!UserSession.IsLoggedIn) { NavigationManager.NavigateTo("/login"); return; }
+Pages\PaymentTerms.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\PaymentTerms.razor :: 313 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Payroll.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\Payroll.razor :: 360 :: if (!UserSession.IsLoggedIn)
+Pages\PayrollDetails.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\PayrollDetails.razor :: 414 :: if (!UserSession.IsLoggedIn)
+Pages\PayrollSlip.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\PayrollSlip.razor :: 182 :: if (!UserSession.IsLoggedIn)
+Pages\Penalties.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\Penalties.razor :: 217 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PenaltyForm.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\PenaltyForm.razor :: 194 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PriceLists.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\PriceLists.razor :: 400 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\ProductionBatchEdit.razor :: 11 :: @if (!UserSession.IsLoggedIn)
+Pages\ProductionBatchEdit.razor :: 682 :: if (!UserSession.IsLoggedIn)
+Pages\ProductionBatches.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\ProductionBatches.razor :: 342 :: if (!UserSession.IsLoggedIn)
+Pages\ProductionOrderEdit.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\ProductionOrderEdit.razor :: 1221 :: if (!UserSession.IsLoggedIn)
+Pages\ProductionOrders.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\ProductionOrders.razor :: 1256 :: if (!UserSession.IsLoggedIn)
+Pages\PublicHolidayForm.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\PublicHolidayForm.razor :: 137 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PublicHolidays.razor :: 13 :: @if (!UserSession.IsLoggedIn)
+Pages\PublicHolidays.razor :: 1038 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseInvoiceEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseInvoiceEdit.razor :: 357 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseInvoices.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseInvoices.razor :: 269 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseOrderEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseOrderEdit.razor :: 940 :: if (!UserSession.IsLoggedIn)
+Pages\PurchaseOrders.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseOrders.razor :: 472 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseRequestEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseRequestEdit.razor :: 647 :: if (!UserSession.IsLoggedIn)
+Pages\PurchaseRequests.razor :: 14 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseRequests.razor :: 435 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseReturnEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseReturnEdit.razor :: 309 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\PurchaseReturns.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\PurchaseReturns.razor :: 188 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\RoleEdit.razor :: 540 :: if (!UserSession.IsLoggedIn)
+Pages\RoleEdit.razor :: 542 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\Roles.razor :: 358 :: if (!UserSession.IsLoggedIn)
+Pages\Roles.razor :: 360 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\Settings.razor :: 12 :: @if (!UserSession.IsLoggedIn)
+Pages\Settings.razor :: 514 :: if (!UserSession.IsLoggedIn)
+Pages\StockBalances.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\StockBalances.razor :: 373 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\StockCountEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\StockCountEdit.razor :: 215 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\StockCounts.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\StockCounts.razor :: 127 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\StockMovements.razor :: 16 :: @if (!UserSession.IsLoggedIn)
+Pages\StockMovements.razor :: 119 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\StockTransferEdit.razor :: 17 :: @if (!UserSession.IsLoggedIn)
+Pages\StockTransferEdit.razor :: 226 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\StockTransfers.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\StockTransfers.razor :: 109 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Suppliers.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\Suppliers.razor :: 161 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\Units.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\Units.razor :: 524 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+Pages\UserEdit.razor :: 983 :: if (!UserSession.IsLoggedIn)
+Pages\UserEdit.razor :: 985 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\Users.razor :: 868 :: if (!UserSession.IsLoggedIn)
+Pages\Users.razor :: 870 :: var restored = await UserSession.TryRestoreSessionAsync();
+Pages\Warehouses.razor :: 15 :: @if (!UserSession.IsLoggedIn)
+Pages\Warehouses.razor :: 468 :: if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+SupplierEdit.razor :: 27 :: @if (!UserSession.IsLoggedIn)
+SupplierEdit.razor :: 817 :: if (!UserSession.IsLoggedIn)

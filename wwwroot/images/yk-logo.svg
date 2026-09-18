@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="72" viewBox="0 0 300 72" role="img" aria-label="YK Coatings">
+  <defs>
+    <linearGradient id="ykDrop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#ykDrop)" fill-rule="evenodd"
+        d="M32 4C32 4 10 28 10 42a22 22 0 0 0 44 0C54 28 32 4 32 4Z
+           M18 34h4.5L24 38.5 25.5 34H30l-4 8v10h-4V42Z
+           M33 34h4v7l6-7h5.5l-7 8 7 10H43l-6-8v8h-4Z"/>
+  <text x="66" y="37" font-family="Arial, 'Segoe UI', sans-serif" font-size="25" font-weight="800" fill="#ffffff" letter-spacing="0.5">YK COATINGS</text>
+  <text x="66" y="56" font-family="Arial, 'Segoe UI', sans-serif" font-size="10.5" font-weight="700" fill="#f97316" letter-spacing="3.5">ERP SYSTEM</text>
+</svg>

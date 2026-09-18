@@ -1,0 +1,554 @@
+﻿@page "/purchase-requests"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PurchaseRequestService PrService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>طلبات الشراء - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access">
+        <div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-m btn-ghost" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <div class="page-wrap" dir="rtl">
+
+        <!-- Header -->
+        <div class="page-hdr">
+            <div>
+                <h2 class="page-title">طلبات الشراء</h2>
+                <p class="page-sub">إدارة ومتابعة طلبات الشراء</p>
+            </div>
+            <div class="hdr-actions">
+                <span class="badge-count">@filtered.Count طلب</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-m btn-export" @onclick="ExportExcel" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spin"></div> }
+                        else
+                        {
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        }
+                        Excel
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-m btn-primary" @onclick="AddNew">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        طلب جديد
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Stats -->
+        @if (requests != null)
+        {
+            <div class="stats-row">
+                <div class="stat-box" style="border-top-color:#64748b">
+                    <div class="stat-n">@requests.Count(r => r.RequestStatus == 1)</div>
+                    <div class="stat-l">مسودة</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#f59e0b">
+                    <div class="stat-n">@requests.Count(r => r.RequestStatus == 2)</div>
+                    <div class="stat-l">انتظار اعتماد</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#10b981">
+                    <div class="stat-n">@requests.Count(r => r.RequestStatus == 3)</div>
+                    <div class="stat-l">معتمد</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#ef4444">
+                    <div class="stat-n">@requests.Count(r => r.RequestStatus == 4)</div>
+                    <div class="stat-l">مرفوض</div>
+                </div>
+                <div class="stat-box" style="border-top-color:#2563eb">
+                    <div class="stat-n">@requests.Count(r => r.RequestStatus == 5)</div>
+                    <div class="stat-l">تم التنفيذ</div>
+                </div>
+            </div>
+        }
+
+        <!-- Filter -->
+        <div class="filter-row">
+            <div class="search-wrap">
+                <svg class="search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <input class="search-inp" type="text" placeholder="بحث برقم الطلب أو الطالب..."
+                       @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+                @if (!string.IsNullOrEmpty(searchText))
+                { <button class="search-clr" @onclick="ClearSearch">✕</button> }
+            </div>
+            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
+                <option value="0">كل الحالات</option>
+                <option value="1">مسودة</option>
+                <option value="2">انتظار اعتماد</option>
+                <option value="3">معتمد</option>
+                <option value="4">مرفوض</option>
+                <option value="5">تم التنفيذ</option>
+            </select>
+            <select class="filter-sel" @bind="filterPriority" @bind:after="Filter">
+                <option value="0">كل الأولويات</option>
+                <option value="1">عاجل</option>
+                <option value="2">عادي</option>
+                <option value="3">غير عاجل</option>
+            </select>
+            <button class="btn-m btn-ghost" @onclick="LoadData">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                    <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                تحديث
+            </button>
+        </div>
+
+        <!-- Table -->
+        @if (requests == null)
+        {
+            <div class="loading-st"><div class="loader"></div><p>جاري التحميل...</p></div>
+        }
+        else if (!filtered.Any())
+        {
+            <div class="empty-st">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="color:#cbd5e1;margin-bottom:12px">
+                    <path d="M6 2 3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/>
+                </svg>
+                <h4>لا توجد طلبات</h4>
+            </div>
+        }
+        else
+        {
+            <div class="tbl-card">
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>رقم الطلب</th>
+                            <th>التاريخ</th>
+                            <th>مطلوب بتاريخ</th>
+                            <th>الطالب</th>
+                            <th>القسم</th>
+                            <th class="tc">أصناف</th>
+                            <th class="tc">الأولوية</th>
+                            <th class="tc">الحالة</th>
+                            <th class="tc">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int n = 0; }
+                        @foreach (var req in filtered)
+                        {
+                            n++;
+                            <tr class="@(req.RequestStatus == 1 ? "tr-draft" : "")">
+                                <td class="td-n">@n</td>
+                                <td>
+                                    <span class="doc-num" @onclick="() => ViewRequest(req.RequestID)" style="cursor:pointer">
+                                        @req.RequestNumber
+                                    </span>
+                                </td>
+                                <td>@req.RequestDate.ToString("dd/MM/yyyy")</td>
+                                <td>@(req.RequiredDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                <td class="td-bold">@(req.RequestedByName ?? "—")</td>
+                                <td class="td-muted">@(req.DepartmentName ?? "—")</td>
+                                <td class="tc">
+                                    <span class="cnt-badge">@req.ItemCount</span>
+                                </td>
+                                <td class="tc">
+                                    <span class="priority-badge" style="color:@PurchaseRequestService.GetPriorityColor(req.Priority)">
+                                        @PurchaseRequestService.GetPriorityName(req.Priority)
+                                    </span>
+                                </td>
+                                <td class="tc">
+                                    <span class="status-badge" style="--sc:@PurchaseRequestService.GetStatusColor(req.RequestStatus)">
+                                        @PurchaseRequestService.GetStatusName(req.RequestStatus)
+                                    </span>
+                                </td>
+                                <td class="tc">
+                                    <div class="actions-wrap">
+                                        <!-- عرض/تعديل -->
+                                        @if (permissions.CanEdit && req.RequestStatus == 1)
+                                        {
+                                            <button class="act-btn edit" title="تعديل" @onclick="() => EditRequest(req.RequestID)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                                </svg>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="act-btn view" title="عرض" @onclick="() => ViewRequest(req.RequestID)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                    <circle cx="12" cy="12" r="3"/>
+                                                </svg>
+                                            </button>
+                                        }
+
+                                        <!-- طباعة -->
+                                        @if (permissions.CanPrint)
+                                        {
+                                            <button class="act-btn print" title="طباعة" @onclick="() => PrintRequest(req.RequestID)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="6 9 6 2 18 2 18 9"/>
+                                                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                                                    <rect x="6" y="14" width="12" height="8"/>
+                                                </svg>
+                                            </button>
+                                        }
+
+                                        <!-- اعتماد -->
+                                        @if (permissions.CanApprove && req.RequestStatus == 2)
+                                        {
+                                            <button class="act-btn approve" title="اعتماد" @onclick="() => ViewRequest(req.RequestID)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                                    <polyline points="22 4 12 14.01 9 11.01"/>
+                                                </svg>
+                                            </button>
+                                        }
+
+                                        <!-- حذف -->
+                                        @if (permissions.CanDelete && req.RequestStatus == 1)
+                                        {
+                                            <button class="act-btn del" title="حذف" @onclick="() => ShowDeleteDialog(req)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                                </svg>
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Approve Dialog -->
+    @if (showApproveDialog)
+    {
+        <div class="modal-ov" @onclick="CloseApproveDialog">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <div class="modal-icon-wrap approve-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                </div>
+                <h4>اعتماد / رفض الطلب</h4>
+                <p>الطلب: <strong>@approveRequest?.RequestNumber</strong></p>
+                <div class="modal-btns">
+                    <button class="btn-m btn-success" @onclick="ApproveRequest">
+                        ✅ اعتماد الطلب
+                    </button>
+                    <div class="reject-wrap">
+                        <input type="text" class="field-inp" @bind="rejectionReason" placeholder="سبب الرفض..." />
+                        <button class="btn-m btn-danger" @onclick="RejectRequest">
+                            ❌ رفض
+                        </button>
+                    </div>
+                    <button class="btn-m btn-ghost" @onclick="CloseApproveDialog">إلغاء</button>
+                </div>
+                @if (!string.IsNullOrEmpty(approveMsg))
+                { <div class="form-msg err">@approveMsg</div> }
+            </div>
+        </div>
+    }
+
+    <!-- Delete Dialog -->
+    @if (showDeleteDialog)
+    {
+        <div class="modal-ov" @onclick="CloseDeleteDialog">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <div class="modal-icon-wrap del-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                </div>
+                <h4>تأكيد الحذف</h4>
+                <p>هل أنت متأكد من حذف الطلب: <strong>@deleteRequest?.RequestNumber</strong>؟</p>
+                @if (!string.IsNullOrEmpty(deleteMsg))
+                { <div class="form-msg err">@deleteMsg</div> }
+                <div class="modal-btns">
+                    <button class="btn-m btn-danger" @onclick="ConfirmDelete">تأكيد الحذف</button>
+                    <button class="btn-m btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast -->
+    @if (!string.IsNullOrEmpty(toast))
+    {
+        <div class="toast-wrap">
+            <div class="toast @(toastOk ? "t-ok" : "t-err")">
+                <span>@toast</span>
+                <button @onclick='() => toast = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .page-wrap { display:flex; flex-direction:column; gap:18px; }
+    .page-hdr { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; }
+    .page-title { font-weight:800; color:#0f172a; margin:0; font-size:1.3rem; }
+    .page-sub { color:#64748b; font-size:.84rem; margin:3px 0 0; }
+    .hdr-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .badge-count { background:#f1f5f9; border:1px solid #e2e8f0; color:#475569; padding:7px 14px; border-radius:999px; font-size:.8rem; font-weight:700; }
+
+    .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+    .stat-box { background:white; border:1px solid #e2e8f0; border-radius:16px; padding:16px; text-align:center; border-top:3px solid; transition:.2s; }
+    .stat-box:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(15,23,42,.06); }
+    .stat-n { font-size:1.6rem; font-weight:900; color:#0f172a; }
+    .stat-l { font-size:.78rem; color:#64748b; margin-top:3px; }
+
+    .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .search-wrap { flex:1; min-width:260px; position:relative; display:flex; align-items:center; }
+    .search-ic { position:absolute; right:12px; color:#94a3b8; pointer-events:none; }
+    .search-inp { width:100%; padding:10px 38px 10px 36px; border:1.5px solid #e2e8f0; border-radius:12px; font-size:.88rem; background:white; outline:none; transition:.2s; }
+    .search-inp:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .search-clr { position:absolute; left:10px; background:#f1f5f9; border:none; width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:.7rem; display:flex; align-items:center; justify-content:center; }
+    .filter-sel { padding:10px 14px; border:1.5px solid #e2e8f0; border-radius:12px; font-size:.85rem; background:white; outline:none; }
+
+    .tbl-card { background:white; border-radius:18px; overflow:hidden; border:1px solid #e2e8f0; box-shadow:0 4px 16px rgba(15,23,42,.04); }
+    .tbl { width:100%; border-collapse:collapse; }
+    .tbl thead { background:#f8fafc; }
+    .tbl th { padding:13px 14px; font-size:.8rem; font-weight:700; color:#64748b; text-align:right; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+    .tbl td { padding:12px 14px; font-size:.86rem; color:#334155; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .tbl tbody tr { transition:.15s; }
+    .tbl tbody tr:hover { background:#f8fafc; }
+    .tr-draft { opacity:.8; }
+    .tc { text-align:center; }
+    .td-n { color:#94a3b8; font-size:.8rem; text-align:center; }
+    .td-bold { font-weight:700; color:#0f172a; }
+    .td-muted { color:#64748b; }
+
+    .doc-num { color:#2563eb; font-weight:700; font-size:.88rem; text-decoration:underline; }
+    .cnt-badge { background:#f1f5f9; color:#475569; padding:3px 10px; border-radius:6px; font-size:.78rem; font-weight:700; }
+    .priority-badge { font-size:.78rem; font-weight:800; }
+    .status-badge { display:inline-block; padding:4px 12px; border-radius:999px; font-size:.75rem; font-weight:700; background:rgba(from var(--sc) r g b / 0.1); color:var(--sc); border:1px solid rgba(from var(--sc) r g b / 0.2); }
+
+    .actions-wrap { display:flex; gap:5px; justify-content:center; }
+    .act-btn { width:30px; height:30px; border-radius:8px; border:1.5px solid; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.2s; }
+    .act-btn.view { color:#2563eb; border-color:#bfdbfe; } .act-btn.view:hover { background:#eff6ff; }
+    .act-btn.edit { color:#1d4ed8; border-color:#ddd6fe; } .act-btn.edit:hover { background:#f5f3ff; }
+    .act-btn.print { color:#0891b2; border-color:#a5f3fc; } .act-btn.print:hover { background:#ecfeff; }
+    .act-btn.approve { color:#10b981; border-color:#a7f3d0; } .act-btn.approve:hover { background:#ecfdf5; }
+    .act-btn.del { color:#ef4444; border-color:#fecaca; } .act-btn.del:hover { background:#fef2f2; }
+
+    .btn-m { display:inline-flex; align-items:center; gap:7px; padding:9px 18px; border-radius:12px; border:none; font-weight:700; font-size:.86rem; cursor:pointer; transition:.2s; }
+    .btn-m:disabled { opacity:.6; cursor:not-allowed; }
+    .btn-primary { background:linear-gradient(135deg,#1e40af,#2563eb); color:white; box-shadow:0 4px 14px rgba(37,99,235,.25); }
+    .btn-primary:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 20px rgba(37,99,235,.35); }
+    .btn-export { background:linear-gradient(135deg,#059669,#10b981); color:white; }
+    .btn-success { background:linear-gradient(135deg,#059669,#10b981); color:white; }
+    .btn-danger { background:linear-gradient(135deg,#dc2626,#ef4444); color:white; }
+    .btn-ghost { background:transparent; color:#64748b; border:1.5px solid #e2e8f0; }
+    .btn-spin { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:white; border-radius:50%; animation:spin .6s linear infinite; }
+
+    .modal-ov { position:fixed; inset:0; background:rgba(15,23,42,.5); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px; }
+    .modal-box { background:white; border-radius:22px; padding:32px; max-width:420px; width:100%; text-align:center; box-shadow:0 20px 48px rgba(0,0,0,.15); animation:modalIn .25s ease; }
+    .modal-box h4 { font-weight:800; color:#0f172a; margin:0 0 8px; }
+    .modal-box p { color:#475569; font-size:.9rem; margin-bottom:16px; }
+    .modal-icon-wrap { width:56px; height:56px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px; }
+    .approve-icon { background:#ecfdf5; color:#10b981; }
+    .del-icon { background:#fef2f2; color:#ef4444; }
+    .modal-btns { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+    .reject-wrap { display:flex; gap:8px; }
+    @@keyframes modalIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+
+    .field-inp { flex:1; padding:9px 13px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:.86rem; outline:none; }
+    .field-inp:focus { border-color:#2563eb; }
+    .form-msg { padding:8px 12px; border-radius:10px; font-size:.82rem; font-weight:600; margin-top:10px; }
+    .err { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+
+    .toast-wrap { position:fixed; bottom:22px; left:22px; z-index:1050; animation:toastIn .35s ease; }
+    .toast { display:flex; align-items:center; gap:12px; padding:12px 18px; border-radius:14px; box-shadow:0 10px 28px rgba(0,0,0,.12); min-width:300px; font-weight:600; font-size:.86rem; }
+    .t-ok { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+    .t-err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+    .toast button { background:none; border:none; cursor:pointer; color:inherit; opacity:.6; margin-right:auto; font-size:1rem; }
+
+    .loading-st { text-align:center; padding:50px 20px; color:#64748b; }
+    .loader { width:36px; height:36px; border:3px solid #e2e8f0; border-top-color:#2563eb; border-radius:50%; animation:spin .7s linear infinite; margin:0 auto 12px; }
+    .empty-st { text-align:center; padding:50px 20px; background:white; border-radius:18px; border:1px solid #e2e8f0; }
+    .empty-st h4 { color:#64748b; margin:0; }
+    .no-access { text-align:center; padding:60px 20px; background:white; border-radius:20px; border:1px solid #e2e8f0; }
+    .na-icon { font-size:3rem; margin-bottom:12px; }
+    @@keyframes spin { to { transform:rotate(360deg); } }
+    @@keyframes toastIn { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+
+    @@media (max-width:768px) {
+        .page-hdr { flex-direction:column; }
+        .filter-row { flex-direction:column; }
+        .search-wrap { min-width:100%; }
+        .stats-row { grid-template-columns:repeat(2,1fr); }
+    }
+</style>
+
+@code {
+    private List<PurchaseRequestListDto>? requests;
+    private List<PurchaseRequestListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private int filterStatus = 0;
+    private int filterPriority = 0;
+    private bool isExporting = false;
+    private string toast = "";
+    private bool toastOk = true;
+
+    // Approve
+    private bool showApproveDialog = false;
+    private PurchaseRequestListDto? approveRequest;
+    private string rejectionReason = "";
+    private string approveMsg = "";
+
+    // Delete
+    private bool showDeleteDialog = false;
+    private PurchaseRequestListDto? deleteRequest;
+    private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_PR");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        requests = await PrService.GetRequestsListAsync();
+        Filter();
+    }
+
+    private void Filter()
+    {
+        if (requests == null) return;
+        filtered = requests.Where(r =>
+            (filterStatus == 0 || r.RequestStatus == filterStatus) &&
+            (filterPriority == 0 || r.Priority == filterPriority) &&
+            (string.IsNullOrEmpty(searchText) ||
+             ArabicSearchHelper.Contains(r.RequestNumber, searchText) ||
+             ArabicSearchHelper.Contains(r.RequestedByName, searchText) ||
+             ArabicSearchHelper.Contains(r.DepartmentName, searchText))
+        ).ToList();
+    }
+
+    private void ClearSearch() { searchText = ""; Filter(); }
+    private void AddNew() => Navigation.NavigateTo("/purchase-requests/new");
+        private void ViewRequest(int id)
+    {
+        var req = requests?.FirstOrDefault(r => r.RequestID == id);
+        if (req != null && req.RequestStatus == 2 && permissions != null && permissions.CanApprove)
+            Navigation.NavigateTo($"/purchase-requests/edit/{id}");
+        else
+            Navigation.NavigateTo($"/purchase-requests/view/{id}");
+    }
+    private void EditRequest(int id) => Navigation.NavigateTo($"/purchase-requests/edit/{id}");
+
+    private async Task PrintRequest(int id)
+    {
+        try
+        {
+            var html = await PrService.GenerateReportHtmlAsync(id, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex) { toast = "خطأ في الطباعة: " + ex.Message; toastOk = false; }
+    }
+
+    private async Task ExportExcel()
+    {
+        if (!filtered.Any()) return;
+        isExporting = true; StateHasChanged();
+        try
+        {
+            var bytes = await PrService.ExportToExcelAsync(filtered, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile", $"PurchaseRequests_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isExporting = false; }
+    }
+
+    // Approve
+    private void ShowApproveDialog(PurchaseRequestListDto req)
+    { approveRequest = req; rejectionReason = ""; approveMsg = ""; showApproveDialog = true; }
+    private void CloseApproveDialog() { showApproveDialog = false; }
+
+    private async Task ApproveRequest()
+    {
+        if (approveRequest == null) return;
+        try
+        {
+            await PrService.ChangeStatusAsync(
+    approveRequest.RequestID,
+    3,
+    UserSession.CurrentUserID,
+    UserSession.CurrentEmployeeID);
+            toast = "تم اعتماد الطلب ✅"; toastOk = true;
+            showApproveDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex) { approveMsg = "خطأ: " + ex.Message; }
+    }
+
+    private async Task RejectRequest()
+    {
+        if (approveRequest == null) return;
+        if (string.IsNullOrWhiteSpace(rejectionReason)) { approveMsg = "يجب إدخال سبب الرفض"; return; }
+        try
+        {
+            await PrService.ChangeStatusAsync(
+    approveRequest.RequestID,
+    4,
+    UserSession.CurrentUserID,
+    UserSession.CurrentEmployeeID,
+    rejectionReason);
+            toast = "تم رفض الطلب"; toastOk = false;
+            showApproveDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex) { approveMsg = "خطأ: " + ex.Message; }
+    }
+
+    // Delete
+    private void ShowDeleteDialog(PurchaseRequestListDto req)
+    { deleteRequest = req; deleteMsg = ""; showDeleteDialog = true; }
+    private void CloseDeleteDialog() { showDeleteDialog = false; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteRequest == null) return;
+        try
+        {
+            var result = await PrService.DeleteRequestAsync(deleteRequest.RequestID, UserSession.UserID);
+            if (result.Success) { toast = result.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+            else { deleteMsg = result.Message; }
+        }
+        catch (Exception ex) { deleteMsg = "خطأ: " + ex.Message; }
+    }
+}

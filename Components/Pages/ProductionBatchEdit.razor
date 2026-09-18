@@ -1,0 +1,1100 @@
+﻿@page "/production-batches/edit/{Id:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject ProductionBatchService BatchService
+@inject NavigationManager NavigationManager
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+
+<PageTitle>@(Id == 0 ? "دفعة إنتاج جديدة" : isViewMode ? "عرض دفعة الإنتاج" : "تعديل دفعة الإنتاج") - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions is null || !Perms.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-page"><div class="spinner-lg"></div><span>جاري التحميل...</span></div>
+}
+else
+{
+    <div class="batch-edit-page">
+
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <i class="bi bi-layers-fill"></i>
+                    @if (Id == 0)
+                    {
+                        <span>إنشاء دفعة إنتاج جديدة</span>
+                    }
+                    else if (isViewMode)
+                    {
+                        <span>عرض دفعة الإنتاج</span>
+                    }
+                    else
+                    {
+                        <span>تعديل دفعة الإنتاج</span>
+                    }
+                </h1>
+                @if (Id > 0)
+                {
+                    <p class="header-subtitle">
+                        رقم الباتش: @batch.BatchNumber
+                        <span class="status-chip-header @GetStatusClass(batch.BatchStatus)">
+                            @GetStatusName(batch.BatchStatus)
+                        </span>
+                    </p>
+                }
+            </div>
+            <div class="header-actions">
+                <button class="btn-outline-light" @onclick="GoBack"><i class="bi bi-arrow-right"></i><span>رجوع</span></button>
+            </div>
+        </div>
+
+        <div class="tabs-bar">
+            <button class="tab-btn @(activeTab == "main" ? "active" : "")" @onclick='() => activeTab = "main"'>
+                <i class="bi bi-info-circle-fill"></i> البيانات الأساسية
+            </button>
+            <button class="tab-btn @(activeTab == "stages" ? "active" : "")" @onclick="LoadStagesTab">
+                <i class="bi bi-list-ol"></i> المراحل
+            </button>
+            <button class="tab-btn @(activeTab == "qc" ? "active" : "")" @onclick='() => activeTab = "qc"'>
+                <i class="bi bi-shield-check"></i> الجودة
+            </button>
+            
+            @if (Id > 0)
+            {
+                <button class="tab-btn @(activeTab == "audit" ? "active" : "")" @onclick="LoadAuditTab">
+                    <i class="bi bi-clock-history"></i> معلومات النظام
+                </button>
+            }
+        </div>
+
+        @if (activeTab == "main")
+        {
+            <div class="form-card">
+                <div class="form-card-header"><i class="bi bi-info-circle-fill"></i> بيانات دفعة الإنتاج</div>
+                <div class="form-card-body">
+
+                    <div class="form-row">
+                        <div class="form-group col-4">
+                            <label class="form-lbl required">أمر التصنيع</label>
+                            <select class="form-ctrl"
+                                    @bind="batch.ProductionOrderID"
+                                    @bind:after="OnOrderChanged"
+                                    disabled="@(isViewMode || Id > 0)">
+                                <option value="0">— اختر أمر التصنيع —</option>
+                                @foreach (var o in orderLookup)
+                                {
+                                    <option value="@o.Id">@o.Name</option>
+                                }
+                            </select>
+                            @if (errors.ContainsKey("ProductionOrderID"))
+                            {
+                                <span class="field-error">@errors["ProductionOrderID"]</span>
+                            }
+                        </div>
+                        <div class="form-group col-4">
+                            <label class="form-lbl">المنتج</label>
+                            <input class="form-ctrl readonly-field" value="@batch.ProductName" readonly />
+                        </div>
+                        <div class="form-group col-4">
+                            <label class="form-lbl">رقم أمر التصنيع</label>
+                            <input class="form-ctrl readonly-field" value="@batch.ProductionOrderNumber" readonly />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-3">
+                            <label class="form-lbl">تاريخ الباتش</label>
+                            <input type="date" class="form-ctrl" @bind="batch.BatchDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">تاريخ الصلاحية</label>
+                            <input type="date" class="form-ctrl" @bind="batch.ExpiryDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl required">الكمية المخططة</label>
+                            <input type="number" class="form-ctrl" step="0.01" min="0.01"
+                                   @bind="batch.PlannedQty" disabled="@isViewMode" />
+                            @if (errors.ContainsKey("PlannedQty"))
+                            {
+                                <span class="field-error">@errors["PlannedQty"]</span>
+                            }
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl required">الوحدة</label>
+                            <input class="form-ctrl readonly-field" value="@batch.UnitName" readonly />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-3">
+                            <label class="form-lbl">إنتاج فعلي</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.ProducedQty" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">صالح</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.GoodQty" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">مرفوض</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.RejectedQty" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">هالك</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.WasteQty" disabled="@isViewMode" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-3">
+                            <label class="form-lbl">عينات</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.SampleQty" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">المخزن المستهدف</label>
+                            <select class="form-ctrl" @bind="batch.TargetWarehouseID" disabled="@isViewMode">
+                                <option value="">— اختر —</option>
+                                @foreach (var w in warehouseLookup)
+                                {
+                                    <option value="@w.Id">@w.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">أُنتج بواسطة</label>
+                            <select class="form-ctrl" @bind="batch.ProducedBy" disabled="@isViewMode">
+                                <option value="">— اختر —</option>
+                                @foreach (var e in employeeLookup)
+                                {
+                                    <option value="@e.Id">@e.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">المشرف</label>
+                            <select class="form-ctrl" @bind="batch.SupervisorID" disabled="@isViewMode">
+                                <option value="">— اختر —</option>
+                                @foreach (var e in employeeLookup)
+                                {
+                                    <option value="@e.Id">@e.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-3">
+                            <label class="form-lbl">بداية التشغيل</label>
+                            <input type="datetime-local" class="form-ctrl" @bind="batch.StartTime" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">نهاية التشغيل</label>
+                            <input type="datetime-local" class="form-ctrl" @bind="batch.EndTime" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">تكلفة المواد</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.MaterialCost" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">تكلفة العمالة</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.LaborCost" disabled="@isViewMode" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-3">
+                            <label class="form-lbl">مصاريف غير مباشرة</label>
+                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.OverheadCost" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">الإجمالي</label>
+                            <input class="form-ctrl readonly-field" value="@CurrentTotalCost.ToString("N2")" readonly />
+                        </div>
+                        <div class="form-group col-12">
+                            <label class="form-lbl">ملاحظات</label>
+                            <textarea class="form-ctrl textarea-ctrl" rows="3" @bind="batch.Notes" disabled="@isViewMode"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (activeTab == "stages")
+        {
+    <div class="form-card">
+        <div class="form-card-header">
+            <div style="display:flex;align-items:center;gap:.5rem;">
+                <i class="bi bi-list-ol"></i>
+                مراحل الدفعة
+                <span class="count-badge">@stages.Count مرحلة</span>
+            </div>
+
+            @if (Id > 0 && batch.BatchStatus <= 2 && Perms.CanEdit)
+            {
+                <button class="btn-stage-load" @onclick="ReloadStagesFromBom" disabled="@isSaving">
+                    <i class="bi bi-arrow-repeat"></i>
+                    إعادة تحميل المراحل
+                </button>
+            }
+        </div>
+
+        @if (stagesLoading)
+        {
+            <div class="state-box">
+                <div class="spinner-md"></div>
+                <span class="state-text">جاري تحميل المراحل...</span>
+            </div>
+        }
+        else
+        {
+            <div class="stage-toolbar">
+                <div class="form-group col-3">
+                    <label class="form-lbl">الحرارة</label>
+                    <input class="form-ctrl" @bind="stageTemperature" placeholder="مثال: 70°C" />
+                </div>
+                <div class="form-group col-3">
+                    <label class="form-lbl">السرعة</label>
+                    <input class="form-ctrl" @bind="stageSpeed" placeholder="مثال: 120 RPM" />
+                </div>
+                <div class="form-group col-3">
+                    <label class="form-lbl">المشغل</label>
+                    <select class="form-ctrl" @bind="stageOperatorId">
+                        <option value="">— اختر —</option>
+                        @foreach (var e in employeeLookup)
+                        {
+                            <option value="@e.Id">@e.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (!stages.Any())
+            {
+                <div class="state-box">
+                    <div class="empty-icon-circle"><i class="bi bi-inbox"></i></div>
+                    <p class="empty-title">لا توجد مراحل</p>
+                    <p class="empty-sub">يمكن تحميل المراحل من الوصفة</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="stage-table">
+                        <thead>
+                            <tr>
+                                <th style="width:50px;">#</th>
+                                <th>المرحلة</th>
+                                <th class="tc">الحالة</th>
+                                <th class="tc">البداية</th>
+                                <th class="tc">النهاية</th>
+                                <th class="tc">المدة</th>
+                                <th class="tc">المشغل</th>
+                                <th class="tc">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < stages.Count; i++)
+                            {
+                                var s = stages[i];
+                                <tr>
+                                    <td class="tc">@(i + 1)</td>
+                                    <td>@s.StageName</td>
+                                    <td class="tc">
+                                        <span class="stage-chip @GetStageStatusClass(s.StageStatus)">
+                                            @s.StageStatusName
+                                        </span>
+                                    </td>
+                                    <td class="tc">@(s.StartTime?.ToString("dd/MM HH:mm") ?? "—")</td>
+                                    <td class="tc">@(s.EndTime?.ToString("dd/MM HH:mm") ?? "—")</td>
+                                    <td class="tc">@(s.Duration.HasValue ? $"{s.Duration} د" : "—")</td>
+                                    <td class="tc">@(!string.IsNullOrWhiteSpace(s.OperatorName) ? s.OperatorName : "—")</td>
+                                    <td class="tc">
+                                        <div class="stage-actions">
+                                            @if (batch.BatchStatus <= 2 && Perms.CanEdit)
+                                            {
+                                                @if (s.StageStatus == 1 || s.StageStatus == 4)
+                                                {
+                                                    <button class="ico-btn start-stage-btn"
+                                                            title="بدء المرحلة"
+                                                            @onclick="() => StartStage(s.BatchStageID)">
+                                                        <i class="bi bi-play-fill"></i>
+                                                    </button>
+                                                }
+                                                @if (s.StageStatus == 2)
+                                                {
+                                                    <button class="ico-btn end-stage-btn"
+                                                            title="إنهاء المرحلة"
+                                                            @onclick="() => EndStage(s.BatchStageID)">
+                                                        <i class="bi bi-stop-fill"></i>
+                                                    </button>
+                                                }
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </div>
+}
+
+
+        @if (activeTab == "qc")
+        {
+            <div class="form-card">
+                <div class="form-card-header"><i class="bi bi-shield-check"></i> بيانات الجودة</div>
+                <div class="form-card-body">
+                    <div class="form-row">
+                        <div class="form-group col-4">
+                            <label class="form-lbl">مفتش الجودة</label>
+                            <select class="form-ctrl" @bind="batch.QCInspectedBy" disabled="@isViewMode">
+                                <option value="">— اختر —</option>
+                                @foreach (var e in employeeLookup)
+                                {
+                                    <option value="@e.Id">@e.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group col-4">
+                            <label class="form-lbl">تاريخ الفحص</label>
+                            <input type="datetime-local" class="form-ctrl" @bind="batch.QCInspectionDate" disabled="@isViewMode" />
+                        </div>
+                        <div class="form-group col-4">
+                            <label class="form-lbl">نتيجة الفحص</label>
+                            <select class="form-ctrl" @bind="batch.QCResult" disabled="@isViewMode">
+                                <option value="">— اختر —</option>
+                                <option value="1">ناجح</option>
+                                <option value="2">فاشل</option>
+                                <option value="3">ناجح بتحفظ</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-12">
+                            <label class="form-lbl">ملاحظات الجودة</label>
+                            <textarea class="form-ctrl textarea-ctrl" rows="4" @bind="batch.QCNotes" disabled="@isViewMode"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        
+
+        @if (activeTab == "audit" && Id > 0)
+        {
+            <div class="form-card">
+                <div class="form-card-header"><i class="bi bi-clock-history"></i> معلومات النظام</div>
+                <div class="form-card-body">
+                    @if (auditInfo is null)
+                    {
+                        <div class="state-box"><div class="spinner-md"></div></div>
+                    }
+                    else
+                    {
+                        <div class="audit-grid">
+                            <div class="audit-item"><strong>أنشأ بواسطة:</strong> @auditInfo.CreatedByName</div>
+                            <div class="audit-item"><strong>تاريخ الإنشاء:</strong> @(auditInfo.CreatedDate?.ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+                            <div class="audit-item"><strong>آخر تعديل:</strong> @auditInfo.ModifiedByName</div>
+                            <div class="audit-item"><strong>تاريخ التعديل:</strong> @(auditInfo.ModifiedDate?.ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+                            <div class="audit-item"><strong>أنتج بواسطة:</strong> @auditInfo.ProducedByName</div>
+                            <div class="audit-item"><strong>المشرف:</strong> @auditInfo.SupervisorName</div>
+                            <div class="audit-item"><strong>فحص الجودة:</strong> @auditInfo.QCInspectedByName</div>
+                            <div class="audit-item"><strong>تاريخ الفحص:</strong> @(auditInfo.QCInspectionDate?.ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="action-bar">
+    <div class="action-bar-start">
+        @if (Id > 0 && batch.BatchStatus == 1 && Perms.CanApprove)
+        {
+            <button class="btn-action start" @onclick="StartProduction" disabled="@isSaving">
+                <i class="bi bi-play-circle-fill"></i> بدء التصنيع
+            </button>
+        }
+
+        @if (Id > 0 && batch.BatchStatus == 2 && Perms.CanApprove)
+        {
+            <button class="btn-action done" @onclick="CompleteProduction" disabled="@isSaving">
+                <i class="bi bi-check2-circle"></i> اكتمال التصنيع
+            </button>
+        }
+
+        @if (Id > 0 && (batch.BatchStatus == 3 || batch.BatchStatus == 4) && Perms.CanApprove)
+        {
+            <button class="btn-action qc" @onclick="ApplyQc" disabled="@isSaving">
+                <i class="bi bi-shield-check"></i> تسجيل نتيجة الجودة
+            </button>
+        }
+
+        @if (Id > 0 && batch.BatchStatus == 5 && !inventoryAdded && Perms.CanApprove)
+        {
+            <button class="btn-action accept" @onclick="AddToInventory" disabled="@isSaving">
+                <i class="bi bi-box-seam"></i> إدخال المخزن
+            </button>
+        }
+
+        @if (Id > 0 && batch.BatchStatus == 5 && inventoryAdded)
+        {
+            <span class="inventory-done-chip">
+                <i class="bi bi-check-circle-fill"></i>
+                تم إدخال الدفعة إلى المخزون
+            </span>
+        }
+    </div>
+
+    <div class="action-bar-end">
+        @if (!isViewMode)
+        {
+            <button class="btn-save" @onclick="SaveBatch" disabled="@isSaving">
+                @if (isSaving)
+                {
+                    <span class="spinner-tiny"></span><span>جاري الحفظ...</span>
+                }
+                else
+                {
+                    <i class="bi bi-check-lg"></i><span>@(Id == 0 ? "حفظ الدفعة" : "حفظ التعديلات")</span>
+                }
+            </button>
+        }
+        <button class="btn-back" @onclick="GoBack"><i class="bi bi-arrow-right"></i><span>رجوع</span></button>
+    </div>
+</div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(resultMessage))
+{
+    <div class="toast-msg @(isSuccess ? "toast-success" : "toast-error")">
+        <i class="bi @(isSuccess ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+        @resultMessage
+    </div>
+}
+
+<style>
+    :root {
+        --c-primary:#0f766e; --c-primary-lt:#f0fdfa; --c-primary-dk:#115e59;
+        --c-success:#10b981; --c-success-lt:#ecfdf5;
+        --c-warning:#f59e0b; --c-warning-lt:#fffbeb;
+        --c-danger:#ef4444; --c-danger-lt:#fef2f2;
+        --c-info:#0ea5e9; --c-info-lt:#f0f9ff;
+        --c-secondary:#64748b; --c-secondary-lt:#f1f5f9;
+        --c-surface:#fff; --c-bg:#f8fafc; --c-border:#e2e8f0;
+        --c-text:#0f172a; --c-text-2:#64748b; --c-text-3:#94a3b8;
+        --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px;
+        --sh-sm:0 1px 3px rgba(0,0,0,.06); --sh-md:0 4px 16px rgba(0,0,0,.08);
+    }
+
+    .batch-edit-page { direction:rtl; padding:1.75rem 1.5rem; background:var(--c-bg); min-height:100vh; font-family:'Segoe UI',system-ui,sans-serif; display:flex; flex-direction:column; gap:1.25rem; }
+    .no-access-card { text-align:center; padding:80px 20px; background:white; border-radius:var(--r-xl); border:1px solid var(--c-border); max-width:480px; margin:80px auto; box-shadow:var(--sh-sm); }
+    .no-access-icon { font-size:3.5rem; margin-bottom:16px; }
+    .btn-back-dash { background:var(--c-secondary-lt); color:var(--c-secondary); border:none; padding:.6rem 1.4rem; border-radius:var(--r-sm); font-weight:600; cursor:pointer; }
+
+    .loading-page { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; gap:1rem; color:var(--c-text-3); }
+    .spinner-lg { width:56px; height:56px; border:4px solid var(--c-border); border-top-color:var(--c-primary); border-radius:50%; animation:spin .7s linear infinite; }
+
+    .page-header { background:linear-gradient(135deg,var(--c-primary),var(--c-primary-dk)); border-radius:var(--r-xl); padding:1.5rem 2rem; display:flex; justify-content:space-between; align-items:center; box-shadow:0 8px 32px rgba(15,118,110,.25); position:relative; overflow:hidden; flex-wrap:wrap; gap:1rem; }
+    .page-header::before { content:''; position:absolute; top:-40px; left:-40px; width:180px; height:180px; background:rgba(255,255,255,.06); border-radius:50%; }
+    .header-content { position:relative; z-index:1; }
+    .header-actions {position: relative;z-index: 1;}
+    .header-title { color:#fff; font-size:1.35rem; font-weight:700; margin:0 0 .2rem; display:flex; gap:.5rem; align-items:center; }
+    .header-subtitle { color:rgba(255,255,255,.8); font-size:.85rem; margin:0; display:flex; align-items:center; gap:.6rem; }
+    .status-chip-header { display:inline-flex; align-items:center; gap:.3rem; padding:.2rem .6rem; border-radius:20px; font-size:.72rem; font-weight:700; }
+    .btn-outline-light { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); padding:.5rem 1rem; border-radius:var(--r-sm); font-weight:600; cursor:pointer; display:flex; align-items:center; gap:.4rem; }
+
+    .tabs-bar { display:flex; gap:.5rem; background:var(--c-surface); padding:.5rem; border-radius:var(--r-md); border:1px solid var(--c-border); box-shadow:var(--sh-sm); flex-wrap:wrap; }
+    .tab-btn { background:transparent; border:none; padding:.6rem 1.2rem; border-radius:var(--r-sm); font-size:.85rem; font-weight:600; color:var(--c-text-2); cursor:pointer; display:flex; align-items:center; gap:.4rem; }
+    .tab-btn:hover { background:var(--c-primary-lt); color:var(--c-primary); }
+    .tab-btn.active { background:var(--c-primary); color:#fff; }
+
+    .form-card { background:var(--c-surface); border-radius:var(--r-md); box-shadow:var(--sh-sm); border:1px solid var(--c-border); overflow:hidden; }
+    .form-card-header { padding:.9rem 1.4rem; background:#fafafa; border-bottom:1px solid var(--c-border); font-size:.88rem; font-weight:700; color:var(--c-text); display:flex; align-items:center; gap:.5rem; }
+    .form-card-body { padding:1.4rem; }
+
+    .form-row { display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap; }
+    .form-group { display:flex; flex-direction:column; gap:.35rem; }
+    .col-3 { flex:0 0 calc(25% - .75rem); min-width:180px; }
+    .col-4 { flex:0 0 calc(33.33% - .67rem); min-width:220px; }
+    .col-12 { flex:0 0 100%; }
+
+    .form-lbl { font-size:.8rem; font-weight:600; color:var(--c-text-2); }
+    .form-lbl.required::after { content:' *'; color:var(--c-danger); }
+    .form-ctrl { border:1.5px solid var(--c-border); border-radius:var(--r-sm); padding:.55rem .9rem; font-size:.88rem; color:var(--c-text); background:#fafafa; outline:none; width:100%; }
+    .form-ctrl:focus { border-color:var(--c-primary); background:#fff; box-shadow:0 0 0 3px rgba(15,118,110,.1); }
+    .form-ctrl:disabled { background:#f1f5f9; color:var(--c-text-2); cursor:not-allowed; }
+    .readonly-field { background:#f8fafc !important; color:var(--c-text-2) !important; }
+    .textarea-ctrl { resize:vertical; min-height:70px; }
+    .field-error { font-size:.75rem; color:var(--c-danger); font-weight:600; }
+
+    .table-scroll { overflow-x:auto; }
+    .stage-table { width:100%; border-collapse:collapse; }
+    .stage-table th, .stage-table td { padding:.75rem 1rem; border-bottom:1px solid #f1f5f9; }
+    .stage-table th { background:#f8fafc; font-size:.76rem; color:var(--c-text-3); }
+    .stage-table .tc { text-align:center; }
+    .stage-chip { padding:.2rem .6rem; border-radius:20px; font-size:.75rem; font-weight:700; }
+    .st-pending{background:#f1f5f9;color:#64748b;}
+    .st-running{background:#ffedd5;color:#c2410c;}
+    .st-done{background:#dcfce7;color:#15803d;}
+    .st-problem{background:#fee2e2;color:#b91c1c;}
+
+    .audit-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; }
+    .audit-item { background:#fafafa; border:1px solid var(--c-border); border-radius:var(--r-sm); padding:1rem; }
+
+    .action-bar { display:flex; justify-content:space-between; align-items:center; padding:1rem 1.4rem; background:var(--c-surface); border-radius:var(--r-md); border:1px solid var(--c-border); box-shadow:var(--sh-sm); flex-wrap:wrap; gap:.75rem; position:sticky; bottom:0; z-index:10; }
+    .action-bar-start, .action-bar-end { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .btn-action { border:none; border-radius:var(--r-sm); padding:.55rem 1.1rem; font-size:.85rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:.4rem; color:#fff; }
+    .btn-action.start{background:#ea580c;} .btn-action.done{background:#2563eb;} .btn-action.qc{background:#1d4ed8;} .btn-action.accept{background:#059669;} .btn-action.reject{background:#dc2626;}
+    .btn-save { background:linear-gradient(135deg,var(--c-primary),var(--c-primary-dk)); color:#fff; border:none; border-radius:var(--r-sm); padding:.6rem 1.5rem; font-size:.88rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:.45rem; }
+    .btn-back { background:var(--c-secondary-lt); color:var(--c-secondary); border:none; border-radius:var(--r-sm); padding:.6rem 1.2rem; font-size:.85rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:.4rem; }
+
+    .s-draft{background:#f1f5f9;color:#64748b;} .s-work{background:#fed7aa;color:#c2410c;} .s-done{background:#dbeafe;color:#1d4ed8;} .s-qc{background:#e0e7ff;color:#4338ca;} .s-accepted{background:#ecfdf5;color:#059669;} .s-rejected{background:#fef2f2;color:#dc2626;}
+    .count-badge { background:var(--c-primary-lt); color:var(--c-primary); font-size:.75rem; font-weight:700; padding:.2rem .65rem; border-radius:20px; }
+
+    .state-box { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:3rem 2rem; gap:1rem; }
+    .spinner-md { width:44px; height:44px; border:3px solid var(--c-border); border-top-color:var(--c-primary); border-radius:50%; animation:spin .7s linear infinite; }
+    .spinner-tiny { width:14px; height:14px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; display:inline-block; }
+    .empty-icon-circle { width:70px; height:70px; background:var(--c-primary-lt); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.8rem; color:var(--c-primary); }
+    .state-text { color:var(--c-text-3); }
+    .empty-title { font-size:1rem; font-weight:700; color:var(--c-text); margin:0; }
+
+    .toast-msg { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); padding:.8rem 1.5rem; border-radius:var(--r-sm); font-weight:600; font-size:.9rem; display:flex; align-items:center; gap:.5rem; z-index:2000; box-shadow:0 8px 24px rgba(0,0,0,.15); }
+    .toast-success { background:#065f46; color:#fff; }
+    .toast-error { background:#991b1b; color:#fff; }
+
+    .btn-stage-load {
+    background: var(--c-primary-lt);
+    color: var(--c-primary);
+    border: 1px solid #99f6e4;
+    border-radius: var(--r-sm);
+    padding: .45rem .9rem;
+    font-size: .8rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.stage-toolbar {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 1.4rem 0;
+    flex-wrap: wrap;
+}
+
+.stage-actions {
+    display: flex;
+    justify-content: center;
+    gap: .35rem;
+}
+
+.start-stage-btn {
+    color: #059669;
+}
+.start-stage-btn:hover {
+    background: #ecfdf5;
+}
+
+.end-stage-btn {
+    color: #dc2626;
+}
+.end-stage-btn:hover {
+    background: #fef2f2;
+}
+
+.inventory-done-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+    border-radius: 20px;
+    padding: .4rem .8rem;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+
+    @@keyframes spin { to { transform:rotate(360deg); } }
+
+    @@media (max-width:768px) {
+        .batch-edit-page { padding:1rem; }
+        .page-header { flex-direction:column; align-items:flex-start; }
+        .form-row { flex-direction:column; }
+        .col-3, .col-4, .col-12 { flex:0 0 100%; min-width:0; }
+        .action-bar { flex-direction:column; }
+        .action-bar-start, .action-bar-end { width:100%; justify-content:center; }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")]
+    private string? QueryTab { get; set; }
+
+    private ProductionBatchEditDto batch = new();
+    private ProductionBatchAuditDto? auditInfo;
+    private List<ProductionBatchStageDto> stages = new();
+    private bool inventoryAdded = false;
+    private string? stageTemperature;
+    private string? stageSpeed;
+    private int? stageOperatorId;
+
+    private ModulePermissionDto? permissions;
+    private ModulePermissionDto Perms => permissions!;
+
+    private List<ProductionLookupDto> orderLookup = new();
+    private List<ProductionLookupDto> warehouseLookup = new();
+    private List<ProductionLookupDto> employeeLookup = new();
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isViewMode = false;
+    private bool stagesLoading = false;
+
+    private string activeTab = "main";
+    private Dictionary<string, string> errors = new();
+
+    private string? resultMessage;
+    private bool isSuccess;
+
+    private decimal CurrentTotalCost => batch.MaterialCost + batch.LaborCost + batch.OverheadCost;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_BATCH");
+
+        if (permissions is null || !Perms.CanView)
+        {
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            orderLookup = await BatchService.GetProductionOrdersLookupAsync();
+            warehouseLookup = await BatchService.GetWarehousesLookupAsync();
+            employeeLookup = await BatchService.GetEmployeesLookupAsync();
+
+            if (Id > 0)
+{
+    var existing = await BatchService.GetByIdAsync(Id);
+    if (existing is null)
+    {
+        NavigationManager.NavigateTo("/production-batches");
+        return;
+    }
+
+    batch = existing;
+    isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+
+    if (!string.IsNullOrWhiteSpace(batch.BatchNumber))
+        inventoryAdded = await BatchService.HasInventoryEntryAsync(batch.BatchNumber);
+}
+else
+{
+    if (!Perms.CanAdd)
+    {
+        NavigationManager.NavigateTo("/production-batches");
+        return;
+    }
+
+    batch = new ProductionBatchEditDto
+    {
+        BatchDate = DateTime.Today
+    };
+
+    inventoryAdded = false;
+}
+        }
+        finally
+        {
+            isLoading = false;
+            if (!string.IsNullOrWhiteSpace(QueryTab) && QueryTab == "stages" && Id > 0)
+            {
+                await LoadStagesTab();
+            }
+        }
+    }
+
+    private async Task OnOrderChanged()
+{
+    if (batch.ProductionOrderID <= 0)
+        return;
+
+    var info = await BatchService.GetOrderInfoAsync(batch.ProductionOrderID);
+    if (info is null)
+        return;
+
+    batch.ProductionOrderNumber = info.OrderNumber;
+    batch.ProductItemID = info.ProductItemID;
+    batch.ProductName = $"{info.ProductCode} - {info.ProductName}";
+    batch.UnitID = info.PlannedUnitID;
+    batch.UnitName = info.UnitName;
+    batch.TargetWarehouseID = info.TargetWarehouseID;
+    batch.TargetWarehouseName = info.TargetWarehouseName;
+
+    if (Id == 0)
+    {
+        batch.PlannedQty = await BatchService.GetSuggestedBatchQtyAsync(batch.ProductionOrderID, Id);
+    }
+}
+
+    private async Task LoadStagesTab()
+    {
+        activeTab = "stages";
+        if (Id <= 0) return;
+
+        stagesLoading = true;
+        try
+        {
+            stages = await BatchService.GetStagesAsync(Id);
+        }
+        finally
+        {
+            stagesLoading = false;
+        }
+    }
+    private async Task ReloadStagesFromBom()
+{
+    if (Id <= 0) return;
+
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.LoadStagesFromBomAsync(Id, UserSession.UserID, true);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            stages = await BatchService.GetStagesAsync(Id);
+            activeTab = "stages";
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task StartProduction()
+{
+    if (Id <= 0) return;
+
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.StartProductionAsync(Id, UserSession.UserID);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            var refreshed = await BatchService.GetByIdAsync(Id);
+            if (refreshed is not null)
+            {
+                batch = refreshed;
+                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+            }
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task CompleteProduction()
+{
+    if (Id <= 0) return;
+
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.CompleteProductionAsync(Id, UserSession.UserID);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            var refreshed = await BatchService.GetByIdAsync(Id);
+            if (refreshed is not null)
+            {
+                batch = refreshed;
+                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+            }
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task ApplyQc()
+{
+    if (Id <= 0) return;
+
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.ApplyQcAsync(
+            batchId: Id,
+            qcResult: batch.QCResult ?? 0,
+            qcInspectedBy: batch.QCInspectedBy ?? 0,
+            qcNotes: batch.QCNotes,
+            goodQty: batch.GoodQty,
+            rejectedQty: batch.RejectedQty,
+            sampleQty: batch.SampleQty,
+            userId: UserSession.UserID);
+
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            var refreshed = await BatchService.GetByIdAsync(Id);
+            if (refreshed is not null)
+            {
+                batch = refreshed;
+                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+            }
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task AddToInventory()
+{
+    if (Id <= 0) return;
+
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.AddToInventoryAsync(Id, UserSession.UserID);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            inventoryAdded = true;
+
+            var refreshed = await BatchService.GetByIdAsync(Id);
+            if (refreshed is not null)
+            {
+                batch = refreshed;
+                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+            }
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task StartStage(int batchStageId)
+{
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.StartStageAsync(
+            batchStageId,
+            stageTemperature,
+            stageSpeed,
+            stageOperatorId,
+            UserSession.UserID);
+
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            stages = await BatchService.GetStagesAsync(Id);
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+private async Task EndStage(int batchStageId)
+{
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.EndStageAsync(batchStageId, UserSession.UserID);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+
+        if (result.Success)
+        {
+            stages = await BatchService.GetStagesAsync(Id);
+        }
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+
+    private async Task LoadAuditTab()
+    {
+        activeTab = "audit";
+        if (Id > 0 && auditInfo is null)
+        {
+            auditInfo = await BatchService.GetAuditAsync(Id);
+        }
+    }
+
+    private async Task SaveBatch()
+    {
+        if (!Validate()) return;
+
+        isSaving = true;
+        try
+        {
+            batch.TotalCost = CurrentTotalCost;
+
+            if (Id == 0)
+            {
+                var newId = await BatchService.InsertAsync(batch, UserSession.UserID);
+                isSuccess = true;
+                resultMessage = "تم حفظ دفعة الإنتاج بنجاح";
+                NavigationManager.NavigateTo($"/production-batches/edit/{newId}");
+            }
+            else
+            {
+                await BatchService.UpdateAsync(batch, UserSession.UserID);
+                isSuccess = true;
+                resultMessage = "تم حفظ التعديلات بنجاح";
+            }
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            resultMessage = $"خطأ: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            _ = ClearMessage();
+        }
+    }
+
+    private bool Validate()
+    {
+        errors.Clear();
+
+        if (batch.ProductionOrderID <= 0)
+            errors["ProductionOrderID"] = "يجب اختيار أمر التصنيع";
+
+        if (batch.PlannedQty <= 0)
+            errors["PlannedQty"] = "الكمية المخططة يجب أن تكون أكبر من صفر";
+
+        return !errors.Any();
+    }
+
+    private async Task ChangeStatus(int newStatus)
+    {
+        if (Id <= 0) return;
+
+        isSaving = true;
+        try
+        {
+            var result = await BatchService.ChangeStatusAsync(Id, newStatus, UserSession.UserID);
+            isSuccess = result.Success;
+            resultMessage = result.Message;
+
+            if (result.Success)
+            {
+                var refreshed = await BatchService.GetByIdAsync(Id);
+                if (refreshed is not null)
+                {
+                    batch = refreshed;
+                    isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                }
+
+                if (activeTab == "stages")
+                    stages = await BatchService.GetStagesAsync(Id);
+            }
+        }
+        finally
+        {
+            isSaving = false;
+            _ = ClearMessage();
+        }
+    }
+
+    private void GoBack() => NavigationManager.NavigateTo("/production-batches");
+
+    private async Task ClearMessage()
+    {
+        await Task.Delay(4000);
+        resultMessage = null;
+        StateHasChanged();
+    }
+
+    private string GetStatusName(int status) => status switch
+    {
+        1 => "مسودة",
+        2 => "قيد التصنيع",
+        3 => "اكتمل التصنيع",
+        4 => "في فحص الجودة",
+        5 => "مقبول",
+        6 => "مرفوض",
+        _ => "—"
+    };
+
+    private string GetStatusClass(int status) => status switch
+    {
+        1 => "s-draft",
+        2 => "s-work",
+        3 => "s-done",
+        4 => "s-qc",
+        5 => "s-accepted",
+        6 => "s-rejected",
+        _ => "s-draft"
+    };
+
+    private string GetStageStatusClass(int status) => status switch
+    {
+        1 => "st-pending",
+        2 => "st-running",
+        3 => "st-done",
+        4 => "st-problem",
+        _ => "st-pending"
+    };
+}

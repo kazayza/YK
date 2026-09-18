@@ -1,0 +1,679 @@
+﻿@page "/units"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject UnitService UnitService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>وحدات القياس - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <div class="items-page" dir="rtl">
+
+        <!-- العنوان -->
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">وحدات القياس</h2>
+                <p class="page-subtitle">إدارة وحدات القياس وتحويلاتها</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@filteredUnits.Count وحدة</span>
+
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportToExcel" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spinner-sm"></div> }
+                        else
+                        {
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                        }
+                        تصدير Excel
+                    </button>
+                }
+
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="ShowAddDialog">
+                        <span class="btn-icon">+</span> إضافة وحدة
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- الإحصائيات -->
+        @if (units != null)
+        {
+            <div class="stats-grid">
+                <div class="stat-card stat-total">
+                    <div class="stat-value">@units.Count</div>
+                    <div class="stat-label">إجمالي الوحدات</div>
+                </div>
+                <div class="stat-card stat-raw">
+                    <div class="stat-value">@units.Count(u => u.UnitType == "Weight")</div>
+                    <div class="stat-label">وزن</div>
+                </div>
+                <div class="stat-card stat-pkg">
+                    <div class="stat-value">@units.Count(u => u.UnitType == "Volume")</div>
+                    <div class="stat-label">حجم</div>
+                </div>
+                <div class="stat-card stat-semi">
+                    <div class="stat-value">@units.Count(u => u.UnitType == "Count")</div>
+                    <div class="stat-label">عدد</div>
+                </div>
+                <div class="stat-card stat-fin">
+                    <div class="stat-value">@units.Count(u => u.UnitType == "Length")</div>
+                    <div class="stat-label">طول</div>
+                </div>
+            </div>
+        }
+
+        <!-- شريط البحث -->
+        <div class="filter-bar">
+            <div class="search-box">
+                <span class="search-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                    </svg>
+                </span>
+                <input type="text" class="search-input" placeholder="بحث بالاسم أو الكود..."
+                       @bind="searchText" @bind:event="oninput" @onkeyup="Search" />
+                @if (!string.IsNullOrEmpty(searchText))
+                {
+                    <button class="clear-search" @onclick="ClearSearch">✕</button>
+                }
+            </div>
+
+            <select class="filter-select" @bind="filterType" @bind:after="Search">
+                <option value="">كل الأنواع</option>
+                <option value="Weight">وزن</option>
+                <option value="Volume">حجم</option>
+                <option value="Count">عدد</option>
+                <option value="Length">طول</option>
+            </select>
+
+            <button class="btn-modern btn-ghost" @onclick="LoadData">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                    <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                تحديث
+            </button>
+        </div>
+
+        <!-- تبويبات -->
+        <div class="tab-bar">
+            <button class="tab-btn @(activeTab == "units" ? "active" : "")" @onclick='() => activeTab = "units"'>
+                وحدات القياس
+            </button>
+            <button class="tab-btn @(activeTab == "conversions" ? "active" : "")" @onclick='() => { activeTab = "conversions"; LoadConversions(); }'>
+                التحويلات (@conversions.Count)
+            </button>
+        </div>
+
+        @if (activeTab == "units")
+        {
+            <!-- جدول الوحدات -->
+            @if (units == null)
+            {
+                <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+            }
+            else if (!filteredUnits.Any())
+            {
+                <div class="empty-state"><div class="empty-icon">📏</div><h4>لا توجد وحدات</h4></div>
+            }
+            else
+            {
+                <div class="table-card">
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="th-num">#</th>
+                                    <th>الكود</th>
+                                    <th>اسم الوحدة (عربي)</th>
+                                    <th>اسم الوحدة (إنجليزي)</th>
+                                    <th class="th-center">النوع</th>
+                                    <th class="th-center">عدد الأصناف</th>
+                                    <th class="th-center">التحويلات</th>
+                                    <th class="th-actions">إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int rowNum = 0; }
+                                @foreach (var unit in filteredUnits)
+                                {
+                                    rowNum++;
+                                    <tr>
+                                        <td class="td-num">@rowNum</td>
+                                        <td><code class="item-code">@unit.UnitCode</code></td>
+                                        <td class="item-name">@unit.UnitNameAr</td>
+                                        <td class="item-name-en">@unit.UnitNameEn</td>
+                                        <td class="td-center">
+                                            <span class="type-badge type-@unit.UnitType?.ToLower()">
+                                                @UnitService.GetUnitTypeName(unit.UnitType)
+                                            </span>
+                                        </td>
+                                        <td class="td-center">
+                                            @if (unit.ItemCount > 0)
+                                            { <span class="count-badge">@unit.ItemCount</span> }
+                                            else
+                                            { <span class="no-value">0</span> }
+                                        </td>
+                                        <td class="td-center">@unit.ConversionCount</td>
+                                        <td class="td-actions">
+                                            @if (permissions.CanEdit)
+                                            {
+                                                <button class="action-btn edit-btn" title="تعديل"
+                                                        @onclick="() => ShowEditDialog(unit)">
+                                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                                    </svg>
+                                                </button>
+                                            }
+                                            @if (permissions.CanDelete)
+                                            {
+                                                <button class="action-btn delete-btn" title="حذف"
+                                                        @onclick="() => ShowDeleteConfirm(unit)">
+                                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                                    </svg>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <!-- جدول التحويلات -->
+            <div class="table-card">
+                @if (permissions.CanAdd)
+                {
+                    <div style="padding:16px; border-bottom:1px solid #f3f4f6;">
+                        <div class="conversion-form">
+                            <select class="field-select" @bind="convFromUnitId">
+                                <option value="0">-- من وحدة --</option>
+                                @if (units != null)
+                                {
+                                    @foreach (var u in units)
+                                    { <option value="@u.UnitID">@u.UnitNameAr (@u.UnitCode)</option> }
+                                }
+                            </select>
+                            <span class="conv-arrow">→</span>
+                            <select class="field-select" @bind="convToUnitId">
+                                <option value="0">-- إلى وحدة --</option>
+                                @if (units != null)
+                                {
+                                    @foreach (var u in units)
+                                    { <option value="@u.UnitID">@u.UnitNameAr (@u.UnitCode)</option> }
+                                }
+                            </select>
+                            <span class="conv-arrow">×</span>
+                            <input type="number" class="field-input conv-factor" @bind="convFactor"
+                                   step="0.000001" placeholder="المعامل" />
+                            <button class="btn-modern btn-primary-modern" @onclick="AddConversion">إضافة</button>
+                        </div>
+                    </div>
+                }
+
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="th-num">#</th>
+                                <th>من وحدة</th>
+                                <th class="th-center">→</th>
+                                <th>إلى وحدة</th>
+                                <th class="th-center">المعامل</th>
+                                <th class="th-center">مثال</th>
+                                @if (permissions.CanDelete)
+                                { <th class="th-actions">حذف</th> }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int cNum = 0; }
+                            @foreach (var conv in conversions)
+                            {
+                                cNum++;
+                                <tr>
+                                    <td class="td-num">@cNum</td>
+                                    <td class="item-name">@conv.FromUnitName <code class="item-code">@conv.FromUnitCode</code></td>
+                                    <td class="td-center" style="font-size:1.2rem;">→</td>
+                                    <td class="item-name">@conv.ToUnitName <code class="item-code">@conv.ToUnitCode</code></td>
+                                    <td class="td-center"><strong>@conv.ConversionFactor.ToString("#,##0.######")</strong></td>
+                                    <td class="td-center" style="color:#6b7280; font-size:.85rem;">
+                                        1 @conv.FromUnitName = @conv.ConversionFactor.ToString("#,##0.######") @conv.ToUnitName
+                                    </td>
+                                    @if (permissions.CanDelete)
+                                    {
+                                        <td class="td-actions">
+                                            <button class="action-btn delete-btn" @onclick="() => DeleteConversion(conv.ConversionID)">
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                                </svg>
+                                            </button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- مودال الإضافة/التعديل -->
+    @if (showFormDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-card form-modal" @onclick:stopPropagation="true">
+                <h3 class="modal-title">@(isEditMode ? "تعديل وحدة قياس" : "إضافة وحدة قياس")</h3>
+
+                <div class="form-grid-modal">
+                    <div class="form-field">
+                        <label class="field-label required-field">كود الوحدة</label>
+                        <input type="text" class="field-input" @bind="editItem.UnitCode" placeholder="مثال: KG" dir="ltr" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label required-field">اسم الوحدة (عربي)</label>
+                        <input type="text" class="field-input" @bind="editItem.UnitNameAr" placeholder="مثال: كيلو جرام" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">اسم الوحدة (إنجليزي)</label>
+                        <input type="text" class="field-input" @bind="editItem.UnitNameEn" placeholder="Kilogram" dir="ltr" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label required-field">النوع</label>
+                        <select class="field-select" @bind="editItem.UnitType">
+                            <option value="">-- اختر النوع --</option>
+                            <option value="Weight">وزن</option>
+                            <option value="Volume">حجم</option>
+                            <option value="Count">عدد</option>
+                            <option value="Length">طول</option>
+                        </select>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(formMessage))
+                {
+                    <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+                }
+
+                <div class="modal-buttons">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveUnit" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div> <span>جاري الحفظ...</span> }
+                        else { <span>@(isEditMode ? "حفظ التعديلات" : "حفظ")</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- مودال الحذف -->
+    @if (showDeleteDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon delete-modal-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                </div>
+                <h4>تأكيد الحذف</h4>
+                <p>هل أنت متأكد من حذف الوحدة: <strong>@deleteUnit?.UnitNameAr</strong>؟</p>
+                @if (!string.IsNullOrEmpty(deleteMessage))
+                { <div class="form-message msg-error">@deleteMessage</div> }
+                <div class="modal-buttons">
+                    <button class="btn-modern btn-danger-modern" @onclick="ConfirmDelete">تأكيد الحذف</button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast -->
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .items-page { display: flex; flex-direction: column; gap: 20px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+    .page-title { font-weight: 800; color: #1f2937; margin: 0; }
+    .page-subtitle { color: #6b7280; font-size: .88rem; margin: 4px 0 0; }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+    .result-badge { background: #f3f4f6; color: #4b5563; padding: 8px 16px; border-radius: 999px; font-size: .82rem; font-weight: 700; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
+    .stat-card { background: white; border-radius: 18px; padding: 18px; text-align: center; border: 1px solid #eef2f7; box-shadow: 0 4px 12px rgba(15,23,42,.04); transition: .2s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,.08); }
+    .stat-value { font-size: 1.6rem; font-weight: 800; color: #1f2937; }
+    .stat-label { font-size: .8rem; color: #6b7280; margin-top: 4px; }
+    .stat-total { border-top: 3px solid #1f2937; }
+    .stat-raw { border-top: 3px solid #1d4ed8; }
+    .stat-pkg { border-top: 3px solid #06b6d4; }
+    .stat-semi { border-top: 3px solid #f59e0b; }
+    .stat-fin { border-top: 3px solid #10b981; }
+
+    .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .search-box { flex: 1; min-width: 280px; position: relative; display: flex; align-items: center; }
+    .search-icon { position: absolute; right: 14px; color: #9ca3af; pointer-events: none; }
+    .search-input { width: 100%; padding: 12px 44px 12px 40px; border: 1.5px solid #e5e7eb; border-radius: 14px; font-size: .92rem; background: white; outline: none; transition: .2s; }
+    .search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .clear-search { position: absolute; left: 12px; background: #f3f4f6; border: none; width: 24px; height: 24px; border-radius: 50%; font-size: .75rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6b7280; }
+    .filter-select { padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 14px; font-size: .88rem; background: white; min-width: 150px; outline: none; }
+
+    .tab-bar { display: flex; gap: 8px; background: white; padding: 6px; border-radius: 16px; border: 1px solid #eef2f7; width: fit-content; }
+    .tab-btn { padding: 10px 20px; border: none; background: transparent; border-radius: 12px; font-weight: 700; font-size: .88rem; color: #6b7280; cursor: pointer; transition: .2s; }
+    .tab-btn.active { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 12px rgba(37,99,235,.25); }
+
+    .table-card { background: white; border-radius: 20px; overflow: hidden; border: 1px solid #eef2f7; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead { background: #f8f9fc; }
+    .data-table th { padding: 14px 16px; font-size: .82rem; font-weight: 700; color: #6b7280; text-align: right; border-bottom: 2px solid #eef2f7; white-space: nowrap; }
+    .data-table td { padding: 13px 16px; font-size: .88rem; color: #374151; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    .data-table tbody tr { transition: .15s; }
+    .data-table tbody tr:hover { background: #f8f7ff; }
+    .th-num { width: 50px; text-align: center; } .th-center { text-align: center; } .th-actions { width: 130px; text-align: center; }
+    .td-num { text-align: center; color: #9ca3af; font-size: .82rem; } .td-center { text-align: center; } .td-actions { text-align: center; }
+
+    .item-code { background: #f3f4f6; padding: 4px 10px; border-radius: 8px; font-size: .82rem; color: #1d4ed8; font-weight: 600; }
+    .item-name { font-weight: 700; color: #1f2937; } .item-name-en { color: #9ca3af; font-size: .85rem; }
+    .no-value { color: #d1d5db; }
+    .count-badge { background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 8px; font-size: .82rem; font-weight: 700; }
+    .type-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700; }
+    .type-weight { background: #eff6ff; color: #2563eb; }
+    .type-volume { background: #ecfeff; color: #0891b2; }
+    .type-count { background: #fef3c7; color: #d97706; }
+    .type-length { background: #ecfdf5; color: #059669; }
+
+    .conversion-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .conv-arrow { font-size: 1.2rem; font-weight: 800; color: #1d4ed8; }
+    .conv-factor { max-width: 140px; }
+
+    .action-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 10px; border: 1.5px solid; background: transparent; font-size: .78rem; font-weight: 700; cursor: pointer; transition: .2s; }
+    .edit-btn { color: #1d4ed8; border-color: #e9e0ff; } .edit-btn:hover { background: #f5f3ff; border-color: #1d4ed8; }
+    .delete-btn { color: #ef4444; border-color: #fee2e2; } .delete-btn:hover { background: #fef2f2; border-color: #ef4444; }
+
+    .btn-modern { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 14px; border: none; font-weight: 700; font-size: .88rem; cursor: pointer; transition: .2s; }
+    .btn-modern:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,.25); }
+    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(37,99,235,.35); }
+    .btn-danger-modern { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
+    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; } .btn-ghost:hover { background: #f9fafb; }
+    .btn-export { background: linear-gradient(135deg, #059669, #10b981); color: white; box-shadow: 0 4px 16px rgba(16,185,129,.25); }
+    .btn-icon { font-size: 1.1rem; font-weight: 800; }
+    .btn-spinner-sm { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .6s linear infinite; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-card { background: white; border-radius: 24px; padding: 36px; max-width: 440px; width: 90%; text-align: center; box-shadow: 0 24px 48px rgba(0,0,0,.15); animation: modalIn .3s ease; }
+    .form-modal { max-width: 560px; text-align: right; }
+    .modal-title { font-weight: 800; color: #1f2937; margin-bottom: 20px; text-align: center; }
+    .modal-icon { width: 64px; height: 64px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+    .delete-modal-icon { background: #fef2f2; color: #ef4444; }
+    .modal-buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+    .form-grid-modal { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .field-label { font-size: .82rem; font-weight: 700; color: #374151; }
+    .required-field::after { content: ' *'; color: #ef4444; }
+    .field-input, .field-select { padding: 10px 14px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: .9rem; background: white; outline: none; width: 100%; transition: .2s; }
+    .field-input:focus, .field-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .form-message { padding: 10px 14px; border-radius: 12px; font-size: .85rem; font-weight: 600; margin-top: 12px; }
+    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    .toast-container { position: fixed; bottom: 24px; left: 24px; z-index: 1050; animation: toastIn .4s ease; }
+    .toast-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.12); min-width: 320px; }
+    .toast-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .toast-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .toast-text { flex: 1; font-weight: 600; font-size: .88rem; }
+    .toast-close { background: transparent; border: none; font-size: 1rem; cursor: pointer; color: inherit; opacity: .6; }
+    @@keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 60px 20px; background: white; border-radius: 20px; border: 1px solid #eef2f7; }
+    .empty-icon { font-size: 3rem; margin-bottom: 16px; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .filter-bar { flex-direction: column; }
+        .search-box { min-width: 100%; }
+        .form-grid-modal { grid-template-columns: 1fr; }
+        .conversion-form { flex-direction: column; }
+    }
+</style>
+
+@code {
+    private List<UnitListDto>? units;
+    private List<UnitListDto> filteredUnits = new();
+    private List<UnitConversionDto> conversions = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private string filterType = "";
+    private string activeTab = "units";
+
+    // مودال الإضافة/التعديل
+    private bool showFormDialog = false;
+    private bool isEditMode = false;
+    private UnitEditDto editItem = new();
+    private bool isSaving = false;
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    // مودال الحذف
+    private bool showDeleteDialog = false;
+    private UnitListDto? deleteUnit;
+    private string deleteMessage = "";
+
+    // التحويلات
+    private int convFromUnitId = 0;
+    private int convToUnitId = 0;
+    private decimal convFactor = 0;
+
+    // Toast
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+    private bool isExporting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_UNITS");
+        if (permissions != null && permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        units = await UnitService.GetUnitsListAsync();
+        Search();
+    }
+
+    private async void LoadConversions()
+    {
+        conversions = await UnitService.GetConversionsAsync();
+        StateHasChanged();
+    }
+
+    private void Search()
+    {
+        if (units == null) return;
+        filteredUnits = units.Where(u =>
+            (string.IsNullOrEmpty(filterType) || u.UnitType == filterType) &&
+            (string.IsNullOrEmpty(searchText) ||
+             ArabicSearchHelper.Contains(u.UnitNameAr, searchText) ||
+             ArabicSearchHelper.Contains(u.UnitNameEn, searchText) ||
+             ArabicSearchHelper.Contains(u.UnitCode, searchText))
+        ).ToList();
+    }
+
+    private void ClearSearch() { searchText = ""; Search(); }
+
+    // ===== إضافة =====
+    private void ShowAddDialog()
+    {
+        isEditMode = false;
+        editItem = new UnitEditDto();
+        formMessage = "";
+        showFormDialog = true;
+    }
+
+    // ===== تعديل =====
+    private void ShowEditDialog(UnitListDto unit)
+    {
+        isEditMode = true;
+        editItem = new UnitEditDto
+        {
+            UnitID = unit.UnitID,
+            UnitCode = unit.UnitCode,
+            UnitNameAr = unit.UnitNameAr,
+            UnitNameEn = unit.UnitNameEn,
+            UnitType = unit.UnitType
+        };
+        formMessage = "";
+        showFormDialog = true;
+    }
+
+    private void CloseDialog() { showFormDialog = false; formMessage = ""; }
+
+    // ===== حفظ =====
+    private async Task SaveUnit()
+    {
+        formMessage = "";
+        if (string.IsNullOrWhiteSpace(editItem.UnitCode))
+        { formMessage = "يجب إدخال كود الوحدة"; formSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(editItem.UnitNameAr))
+        { formMessage = "يجب إدخال اسم الوحدة"; formSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(editItem.UnitType))
+        { formMessage = "يجب اختيار نوع الوحدة"; formSuccess = false; return; }
+
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (isEditMode)
+            {
+                await UnitService.UpdateUnitAsync(editItem, UserSession.UserID);
+                resultMessage = "تم تعديل الوحدة بنجاح ✅";
+            }
+            else
+            {
+                await UnitService.InsertUnitAsync(editItem, UserSession.UserID);
+                resultMessage = "تم إضافة الوحدة بنجاح ✅";
+            }
+            resultSuccess = true;
+            showFormDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
+        finally { isSaving = false; }
+    }
+
+    // ===== حذف =====
+    private void ShowDeleteConfirm(UnitListDto unit)
+    { deleteUnit = unit; deleteMessage = ""; showDeleteDialog = true; }
+
+    private void CloseDeleteDialog() { showDeleteDialog = false; deleteMessage = ""; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteUnit == null) return;
+        try
+        {
+            var result = await UnitService.DeleteUnitAsync(deleteUnit.UnitID, UserSession.UserID);
+            if (result.Success)
+            { resultMessage = result.Message + " ✅"; resultSuccess = true; showDeleteDialog = false; await LoadData(); }
+            else { deleteMessage = result.Message; }
+        }
+        catch (Exception ex) { deleteMessage = "خطأ: " + ex.Message; }
+    }
+
+    // ===== تحويلات =====
+    private async Task AddConversion()
+    {
+        if (convFromUnitId == 0 || convToUnitId == 0 || convFactor <= 0)
+        { resultMessage = "يجب اختيار الوحدتين وإدخال معامل التحويل"; resultSuccess = false; return; }
+        if (convFromUnitId == convToUnitId)
+        { resultMessage = "لا يمكن التحويل من وحدة لنفسها"; resultSuccess = false; return; }
+
+        try
+        {
+            await UnitService.InsertConversionAsync(convFromUnitId, convToUnitId, convFactor, UserSession.UserID);
+            resultMessage = "تم إضافة التحويل بنجاح ✅"; resultSuccess = true;
+            convFromUnitId = 0; convToUnitId = 0; convFactor = 0;
+            LoadConversions();
+            await LoadData();
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+    }
+
+    private async Task DeleteConversion(int conversionId)
+    {
+        try
+        {
+            await UnitService.DeleteConversionAsync(conversionId, UserSession.UserID);
+            resultMessage = "تم حذف التحويل ✅"; resultSuccess = true;
+            LoadConversions();
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+    }
+
+    // ===== تصدير =====
+    private async Task ExportToExcel()
+    {
+        if (filteredUnits == null || !filteredUnits.Any()) return;
+        isExporting = true; StateHasChanged();
+        try
+        {
+            var fileBytes = await UnitService.ExportUnitsToExcelAsync(filteredUnits, UserSession.UserID);
+            var base64 = Convert.ToBase64String(fileBytes);
+            await JS.InvokeVoidAsync("downloadFile", $"Units_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+        finally { isExporting = false; }
+    }
+}

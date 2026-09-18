@@ -1,0 +1,707 @@
+﻿@using YKCoatings.Models
+@using YKCoatings.Services
+@implements IAsyncDisposable
+@inject DashboardService DashboardService
+@inject NavigationManager NavigationManager
+
+<div class="live-prod-card">
+    <div class="live-prod-header">
+        <div class="live-prod-title">
+            <i class="bi bi-activity"></i>
+            أوامر التصنيع الحالية
+            @if (!isLoading)
+            {
+                <span class="live-count">@items.Count</span>
+            }
+        </div>
+
+        <div class="live-prod-actions">
+            <button class="btn-live-refresh" @onclick="LoadData" disabled="@isLoading">
+                @if (isLoading)
+                {
+                    <span class="spinner-mini"></span>
+                }
+                else
+                {
+                    <i class="bi bi-arrow-clockwise"></i>
+                }
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="live-state-box">
+            <div class="spinner-md"></div>
+            <span>جاري تحميل المتابعة اللحظية...</span>
+        </div>
+    }
+    else if (!items.Any())
+    {
+        <div class="live-state-box">
+            <div class="live-empty-icon"><i class="bi bi-check2-circle"></i></div>
+            <div>لا توجد أوامر تصنيع حالية</div>
+        </div>
+    }
+    else
+    {
+        <div class="live-prod-list">
+            @foreach (var item in items)
+            {
+                var stages = GetStagesForOrder(item.ProductionOrderID);
+
+                                <div class="live-order-item" @onclick="() => OpenOrder(item.ProductionOrderID, item.CurrentBatchID)">
+                    <div class="live-order-top">
+                        <div>
+                            <div class="live-order-number">@item.OrderNumber</div>
+                            <div class="live-product-name">@item.ProductName</div>
+                        </div>
+                        <span class="live-order-status @GetOrderStatusClass(item.OrderStatus)">
+                            @item.OrderStatusName
+                        </span>
+                    </div>
+
+                    <div class="live-order-mid">
+                        <div class="live-line">
+                            <span class="live-label">الباتش:</span>
+                            <span class="live-value">
+                                @(string.IsNullOrWhiteSpace(item.CurrentBatchNumber) ? "—" : item.CurrentBatchNumber)
+                            </span>
+                        </div>
+
+                        <div class="live-line">
+                            <span class="live-label">المرحلة:</span>
+                            <span class="live-stage-name">
+                                @(string.IsNullOrWhiteSpace(item.CurrentStageName) ? "لا توجد مرحلة نشطة" : item.CurrentStageName)
+                            </span>
+                        </div>
+
+                        @if (item.StageStartTime.HasValue)
+                        {
+                            <div class="live-line">
+                                <span class="live-label">بدأت:</span>
+                                <span class="live-value">@item.StageStartTime.Value.ToString("dd/MM hh:mm tt")</span>
+                            </div>
+                        }
+
+                        @if (item.ElapsedMinutes > 0)
+                        {
+                            <div class="live-line">
+                                <span class="live-label">المنقضي:</span>
+                                <span class="live-elapsed">@item.ElapsedText</span>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(item.OperatorName))
+                        {
+                            <div class="live-line">
+                                <span class="live-label">المشغل:</span>
+                                <span class="live-value">@item.OperatorName</span>
+                            </div>
+                        }
+                    </div>
+
+                                        @if (stages.Any())
+                    {
+                        <div class="htl-wrap">
+                            <div class="htl-header">
+                                <span>المراحل</span>
+                                <span class="htl-count">@item.CompletedStages / @item.TotalStages</span>
+                            </div>
+
+                            <div class="htl-scroll">
+                                <div class="htl-track">
+                                    @foreach (var stage in stages)
+                                    {
+                                        <div class="htl-step @GetStageTimelineClass(stage.StageStatus)">
+                                            <div class="htl-top-row">
+                                                <div class="htl-dot"></div>
+                                                @if (stage.StageOrder < stages.Last().StageOrder)
+                                                {
+                                                    <div class="htl-line @GetHLineClass(stage.StageStatus)"></div>
+                                                }
+                                            </div>
+                                            <div class="htl-content">
+                                                <div class="htl-name">@stage.StageName</div>
+                                                @if (stage.StageStatus == 3)
+                                                {
+                                                    <div class="htl-meta htl-meta-done">
+                                                        <span class="htl-badge-done">✓ تمت</span>
+                                                        @if (!string.IsNullOrWhiteSpace(stage.DurationText))
+                                                        {
+                                                            <span class="htl-dur">⏱ @stage.DurationText</span>
+                                                        }
+                                                    </div>
+                                                    @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
+                                                    {
+                                                        <div class="htl-op">👤 @stage.OperatorName</div>
+                                                    }
+                                                }
+                                                else if (stage.StageStatus == 2)
+                                                {
+                                                    <div class="htl-meta htl-meta-run">
+                                                        <span class="htl-badge-run">● جارية</span>
+                                                        @if (!string.IsNullOrWhiteSpace(stage.DurationText))
+                                                        {
+                                                            <span class="htl-dur">⏱ منذ @stage.DurationText</span>
+                                                        }
+                                                    </div>
+                                                    @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
+                                                    {
+                                                        <div class="htl-op">👤 @stage.OperatorName</div>
+                                                    }
+                                                }
+                                                else if (stage.StageStatus == 4)
+                                                {
+                                                    <div class="htl-meta htl-meta-err">
+                                                        <span class="htl-badge-err">✗ مشكلة</span>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="htl-meta htl-meta-wait">
+                                                        <span>في الانتظار</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (item.ActiveBatchCount > 1)
+                    {
+                        <div class="live-batch-badge">
+                            <i class="bi bi-layers"></i>
+                            @item.ActiveBatchCount دفعات نشطة
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .live-prod-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        box-shadow: 0 4px 18px rgba(15, 23, 42, .05);
+        overflow: hidden;
+    }
+
+    .live-prod-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #eef2f7;
+        background: linear-gradient(135deg, #0f766e, #115e59);
+    }
+
+    .live-prod-title {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        color: #fff;
+        font-weight: 800;
+        font-size: .95rem;
+    }
+
+    .live-prod-title i { font-size: 1rem; }
+
+    .live-count {
+        background: rgba(255,255,255,.18);
+        color: #fff;
+        padding: .15rem .55rem;
+        border-radius: 999px;
+        font-size: .75rem;
+        font-weight: 700;
+    }
+
+    .btn-live-refresh {
+        width: 36px; height: 36px;
+        border: 1px solid rgba(255,255,255,.25);
+        background: rgba(255,255,255,.12);
+        color: #fff;
+        border-radius: 10px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: .2s;
+    }
+
+    .btn-live-refresh:hover:not(:disabled) {
+        background: rgba(255,255,255,.2);
+        transform: rotate(20deg);
+    }
+
+    .btn-live-refresh:disabled { opacity: .75; cursor: not-allowed; }
+
+    .live-state-box {
+        padding: 2.2rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: .85rem;
+        color: #64748b;
+        font-weight: 600;
+    }
+
+    .live-empty-icon {
+        width: 62px; height: 62px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ecfdf5;
+        color: #10b981;
+        font-size: 1.55rem;
+    }
+
+    .live-prod-list {
+        padding: 1rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 1rem;
+    }
+
+    .live-order-item {
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 1rem;
+        background: #fafafa;
+        transition: .2s;
+        cursor: pointer;
+    }
+
+    .live-order-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+        border-color: #cbd5e1;
+    }
+
+    .live-order-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: .75rem;
+        margin-bottom: .85rem;
+    }
+
+    .live-order-number {
+        font-weight: 800;
+        color: #0f172a;
+        font-size: .95rem;
+    }
+
+    .live-product-name {
+        color: #64748b;
+        font-size: .83rem;
+        margin-top: .15rem;
+    }
+
+    .live-order-status {
+        font-size: .72rem;
+        font-weight: 700;
+        padding: .25rem .65rem;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    .los-prepare { background: #fffbeb; color: #b45309; }
+    .los-work    { background: #fff7ed; color: #c2410c; }
+    .los-qc      { background: #eef2ff; color: #4338ca; }
+
+    .live-order-mid {
+        display: flex;
+        flex-direction: column;
+        gap: .4rem;
+    }
+
+    .live-line {
+        display: flex;
+        gap: .4rem;
+        flex-wrap: wrap;
+        font-size: .83rem;
+    }
+
+    .live-label {
+        color: #64748b;
+        font-weight: 700;
+        min-width: 72px;
+    }
+
+    .live-value {
+        color: #0f172a;
+        font-weight: 600;
+    }
+
+    .live-stage-name {
+        color: #0f766e;
+        font-weight: 800;
+    }
+
+    .live-elapsed {
+        color: #dc2626;
+        font-weight: 800;
+    }
+
+    /* ===== TIMELINE ===== */
+        /* ===== HORIZONTAL TIMELINE ===== */
+    .htl-wrap {
+        margin-top: .9rem;
+        border-top: 1px solid #e5e7eb;
+        padding-top: .75rem;
+    }
+
+    .htl-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: .78rem;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: .7rem;
+    }
+
+    .htl-count {
+        background: #f0fdfa;
+        color: #0f766e;
+        padding: .12rem .5rem;
+        border-radius: 999px;
+        font-size: .72rem;
+    }
+
+    .htl-scroll {
+        overflow-x: auto;
+        padding-bottom: .5rem;
+    }
+
+    .htl-track {
+        display: flex;
+        gap: 0;
+        min-width: max-content;
+    }
+
+    .htl-step {
+        display: flex;
+        flex-direction: column;
+        min-width: 120px;
+        max-width: 160px;
+        flex: 1;
+    }
+
+    .htl-top-row {
+        display: flex;
+        align-items: center;
+        height: 18px;
+    }
+
+    .htl-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2.5px solid #cbd5e1;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .htl-line {
+        height: 2.5px;
+        flex: 1;
+        background: #e5e7eb;
+        margin: 0 2px;
+    }
+
+    .htl-line.hline-done { background: #10b981; }
+    .htl-line.hline-running { background: linear-gradient(to right, #f59e0b, #e5e7eb); }
+
+    /* dot states */
+    .htl-step.tl-done .htl-dot {
+        background: #10b981;
+        border-color: #10b981;
+    }
+
+    .htl-step.tl-running .htl-dot {
+        background: #fff;
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, .2);
+        animation: pulse-ring 1.5s infinite;
+    }
+
+    .htl-step.tl-problem .htl-dot {
+        background: #ef4444;
+        border-color: #ef4444;
+    }
+
+    .htl-step.tl-waiting .htl-dot {
+        background: #fff;
+        border-color: #cbd5e1;
+    }
+
+    .htl-content {
+        padding-top: .5rem;
+    }
+
+    .htl-name {
+        font-weight: 800;
+        font-size: .84rem;
+        color: #0f172a;
+        margin-bottom: .3rem;
+        line-height: 1.3;
+    }
+
+    .htl-step.tl-done .htl-name { color: #059669; }
+    .htl-step.tl-running .htl-name { color: #d97706; }
+    .htl-step.tl-problem .htl-name { color: #dc2626; }
+    .htl-step.tl-waiting .htl-name { color: #94a3b8; }
+
+    .htl-meta {
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+    }
+
+    .htl-badge-done {
+        display: inline-block;
+        background: #ecfdf5;
+        color: #059669;
+        font-size: .7rem;
+        font-weight: 800;
+        padding: .15rem .45rem;
+        border-radius: 999px;
+    }
+
+    .htl-badge-run {
+        display: inline-block;
+        background: #fffbeb;
+        color: #d97706;
+        font-size: .7rem;
+        font-weight: 800;
+        padding: .15rem .45rem;
+        border-radius: 999px;
+        animation: pulse-ring 1.5s infinite;
+    }
+
+    .htl-badge-err {
+        display: inline-block;
+        background: #fef2f2;
+        color: #dc2626;
+        font-size: .7rem;
+        font-weight: 800;
+        padding: .15rem .45rem;
+        border-radius: 999px;
+    }
+
+    .htl-dur {
+        font-size: .76rem;
+        font-weight: 800;
+        color: #475569;
+    }
+
+    .htl-step.tl-done .htl-dur { color: #059669; }
+    .htl-step.tl-running .htl-dur { color: #d97706; }
+
+    .htl-op {
+        font-size: .74rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+
+    .htl-step.tl-done .htl-op { color: #34d399; }
+    .htl-step.tl-running .htl-op { color: #fbbf24; }
+
+    .htl-meta-wait {
+        font-size: .74rem;
+        font-weight: 700;
+        color: #cbd5e1;
+    }
+
+    .live-batch-badge {
+        margin-top: .6rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        background: #f0f9ff;
+        color: #0369a1;
+        border: 1px solid #bae6fd;
+        padding: .28rem .6rem;
+        border-radius: 999px;
+        font-size: .74rem;
+        font-weight: 700;
+    }
+
+    .spinner-md, .spinner-mini {
+        border-radius: 50%;
+        border-style: solid;
+        animation: liveSpin .8s linear infinite;
+    }
+
+    .spinner-md {
+        width: 38px; height: 38px;
+        border-width: 3px;
+        border-color: #dbeafe;
+        border-top-color: #0f766e;
+    }
+
+    .spinner-mini {
+        width: 14px; height: 14px;
+        border-width: 2px;
+        border-color: rgba(255,255,255,.35);
+        border-top-color: #fff;
+    }
+
+    @@keyframes liveSpin { to { transform: rotate(360deg); } }
+
+    @@keyframes pulse-ring {
+        0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, .35); }
+        70%  { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
+
+    @@media (max-width: 768px) {
+        .live-prod-list {
+            grid-template-columns: 1fr;
+            padding: .85rem;
+        }
+    }
+</style>
+
+@code {
+    private List<CurrentProductionOrderDto> items = new();
+    private List<StageTimelineItemDto> allStages = new();
+    private bool isLoading = true;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        StartAutoRefresh();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            items = await DashboardService.GetCurrentProductionTrackingAsync(8);
+
+            var batchIds = items
+                .Where(x => x.CurrentBatchID.HasValue && x.CurrentBatchID.Value > 0)
+                .Select(x => x.CurrentBatchID!.Value)
+                .Distinct()
+                .ToList();
+
+            if (batchIds.Any())
+            {
+                allStages = await DashboardService.GetActiveBatchesStagesAsync(batchIds);
+            }
+            else
+            {
+                allStages = new List<StageTimelineItemDto>();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private List<StageTimelineItemDto> GetStagesForOrder(int productionOrderId)
+    {
+        return allStages
+            .Where(s => s.ProductionOrderID == productionOrderId)
+            .OrderBy(s => s.StageOrder)
+            .ToList();
+    }
+
+        private void OpenOrder(int productionOrderId, int? batchId)
+    {
+        if (batchId.HasValue && batchId.Value > 0)
+        {
+            NavigationManager.NavigateTo($"/production-batches/edit/{batchId.Value}?tab=stages");
+        }
+        else
+        {
+            NavigationManager.NavigateTo($"/production-orders/edit/{productionOrderId}");
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        _cts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        _ = AutoRefreshLoop();
+    }
+
+    private async Task AutoRefreshLoop()
+    {
+        try
+        {
+            while (_timer is not null && await _timer.WaitForNextTickAsync(_cts!.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadData();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            _cts?.Cancel();
+            if (_timer is not null)
+                _timer.Dispose();
+            _cts?.Dispose();
+        }
+        catch
+        {
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private string GetOrderStatusClass(int status) => status switch
+    {
+        3 => "los-prepare",
+        4 => "los-work",
+        5 => "los-qc",
+        _ => "los-prepare"
+    };
+
+    private string GetStageTimelineClass(int stageStatus) => stageStatus switch
+    {
+        3 => "tl-done",
+        2 => "tl-running",
+        4 => "tl-problem",
+        _ => "tl-waiting"
+    };
+
+        private string GetLineClass(int stageStatus) => stageStatus switch
+    {
+        3 => "line-done",
+        2 => "line-running",
+        _ => ""
+    };
+
+    private string GetHLineClass(int stageStatus) => stageStatus switch
+    {
+        3 => "hline-done",
+        2 => "hline-running",
+        _ => ""
+    };
+}

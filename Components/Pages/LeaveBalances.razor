@@ -1,0 +1,733 @@
+﻿@page "/leave-balances"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject LeaveBalanceService LeaveBalanceService
+@inject LookupService LookupService
+@inject LeaveTypeService LeaveTypeService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>أرصدة الإجازات - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
+}
+else
+{
+    <div class="items-page" dir="rtl">
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">أرصدة الإجازات</h2>
+                <p class="page-subtitle">عرض وإدارة أرصدة إجازات الموظفين</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@balances.Count سجل</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>تصدير Excel</span> }
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-modern btn-init" @onclick="ShowInitDialog">
+                        <span>⚡</span><span>تهيئة الأرصدة</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="filter-card">
+            <div class="filter-grid">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" placeholder="بحث بالاسم أو الكود..."
+                           @bind="searchText" @bind:event="oninput" />
+                </div>
+                <div>
+                    <label class="filter-label">القسم</label>
+                    <select class="filter-select" @bind="filterDepartmentId">
+                        <option value="0">كل الأقسام</option>
+                        @if (departments != null)
+                        {
+                            @foreach (var d in departments)
+                            {
+                                <option value="@d.Id">@d.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="filter-label">نوع الإجازة</label>
+                    <select class="filter-select" @bind="filterLeaveTypeId">
+                        <option value="0">كل الأنواع</option>
+                        @if (leaveTypes != null)
+                        {
+                            @foreach (var lt in leaveTypes)
+                            {
+                                <option value="@lt.LeaveTypeID">@lt.LeaveTypeNameAr</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="filter-label">السنة المالية</label>
+                    <select class="filter-select" @bind="filterFiscalYearId">
+                        <option value="0">السنة الحالية</option>
+                        @if (fiscalYears != null)
+                        {
+                            @foreach (var fy in fiscalYears)
+                            {
+                                <option value="@fy.FiscalYearID">@fy.YearName @(fy.IsCurrent ? "(حالية)" : "")</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn-modern btn-primary-modern" @onclick="SearchData" disabled="@isLoading">بحث</button>
+                <button class="btn-modern btn-ghost" @onclick="ClearFilters" disabled="@isLoading">مسح</button>
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+        }
+        else if (!balances.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon">📊</div>
+                <h4>لا توجد أرصدة</h4>
+                <p style="color:#9ca3af;font-size:.88rem">اضغط "تهيئة الأرصدة" لإنشاء أرصدة لكل الموظفين</p>
+            </div>
+        }
+        else
+        {
+            <div class="stats-row">
+                <div class="stat-card stat-purple">
+                    <div class="stat-value">@balances.Select(b => b.EmployeeID).Distinct().Count()</div>
+                    <div class="stat-label">موظف</div>
+                </div>
+                <div class="stat-card stat-blue">
+                    <div class="stat-value">@balances.Sum(b => b.TotalEntitled).ToString("0.#")</div>
+                    <div class="stat-label">إجمالي المستحق</div>
+                </div>
+                <div class="stat-card stat-orange">
+                    <div class="stat-value">@balances.Sum(b => b.UsedDays).ToString("0.#")</div>
+                    <div class="stat-label">إجمالي المستخدم</div>
+                </div>
+                <div class="stat-card stat-green">
+                    <div class="stat-value">@balances.Sum(b => b.RemainingDays).ToString("0.#")</div>
+                    <div class="stat-label">إجمالي المتبقي</div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="th-num">#</th>
+                                <th>الكود</th>
+                                <th>الموظف</th>
+                                <th>القسم</th>
+                                <th>نوع الإجازة</th>
+                                <th>السنة</th>
+                                <th class="th-center">مستحق</th>
+                                <th class="th-center">مرحّل</th>
+                                <th class="th-center">إضافي</th>
+                                <th class="th-center">إجمالي</th>
+                                <th class="th-center">مستخدم</th>
+                                <th class="th-center">معلق</th>
+                                <th class="th-center">متبقي</th>
+                                <th class="th-actions">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var b in balances.Select((x, i) => new { x, Index = i + 1 }))
+                            {
+                                <tr>
+                                    <td class="td-num">@b.Index</td>
+                                    <td><code class="item-code">@b.x.EmployeeCode</code></td>
+                                    <td class="item-name">@b.x.EmployeeName</td>
+                                    <td>@(b.x.DepartmentName ?? "—")</td>
+                                    <td>@b.x.LeaveTypeName</td>
+                                    <td>@(b.x.YearName ?? "—")</td>
+                                    <td class="td-center">@b.x.EntitledDays.ToString("0.#")</td>
+                                    <td class="td-center">@b.x.CarriedForward.ToString("0.#")</td>
+                                    <td class="td-center">@b.x.AdditionalDays.ToString("0.#")</td>
+                                    <td class="td-center"><strong>@b.x.TotalEntitled.ToString("0.#")</strong></td>
+                                    <td class="td-center used">@b.x.UsedDays.ToString("0.#")</td>
+                                    <td class="td-center pending">@b.x.PendingDays.ToString("0.#")</td>
+                                    <td class="td-center">
+                                        <span class="remain-badge @(b.x.RemainingDays < 0 ? "negative" : b.x.RemainingDays <= 3 ? "low" : "ok")">
+                                            @b.x.RemainingDays.ToString("0.#")
+                                        </span>
+                                    </td>
+                                    <td class="td-actions">
+                                        <div class="actions-wrap">
+                                            @if (permissions.CanEdit)
+{
+    <button class="action-btn edit-btn" @onclick="() => ShowEditDialog(b.x)">تعديل</button>
+}
+@if (permissions.CanEdit && b.x.UsedDays == 0 && b.x.PendingDays == 0)
+{
+    <button class="action-btn exclude-btn" @onclick="() => ShowExcludeDialog(b.x)">استبعاد</button>
+}
+                                            
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+    @if (showExcludeDialog && excludeItem != null)
+{
+    <div class="modal-overlay" @onclick="CloseExcludeDialog">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-icon exclude-modal-icon">🗑️</div>
+            <h4>تأكيد استبعاد الرصيد</h4>
+            <p class="confirm-msg">
+                هل أنت متأكد من استبعاد رصيد إجازة
+                <strong>@excludeItem.LeaveTypeName</strong>
+                للموظف <strong>@excludeItem.EmployeeName</strong>؟
+                <br /><br />
+                <span style="color:#dc2626;font-size:.84rem">⚠️ سيتم حذف سجل الرصيد نهائيًا</span>
+            </p>
+
+            @if (!string.IsNullOrEmpty(excludeMessage))
+            {
+                <div class="form-message msg-error">@excludeMessage</div>
+            }
+
+            <div class="modal-buttons-row center-buttons">
+                <button class="btn-modern btn-exclude" @onclick="ExecuteExclude" disabled="@isExcluding">
+                    @if (isExcluding)
+                    {
+                        <div class="btn-spinner-sm"></div><span>جاري...</span>
+                    }
+                    else
+                    {
+                        <span>نعم، استبعاد</span>
+                    }
+                </button>
+                <button class="btn-modern btn-ghost" @onclick="CloseExcludeDialog" disabled="@isExcluding">إلغاء</button>
+            </div>
+        </div>
+    </div>
+}
+    @if (showEditDialog && editItem != null)
+    {
+        <div class="modal-overlay" @onclick="CloseEditDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon edit-modal-icon">✏️</div>
+                <h4>تعديل رصيد الإجازة</h4>
+
+                <div class="edit-employee-info">
+                    <div><strong>@editItem.EmployeeName</strong></div>
+                    <div class="muted-text">@editItem.EmployeeCode — @editItem.LeaveTypeName — @editItem.YearName</div>
+                </div>
+
+                <div class="form-grid cols-3" style="margin-top:16px">
+                    <div class="form-field">
+                        <label class="field-label">الأيام المستحقة</label>
+                        <input type="number" class="field-input" @bind="editEntitledDays" step="0.5" min="0" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">المرحّل</label>
+                        <input type="number" class="field-input" @bind="editCarriedForward" step="0.5" min="0" />
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">أيام إضافية</label>
+                        <input type="number" class="field-input" @bind="editAdditionalDays" step="0.5" min="0" />
+                    </div>
+                </div>
+
+                <div class="edit-summary">
+                    <div class="summary-item">
+                        <span>الإجمالي المتوقع:</span>
+                        <strong>@((editEntitledDays + editCarriedForward + editAdditionalDays).ToString("0.#")) يوم</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>المستخدم حاليًا:</span>
+                        <strong class="used">@editItem.UsedDays.ToString("0.#") يوم</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>المعلق حاليًا:</span>
+                        <strong class="pending">@editItem.PendingDays.ToString("0.#") يوم</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>المتبقي المتوقع:</span>
+                        <strong class="remain">@((editEntitledDays + editCarriedForward + editAdditionalDays - editItem.UsedDays - editItem.PendingDays).ToString("0.#")) يوم</strong>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(dialogMessage))
+                {
+                    <div class="form-message msg-error">@dialogMessage</div>
+                }
+
+                <div class="modal-buttons-row center-buttons">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveEdit" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>حفظ</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseEditDialog" disabled="@isSaving">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (showInitDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseInitDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon init-modal-icon">⚡</div>
+                <h4>تهيئة أرصدة الإجازات</h4>
+                <p class="confirm-msg">
+                    سيتم إنشاء أرصدة إجازات لكل الموظفين النشطين للسنة المالية الحالية.
+                    <br /><br />
+                    <strong>ملاحظة:</strong> الأرصدة الموجودة بالفعل لن تتأثر.
+                    <br />سيتم إنشاء سجلات جديدة فقط للموظفين أو أنواع الإجازات التي ليس لها رصيد بعد.
+                </p>
+
+                @if (!string.IsNullOrEmpty(initMessage))
+                {
+                    <div class="form-message @(initSuccess ? "msg-success" : "msg-error")">@initMessage</div>
+                }
+
+                <div class="modal-buttons-row center-buttons">
+                    <button class="btn-modern btn-init" @onclick="ExecuteInit" disabled="@isInitializing">
+                        @if (isInitializing)
+                        {
+                            <div class="btn-spinner-sm"></div><span>جاري التهيئة...</span>
+                        }
+                        else
+                        {
+                            <span>نعم، تهيئة الأرصدة</span>
+                        }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseInitDialog" disabled="@isInitializing">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .items-page{display:flex;flex-direction:column;gap:20px}
+    .page-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px}
+    .page-title{font-weight:800;color:#1f2937;margin:0}
+    .page-subtitle{color:#6b7280;font-size:.9rem;margin:4px 0 0}
+    .header-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .result-badge{background:#f3f4f6;color:#4b5563;padding:8px 16px;border-radius:999px;font-size:.82rem;font-weight:700}
+
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+    .stat-card{background:#fff;border-radius:16px;padding:20px;text-align:center;border:1px solid #eef2f7;box-shadow:0 4px 12px rgba(15,23,42,.04)}
+    .stat-value{font-size:1.8rem;font-weight:800;margin-bottom:4px}
+    .stat-label{font-size:.82rem;color:#6b7280;font-weight:600}
+    .stat-purple .stat-value{color:#1d4ed8}
+    .stat-blue .stat-value{color:#2563eb}
+    .stat-orange .stat-value{color:#f59e0b}
+    .stat-green .stat-value{color:#059669}
+
+    .filter-card{background:#fff;border-radius:20px;padding:18px;border:1px solid #eef2f7;box-shadow:0 4px 16px rgba(15,23,42,.04)}
+    .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+    .filter-label{display:block;font-size:.8rem;color:#6b7280;font-weight:700;margin-bottom:6px}
+    .search-box{position:relative}
+    .search-icon{position:absolute;right:14px;top:38px;transform:translateY(-50%);color:#9ca3af;pointer-events:none}
+    .search-input{width:100%;padding:12px 16px 12px 42px;border:1.5px solid #e5e7eb;border-radius:14px;font-size:.92rem;background:#fff;outline:none}
+    .search-input:focus{border-color:#2563eb}
+    .filter-select{width:100%;padding:12px 14px;border:1.5px solid #e5e7eb;border-radius:14px;font-size:.88rem;background:#fff;outline:none}
+    .filter-actions{display:flex;gap:10px;margin-top:16px}
+
+    .table-card{background:#fff;border-radius:20px;overflow:hidden;border:1px solid #eef2f7;box-shadow:0 4px 16px rgba(15,23,42,.04)}
+    .table-responsive{overflow-x:auto}
+    .data-table{width:100%;border-collapse:collapse;min-width:1200px}
+    .data-table thead{background:#f8f9fc}
+    .data-table th{padding:14px 12px;font-size:.8rem;font-weight:700;color:#6b7280;text-align:right;border-bottom:2px solid #eef2f7;white-space:nowrap}
+    .data-table td{padding:12px 12px;font-size:.86rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+    .data-table tbody tr:hover{background:#f8f7ff}
+    .th-num{width:50px;text-align:center}
+    .th-center{text-align:center}
+    .th-actions{width:100px;text-align:center}
+    .td-num{text-align:center;color:#9ca3af}
+    .td-center{text-align:center}
+    .td-actions{text-align:center}
+    .actions-wrap{display:flex;gap:6px;justify-content:center}
+    .item-code{background:#f3f4f6;padding:4px 10px;border-radius:8px;font-size:.82rem;color:#1d4ed8;font-weight:600}
+    .item-name{font-weight:700;color:#1f2937}
+    .used{color:#2563eb;font-weight:600}
+    .pending{color:#f59e0b;font-weight:600}
+    .remain{color:#059669;font-weight:700}
+    .remain-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.8rem;font-weight:800}
+    .remain-badge.ok{background:#ecfdf5;color:#059669}
+    .remain-badge.low{background:#fef3c7;color:#d97706}
+    .remain-badge.negative{background:#fef2f2;color:#dc2626}
+
+    .action-btn{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:10px;border:1.5px solid;background:transparent;font-size:.76rem;font-weight:700;cursor:pointer;min-width:50px}
+    .edit-btn{color:#1d4ed8;border-color:#e9e0ff}.edit-btn:hover{background:#f5f3ff}
+
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+    .btn-modern:disabled{opacity:.6;cursor:not-allowed}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+    .btn-export{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+    .btn-init{background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#1f2937}
+    .btn-init:hover{opacity:.9}
+    .btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal-card{background:#fff;border-radius:24px;padding:30px;max-width:560px;width:92%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,.15)}
+    .modal-icon{width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:1.8rem}
+    .edit-modal-icon{background:#f5f3ff;color:#1d4ed8}
+    .init-modal-icon{background:#fef3c7;color:#f59e0b}
+    .edit-employee-info{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:14px;margin:12px 0}
+    .muted-text{font-size:.82rem;color:#6b7280;margin-top:4px}
+    .edit-summary{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:14px;margin-top:16px;text-align:right}
+    .summary-item{display:flex;justify-content:space-between;padding:6px 0;font-size:.86rem;color:#374151}
+    .summary-item .used{color:#2563eb}
+    .summary-item .pending{color:#f59e0b}
+    .summary-item .remain{color:#059669}
+    .confirm-msg{color:#6b7280;font-size:.92rem;line-height:1.7;margin:8px 0 0;text-align:right}
+    .center-buttons{justify-content:center}
+    .modal-buttons-row{display:flex;gap:10px;margin-top:20px}
+    .form-grid{display:grid;gap:14px}
+    .cols-3{grid-template-columns:repeat(3,1fr)}
+    .form-field{display:flex;flex-direction:column;gap:6px;text-align:right}
+    .field-label{font-size:.82rem;font-weight:700;color:#374151}
+    .field-input{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none}
+    .form-message{padding:10px 14px;border-radius:12px;font-size:.85rem;font-weight:600;margin-top:12px}
+    .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+    .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .empty-state{text-align:center;padding:60px 20px;background:#fff;border-radius:20px;border:1px solid #eef2f7}
+    .empty-icon{font-size:3rem;margin-bottom:16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+
+    .toast-container{position:fixed;bottom:24px;left:24px;z-index:1050;animation:toastIn .4s ease}
+    .toast-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.12);min-width:320px}
+    .toast-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+    .toast-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .toast-text{flex:1;font-weight:600;font-size:.88rem}
+    .toast-close{background:transparent;border:none;font-size:1rem;cursor:pointer;color:inherit;opacity:.6}
+
+    .exclude-btn{color:#dc2626;border-color:#fecaca}.exclude-btn:hover{background:#fef2f2}
+.exclude-modal-icon{background:#fef2f2;color:#dc2626}
+.btn-exclude{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff}
+
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @@media(max-width:768px){
+        .stats-row{grid-template-columns:1fr 1fr}
+        .page-header{flex-direction:column}
+        .btn-modern{width:100%}
+        .cols-3{grid-template-columns:1fr}
+        .modal-card{max-width:100%}
+    }
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private List<LeaveBalanceViewDto> balances = new();
+    private List<LookupDto>? departments;
+    private List<LeaveTypeListDto>? leaveTypes;
+    private List<FiscalYearLookupDto>? fiscalYears;
+
+    private string searchText = "";
+    private int filterDepartmentId = 0;
+    private int filterLeaveTypeId = 0;
+    private int filterFiscalYearId = 0;
+
+    private bool isLoading = true;
+    private bool isExporting = false;
+    private bool isSaving = false;
+    private bool showExcludeDialog = false;
+private bool isExcluding = false;
+private string excludeMessage = "";
+private LeaveBalanceViewDto? excludeItem;
+    private bool showEditDialog = false;
+    private LeaveBalanceViewDto? editItem;
+    private decimal editEntitledDays = 0;
+    private decimal editCarriedForward = 0;
+    private decimal editAdditionalDays = 0;
+    private string dialogMessage = "";
+
+    private bool showInitDialog = false;
+    private bool isInitializing = false;
+    private string initMessage = "";
+    private bool initSuccess = true;
+
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_LV_BALANCE");
+
+        if (permissions == null || !permissions.CanView)
+        {
+            isLoading = false;
+            return;
+        }
+
+        departments = await LookupService.GetDepartmentsLookupAsync();
+        leaveTypes = await LeaveTypeService.GetLeaveTypesListAsync();
+        fiscalYears = await LeaveBalanceService.GetFiscalYearsLookupAsync();
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            balances = await LeaveBalanceService.GetLeaveBalancesAsync(
+                filterDepartmentId, filterLeaveTypeId, filterFiscalYearId, searchText);
+        }
+        catch (Exception ex)
+        {
+            resultMessage = "خطأ: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SearchData() => await LoadData();
+
+    private async Task ClearFilters()
+    {
+        searchText = "";
+        filterDepartmentId = 0;
+        filterLeaveTypeId = 0;
+        filterFiscalYearId = 0;
+        await LoadData();
+    }
+
+    // ========================================
+    // تعديل الرصيد
+    // ========================================
+
+    private void ShowEditDialog(LeaveBalanceViewDto item)
+    {
+        editItem = item;
+        editEntitledDays = item.EntitledDays;
+        editCarriedForward = item.CarriedForward;
+        editAdditionalDays = item.AdditionalDays;
+        dialogMessage = "";
+        showEditDialog = true;
+    }
+
+    private void CloseEditDialog()
+    {
+        if (isSaving) return;
+        showEditDialog = false;
+        editItem = null;
+        dialogMessage = "";
+    }
+
+    private async Task SaveEdit()
+    {
+        if (editItem == null) return;
+
+        if (editEntitledDays < 0 || editCarriedForward < 0 || editAdditionalDays < 0)
+        {
+            dialogMessage = "لا يسمح بقيم سالبة";
+            return;
+        }
+
+        isSaving = true;
+        dialogMessage = "";
+
+        try
+        {
+            await LeaveBalanceService.UpdateBalanceAsync(
+                editItem.BalanceID,
+                editEntitledDays,
+                editCarriedForward,
+                editAdditionalDays,
+                UserSession.UserID);
+
+            resultMessage = $"تم تعديل رصيد {editItem.EmployeeName} - {editItem.LeaveTypeName} ✅";
+            resultSuccess = true;
+            showEditDialog = false;
+            editItem = null;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            dialogMessage = "خطأ: " + ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // ========================================
+    // تهيئة الأرصدة
+    // ========================================
+
+    private void ShowInitDialog()
+    {
+        initMessage = "";
+        showInitDialog = true;
+    }
+
+    private void CloseInitDialog()
+    {
+        if (isInitializing) return;
+        showInitDialog = false;
+        initMessage = "";
+    }
+
+    private async Task ExecuteInit()
+    {
+        isInitializing = true;
+        initMessage = "";
+
+        try
+        {
+            var count = await LeaveBalanceService.InitializeAllBalancesAsync(UserSession.UserID);
+
+            if (count > 0)
+            {
+                initMessage = $"تم إنشاء {count} سجل رصيد بنجاح ✅";
+                initSuccess = true;
+                resultMessage = $"تم تهيئة الأرصدة: {count} سجل جديد ✅";
+                resultSuccess = true;
+
+                await Task.Delay(2000);
+                showInitDialog = false;
+                await LoadData();
+            }
+            else
+            {
+                initMessage = "جميع الأرصدة مهيأة بالفعل، لا توجد سجلات جديدة";
+                initSuccess = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            initMessage = "خطأ: " + ex.Message;
+            initSuccess = false;
+        }
+        finally
+        {
+            isInitializing = false;
+        }
+    }
+    // ========================================
+// استبعاد الرصيد
+// ========================================
+
+private void ShowExcludeDialog(LeaveBalanceViewDto item)
+{
+    excludeItem = item;
+    excludeMessage = "";
+    showExcludeDialog = true;
+}
+
+private void CloseExcludeDialog()
+{
+    if (isExcluding) return;
+    showExcludeDialog = false;
+    excludeItem = null;
+    excludeMessage = "";
+}
+
+private async Task ExecuteExclude()
+{
+    if (excludeItem == null) return;
+
+    isExcluding = true;
+    excludeMessage = "";
+
+    try
+    {
+        await LeaveBalanceService.ExcludeBalanceAsync(excludeItem.BalanceID, UserSession.UserID);
+
+        resultMessage = $"تم استبعاد رصيد {excludeItem.LeaveTypeName} للموظف {excludeItem.EmployeeName} ✅";
+        resultSuccess = true;
+        showExcludeDialog = false;
+        excludeItem = null;
+        await LoadData();
+    }
+    catch (Exception ex)
+    {
+        excludeMessage = "خطأ: " + ex.Message;
+    }
+    finally
+    {
+        isExcluding = false;
+    }
+}
+
+    // ========================================
+    // التصدير
+    // ========================================
+
+    private async Task ExportData()
+    {
+        isExporting = true;
+        try
+        {
+            var bytes = await LeaveBalanceService.ExportToExcelAsync(balances);
+            var b64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFile",
+                $"LeaveBalances_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
+            resultMessage = "تم التصدير ✅";
+            resultSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            resultMessage = "خطأ: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+}

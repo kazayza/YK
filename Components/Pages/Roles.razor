@@ -1,0 +1,439 @@
+﻿@page "/roles"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject RoleService RoleService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+@if (!_authorized)
+{
+    <div></div>
+}
+else
+{
+    <!-- ===== شريط العنوان ===== -->
+    <div class="page-header">
+        <div class="page-header-right">
+            <h2 class="page-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                إدارة الأدوار والصلاحيات
+            </h2>
+            <span class="record-count">@_roles.Count دور</span>
+        </div>
+        <div class="page-header-left">
+            @if (PermissionService.CanAdd("SCR_ROLES"))
+            {
+                <button class="btn-action btn-add" @onclick="AddNew">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    <span>دور جديد</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- ===== البحث ===== -->
+    <div class="filters-card">
+        <div class="filter-search-single">
+            <div class="input-icon-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="input-icon">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" class="filter-input" placeholder="بحث بالكود أو الاسم..."
+                       @bind="_searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                @if (!string.IsNullOrWhiteSpace(_searchText))
+                {
+                    <button class="input-clear" @onclick="ClearSearch">✕</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== رسالة ===== -->
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert-msg @(_isError ? "alert-error" : "alert-success")">
+            <span>@_message</span>
+            <button class="alert-close" @onclick="@(() => _message = "")">✕</button>
+        </div>
+    }
+
+    <!-- ===== التحميل ===== -->
+    @if (_loading)
+    {
+        <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <span>جاري تحميل البيانات...</span>
+        </div>
+    }
+    else if (!_roles.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <h3>لا يوجد أدوار</h3>
+            <p>لا توجد نتائج مطابقة للبحث</p>
+        </div>
+    }
+    else
+    {
+        <!-- ===== كروت الأدوار ===== -->
+        <div class="roles-grid">
+            @foreach (var role in _roles)
+            {
+                <div class="role-card @(!role.IsActive ? "card-inactive" : "")">
+
+                    <!-- الهيدر -->
+                    <div class="role-card-header">
+                        <div class="role-card-icon @(role.IsSystemRole ? "system-icon" : "")">
+                            @if (role.IsSystemRole)
+                            {
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                            }
+                        </div>
+                        <div class="role-card-info">
+                            <h3 class="role-name">@role.RoleNameAr</h3>
+                            <span class="role-code">@role.RoleCode</span>
+                        </div>
+                        <div class="role-card-badges">
+                            @if (role.IsSystemRole)
+                            {
+                                <span class="badge badge-system">نظامي</span>
+                            }
+                            @if (role.IsActive)
+                            {
+                                <span class="badge badge-active">نشط</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-inactive">غير نشط</span>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- الوصف -->
+                    @if (!string.IsNullOrEmpty(role.Description))
+                    {
+                        <p class="role-desc">@role.Description</p>
+                    }
+
+                    <!-- الإحصائيات -->
+                    <div class="role-stats">
+                        <div class="role-stat">
+                            <span class="stat-num">@role.UserCount</span>
+                            <span class="stat-label">مستخدم</span>
+                        </div>
+                        <div class="role-stat">
+                            <span class="stat-num">@role.PermissionCount</span>
+                            <span class="stat-label">صلاحية</span>
+                        </div>
+                    </div>
+
+                    <!-- الأزرار -->
+                    <div class="role-card-actions">
+                        @if (PermissionService.CanEdit("SCR_ROLES"))
+                        {
+                            <button class="btn-role btn-role-edit" @onclick="@(() => EditRole(role.RoleID))" title="تعديل وصلاحيات">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                                <span>تعديل</span>
+                            </button>
+                        }
+
+                        @if (PermissionService.CanEdit("SCR_ROLES") && !role.IsSystemRole)
+                        {
+                            <button class="btn-role @(role.IsActive ? "btn-role-deactivate" : "btn-role-activate")"
+                                    @onclick="@(() => ToggleActive(role))"
+                                    title="@(role.IsActive ? "تعطيل" : "تفعيل")">
+                                @if (role.IsActive)
+                                {
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                        <polyline points="22 4 12 14.01 9 11.01"/>
+                                    </svg>
+                                }
+                            </button>
+                        }
+
+                        @if (PermissionService.CanDelete("SCR_ROLES") && !role.IsSystemRole && role.UserCount == 0)
+                        {
+                            <button class="btn-role btn-role-delete" @onclick="@(() => DeleteRole(role))" title="حذف">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        }
+                    </div>
+
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ===== Modal تأكيد الحذف ===== -->
+    @if (_showDeleteModal)
+    {
+        <div class="modal-overlay" @onclick="@(() => _showDeleteModal = false)">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3 class="modal-title">⚠️ تأكيد الحذف</h3>
+                    <button class="modal-close" @onclick="@(() => _showDeleteModal = false)">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p>هل أنت متأكد من حذف الدور: <strong>@_deleteRole?.RoleNameAr</strong>؟</p>
+                    <p class="modal-warn">هذا الإجراء لا يمكن التراجع عنه</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-modal btn-cancel" @onclick="@(() => _showDeleteModal = false)">إلغاء</button>
+                    <button class="btn-modal btn-delete" @onclick="ConfirmDelete" disabled="@_deleting">
+                        @(_deleting ? "جاري الحذف..." : "حذف")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    /* ===== Page Header ===== */
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .page-header-right { display: flex; align-items: center; gap: 12px; }
+    .page-header-left { display: flex; align-items: center; gap: 8px; }
+    .page-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 10px; margin: 0; }
+    .title-icon { width: 28px; height: 28px; color: #2563eb; }
+    .record-count { background: #f1f5f9; color: #64748b; padding: 4px 12px; border-radius: 20px; font-size: .78rem; font-weight: 700; }
+
+    .btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 10px; font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .2s; }
+    .btn-action svg { width: 16px; height: 16px; }
+    .btn-add { background: linear-gradient(135deg, #2563eb, #2563eb); color: white; box-shadow: 0 4px 12px rgba(37,99,235,.3); }
+    .btn-add:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,.4); }
+
+    /* ===== Filter ===== */
+    .filters-card { background: white; border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(15,23,42,.06); border: 1px solid #e2e8f0; }
+    .filter-search-single { max-width: 400px; }
+    .input-icon-wrap { position: relative; }
+    .input-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #94a3b8; pointer-events: none; }
+    .filter-input { width: 100%; height: 42px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 38px 0 14px; font-size: .85rem; background: #f8fafc; transition: all .2s; }
+    .filter-input:focus { border-color: #2563eb; background: white; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .input-clear { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: #e2e8f0; border: none; width: 20px; height: 20px; border-radius: 50%; font-size: .7rem; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    /* ===== Alerts ===== */
+    .alert-msg { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-radius: 10px; margin-bottom: 16px; font-size: .85rem; font-weight: 600; }
+    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .alert-close { background: none; border: none; font-size: .9rem; cursor: pointer; color: inherit; opacity: .6; }
+
+    /* ===== Loading ===== */
+    .loading-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: #64748b; gap: 16px; font-size: .9rem; }
+    .loading-spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+    .empty-icon { margin-bottom: 16px; }
+    .empty-icon svg { width: 64px; height: 64px; opacity: .4; }
+    .empty-state h3 { font-size: 1.1rem; color: #475569; margin-bottom: 8px; }
+
+    /* ===== Roles Grid ===== */
+    .roles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+
+    .role-card {
+        background: white; border-radius: 16px; border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 8px rgba(15,23,42,.06); padding: 20px; transition: all .2s;
+    }
+    .role-card:hover { box-shadow: 0 4px 16px rgba(15,23,42,.1); transform: translateY(-2px); }
+    .card-inactive { opacity: .6; }
+
+    .role-card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .role-card-icon {
+        width: 44px; height: 44px; border-radius: 12px;
+        background: #eff6ff; color: #2563eb;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .role-card-icon svg { width: 22px; height: 22px; }
+    .role-card-icon.system-icon { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+    .role-card-info { flex: 1; min-width: 0; }
+    .role-name { font-size: 1.05rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .role-code { font-size: .8rem; color: #94a3b8; font-weight: 600; }
+    .role-card-badges { display: flex; gap: 4px; flex-shrink: 0; }
+
+    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: .78rem; font-weight: 700; }
+    .badge-system { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .badge-active { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .badge-inactive { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+
+    .role-desc { font-size: .88rem; color: #64748b; line-height: 1.6; margin-bottom: 12px; }
+
+    .role-stats { display: flex; gap: 16px; padding: 12px 0; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; margin-bottom: 14px; }
+    .role-stat { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .stat-num { font-size: 1.2rem; font-weight: 800; color: #0f172a; }
+    .stat-label { font-size: .8rem; color: #94a3b8; font-weight: 600; }
+
+    .role-card-actions { display: flex; gap: 6px; }
+    .btn-role {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 6px 12px; border: 1px solid #e2e8f0; background: white;
+        border-radius: 8px; font-size: .76rem; font-weight: 700;
+        cursor: pointer; transition: all .2s;
+    }
+    .btn-role svg { width: 14px; height: 14px; }
+    .btn-role-edit { color: #2563eb; }
+    .btn-role-edit:hover { background: #eff6ff; border-color: #bfdbfe; }
+    .btn-role-activate { color: #22c55e; }
+    .btn-role-activate:hover { background: #f0fdf4; border-color: #bbf7d0; }
+    .btn-role-deactivate { color: #f59e0b; }
+    .btn-role-deactivate:hover { background: #fffbeb; border-color: #fde68a; }
+    .btn-role-delete { color: #dc2626; }
+    .btn-role-delete:hover { background: #fef2f2; border-color: #fecaca; }
+
+    /* ===== Modal ===== */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal-box { background: white; border-radius: 16px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(15,23,42,.2); overflow: hidden; animation: modalIn .2s ease; }
+    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .modal-title { font-size: .95rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .modal-close { width: 32px; height: 32px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-size: .9rem; color: #64748b; display: flex; align-items: center; justify-content: center; }
+    .modal-body { padding: 24px; font-size: .88rem; color: #334155; line-height: 1.8; }
+    .modal-warn { color: #dc2626; font-size: .82rem; margin-top: 8px; font-weight: 600; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+    .btn-modal { padding: 10px 24px; border: none; border-radius: 10px; font-size: .84rem; font-weight: 700; cursor: pointer; transition: all .2s; }
+    .btn-cancel { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-delete { background: #dc2626; color: white; }
+    .btn-delete:hover { background: #b91c1c; }
+    .btn-delete:disabled { opacity: .6; cursor: not-allowed; }
+
+    @@media (max-width: 640px) {
+        .roles-grid { grid-template-columns: 1fr; }
+        .page-header { flex-direction: column; align-items: stretch; }
+    }
+</style>
+
+@code {
+    private bool _authorized = false;
+    private bool _loading = true;
+    private string _message = "";
+    private bool _isError = false;
+    private string _searchText = "";
+    private System.Timers.Timer? _searchTimer;
+
+    private List<RoleListDto> _roles = new();
+
+    // حذف
+    private bool _showDeleteModal = false;
+    private RoleListDto? _deleteRole;
+    private bool _deleting = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (!UserSession.IsLoggedIn)
+            {
+                var restored = await UserSession.TryRestoreSessionAsync();
+                if (!restored) { Navigation.NavigateTo("/login"); return; }
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            }
+
+            if (!PermissionService.CanView("SCR_ROLES"))
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+
+            _authorized = true;
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            _loading = true;
+            StateHasChanged();
+            _roles = await RoleService.GetAllAsync(_searchText);
+        }
+        catch (Exception ex) { ShowError("خطأ: " + ex.Message); }
+        finally { _loading = false; }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        _searchTimer?.Stop();
+        _searchTimer?.Dispose();
+        _searchTimer = new System.Timers.Timer(400);
+        _searchTimer.Elapsed += async (s, args) =>
+        {
+            _searchTimer?.Stop();
+            await InvokeAsync(async () => { await LoadData(); StateHasChanged(); });
+        };
+        _searchTimer.AutoReset = false;
+        _searchTimer.Start();
+    }
+
+    private async Task ClearSearch() { _searchText = ""; await LoadData(); }
+    private void AddNew() => Navigation.NavigateTo("/roles/new");
+    private void EditRole(int roleId) => Navigation.NavigateTo($"/roles/edit/{roleId}");
+
+    private async Task ToggleActive(RoleListDto role)
+    {
+        try
+        {
+            var newState = !role.IsActive;
+            await RoleService.ToggleActiveAsync(role.RoleID, newState);
+            role.IsActive = newState;
+            ShowSuccess(newState ? $"تم تفعيل الدور: {role.RoleNameAr}" : $"تم تعطيل الدور: {role.RoleNameAr}");
+        }
+        catch (Exception ex) { ShowError(ex.Message); }
+    }
+
+    private void DeleteRole(RoleListDto role) { _deleteRole = role; _showDeleteModal = true; }
+
+    private async Task ConfirmDelete()
+    {
+        try
+        {
+            _deleting = true;
+            StateHasChanged();
+            await RoleService.DeleteAsync(_deleteRole!.RoleID);
+            _showDeleteModal = false;
+            ShowSuccess($"تم حذف الدور: {_deleteRole.RoleNameAr}");
+            await LoadData();
+        }
+        catch (Exception ex) { ShowError(ex.Message); }
+        finally { _deleting = false; }
+    }
+
+    private void ShowSuccess(string msg) { _message = msg; _isError = false; }
+    private void ShowError(string msg) { _message = msg; _isError = true; }
+}

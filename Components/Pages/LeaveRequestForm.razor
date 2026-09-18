@@ -1,0 +1,663 @@
+﻿@page "/leaves/new"
+@page "/leaves/view/{LeaveRequestId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject LeaveRequestService LeaveRequestService
+@inject LeaveTypeService LeaveTypeService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !HasAccess())
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/leaves")'>العودة</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else
+{
+    <div class="form-page" dir="rtl">
+        <div class="page-header">
+            <div>
+                <div class="breadcrumb-line">
+                    <span class="crumb-link" @onclick='() => Navigation.NavigateTo("/leaves")'>طلبات الإجازات</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@PageTitleText</span>
+                </div>
+                <h2 class="page-title">@PageTitleText</h2>
+            </div>
+            <div class="header-actions">
+                @if (isViewMode && model.RequestNumber != null)
+                {
+                    <span class="status-badge status-@model.RequestStatus">@GetStatusName(model.RequestStatus)</span>
+                }
+
+                @if (!isViewMode)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveItem" disabled="@isSaving">
+                        @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>تقديم الطلب</span> }
+                    </button>
+                }
+
+                @if (isViewMode && permissions.CanEdit)
+                {
+                    @if (model.RequestStatus == 1)
+                    {
+                        <button class="btn-modern btn-approve" @onclick='() => OpenActionDialog("approve_manager")'>اعتماد المدير</button>
+                        <button class="btn-modern btn-reject-btn" @onclick='() => OpenActionDialog("reject")'>رفض</button>
+                        <button class="btn-modern btn-cancel-btn" @onclick='() => OpenActionDialog("cancel")'>إلغاء</button>
+                    }
+
+                    @if (model.RequestStatus == 2)
+                    {
+                        <button class="btn-modern btn-approve" @onclick='() => OpenActionDialog("approve_hr")'>اعتماد HR</button>
+                        <button class="btn-modern btn-reject-btn" @onclick='() => OpenActionDialog("reject")'>رفض</button>
+                    }
+                }
+
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/leaves")'>رجوع</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(formMessage))
+        {
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+        }
+
+        <div class="form-card">
+            <div class="section-title">بيانات الطلب</div>
+            <div class="form-grid cols-3">
+                @if (isViewMode && model.RequestNumber != null)
+                {
+                    <div class="form-field">
+                        <label class="field-label">رقم الطلب</label>
+                        <input type="text" class="field-input readonly-input" value="@model.RequestNumber" disabled />
+                    </div>
+                }
+
+                <div class="form-field">
+                    <label class="field-label required-field">الموظف</label>
+                    <select class="field-select" @bind="model.EmployeeID" disabled="@isViewMode"
+                            @bind:after="OnEmployeeChanged">
+                        <option value="0">— اختر —</option>
+                        @if (employees != null)
+                        {
+                            @foreach (var e in employees)
+                            {
+                                <option value="@e.Id">@e.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label required-field">نوع الإجازة</label>
+                    <select class="field-select" @bind="model.LeaveTypeID" disabled="@isViewMode">
+                        <option value="0">— اختر —</option>
+                        @if (leaveTypes != null)
+                        {
+                            @foreach (var lt in leaveTypes)
+                            {
+                                <option value="@lt.LeaveTypeID">@lt.LeaveTypeNameAr</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label required-field">من تاريخ</label>
+                    <input type="date" class="field-input" @bind="model.StartDate" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label required-field">إلى تاريخ</label>
+                    <input type="date" class="field-input" @bind="model.EndDate" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">عدد الأيام</label>
+                    <input type="text" class="field-input readonly-input" value="@CalculatedDays" disabled />
+                </div>
+
+                <div class="form-field">
+    <label class="field-label">الموظف البديل</label>
+    <select class="field-select" value="@(model.SubstituteEmployeeID?.ToString() ?? "0")"
+            @onchange="OnSubstituteChanged" disabled="@isViewMode">
+        <option value="0">— لا يوجد —</option>
+        @if (employees != null)
+        {
+            @foreach (var e in employees.Where(x => x.Id != model.EmployeeID))
+            {
+                <option value="@e.Id">@e.Name</option>
+            }
+        }
+    </select>
+</div>
+
+                <div class="form-field full-span">
+                    <label class="field-label">السبب</label>
+                    <textarea class="field-input" rows="3" @bind="model.Reason" disabled="@isViewMode"></textarea>
+                </div>
+            </div>
+        </div>
+
+        @if (isViewMode)
+        {
+            <div class="form-card">
+                <div class="section-title">بيانات الاعتماد</div>
+                <div class="approval-grid">
+                    <div class="approval-step @(model.RequestStatus >= 2 ? "step-done" : model.RequestStatus == 1 ? "step-current" : "step-pending")">
+                        <div class="step-icon">@(model.RequestStatus >= 2 ? "✅" : model.RequestStatus == 4 ? "❌" : "⏳")</div>
+                        <div class="step-info">
+                            <div class="step-title">اعتماد المدير</div>
+                            @if (approvalInfo?.ApprovedByManagerName != null)
+                            {
+                                <div class="step-detail">@approvalInfo.ApprovedByManagerName</div>
+                                <div class="step-date">@approvalInfo.ManagerApprovalDate?.ToString("dd/MM/yyyy HH:mm")</div>
+                            }
+                            else
+                            {
+                                <div class="step-detail muted">في الانتظار</div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="step-arrow">→</div>
+
+                    <div class="approval-step @(model.RequestStatus >= 3 ? "step-done" : model.RequestStatus == 2 ? "step-current" : "step-pending")">
+                        <div class="step-icon">@(model.RequestStatus >= 3 ? "✅" : "⏳")</div>
+                        <div class="step-info">
+                            <div class="step-title">اعتماد HR</div>
+                            @if (approvalInfo?.ApprovedByHRName != null)
+                            {
+                                <div class="step-detail">@approvalInfo.ApprovedByHRName</div>
+                                <div class="step-date">@approvalInfo.HRApprovalDate?.ToString("dd/MM/yyyy HH:mm")</div>
+                            }
+                            else
+                            {
+                                <div class="step-detail muted">في الانتظار</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @if (model.RequestStatus == 4 && !string.IsNullOrWhiteSpace(approvalInfo?.RejectionReason))
+                {
+                    <div class="rejection-box">
+                        <strong>سبب الرفض:</strong> @approvalInfo.RejectionReason
+                    </div>
+                }
+            </div>
+        }
+
+        @if (balances.Any())
+        {
+            <div class="form-card">
+                <div class="section-title">أرصدة الإجازات</div>
+                <div class="balance-grid">
+                    @foreach (var b in balances)
+                    {
+                        <div class="balance-card">
+                            <div class="balance-type">@b.LeaveTypeName</div>
+                            <div class="balance-nums">
+                                <div class="bal-item">
+                                    <span class="bal-label">المستحق</span>
+                                    <span class="bal-val">@b.TotalEntitled</span>
+                                </div>
+                                <div class="bal-item">
+                                    <span class="bal-label">المستخدم</span>
+                                    <span class="bal-val used">@b.UsedDays</span>
+                                </div>
+                                <div class="bal-item">
+                                    <span class="bal-label">معلق</span>
+                                    <span class="bal-val pending">@b.PendingDays</span>
+                                </div>
+                                <div class="bal-item">
+                                    <span class="bal-label">المتبقي</span>
+                                    <span class="bal-val remain">@b.RemainingDays</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (showActionDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseActionDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon @GetActionIconClass()">@GetActionIcon()</div>
+                <h4>@GetActionTitle()</h4>
+                <p class="confirm-msg">@GetActionMessage()</p>
+
+                @if (pendingAction == "reject")
+                {
+                    <div class="form-field" style="text-align:right;margin-top:12px">
+                        <label class="field-label required-field">سبب الرفض</label>
+                        <textarea class="field-input" rows="3" @bind="rejectionReason"
+                                  placeholder="اكتب سبب الرفض..."></textarea>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(actionError))
+                {
+                    <div class="form-message msg-error">@actionError</div>
+                }
+
+                <div class="modal-buttons-row">
+                    <button class="btn-modern @GetActionButtonClass()" @onclick="ExecuteAction" disabled="@isProcessing">
+                        @if (isProcessing) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
+                        else { <span>@GetActionButtonText()</span> }
+                    </button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseActionDialog" disabled="@isProcessing">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .form-page{display:flex;flex-direction:column;gap:18px}
+    .page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+    .page-title{margin:0;color:#1f2937;font-weight:800}
+    .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .breadcrumb-line{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem}
+    .crumb-link{color:#1d4ed8;font-weight:700;cursor:pointer}
+    .crumb-sep{color:#9ca3af}.crumb-current{color:#6b7280}
+
+    .status-badge{display:inline-block;padding:6px 16px;border-radius:999px;font-size:.82rem;font-weight:800}
+    .status-1{background:#fef3c7;color:#d97706}
+    .status-2{background:#dbeafe;color:#2563eb}
+    .status-3{background:#ecfdf5;color:#059669}
+    .status-4{background:#fef2f2;color:#dc2626}
+    .status-5{background:#f3f4f6;color:#6b7280}
+
+    .form-card{background:#fff;border-radius:24px;padding:24px;border:1px solid #eef2f7;box-shadow:0 8px 22px rgba(15,23,42,.05)}
+    .section-title{font-size:.95rem;font-weight:800;color:#1d4ed8;margin-bottom:16px}
+    .form-grid{display:grid;gap:14px}.cols-3{grid-template-columns:repeat(3,1fr)}
+    .form-field{display:flex;flex-direction:column;gap:6px}
+    .full-span{grid-column:1/-1}
+    .field-label{font-size:.82rem;font-weight:700;color:#374151}
+    .required-field::after{content:" *";color:#ef4444}
+    .field-input,.field-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none;transition:.2s}
+    .field-input:focus,.field-select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+    .readonly-input{background:#f9fafb;color:#6b7280}
+
+    .approval-grid{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;padding:20px 0}
+    .approval-step{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:16px 20px;min-width:200px}
+    .step-done{background:#ecfdf5;border-color:#a7f3d0}
+    .step-current{background:#eff6ff;border-color:#93c5fd}
+    .step-pending{background:#f9fafb;border-color:#e5e7eb;opacity:.6}
+    .step-icon{font-size:1.6rem}
+    .step-info{flex:1}
+    .step-title{font-weight:800;color:#1f2937;font-size:.88rem}
+    .step-detail{font-size:.82rem;color:#374151;margin-top:4px}
+    .step-date{font-size:.76rem;color:#6b7280;margin-top:2px}
+    .step-detail.muted{color:#9ca3af;font-style:italic}
+    .step-arrow{font-size:1.4rem;color:#9ca3af;font-weight:800}
+
+    .rejection-box{background:#fef2f2;border:1px solid #fecaca;border-radius:14px;padding:14px;margin-top:16px;color:#991b1b;font-size:.88rem}
+
+    .balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+    .balance-card{background:#f8f9fc;border:1px solid #eef2f7;border-radius:16px;padding:16px}
+    .balance-type{font-weight:800;color:#1f2937;margin-bottom:10px;font-size:.9rem}
+    .balance-nums{display:flex;gap:12px;justify-content:space-around}
+    .bal-item{text-align:center}
+    .bal-label{display:block;font-size:.72rem;color:#6b7280;font-weight:700}
+    .bal-val{display:block;font-size:1rem;font-weight:800;color:#1f2937}
+    .bal-val.used{color:#d97706}
+    .bal-val.pending{color:#2563eb}
+    .bal-val.remain{color:#059669}
+
+    .form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
+    .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+    .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+    .btn-modern:disabled{opacity:.6;cursor:not-allowed}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+    .btn-secondary-modern{background:#f3f4f6;color:#374151}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+    .btn-approve{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+    .btn-reject-btn{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff}
+    .btn-cancel-btn{background:#f3f4f6;color:#6b7280;border:1.5px solid #e5e7eb}
+    .btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal-card{background:#fff;border-radius:24px;padding:30px;max-width:500px;width:92%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,.15)}
+    .modal-icon{width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:1.8rem}
+    .icon-approve{background:#ecfdf5;color:#059669}
+    .icon-reject{background:#fef2f2;color:#dc2626}
+    .icon-cancel{background:#f3f4f6;color:#6b7280}
+    .confirm-msg{color:#6b7280;font-size:.92rem;line-height:1.7;margin:8px 0 0}
+    .modal-buttons-row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+
+    .toast-container{position:fixed;bottom:24px;left:24px;z-index:1050;animation:toastIn .4s ease}
+    .toast-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.12);min-width:320px}
+    .toast-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+    .toast-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .toast-text{flex:1;font-weight:600;font-size:.88rem}
+    .toast-close{background:transparent;border:none;font-size:1rem;cursor:pointer;color:inherit;opacity:.6}
+
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @@media(max-width:768px){.cols-3{grid-template-columns:1fr}.page-header{flex-direction:column}.btn-modern{width:100%}.approval-grid{flex-direction:column}.step-arrow{transform:rotate(90deg)}}
+</style>
+
+@code {
+    [Parameter] public int LeaveRequestId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private LeaveRequestEditDto model = new();
+    private LeaveRequestApprovalDto? approvalInfo;
+    private List<LookupDto>? employees;
+    private List<LeaveTypeListDto>? leaveTypes;
+    private List<LeaveBalanceDto> balances = new();
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isProcessing = false;
+
+    private bool isViewMode => LeaveRequestId > 0;
+    private string PageTitleText => isViewMode ? $"طلب إجازة #{model.RequestNumber}" : "طلب إجازة جديد";
+
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    private bool showActionDialog = false;
+    private string pendingAction = "";
+    private string actionError = "";
+    private string rejectionReason = "";
+
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    private string CalculatedDays
+    {
+        get
+        {
+            if (model.StartDate != default && model.EndDate != default && model.EndDate >= model.StartDate)
+                return $"{(model.EndDate - model.StartDate).Days + 1} يوم";
+            return "—";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_LEAVE");
+        if (permissions == null || !HasAccess()) { isLoading = false; return; }
+        await LoadPageAsync();
+    }
+
+    private bool HasAccess()
+    {
+        if (permissions == null) return false;
+        return isViewMode ? permissions.CanView : permissions.CanAdd;
+    }
+
+    private async Task LoadPageAsync()
+    {
+        isLoading = true;
+        formMessage = "";
+
+        try
+        {
+            employees = await LookupService.GetEmployeesAsync();
+            leaveTypes = await LeaveTypeService.GetLeaveTypesListAsync();
+
+            if (isViewMode)
+            {
+                var loaded = await LeaveRequestService.GetLeaveRequestByIdAsync(LeaveRequestId);
+                if (loaded == null)
+                {
+                    formMessage = "الطلب غير موجود";
+                    formSuccess = false;
+                    model = new();
+                }
+                else
+                {
+                    model = loaded;
+                    balances = await LeaveRequestService.GetLeaveBalancesAsync(model.EmployeeID);
+                    approvalInfo = await LeaveRequestService.GetLeaveRequestApprovalAsync(LeaveRequestId);
+                }
+            }
+            else
+            {
+                model = new LeaveRequestEditDto
+                {
+                    StartDate = DateTime.Today,
+                    EndDate = DateTime.Today
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task OnEmployeeChanged()
+    {
+        if (model.EmployeeID > 0)
+        {
+            try
+            {
+                balances = await LeaveRequestService.GetLeaveBalancesAsync(model.EmployeeID);
+            }
+            catch { balances = new(); }
+        }
+        else
+        {
+            balances = new();
+        }
+    }
+
+    private async Task SaveItem()
+    {
+        if (isViewMode) return;
+        formMessage = "";
+
+        if (model.EmployeeID <= 0) { formMessage = "يجب اختيار الموظف"; formSuccess = false; return; }
+        if (model.LeaveTypeID <= 0) { formMessage = "يجب اختيار نوع الإجازة"; formSuccess = false; return; }
+        if (model.EndDate < model.StartDate) { formMessage = "تاريخ النهاية يجب أن يكون بعد البداية"; formSuccess = false; return; }
+
+        isSaving = true;
+        try
+        {
+            var newId = await LeaveRequestService.InsertLeaveRequestAsync(model, UserSession.UserID);
+            Navigation.NavigateTo($"/leaves/view/{newId}", replace: true);
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    // ========================================
+    // Action Dialog
+    // ========================================
+
+    private void OpenActionDialog(string action)
+    {
+        pendingAction = action;
+        actionError = "";
+        rejectionReason = "";
+        showActionDialog = true;
+    }
+
+    private void CloseActionDialog()
+    {
+        if (isProcessing) return;
+        showActionDialog = false;
+        pendingAction = "";
+        actionError = "";
+        rejectionReason = "";
+    }
+
+    private async Task ExecuteAction()
+    {
+        isProcessing = true;
+        actionError = "";
+
+        try
+        {
+            switch (pendingAction)
+            {
+                case "approve_manager":
+                    await LeaveRequestService.ApproveByManagerAsync(LeaveRequestId, UserSession.UserID);
+                    resultMessage = "تم اعتماد المدير بنجاح ✅";
+                    break;
+
+                case "approve_hr":
+                    await LeaveRequestService.ApproveByHRAsync(LeaveRequestId, UserSession.UserID);
+                    resultMessage = "تم اعتماد HR النهائي وخصم الرصيد ✅";
+                    break;
+
+                case "reject":
+                    if (string.IsNullOrWhiteSpace(rejectionReason))
+                    {
+                        actionError = "يجب كتابة سبب الرفض";
+                        isProcessing = false;
+                        return;
+                    }
+                    await LeaveRequestService.RejectLeaveRequestAsync(LeaveRequestId, UserSession.UserID, rejectionReason);
+                    resultMessage = "تم رفض الطلب";
+                    break;
+
+                case "cancel":
+                    await LeaveRequestService.CancelLeaveRequestAsync(LeaveRequestId, UserSession.UserID);
+                    resultMessage = "تم إلغاء الطلب";
+                    break;
+            }
+
+            resultSuccess = true;
+            showActionDialog = false;
+            pendingAction = "";
+
+            await LoadPageAsync();
+        }
+        catch (Exception ex)
+        {
+            actionError = "خطأ: " + ex.Message;
+            resultSuccess = false;
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    // ========================================
+    // Helper Methods
+    // ========================================
+
+    private string GetStatusName(int status) => status switch
+    {
+        1 => "مقدم",
+        2 => "معتمد مدير",
+        3 => "معتمد HR",
+        4 => "مرفوض",
+        5 => "ملغي",
+        _ => "—"
+    };
+
+    private string GetActionTitle() => pendingAction switch
+    {
+        "approve_manager" => "تأكيد اعتماد المدير",
+        "approve_hr" => "تأكيد اعتماد HR النهائي",
+        "reject" => "تأكيد رفض الطلب",
+        "cancel" => "تأكيد إلغاء الطلب",
+        _ => "تأكيد"
+    };
+
+    private string GetActionMessage() => pendingAction switch
+    {
+        "approve_manager" => $"سيتم اعتماد طلب الإجازة {model.RequestNumber} من المدير وإرساله لاعتماد HR.",
+        "approve_hr" => $"سيتم اعتماد طلب الإجازة {model.RequestNumber} نهائيًا وخصم الأيام من رصيد الموظف.",
+        "reject" => $"سيتم رفض طلب الإجازة {model.RequestNumber} وإرجاع الأيام المعلقة.",
+        "cancel" => $"سيتم إلغاء طلب الإجازة {model.RequestNumber} وإرجاع الأيام المعلقة.",
+        _ => ""
+    };
+
+    private string GetActionButtonText() => pendingAction switch
+    {
+        "approve_manager" => "نعم، اعتماد المدير",
+        "approve_hr" => "نعم، اعتماد HR",
+        "reject" => "نعم، رفض",
+        "cancel" => "نعم، إلغاء",
+        _ => "تأكيد"
+    };
+
+    private string GetActionButtonClass() => pendingAction switch
+    {
+        "approve_manager" or "approve_hr" => "btn-approve",
+        "reject" => "btn-reject-btn",
+        "cancel" => "btn-cancel-btn",
+        _ => "btn-primary-modern"
+    };
+
+    private string GetActionIcon() => pendingAction switch
+    {
+        "approve_manager" or "approve_hr" => "✅",
+        "reject" => "❌",
+        "cancel" => "⚪",
+        _ => "❔"
+    };
+    private void OnSubstituteChanged(ChangeEventArgs e)
+{
+    var val = e.Value?.ToString();
+    if (int.TryParse(val, out var id) && id > 0)
+        model.SubstituteEmployeeID = id;
+    else
+        model.SubstituteEmployeeID = null;
+}
+    private string GetActionIconClass() => pendingAction switch
+    {
+        "approve_manager" or "approve_hr" => "icon-approve",
+        "reject" => "icon-reject",
+        "cancel" => "icon-cancel",
+        _ => "icon-approve"
+    };
+}

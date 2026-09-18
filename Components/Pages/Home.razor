@@ -1,0 +1,20 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using YKCoatings.Services
+@inject UserSessionService UserSession
+@inject NavigationManager Navigation
+
+@code {
+    private bool _checked;
+
+    // ⚠️ التحويل لا يتم في OnInitialized لأن الجلسة لا تكون مسترجَعة بعد
+    // (ProtectedSessionStorage يحتاج JS Interop = بعد الرندر فقط).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _checked) return;
+        _checked = true;
+
+        var loggedIn = await UserSession.EnsureRestoredAsync();
+        Navigation.NavigateTo(loggedIn ? "/items" : "/login");
+    }
+}

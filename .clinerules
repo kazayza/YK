@@ -1,0 +1,11 @@
+# قواعد إلزامية للعمل على مشروع YKCoatings (تُقرأ قبل أي تعديل)
+
+- الهوية: YKCoatings (كود) / واي كي كوتينج (معروض). ممنوع إعادة استخدام اسم Dizurde.
+- الواجهة عربية RTL بخط Cairo. أسماء الكود إنجليزية.
+- كل الخدمات ترث BaseDbService وتُسجَّل Scoped في Program.cs.
+- SQL parameterized فقط عبر Dapper — لا دمج نصوص.
+- الصلاحيات تُفحص قبل عرض أي زر كتابة (PermissionService + كود SCR_*).
+- التصميم: استخدم كلاسات wwwroot/yk-theme.css أولاً (أزرق #2563eb / برتقالي #f97316).
+- الشعارات: images/yk-logo.svg وimages/yk-icon.svg فقط.
+- لا تعديل يدوي في bin/ أو obj/ أو publish/.
+- بعد كل مهمة: حدّث memory-bank/activeContext.md وprogress.md.

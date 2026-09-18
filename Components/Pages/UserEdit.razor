@@ -1,0 +1,1307 @@
+﻿@page "/users/new"
+@page "/users/edit/{Id:int}"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject UserService UserService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+<!-- ===== التحقق من الصلاحية ===== -->
+@if (!_authorized)
+{
+    <div></div>
+}
+else
+{
+    <!-- ===== شريط العنوان ===== -->
+    <div class="page-header">
+        <div class="page-header-right">
+            <button class="btn-back" @onclick="GoBack" title="رجوع">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5"/>
+                    <path d="M12 19l7-7-7-7"/>
+                </svg>
+            </button>
+            <h2 class="page-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                @(_isNew ? "إضافة مستخدم جديد" : "تعديل المستخدم")
+            </h2>
+            @if (!_isNew)
+            {
+                <span class="edit-badge">@_dto.Username</span>
+            }
+        </div>
+        <div class="page-header-left">
+            <button class="btn-action btn-cancel-page" @onclick="GoBack">
+                <span>إلغاء</span>
+            </button>
+            <button class="btn-action btn-save-page" @onclick="SaveUser" disabled="@_saving">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17 21 17 13 7 13 7 21"/>
+                    <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                <span>@(_saving ? "جاري الحفظ..." : "حفظ")</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== رسالة النجاح/الخطأ ===== -->
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert-msg @(_isError ? "alert-error" : "alert-success")">
+            <span>@_message</span>
+            <button class="alert-close" @onclick="@(() => _message = "")">✕</button>
+        </div>
+    }
+
+    <!-- ===== التبويبات ===== -->
+    <div class="tabs-header">
+        <button class="tab-btn @(_activeTab == 1 ? "active" : "")" @onclick="@(() => _activeTab = 1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+            </svg>
+            <span>البيانات الأساسية</span>
+        </button>
+        <button class="tab-btn @(_activeTab == 2 ? "active" : "")" @onclick="@(() => _activeTab = 2)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <span>الأمان</span>
+        </button>
+        <button class="tab-btn @(_activeTab == 3 ? "active" : "")" @onclick="@(() => _activeTab = 3)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            <span>الإعدادات</span>
+        </button>
+                @if (!_isNew)
+        {
+            <button class="tab-btn @(_activeTab == 5 ? "active" : "")" @onclick="@(() => { _activeTab = 5; LoadPermissionsIfNeeded(); })">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M9 12l2 2 4-4"/>
+                </svg>
+                <span>صلاحيات خاصة</span>
+                @if (_userPermissions.Any(p => p.CanView != null || p.CanAdd != null || p.CanEdit != null || p.CanDelete != null))
+                {
+                    <span class="tab-override-count">●</span>
+                }
+            </button>
+        }
+        @if (_isNew)
+        {
+            <button class="tab-btn @(_activeTab == 4 ? "active" : "")" @onclick="@(() => _activeTab = 4)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                </svg>
+                <span>كلمة المرور</span>
+            </button>
+        }
+        
+    </div>
+
+    <!-- ===== محتوى التبويبات ===== -->
+    <div class="tab-content">
+
+        <!-- ────────── تبويب 1: البيانات الأساسية ────────── -->
+        @if (_activeTab == 1)
+        {
+            <div class="form-card">
+                <div class="form-card-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    البيانات الأساسية
+                </div>
+
+                <div class="form-grid">
+
+                    <!-- اسم المستخدم -->
+                    <div class="form-group">
+                        <label class="form-label">اسم المستخدم <span class="required">*</span></label>
+                        <input type="text" class="form-input" @bind="_dto.Username"
+                               placeholder="اسم المستخدم (بالإنجليزية)" />
+                    </div>
+
+                    <!-- الاسم الكامل -->
+                    <div class="form-group">
+                        <label class="form-label">الاسم الكامل <span class="required">*</span></label>
+                        <input type="text" class="form-input" @bind="_dto.FullName"
+                               placeholder="الاسم الكامل بالعربية" />
+                    </div>
+
+                    <!-- البريد الإلكتروني -->
+                    <div class="form-group">
+                        <label class="form-label">البريد الإلكتروني</label>
+                        <input type="email" class="form-input" @bind="_dto.Email"
+                               placeholder="example@email.com" />
+                    </div>
+
+                    <!-- الهاتف -->
+                    <div class="form-group">
+                        <label class="form-label">الهاتف</label>
+                        <input type="text" class="form-input" @bind="_dto.Phone"
+                               placeholder="رقم الهاتف" />
+                    </div>
+
+                    <!-- الدور -->
+                    <div class="form-group">
+                        <label class="form-label">الدور <span class="required">*</span></label>
+                        <select class="form-input" @bind="_dto.RoleID">
+                            <option value="0">— اختر الدور —</option>
+                            @foreach (var role in _rolesLookup)
+                            {
+                                <option value="@role.Id">@role.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- الموظف المرتبط -->
+                    <div class="form-group">
+                        <label class="form-label">الموظف المرتبط</label>
+                        <select class="form-input" @bind="_dto.EmployeeID">
+                            <option value="">— بدون ربط بموظف —</option>
+                            @foreach (var emp in _employeesLookup)
+                            {
+                                <option value="@emp.Id">@emp.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- نشط -->
+                    <div class="form-group">
+                        <label class="form-label">الحالة</label>
+                        <div class="toggle-wrap">
+                            <label class="toggle-label">
+                                <input type="checkbox" @bind="_dto.IsActive" />
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">@(_dto.IsActive ? "نشط" : "غير نشط")</span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        }
+                <!-- ────────── تبويب 2: الأمان ────────── -->
+        @if (_activeTab == 2)
+        {
+            <div class="form-card">
+                <div class="form-card-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    إعدادات الأمان
+                </div>
+
+                <div class="form-grid">
+
+                    <!-- يجب تغيير كلمة المرور -->
+                    <div class="form-group">
+                        <label class="form-label">تغيير كلمة المرور</label>
+                        <div class="toggle-wrap">
+                            <label class="toggle-label">
+                                <input type="checkbox" @bind="_dto.MustChangePassword" />
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">@(_dto.MustChangePassword ? "يجب التغيير عند الدخول" : "لا يلزم التغيير")</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- الحد الأقصى لمحاولات الدخول الفاشلة -->
+                    <div class="form-group">
+                        <label class="form-label">الحد الأقصى لمحاولات الدخول الفاشلة</label>
+                        <input type="number" class="form-input" @bind="_dto.MaxFailedAttempts" min="1" max="20" />
+                    </div>
+
+                    <!-- مدة صلاحية كلمة المرور -->
+                    <div class="form-group">
+                        <label class="form-label">مدة صلاحية كلمة المرور (بالأيام)</label>
+                        <input type="number" class="form-input" @bind="_dto.PasswordExpiryDays" min="0" max="365" />
+                        <span class="form-hint">0 = بدون انتهاء</span>
+                    </div>
+
+                    @if (!_isNew)
+                    {
+                        <!-- حالة الحظر (عرض فقط) -->
+                        <div class="form-group">
+                            <label class="form-label">حالة الحظر</label>
+                            <div class="info-box @(_dto.IsLocked ? "info-danger" : "info-success")">
+                                @if (_dto.IsLocked)
+                                {
+                                    <span>🔒 محظور</span>
+                                    @if (_dto.LockoutEnd.HasValue)
+                                    {
+                                        <span class="info-sub">ينتهي الحظر: @_dto.LockoutEnd.Value.ToString("dd/MM/yyyy hh:mm tt")</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span>🔓 غير محظور</span>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- محاولات الدخول الفاشلة (عرض فقط) -->
+                        <div class="form-group">
+                            <label class="form-label">محاولات الدخول الفاشلة</label>
+                            <div class="info-box">
+                                <span>@_dto.FailedLoginAttempts من @_dto.MaxFailedAttempts</span>
+                            </div>
+                        </div>
+
+                        <!-- آخر تغيير لكلمة المرور (عرض فقط) -->
+                        <div class="form-group">
+                            <label class="form-label">آخر تغيير لكلمة المرور</label>
+                            <div class="info-box">
+                                @if (_dto.PasswordChangedDate.HasValue)
+                                {
+                                    <span>@_dto.PasswordChangedDate.Value.ToString("dd/MM/yyyy hh:mm tt")</span>
+                                }
+                                else
+                                {
+                                    <span class="cell-empty">لم يتم التغيير</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                </div>
+            </div>
+
+            <!-- معلومات آخر دخول -->
+            @if (!_isNew)
+            {
+                <div class="form-card" style="margin-top:16px">
+                    <div class="form-card-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        آخر دخول
+                    </div>
+                    <div class="form-grid form-grid-3">
+                        <div class="form-group">
+                            <label class="form-label">تاريخ آخر دخول</label>
+                            <div class="info-box">
+                                @if (_dto.LastLoginDate.HasValue)
+                                {
+                                    <span>@_dto.LastLoginDate.Value.ToString("dd/MM/yyyy hh:mm tt")</span>
+                                }
+                                else
+                                {
+                                    <span class="cell-empty">لم يسجل دخول</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">عنوان IP</label>
+                            <div class="info-box">
+                                <span>@(string.IsNullOrEmpty(_dto.LastLoginIP) ? "—" : _dto.LastLoginIP)</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">اسم الجهاز</label>
+                            <div class="info-box">
+                                <span>@(string.IsNullOrEmpty(_dto.LastLoginMachine) ? "—" : _dto.LastLoginMachine)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <!-- ────────── تبويب 3: الإعدادات الافتراضية ────────── -->
+        @if (_activeTab == 3)
+        {
+            <div class="form-card">
+                <div class="form-card-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                    الإعدادات الافتراضية
+                </div>
+
+                <div class="form-grid">
+
+                    <!-- اللغة الافتراضية -->
+                    <div class="form-group">
+                        <label class="form-label">اللغة الافتراضية</label>
+                        <select class="form-input" @bind="_dto.DefaultLanguage">
+                            <option value="ar">العربية</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+
+                    <!-- المخزن الافتراضي -->
+                    <div class="form-group">
+                        <label class="form-label">المخزن الافتراضي</label>
+                        <select class="form-input" @bind="_dto.DefaultWarehouseID">
+                            <option value="">— بدون —</option>
+                            @foreach (var wh in _warehousesLookup)
+                            {
+                                <option value="@wh.Id">@wh.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- الصندوق الافتراضي -->
+                    <div class="form-group">
+                        <label class="form-label">الصندوق الافتراضي</label>
+                        <select class="form-input" @bind="_dto.DefaultCashBoxID">
+                            <option value="">— بدون —</option>
+                            @foreach (var cb in _cashBoxesLookup)
+                            {
+                                <option value="@cb.Id">@cb.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <!-- ملاحظات -->
+                    <div class="form-group form-full">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea class="form-input form-textarea" @bind="_dto.Notes"
+                                  placeholder="ملاحظات إضافية..." rows="3"></textarea>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- معلومات التسجيل -->
+            @if (!_isNew && _dto.CreatedDate.HasValue)
+            {
+                <div class="form-card" style="margin-top:16px">
+                    <div class="form-card-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        معلومات التسجيل
+                    </div>
+                    <div class="form-grid form-grid-2">
+                        <div class="form-group">
+                            <label class="form-label">تاريخ الإنشاء</label>
+                            <div class="info-box">
+                                <span>@_dto.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt")</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">آخر تعديل</label>
+                            <div class="info-box">
+                                @if (_dto.ModifiedDate.HasValue)
+                                {
+                                    <span>@_dto.ModifiedDate.Value.ToString("dd/MM/yyyy hh:mm tt")</span>
+                                }
+                                else
+                                {
+                                    <span class="cell-empty">لم يتم التعديل</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <!-- ────────── تبويب 4: كلمة المرور (إنشاء فقط) ────────── -->
+        @if (_activeTab == 4 && _isNew)
+        {
+            <div class="form-card">
+                <div class="form-card-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                    </svg>
+                    كلمة المرور
+                </div>
+
+                <div class="form-grid">
+
+                    <!-- كلمة المرور -->
+                    <div class="form-group">
+                        <label class="form-label">كلمة المرور <span class="required">*</span></label>
+                        <input type="password" class="form-input" @bind="_newPassword"
+                               placeholder="أدخل كلمة المرور (6 أحرف على الأقل)" />
+                    </div>
+
+                    <!-- تأكيد كلمة المرور -->
+                    <div class="form-group">
+                        <label class="form-label">تأكيد كلمة المرور <span class="required">*</span></label>
+                        <input type="password" class="form-input" @bind="_confirmPassword"
+                               placeholder="أعد إدخال كلمة المرور" />
+                    </div>
+
+                    <!-- يجب التغيير -->
+                    <div class="form-group">
+                        <label class="form-label">عند أول دخول</label>
+                        <div class="toggle-wrap">
+                            <label class="toggle-label">
+                                <input type="checkbox" @bind="_dto.MustChangePassword" />
+                                <span class="toggle-switch"></span>
+                                <span class="toggle-text">@(_dto.MustChangePassword ? "يجب تغيير كلمة المرور" : "لا يلزم التغيير")</span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="pwd-hints">
+                    <p class="pwd-hint-title">متطلبات كلمة المرور:</p>
+                    <ul class="pwd-hint-list">
+                        <li class="@(_newPassword.Length >= 6 ? "hint-ok" : "")">6 أحرف على الأقل</li>
+                        <li class="@(_newPassword == _confirmPassword && !string.IsNullOrEmpty(_newPassword) ? "hint-ok" : "")">كلمة المرور وتأكيدها متطابقتين</li>
+                    </ul>
+                </div>
+            </div>
+        }
+                <!-- ────────── تبويب 5: صلاحيات خاصة ────────── -->
+        @if (_activeTab == 5 && !_isNew)
+        {
+            <div class="form-card perm-card-user">
+
+                <!-- شريط أدوات -->
+                <div class="perm-toolbar">
+                    <div class="perm-toolbar-right">
+                        <div class="form-card-title" style="margin:0;padding:0;border:none">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <path d="M9 12l2 2 4-4"/>
+                            </svg>
+                            صلاحيات خاصة بالمستخدم
+                        </div>
+                    </div>
+                    <div class="perm-toolbar-left">
+                        <button class="btn-toolbar btn-toolbar-danger" @onclick="ClearAllOverrides" title="مسح كل الـ Override">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                                <path d="M3 3v5h5"/>
+                            </svg>
+                            <span>إعادة تعيين للدور</span>
+                        </button>
+                        <button class="btn-toolbar" @onclick="SavePermissions" disabled="@_savingPerms">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                            </svg>
+                            <span>@(_savingPerms ? "جاري الحفظ..." : "حفظ الصلاحيات")</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- الدليل -->
+                <div class="perm-legend">
+                    <div class="legend-item">
+                        <span class="legend-dot legend-null"></span>
+                        <span>يتبع الدور</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-allow"></span>
+                        <span>سماح إضافي</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-deny"></span>
+                        <span>منع خاص</span>
+                    </div>
+                </div>
+
+                <!-- الجدول -->
+                <div class="perm-table-wrap-user">
+                    @if (_loadingPerms)
+                    {
+                        <div class="loading-container" style="padding:40px">
+                            <div class="loading-spinner"></div>
+                            <span>جاري تحميل الصلاحيات...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="perm-table-user">
+                            <thead>
+                                <tr>
+                                    <th class="perm-th-module-u">الشاشة</th>
+                                    <th class="perm-th-role">الدور</th>
+                                    <th class="perm-th-check-u">عرض</th>
+                                    <th class="perm-th-check-u">إضافة</th>
+                                    <th class="perm-th-check-u">تعديل</th>
+                                    <th class="perm-th-check-u">حذف</th>
+                                    <th class="perm-th-check-u">طباعة</th>
+                                    <th class="perm-th-check-u">تصدير</th>
+                                    <th class="perm-th-check-u">اعتماد</th>
+                                    <th class="perm-th-check-u">ترحيل</th>
+                                    <th class="perm-th-check-u">إلغاء</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var perm in _userPermissions)
+                                {
+                                    <tr class="perm-row-user">
+                                        <td class="perm-td-module-u">
+                                            <span class="perm-module-name-u">@perm.ModuleNameAr</span>
+                                        </td>
+                                        <td class="perm-td-role-summary">
+                                            <span class="role-perm-dots">
+                                                @if (perm.RoleCanView == true) { <span class="rpd on">ع</span> }
+                                                @if (perm.RoleCanAdd == true) { <span class="rpd on">ض</span> }
+                                                @if (perm.RoleCanEdit == true) { <span class="rpd on">ت</span> }
+                                                @if (perm.RoleCanDelete == true) { <span class="rpd on">ح</span> }
+                                            </span>
+                                        </td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "View")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Add")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Edit")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Delete")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Print")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Export")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Approve")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Post")</td>
+                                        <td class="perm-td-check-u">@TriStateBtn(perm, "Cancel")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        }
+
+    </div> <!-- نهاية tab-content -->
+
+} <!-- نهاية else الخاص بـ _authorized -->
+<style>
+    /* ===== Page Header ===== */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .page-header-right { display: flex; align-items: center; gap: 12px; }
+    .page-header-left { display: flex; align-items: center; gap: 8px; }
+    .page-title {
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+    }
+    .title-icon { width: 26px; height: 26px; color: #2563eb; }
+    .edit-badge {
+        background: #eff6ff;
+        color: #1d4ed8;
+        padding: 4px 12px;
+        border-radius: 8px;
+        font-size: .78rem;
+        font-weight: 700;
+        border: 1px solid #bfdbfe;
+    }
+
+    /* Back Button */
+    .btn-back {
+        width: 40px;
+        height: 40px;
+        border: 1px solid #e2e8f0;
+        background: white;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all .2s;
+    }
+    .btn-back:hover { background: #f1f5f9; }
+    .btn-back svg { width: 18px; height: 18px; color: #475569; }
+
+    /* Action Buttons */
+    .btn-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 10px;
+        font-size: .84rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .2s;
+    }
+    .btn-action svg { width: 16px; height: 16px; }
+    .btn-save-page {
+        background: linear-gradient(135deg, #2563eb, #2563eb);
+        color: white;
+        box-shadow: 0 4px 12px rgba(37,99,235,.3);
+    }
+    .btn-save-page:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,.4); }
+    .btn-save-page:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+    .btn-cancel-page {
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-cancel-page:hover { background: #e2e8f0; }
+
+    /* ===== Alerts ===== */
+    .alert-msg {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 18px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+        font-size: .85rem;
+        font-weight: 600;
+    }
+    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .alert-close { background: none; border: none; font-size: .9rem; cursor: pointer; color: inherit; opacity: .6; }
+
+    /* ===== Tabs ===== */
+    .tabs-header {
+        display: flex;
+        gap: 4px;
+        background: white;
+        border-radius: 14px 14px 0 0;
+        padding: 6px 6px 0;
+        border: 1px solid #e2e8f0;
+        border-bottom: none;
+        overflow-x: auto;
+    }
+    .tab-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border: none;
+        background: transparent;
+        color: #64748b;
+        font-size: .84rem;
+        font-weight: 700;
+        border-radius: 10px 10px 0 0;
+        cursor: pointer;
+        transition: all .2s;
+        white-space: nowrap;
+        border-bottom: 3px solid transparent;
+    }
+    .tab-btn:hover { background: #f8fafc; color: #334155; }
+    .tab-btn.active {
+        background: #f8fafc;
+        color: #2563eb;
+        border-bottom-color: #2563eb;
+    }
+    .tab-btn svg { width: 16px; height: 16px; }
+    .tab-content { }
+
+    /* ===== Form Card ===== */
+    .form-card {
+        background: white;
+        border-radius: 0 0 14px 14px;
+        padding: 24px;
+        border: 1px solid #e2e8f0;
+        border-top: none;
+        box-shadow: 0 2px 8px rgba(15,23,42,.06);
+    }
+    .form-card + .form-card { border-radius: 14px; border-top: 1px solid #e2e8f0; }
+    .form-card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: .95rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .form-card-title svg { width: 20px; height: 20px; color: #2563eb; }
+
+    /* ===== Form Grid ===== */
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    .form-grid-2 { grid-template-columns: 1fr 1fr; }
+    .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .form-full { grid-column: 1 / -1; }
+
+    /* ===== Form Elements ===== */
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+        font-size: .8rem;
+        font-weight: 700;
+        color: #475569;
+    }
+    .required { color: #dc2626; }
+    .form-input {
+        height: 42px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0 14px;
+        font-size: .85rem;
+        background: #f8fafc;
+        transition: all .2s;
+        width: 100%;
+    }
+    .form-input:focus {
+        border-color: #2563eb;
+        background: white;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+    .form-textarea {
+        height: auto;
+        padding: 12px 14px;
+        resize: vertical;
+        min-height: 80px;
+    }
+    .form-hint {
+        font-size: .72rem;
+        color: #94a3b8;
+    }
+
+    /* ===== Info Box ===== */
+    .info-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px 14px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        font-size: .84rem;
+        color: #334155;
+        font-weight: 600;
+    }
+    .info-danger { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+    .info-success { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+    .info-sub { font-size: .72rem; color: #64748b; font-weight: 400; }
+    .cell-empty { color: #cbd5e1; }
+
+    /* ===== Toggle Switch ===== */
+    .toggle-wrap { display: flex; align-items: center; height: 42px; }
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        font-size: .84rem;
+        color: #334155;
+    }
+    .toggle-label input { display: none; }
+    .toggle-switch {
+        width: 44px;
+        height: 24px;
+        background: #cbd5e1;
+        border-radius: 12px;
+        position: relative;
+        transition: background .2s;
+        flex-shrink: 0;
+    }
+    .toggle-switch::after {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        right: 3px;
+        transition: transform .2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    }
+    .toggle-label input:checked + .toggle-switch {
+        background: #2563eb;
+    }
+    .toggle-label input:checked + .toggle-switch::after {
+        transform: translateX(-20px);
+    }
+    .toggle-text { font-weight: 600; }
+
+    /* ===== Password Hints ===== */
+    .pwd-hints {
+        margin-top: 20px;
+        padding: 16px;
+        background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+    }
+    .pwd-hint-title { font-size: .82rem; font-weight: 700; color: #475569; margin-bottom: 8px; }
+    .pwd-hint-list { list-style: none; padding: 0; margin: 0; }
+    .pwd-hint-list li {
+        font-size: .8rem;
+        color: #94a3b8;
+        padding: 4px 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .pwd-hint-list li::before { content: '○'; font-size: .7rem; }
+    .pwd-hint-list li.hint-ok { color: #22c55e; }
+    .pwd-hint-list li.hint-ok::before { content: '●'; }
+        /* ===== User Permissions Tab ===== */
+    .perm-card-user { padding: 0; overflow: hidden; border-radius: 0 0 14px 14px; }
+
+    .perm-toolbar {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+        flex-wrap: wrap; gap: 12px;
+    }
+    .perm-toolbar-right { display: flex; align-items: center; gap: 10px; }
+    .perm-toolbar-left { display: flex; align-items: center; gap: 8px; }
+    .btn-toolbar {
+        display: inline-flex; align-items: center; gap: 4px; height: 38px; padding: 0 14px;
+        background: white; color: #475569; border: 1px solid #e2e8f0; border-radius: 8px;
+        font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .2s;
+    }
+    .btn-toolbar:hover { background: #f1f5f9; }
+    .btn-toolbar:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-toolbar svg { width: 15px; height: 15px; }
+    .btn-toolbar-danger { color: #dc2626; border-color: #fecaca; }
+    .btn-toolbar-danger:hover { background: #fef2f2; }
+
+    /* Legend */
+    .perm-legend {
+        display: flex; gap: 20px; padding: 12px 20px;
+        border-bottom: 1px solid #f1f5f9; background: #fafbfc;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: #64748b; font-weight: 600; }
+    .legend-dot { width: 14px; height: 14px; border-radius: 4px; border: 2px solid; }
+    .legend-null { border-color: #cbd5e1; background: #f8fafc; }
+    .legend-allow { border-color: #22c55e; background: #f0fdf4; }
+    .legend-deny { border-color: #ef4444; background: #fef2f2; }
+
+    /* Table */
+    .perm-table-wrap-user { overflow-x: auto; max-height: 60vh; overflow-y: auto; }
+    .perm-table-user { width: 100%; border-collapse: collapse; min-width: 950px; }
+    .perm-table-user thead {
+        background: #f1f5f9; border-bottom: 2px solid #e2e8f0;
+        position: sticky; top: 0; z-index: 10;
+    }
+    .perm-table-user th {
+        padding: 14px 8px; font-size: .82rem; font-weight: 800; color: #334155;
+        text-align: center; white-space: nowrap; background: #f1f5f9;
+    }
+    .perm-th-module-u { text-align: right; padding-right: 16px !important; min-width: 200px; }
+    .perm-th-role { min-width: 80px; }
+    .perm-th-check-u { width: 60px; }
+    .perm-row-user { border-bottom: 1px solid #f1f5f9; }
+    .perm-row-user:hover { background: #fafbfc; }
+    .perm-row-user td { padding: 8px; vertical-align: middle; }
+    .perm-td-module-u { text-align: right; padding-right: 16px !important; }
+    .perm-module-name-u { font-size: .86rem; font-weight: 600; color: #334155; }
+    .perm-td-check-u { text-align: center; }
+    .perm-td-role-summary { text-align: center; }
+    .role-perm-dots { display: flex; gap: 2px; justify-content: center; }
+    .rpd {
+        width: 18px; height: 18px; border-radius: 4px; font-size: .6rem; font-weight: 800;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: #f1f5f9; color: #94a3b8;
+    }
+    .rpd.on { background: #dbeafe; color: #1d4ed8; }
+
+    /* Tri-state button */
+    .tri-btn {
+        width: 30px; height: 30px; border-radius: 6px; border: 2px solid;
+        display: inline-flex; align-items: center; justify-content: center;
+        cursor: pointer; font-size: .7rem; font-weight: 800; transition: all .15s;
+    }
+    .tri-null { border-color: #cbd5e1; background: #f8fafc; color: #94a3b8; }
+    .tri-null:hover { border-color: #94a3b8; }
+    .tri-allow { border-color: #22c55e; background: #f0fdf4; color: #22c55e; }
+    .tri-allow:hover { background: #dcfce7; }
+    .tri-deny { border-color: #ef4444; background: #fef2f2; color: #ef4444; }
+    .tri-deny:hover { background: #fee2e2; }
+
+    .tab-override-count { color: #f59e0b; font-size: .9rem; margin-right: 2px; }
+
+    .loading-container { display: flex; flex-direction: column; align-items: center; color: #64748b; gap: 12px; }
+    .loading-spinner {
+        width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #2563eb;
+        border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    /* ===== Responsive ===== */
+    @@media (max-width: 768px) {
+        .form-grid { grid-template-columns: 1fr; }
+        .form-grid-3 { grid-template-columns: 1fr; }
+        .tabs-header { overflow-x: auto; }
+        .page-header { flex-direction: column; align-items: stretch; }
+        .page-header-left { justify-content: flex-end; }
+    }
+</style>
+@code {
+    // ===== المعاملات =====
+    [Parameter] public int Id { get; set; }
+
+    // ===== الحالة =====
+    private bool _authorized = false;
+    private bool _isNew => Id == 0;
+    private bool _saving = false;
+    private string _message = "";
+    private bool _isError = false;
+    private int _activeTab = 1;
+
+    // ===== البيانات =====
+    private UserEditDto _dto = new();
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+
+    // ===== Lookups =====
+    private List<LookupDto> _rolesLookup = new();
+    private List<LookupDto> _employeesLookup = new();
+    private List<LookupDto> _warehousesLookup = new();
+    private List<LookupDto> _cashBoxesLookup = new();
+        // ===== صلاحيات خاصة =====
+    private List<UserPermissionEditDto> _userPermissions = new();
+    private bool _loadingPerms = false;
+    private bool _savingPerms = false;
+    private bool _permsLoaded = false;
+
+    // ══════════════════════════════════════
+    // التهيئة
+    // ══════════════════════════════════════
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // التحقق من تسجيل الدخول
+            if (!UserSession.IsLoggedIn)
+            {
+                var restored = await UserSession.TryRestoreSessionAsync();
+                if (!restored)
+                {
+                    Navigation.NavigateTo("/login");
+                    return;
+                }
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            }
+
+            // التحقق من الصلاحية
+            if (_isNew && !PermissionService.CanAdd("SCR_USERS"))
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+            if (!_isNew && !PermissionService.CanEdit("SCR_USERS"))
+            {
+                Navigation.NavigateTo("/access-denied");
+                return;
+            }
+
+            _authorized = true;
+
+            // تحميل الـ Lookups
+            await LoadLookups();
+
+            // تحميل بيانات المستخدم (في حالة التعديل)
+            if (!_isNew)
+                await LoadUser();
+
+            StateHasChanged();
+        }
+    }
+
+    // ══════════════════════════════════════
+    // تحميل البيانات
+    // ══════════════════════════════════════
+    private async Task LoadLookups()
+    {
+        try
+        {
+            _rolesLookup = await UserService.GetRolesLookupAsync();
+            _employeesLookup = await UserService.GetAvailableEmployeesLookupAsync(
+                _isNew ? null : _dto.EmployeeID);
+            _warehousesLookup = await UserService.GetWarehousesLookupAsync();
+            _cashBoxesLookup = await UserService.GetCashBoxesLookupAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowError("خطأ في تحميل البيانات المساعدة: " + ex.Message);
+        }
+    }
+
+    private async Task LoadUser()
+    {
+        try
+        {
+            var user = await UserService.GetByIdAsync(Id);
+            if (user == null)
+            {
+                ShowError("المستخدم غير موجود");
+                return;
+            }
+            _dto = user;
+
+            // تحديث قائمة الموظفين لتشمل الموظف الحالي
+            _employeesLookup = await UserService.GetAvailableEmployeesLookupAsync(_dto.EmployeeID);
+        }
+        catch (Exception ex)
+        {
+            ShowError("خطأ في تحميل بيانات المستخدم: " + ex.Message);
+        }
+    }
+
+    // ══════════════════════════════════════
+    // الحفظ
+    // ══════════════════════════════════════
+    private async Task SaveUser()
+    {
+        try
+        {
+            _saving = true;
+            _message = "";
+            StateHasChanged();
+
+            // التحقق من البيانات الإلزامية
+            if (string.IsNullOrWhiteSpace(_dto.Username))
+            {
+                ShowError("اسم المستخدم مطلوب");
+                _activeTab = 1;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_dto.FullName))
+            {
+                ShowError("الاسم الكامل مطلوب");
+                _activeTab = 1;
+                return;
+            }
+
+            if (_dto.RoleID == 0)
+            {
+                ShowError("يجب اختيار الدور");
+                _activeTab = 1;
+                return;
+            }
+
+            // التحقق من كلمة المرور عند الإنشاء
+            if (_isNew)
+            {
+                if (string.IsNullOrWhiteSpace(_newPassword) || _newPassword.Length < 6)
+                {
+                    ShowError("كلمة المرور يجب أن تكون 6 أحرف على الأقل");
+                    _activeTab = 4;
+                    return;
+                }
+
+                if (_newPassword != _confirmPassword)
+                {
+                    ShowError("كلمة المرور وتأكيدها غير متطابقتين");
+                    _activeTab = 4;
+                    return;
+                }
+            }
+
+            if (_isNew)
+            {
+                // إنشاء
+                var newId = await UserService.CreateAsync(_dto, _newPassword, UserSession.CurrentUserID);
+                ShowSuccess("تم إنشاء المستخدم بنجاح");
+
+                // الانتقال لصفحة التعديل
+                await Task.Delay(500);
+                Navigation.NavigateTo($"/users/edit/{newId}");
+            }
+            else
+            {
+                // تعديل
+                var result = await UserService.UpdateAsync(_dto, UserSession.CurrentUserID);
+                if (result)
+                    ShowSuccess("تم حفظ التعديلات بنجاح");
+                else
+                    ShowError("فشل في حفظ التعديلات");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    // ══════════════════════════════════════
+    // التنقل
+    // ══════════════════════════════════════
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/users");
+    }
+        // ══════════════════════════════════════
+    // صلاحيات المستخدم الخاصة
+    // ══════════════════════════════════════
+    private async void LoadPermissionsIfNeeded()
+    {
+        if (_permsLoaded) return;
+
+        try
+        {
+            _loadingPerms = true;
+            StateHasChanged();
+
+            _userPermissions = await UserService.GetUserPermissionsAsync(Id);
+            _permsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            ShowError("خطأ في تحميل الصلاحيات: " + ex.Message);
+        }
+        finally
+        {
+            _loadingPerms = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SavePermissions()
+    {
+        try
+        {
+            _savingPerms = true;
+            StateHasChanged();
+
+            await UserService.SaveUserPermissionsAsync(Id, _userPermissions);
+            ShowSuccess("تم حفظ الصلاحيات الخاصة بنجاح");
+        }
+        catch (Exception ex)
+        {
+            ShowError("خطأ: " + ex.Message);
+        }
+        finally
+        {
+            _savingPerms = false;
+        }
+    }
+
+    private async Task ClearAllOverrides()
+    {
+        foreach (var perm in _userPermissions)
+        {
+            perm.CanView = null;
+            perm.CanAdd = null;
+            perm.CanEdit = null;
+            perm.CanDelete = null;
+            perm.CanPrint = null;
+            perm.CanExport = null;
+            perm.CanApprove = null;
+            perm.CanPost = null;
+            perm.CanCancel = null;
+        }
+
+        await SavePermissions();
+        ShowSuccess("تم إعادة تعيين الصلاحيات للدور الأصلي");
+    }
+
+    private void ToggleTriState(UserPermissionEditDto perm, string field)
+    {
+        // Cycle: null → true → false → null
+        bool? current = field switch
+        {
+            "View"    => perm.CanView,
+            "Add"     => perm.CanAdd,
+            "Edit"    => perm.CanEdit,
+            "Delete"  => perm.CanDelete,
+            "Print"   => perm.CanPrint,
+            "Export"  => perm.CanExport,
+            "Approve" => perm.CanApprove,
+            "Post"    => perm.CanPost,
+            "Cancel"  => perm.CanCancel,
+            _ => null
+        };
+
+        bool? next = current switch
+        {
+            null  => true,
+            true  => false,
+            false => null,
+            
+        };
+
+        switch (field)
+        {
+            case "View":    perm.CanView    = next; break;
+            case "Add":     perm.CanAdd     = next; break;
+            case "Edit":    perm.CanEdit    = next; break;
+            case "Delete":  perm.CanDelete  = next; break;
+            case "Print":   perm.CanPrint   = next; break;
+            case "Export":  perm.CanExport  = next; break;
+            case "Approve": perm.CanApprove = next; break;
+            case "Post":    perm.CanPost    = next; break;
+            case "Cancel":  perm.CanCancel  = next; break;
+        }
+    }
+
+    private RenderFragment TriStateBtn(UserPermissionEditDto perm, string field) => builder =>
+    {
+        bool? val = field switch
+        {
+            "View"    => perm.CanView,
+            "Add"     => perm.CanAdd,
+            "Edit"    => perm.CanEdit,
+            "Delete"  => perm.CanDelete,
+            "Print"   => perm.CanPrint,
+            "Export"  => perm.CanExport,
+            "Approve" => perm.CanApprove,
+            "Post"    => perm.CanPost,
+            "Cancel"  => perm.CanCancel,
+            _ => null
+        };
+
+        string cssClass = val switch
+        {
+            null  => "tri-btn tri-null",
+            true  => "tri-btn tri-allow",
+            false => "tri-btn tri-deny",
+            
+        };
+
+        string label = val switch
+        {
+            null  => "—",
+            true  => "✓",
+            false => "✕",
+            
+        };
+
+        string title = val switch
+        {
+            null  => "يتبع الدور (اضغط للسماح)",
+            true  => "سماح إضافي (اضغط للمنع)",
+            false => "منع خاص (اضغط للإعادة للدور)",
+            
+        };
+
+        builder.OpenElement(0, "button");
+        builder.AddAttribute(1, "class", cssClass);
+        builder.AddAttribute(2, "title", title);
+        builder.AddAttribute(3, "onclick",
+            Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this,
+                () => ToggleTriState(perm, field)));
+        builder.AddContent(4, label);
+        builder.CloseElement();
+    };
+
+    // ══════════════════════════════════════
+    // الرسائل
+    // ══════════════════════════════════════
+    private void ShowSuccess(string msg) { _message = msg; _isError = false; }
+    private void ShowError(string msg) { _message = msg; _isError = true; }
+}

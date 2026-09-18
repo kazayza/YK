@@ -1,0 +1,1251 @@
+﻿@page "/attendance"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject AttendanceService AttendanceService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>الحضور والانصراف - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
+}
+else
+{
+    <div class="items-page" dir="rtl">
+        
+        <!-- Header -->
+        <div class="page-header">
+            <div>
+                <h2 class="page-title">الحضور والانصراف</h2>
+                <p class="page-subtitle">متابعة حضور وانصراف الموظفين</p>
+            </div>
+            <div class="header-actions">
+                <span class="result-badge">@pagedResult.TotalCount سجل</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting">
+                        @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> } 
+                        else { <span>📎 تصدير</span> }
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="btn-icon-only btn-import-icon" @onclick="ShowImportDialog" title="استيراد بصمة">📥</button>
+                    <button class="btn-modern btn-primary-modern" @onclick="GoToAdd">+ تسجيل حضور</button>
+                }
+            </div>
+        </div>
+
+        <!-- Stats Cards - محسنة -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-green">✅</div>
+                <div class="stat-content">
+                    <div class="stat-value">@stats.PresentCount</div>
+                    <div class="stat-label">حاضر</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-red">❌</div>
+                <div class="stat-content">
+                    <div class="stat-value">@stats.AbsentCount</div>
+                    <div class="stat-label">غائب</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-blue">🌴</div>
+                <div class="stat-content">
+                    <div class="stat-value">@stats.LeaveCount</div>
+                    <div class="stat-label">إجازة</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-yellow">⏰</div>
+                <div class="stat-content">
+                    <div class="stat-value">@stats.LateCount</div>
+                    <div class="stat-label">متأخر</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-purple">⏱️</div>
+                <div class="stat-content">
+                    <div class="stat-value">@stats.TotalOvertimeHours.ToString("0.0")</div>
+                    <div class="stat-label">أوفرتايم</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Bar - محسنة (صف واحد) -->
+        <div class="filter-bar">
+            <div class="filter-row">
+                <div class="filter-field search-field">
+                    <span class="field-icon">🔍</span>
+                    <input type="text" class="filter-input" placeholder="بحث بالاسم أو الكود..."
+                           @bind="filters.SearchText" @bind:event="oninput" />
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="filters.DepartmentID">
+                        <option value="0">📁 كل الأقسام</option>
+                        @if (departments != null) { @foreach (var d in departments) { <option value="@d.Id">@d.Name</option> } }
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <select class="filter-select" @bind="filters.AttendanceStatus">
+                        <option value="0">📋 كل الحالات</option>
+                        <option value="1">✅ حاضر</option>
+                        <option value="2">❌ غائب</option>
+                        <option value="3">🌴 إجازة</option>
+                        <option value="4">🚗 مأمورية</option>
+                        <option value="5">⏰ متأخر</option>
+                        <option value="6">🏃 انصراف مبكر</option>
+                        <option value="7">🎉 عطلة رسمية</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <input type="date" class="filter-input" @bind="filters.DateFrom" />
+                </div>
+                <div class="filter-field">
+                    <input type="date" class="filter-input" @bind="filters.DateTo" />
+                </div>
+                <div class="filter-actions-inline">
+                    <button class="btn-sm btn-sm-primary" @onclick="SearchData" disabled="@isLoading">بحث</button>
+                    <button class="btn-sm btn-sm-ghost" @onclick="ClearFilters" disabled="@isLoading">مسح</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table - محسنة -->
+        @if (isLoading)
+        {
+            <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+        }
+        else if (!pagedResult.Items.Any())
+        {
+            <div class="empty-state"><div class="empty-icon">📋</div><h4>لا توجد سجلات</h4><p>حاول تغيير معايير البحث</p></div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="col-num">#</th>
+                                <th class="col-code">الكود</th>
+                                <th class="col-name">الموظف</th>
+                                <th class="col-dept">القسم</th>
+                                <th class="col-date">التاريخ</th>
+                                <th class="col-status">الحالة</th>
+                                <th class="col-time">الدخول</th>
+                                <th class="col-time">الخروج</th>
+                                <th class="col-hours">ساعات</th>
+                                <th class="col-hours">أوفرتايم</th>
+                                <th class="col-actions">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var rowIdx = (filters.PageNumber - 1) * filters.PageSize; }
+                            @foreach (var a in pagedResult.Items)
+                            {
+                                rowIdx++;
+                                <tr>
+                                    <td class="col-num">@rowIdx</td>
+                                    <td class="col-code"><span class="code-badge">@a.EmployeeCode</span></td>
+                                    <td class="col-name"><strong>@a.EmployeeName</strong></td>
+                                    <td class="col-dept">@(a.DepartmentName ?? "—")</td>
+                                    <td class="col-date">@a.AttendanceDate.ToString("dd/MM/yyyy")</td>
+                                    <td class="col-status">
+                                        <span class="status-badge status-@a.AttendanceStatus">@a.StatusName</span>
+                                    </td>
+                                    <td class="col-time">@(a.ActualIn ?? "—")</td>
+                                    <td class="col-time">@(a.ActualOut ?? "—")</td>
+                                    <td class="col-hours">@(a.WorkedHours?.ToString("0.0") ?? "0")</td>
+                                    <td class="col-hours overtime-value">@(a.OvertimeHours?.ToString("0.0") ?? "0")</td>
+                                    <td class="col-actions">
+                                        <div class="action-icons">
+                                            <button class="action-icon view-icon" @onclick="() => GoToView(a.AttendanceID)" title="عرض">👁️</button>
+                                            @if (permissions.CanEdit) 
+                                            { 
+                                                <button class="action-icon edit-icon" @onclick="() => GoToEdit(a.AttendanceID)" title="تعديل">✏️</button> 
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        عرض @((filters.PageNumber - 1) * filters.PageSize + 1) - @Math.Min(filters.PageNumber * filters.PageSize, pagedResult.TotalCount) من @pagedResult.TotalCount
+                    </div>
+                    <div class="pagination-controls">
+                        <button class="page-btn" @onclick="PreviousPage" disabled="@(!pagedResult.HasPrevious || isLoading)">‹ السابق</button>
+                        <span class="page-current">@pagedResult.PageNumber / @Math.Max(pagedResult.TotalPages, 1)</span>
+                        <button class="page-btn" @onclick="NextPage" disabled="@(!pagedResult.HasNext || isLoading)">التالي ›</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Import Dialog -->
+    @if (showImportDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseImportDialog">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon modal-icon-import">📥</div>
+                <h4>استيراد من ملف البصمة</h4>
+               <p style="color:#6b7280;font-size:0.85rem">اختر ملف Excel يحتوي على بيانات الحضور</p>
+
+<div class="import-field">
+    <label class="import-label">ملف Excel (.xlsx)</label>
+    <InputFile OnChange="HandleImportFile" accept=".xlsx" />
+</div>
+
+<div class="import-hint">
+    <strong>الأعمدة الإلزامية:</strong>
+    <br />• <code>EmployeeCode</code> — كود الموظف
+    <br />• <code>AttendanceDate</code> — التاريخ (dd/MM/yyyy)
+    <br /><br />
+    <strong>الأعمدة الاختيارية:</strong>
+    <br />• <code>ActualIn</code> — وقت الدخول (HH:mm)
+    <br />• <code>ActualOut</code> — وقت الخروج (HH:mm)
+    <br />• <code>ScheduledIn</code> — الدخول المفترض (HH:mm)
+    <br />• <code>ScheduledOut</code> — الخروج المفترض (HH:mm)
+    <br />• <code>AttendanceStatus</code> — الحالة (1-7)
+    <br />• <code>OvertimeHours</code> — ساعات الأوفرتايم
+    <br />• <code>Notes</code> — ملاحظات
+</div>
+
+                @if (isImporting)
+                {
+                    <div class="loading-state-mini"><div class="loader-mini"></div><p>جاري الاستيراد...</p></div>
+                }
+                @if (!string.IsNullOrEmpty(importMessage))
+                {
+                    <div class="form-message @(importSuccess ? "msg-success" : "msg-error")">@importMessage</div>
+                }
+
+                <div class="modal-buttons">
+                    <button class="btn-modern btn-primary-modern" @onclick="ProcessImport">استيراد</button>
+                    <button class="btn-modern btn-ghost" @onclick="CloseImportDialog" disabled="@isImporting">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast Message -->
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-notification @(resultSuccess ? "toast-success" : "toast-error")">
+            <span>@resultMessage</span>
+            <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+        </div>
+    }
+}
+
+<style>
+    /* ========== BASE STYLES ========== */
+    .items-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 0.25rem;
+    }
+
+    /* ========== HEADER ========== */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #1e293b;
+        margin: 0;
+    }
+    .page-subtitle {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin: 0.25rem 0 0;
+    }
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .result-badge {
+        background: #f1f5f9;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #475569;
+    }
+    .btn-icon-only {
+        background: #f1f5f9;
+        border: none;
+        padding: 0.5rem;
+        border-radius: 0.75rem;
+        cursor: pointer;
+        font-size: 1.1rem;
+        transition: all 0.2s;
+    }
+    .btn-icon-only:hover {
+        background: #e2e8f0;
+        transform: scale(1.02);
+    }
+
+    /* ========== STATS CARDS ========== */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+    .stat-card {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #eef2ff;
+        position: relative;
+        overflow: hidden;
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+    .stat-card:nth-child(1)::before { background: #10b981; }
+    .stat-card:nth-child(2)::before { background: #ef4444; }
+    .stat-card:nth-child(3)::before { background: #2563eb; }
+    .stat-card:nth-child(4)::before { background: #f59e0b; }
+    .stat-card:nth-child(5)::before { background: #2563eb; }
+    
+    .stat-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+    .stat-icon-green { background: #ecfdf5; }
+    .stat-icon-red { background: #fef2f2; }
+    .stat-icon-blue { background: #eff6ff; }
+    .stat-icon-yellow { background: #fffbeb; }
+    .stat-icon-purple { background: #f5f3ff; }
+    
+    .stat-content { flex: 1; }
+    .stat-value {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    /* ========== FILTER BAR ========== */
+    .filter-bar {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid #eef2ff;
+    }
+    .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .filter-field {
+        flex: 1 1 auto;
+        min-width: 120px;
+        position: relative;
+    }
+    .search-field {
+        min-width: 180px;
+        flex: 2;
+    }
+    .field-icon {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.9rem;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+    .filter-input {
+        width: 100%;
+        padding: 0.45rem 2rem 0.45rem 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        transition: all 0.2s;
+    }
+    .filter-input:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+        background: white;
+    }
+    .filter-select {
+        width: 100%;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.6rem;
+        font-size: 0.8rem;
+        background: #f8fafc;
+        cursor: pointer;
+    }
+    .filter-select:focus {
+        outline: none;
+        border-color: #2563eb;
+    }
+    .filter-actions-inline {
+        display: flex;
+        gap: 0.4rem;
+        margin-right: auto;
+    }
+    .btn-sm {
+        padding: 0.45rem 1rem;
+        border-radius: 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-sm-primary {
+        background: #2563eb;
+        color: white;
+    }
+    .btn-sm-primary:hover:not(:disabled) {
+        background: #1d4ed8;
+    }
+    .btn-sm-ghost {
+        background: transparent;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-sm-ghost:hover:not(:disabled) {
+        background: #f8fafc;
+    }
+    .btn-sm:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* ========== TABLE ========== */
+    .table-wrapper {
+        background: #ffffff;
+        border-radius: 1rem;
+        border: 1px solid #eef2ff;
+        overflow: hidden;
+    }
+    .table-responsive {
+        overflow-x: auto;
+    }
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+    .data-table thead {
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .data-table th {
+        padding: 0.85rem 0.75rem;
+        font-weight: 700;
+        color: #475569;
+        text-align: right;
+        white-space: nowrap;
+    }
+    .data-table td {
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid #f1f5f9;
+        color: #334155;
+    }
+    .data-table tbody tr:nth-child(even) {
+        background-color: #fafcff;
+    }
+    .data-table tbody tr:hover {
+        background: #f8f7ff;
+    }
+    
+    .col-num { width: 45px; text-align: center; }
+    .col-code { width: 90px; }
+    .col-name { min-width: 130px; }
+    .col-dept { min-width: 100px; }
+    .col-date { width: 100px; }
+    .col-status { width: 85px; }
+    .col-time { width: 70px; text-align: center; }
+    .col-hours { width: 65px; text-align: center; }
+    .col-actions { width: 80px; text-align: center; }
+    
+    .code-badge {
+        background: #f1f5f9;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.4rem;
+        font-family: monospace;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #1d4ed8;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 1rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+    .status-1 { background: #ecfdf5; color: #059669; }
+    .status-2 { background: #fef2f2; color: #dc2626; }
+    .status-3 { background: #eff6ff; color: #2563eb; }
+    .status-4 { background: #f5f3ff; color: #1d4ed8; }
+    .status-5 { background: #fffbeb; color: #d97706; }
+    .status-6 { background: #fffbeb; color: #f59e0b; }
+    .status-7 { background: #f1f5f9; color: #475569; }
+    
+    .overtime-value {
+        font-weight: 700;
+        color: #2563eb;
+    }
+    
+    .action-icons {
+        display: flex;
+        gap: 0.4rem;
+        justify-content: center;
+    }
+    .action-icon {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 0.3rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .view-icon:hover { background: #eff6ff; transform: scale(1.05); }
+    .edit-icon:hover { background: #f5f3ff; transform: scale(1.05); }
+
+    /* ========== PAGINATION ========== */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.8rem 1rem;
+        border-top: 1px solid #eef2ff;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .pagination-info {
+        font-size: 0.75rem;
+        color: #64748b;
+    }
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .page-btn {
+        padding: 0.4rem 1rem;
+        border: 1px solid #e2e8f0;
+        background: white;
+        border-radius: 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .page-btn:hover:not(:disabled) {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+    }
+    .page-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+    .page-current {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #1e293b;
+        background: #f1f5f9;
+        padding: 0.3rem 0.8rem;
+        border-radius: 0.5rem;
+    }
+
+    /* ========== MODAL ========== */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+    .modal-card {
+        background: white;
+        border-radius: 1.25rem;
+        padding: 1.5rem;
+        max-width: 460px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 20px 35px -8px rgba(0,0,0,0.2);
+    }
+    .modal-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+    }
+    .modal-icon-import { background: #eff6ff; }
+    
+    .import-field {
+        text-align: right;
+        margin: 1rem 0;
+    }
+    .import-label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 0.5rem;
+    }
+    .import-hint {
+        background: #f8fafc;
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        text-align: right;
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-bottom: 1rem;
+    }
+    .import-hint strong {
+        color: #1e293b;
+    }
+    .import-hint span {
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+    
+    .loading-state-mini {
+        text-align: center;
+        padding: 1rem;
+    }
+    .loader-mini {
+        width: 24px;
+        height: 24px;
+        border: 2px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin: 0 auto 0.5rem;
+    }
+    
+    .modal-buttons {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        margin-top: 1rem;
+    }
+    .form-message {
+        padding: 0.6rem;
+        border-radius: 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-top: 0.75rem;
+    }
+    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    /* ========== TOAST ========== */
+    .toast-notification {
+        position: fixed;
+        bottom: 1.5rem;
+        left: 1.5rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        z-index: 1050;
+        animation: slideIn 0.3s ease;
+    }
+    .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .toast-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .toast-close {
+        background: transparent;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        opacity: 0.6;
+    }
+
+    /* ========== LOADING & EMPTY STATES ========== */
+    .loading-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+    }
+    .loader {
+        width: 36px;
+        height: 36px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 1rem;
+        border: 1px dashed #cbd5e1;
+    }
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+    }
+    .no-access-card {
+        text-align: center;
+        padding: 4rem;
+        background: white;
+        border-radius: 1.5rem;
+    }
+    .no-access-icon {
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
+    }
+
+    /* ========== BUTTONS ========== */
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.55rem 1.2rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.8rem;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+    }
+    .btn-export {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+    }
+    .btn-ghost {
+        background: transparent;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+    .btn-spinner-sm {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+
+    /* ========== ANIMATIONS ========== */
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    @@keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @@media (max-width: 900px) {
+        .filter-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .filter-field {
+            min-width: auto;
+        }
+        .filter-actions-inline {
+            margin-right: 0;
+            justify-content: center;
+        }
+        .stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        }
+        .col-dept, .col-time {
+            display: none;
+        }
+    }
+    @@media (max-width: 600px) {
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .col-code, .col-hours {
+            display: none;
+        }
+    }
+    @@media print {
+        .filter-bar, .stats-grid, .header-actions, .pagination-container, .action-icons {
+            display: none !important;
+        }
+        .table-wrapper {
+            box-shadow: none;
+            border: none;
+        }
+    }
+</style>
+
+<script>
+    window.downloadFile = (fileName, mimeType, base64Data) => {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = `data:${mimeType};base64,${base64Data}`;
+        link.click();
+    };
+</script>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private AttendanceFilterDto filters = new() { PageNumber = 1, PageSize = 20, DateFrom = DateTime.Today.AddDays(-7), DateTo = DateTime.Today };
+    private AttendancePagedResult pagedResult = new();
+    private AttendanceStatsDto stats = new();
+    private List<LookupDto>? departments;
+    private bool isLoading = true, isExporting = false;
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+    
+    private bool showImportDialog = false;
+    private bool isImporting = false;
+    private string importMessage = "";
+    private bool importSuccess = true;
+    private IBrowserFile? importFile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_ATTEND");
+        if (permissions == null || !permissions.CanView) { isLoading = false; return; }
+        departments = await LookupService.GetDepartmentsLookupAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try 
+        { 
+            stats = await AttendanceService.GetAttendanceStatsAsync(filters.DateFrom, filters.DateTo); 
+            pagedResult = await AttendanceService.GetAttendancePagedAsync(filters); 
+        }
+        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchData() { filters.PageNumber = 1; await LoadData(); }
+    private async Task ClearFilters() { filters = new() { PageNumber = 1, PageSize = 20, DateFrom = DateTime.Today.AddDays(-7), DateTo = DateTime.Today }; await LoadData(); }
+    private async Task PreviousPage() { if (pagedResult.HasPrevious) { filters.PageNumber--; await LoadData(); } }
+    private async Task NextPage() { if (pagedResult.HasNext) { filters.PageNumber++; await LoadData(); } }
+
+    private void GoToAdd() => Navigation.NavigateTo("/attendance/new");
+    private void GoToEdit(int id) => Navigation.NavigateTo($"/attendance/edit/{id}");
+    private void GoToView(int id) => Navigation.NavigateTo($"/attendance/view/{id}");
+
+    private async Task ExportData()
+    {
+        isExporting = true;
+        try
+        {
+            var exportFilter = new AttendanceFilterDto
+            {
+                SearchText = filters.SearchText,
+                DepartmentID = filters.DepartmentID,
+                AttendanceStatus = filters.AttendanceStatus,
+                DateFrom = filters.DateFrom,
+                DateTo = filters.DateTo,
+                PageNumber = 1,
+                PageSize = 10000
+            };
+            var exportResult = await AttendanceService.GetAttendancePagedAsync(exportFilter);
+
+            if (exportResult.Items == null || !exportResult.Items.Any())
+            {
+                resultMessage = "لا توجد بيانات للتصدير"; resultSuccess = false;
+                isExporting = false; return;
+            }
+
+            var bytes = await AttendanceService.ExportAttendanceToExcelAsync(exportResult.Items, UserSession.UserID);
+            var b64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("downloadFile", $"Attendance_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
+            resultMessage = $"تم تصدير {exportResult.Items.Count} سجل ✅"; resultSuccess = true;
+        }
+        catch (Exception ex) { resultMessage = "خطأ في التصدير: " + ex.Message; resultSuccess = false; }
+        finally { isExporting = false; }
+    }
+
+    private void ShowImportDialog() { showImportDialog = true; importMessage = ""; importFile = null; }
+    private void CloseImportDialog() { showImportDialog = false; importMessage = ""; importFile = null; }
+
+    private void HandleImportFile(InputFileChangeEventArgs e)
+{
+    importFile = e.FileCount > 0 ? e.GetMultipleFiles(1)[0] : null;
+    importMessage = importFile != null 
+        ? $"تم اختيار الملف: {importFile.Name} ({importFile.Size} bytes)" 
+        : "لم يتم اختيار ملف";
+    importSuccess = true;
+    StateHasChanged();
+}
+
+    private async Task ProcessImport()
+{
+    if (importFile == null)
+    {
+        importMessage = "لم يتم اختيار ملف";
+        importSuccess = false;
+        StateHasChanged();
+        return;
+    }
+
+    isImporting = true;
+    importMessage = "";
+    StateHasChanged();
+
+    try
+    {
+        // خطوة 1: قراءة الملف
+        importMessage = $"جاري قراءة: {importFile.Name} ({importFile.Size} bytes)";
+        StateHasChanged();
+        await Task.Delay(300);
+
+        using var memStream = new MemoryStream();
+        using var fileStream = importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        await fileStream.CopyToAsync(memStream);
+        memStream.Position = 0;
+
+        importMessage = "تم قراءة الملف، جاري فتح Excel...";
+        StateHasChanged();
+        await Task.Delay(300);
+
+        // خطوة 2: فتح Excel
+        using var workbook = new ClosedXML.Excel.XLWorkbook(memStream);
+        var ws = workbook.Worksheet(1);
+
+        importMessage = "تم فتح Excel، جاري قراءة العناوين...";
+        StateHasChanged();
+        await Task.Delay(300);
+
+        // خطوة 3: قراءة العناوين
+        var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var lastCol = ws.Row(1).LastCellUsed()?.Address.ColumnNumber ?? 0;
+
+        for (int col = 1; col <= lastCol; col++)
+        {
+            var header = ws.Cell(1, col).GetString().Trim();
+            if (!string.IsNullOrWhiteSpace(header))
+                headers[header] = col;
+        }
+
+        importMessage = $"تم قراءة {headers.Count} عمود: {string.Join(", ", headers.Keys)}";
+        StateHasChanged();
+        await Task.Delay(500);
+
+        // خطوة 4: التحقق من الأعمدة الإلزامية
+        if (!headers.ContainsKey("EmployeeCode"))
+        {
+            importMessage = "الملف لا يحتوي على عمود EmployeeCode";
+            importSuccess = false;
+            isImporting = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (!headers.ContainsKey("AttendanceDate"))
+        {
+            importMessage = "الملف لا يحتوي على عمود AttendanceDate";
+            importSuccess = false;
+            isImporting = false;
+            StateHasChanged();
+            return;
+        }
+
+        // خطوة 5: قراءة الصفوف
+        var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+        importMessage = $"عدد الصفوف: {lastRow - 1}، جاري المعالجة...";
+        StateHasChanged();
+        await Task.Delay(300);
+
+        var records = new List<FingerprintRecord>();
+        var skippedRows = new List<string>();
+
+        for (int row = 2; row <= lastRow; row++)
+        {
+            try
+            {
+                var empCode = ws.Cell(row, headers["EmployeeCode"]).GetString().Trim();
+                if (string.IsNullOrWhiteSpace(empCode))
+                {
+                    skippedRows.Add($"صف {row}: كود فارغ");
+                    continue;
+                }
+
+                // قراءة التاريخ
+                var dateCell = ws.Cell(row, headers["AttendanceDate"]);
+                DateTime attendanceDate;
+
+                if (dateCell.DataType == ClosedXML.Excel.XLDataType.DateTime)
+                {
+                    attendanceDate = dateCell.GetDateTime().Date;
+                }
+                else
+                {
+                    var dateStr = dateCell.GetString().Trim();
+                    if (!TryParseDate(dateStr, out attendanceDate))
+                    {
+                        skippedRows.Add($"صف {row}: تاريخ غير صحيح");
+                        continue;
+                    }
+                }
+
+                var empId = await GetEmployeeIdByCode(empCode);
+                if (empId <= 0)
+                {
+                    skippedRows.Add($"صف {row}: كود ({empCode}) غير موجود");
+                    continue;
+                }
+
+                // قراءة الأوقات
+                TimeSpan? actualIn = headers.ContainsKey("ActualIn") ? ParseTimeCell(ws.Cell(row, headers["ActualIn"])) : null;
+                TimeSpan? actualOut = headers.ContainsKey("ActualOut") ? ParseTimeCell(ws.Cell(row, headers["ActualOut"])) : null;
+                TimeSpan? scheduledIn = headers.ContainsKey("ScheduledIn") ? ParseTimeCell(ws.Cell(row, headers["ScheduledIn"])) : null;
+                TimeSpan? scheduledOut = headers.ContainsKey("ScheduledOut") ? ParseTimeCell(ws.Cell(row, headers["ScheduledOut"])) : null;
+
+                // الحالة
+                int status = 0;
+                if (headers.ContainsKey("AttendanceStatus"))
+                {
+                    var statusStr = ws.Cell(row, headers["AttendanceStatus"]).GetString().Trim();
+                    if (int.TryParse(statusStr, out var ps) && ps >= 1 && ps <= 7)
+                        status = ps;
+                }
+
+                if (status == 0)
+                {
+                    if (actualIn.HasValue)
+                        status = (scheduledIn.HasValue && actualIn.Value > scheduledIn.Value) ? 5 : 1;
+                    else
+                        status = 2;
+                }
+
+                // الأوفرتايم
+                decimal overtimeHours = 0;
+                if (headers.ContainsKey("OvertimeHours"))
+                {
+                    var otStr = ws.Cell(row, headers["OvertimeHours"]).GetString().Trim();
+                    if (decimal.TryParse(otStr, out var pot))
+                        overtimeHours = pot;
+                }
+
+                if (overtimeHours == 0 && actualIn.HasValue && actualOut.HasValue
+                    && scheduledIn.HasValue && scheduledOut.HasValue)
+                {
+                    var workedMin = (actualOut.Value - actualIn.Value).TotalMinutes;
+                    var scheduledMin = (scheduledOut.Value - scheduledIn.Value).TotalMinutes;
+                    if (workedMin > scheduledMin)
+                        overtimeHours = Math.Round((decimal)(workedMin - scheduledMin) / 60m, 2);
+                }
+
+                // الملاحظات
+                string? notes = headers.ContainsKey("Notes") ? ws.Cell(row, headers["Notes"]).GetString().Trim() : null;
+
+                records.Add(new FingerprintRecord
+                {
+                    EmployeeID = empId,
+                    AttendanceDate = attendanceDate,
+                    ActualIn = actualIn,
+                    ActualOut = actualOut,
+                    ScheduledIn = scheduledIn,
+                    ScheduledOut = scheduledOut,
+                    AttendanceStatus = status,
+                    OvertimeHours = overtimeHours,
+                    Notes = notes
+                });
+            }
+            catch (Exception rowEx)
+            {
+                skippedRows.Add($"صف {row}: {rowEx.Message}");
+            }
+        }
+
+        importMessage = $"تم قراءة {records.Count} سجل صحيح، {skippedRows.Count} مرفوض";
+        StateHasChanged();
+        await Task.Delay(500);
+
+        if (!records.Any())
+        {
+            var details = skippedRows.Any()
+                ? "\n" + string.Join("\n", skippedRows.Take(10))
+                : "";
+            importMessage = $"لم يتم قراءة أي سجلات صحيحة{details}";
+            importSuccess = false;
+            isImporting = false;
+            StateHasChanged();
+            return;
+        }
+
+        // الاستيراد
+        importMessage = "جاري حفظ البيانات...";
+        StateHasChanged();
+
+        var count = await AttendanceService.ImportFromFingerprintAsync(records, UserSession.UserID);
+
+        var resultMsg = $"تم استيراد {count} سجل بنجاح ✅";
+        if (skippedRows.Any())
+            resultMsg += $"\nتم تجاهل {skippedRows.Count} سجل";
+
+        importMessage = resultMsg;
+        importSuccess = true;
+        StateHasChanged();
+
+        await LoadData();
+        await Task.Delay(3000);
+        CloseImportDialog();
+    }
+    catch (Exception ex)
+    {
+        importMessage = $"خطأ: {ex.Message}";
+        importSuccess = false;
+        StateHasChanged();
+    }
+    finally
+    {
+        isImporting = false;
+        StateHasChanged();
+    }
+}
+
+// دالة مساعدة لقراءة الوقت من خلية Excel
+private TimeSpan? ParseTimeCell(ClosedXML.Excel.IXLCell cell)
+{
+    try
+    {
+        if (cell == null || cell.IsEmpty()) return null;
+
+        // لو الخلية DateTime
+        if (cell.DataType == ClosedXML.Excel.XLDataType.DateTime)
+        {
+            var dt = cell.GetDateTime();
+            return dt.TimeOfDay;
+        }
+
+        // لو TimeSpan
+        if (cell.DataType == ClosedXML.Excel.XLDataType.TimeSpan)
+            return cell.GetTimeSpan();
+
+        // لو نص
+        var timeStr = cell.GetString().Trim();
+        if (string.IsNullOrWhiteSpace(timeStr)) return null;
+
+        // دعم صيغ متعددة: HH:mm أو HH:mm:ss
+        if (TimeSpan.TryParseExact(timeStr, new[] { @"hh\:mm", @"hh\:mm\:ss", @"h\:mm", @"h\:mm\:ss" },
+            null, out var ts))
+            return ts;
+
+        if (TimeSpan.TryParse(timeStr, out var ts2))
+            return ts2;
+
+        return null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+// دالة مساعدة لتحليل التاريخ بصيغ متعددة
+private bool TryParseDate(string dateStr, out DateTime result)
+{
+    result = default;
+    if (string.IsNullOrWhiteSpace(dateStr)) return false;
+
+    var formats = new[]
+    {
+        "dd/MM/yyyy",
+        "d/M/yyyy",
+        "yyyy-MM-dd",
+        "MM/dd/yyyy",
+        "dd-MM-yyyy",
+        "yyyy/MM/dd"
+    };
+
+    if (DateTime.TryParseExact(dateStr, formats,
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.None, out result))
+        return true;
+
+    return DateTime.TryParse(dateStr,
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.None, out result);
+}
+
+    private async Task<int> GetEmployeeIdByCode(string code)
+    {
+        return await LookupService.GetEmployeeIdByCodeAsync(code);
+    }
+}

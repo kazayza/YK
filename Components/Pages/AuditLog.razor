@@ -1,0 +1,517 @@
+﻿@page "/audit-log"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject AuditLogService AuditLogService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+@if (!_authorized)
+{
+    <div></div>
+}
+else
+{
+    <!-- ===== شريط العنوان ===== -->
+    <div class="page-header">
+        <div class="page-header-right">
+            <h2 class="page-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                سجل العمليات
+            </h2>
+            <span class="record-count">@_records.Count سجل</span>
+        </div>
+        <div class="page-header-left">
+            @if (PermissionService.CanExport("SCR_AUDIT"))
+            {
+                <button class="btn-action btn-export" @onclick="ExportData">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>تصدير</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- ===== بطاقات الإحصائيات ===== -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-body">
+                <span class="stat-num">@_stats.TotalActions</span>
+                <span class="stat-label">إجمالي العمليات</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">➕</div>
+            <div class="stat-body">
+                <span class="stat-num">@_stats.AddCount</span>
+                <span class="stat-label">إضافة</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">✏️</div>
+            <div class="stat-body">
+                <span class="stat-num">@_stats.EditCount</span>
+                <span class="stat-label">تعديل</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🗑️</div>
+            <div class="stat-body">
+                <span class="stat-num">@_stats.DeleteCount</span>
+                <span class="stat-label">حذف</span>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-body">
+                <span class="stat-num">@_stats.UniqueUsers</span>
+                <span class="stat-label">مستخدم فريد</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== الفلاتر ===== -->
+    <div class="filters-card">
+        <div class="filters-grid">
+
+            <div class="filter-group">
+                <label class="filter-label">من تاريخ</label>
+                <input type="date" class="filter-input" @bind="_filter.DateFrom" @bind:after="ApplyFilters" />
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">إلى تاريخ</label>
+                <input type="date" class="filter-input" @bind="_filter.DateTo" @bind:after="ApplyFilters" />
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">المستخدم</label>
+                <input type="text" class="filter-input" placeholder="اسم المستخدم..."
+                       @bind="_filter.Username" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">نوع العملية</label>
+                <select class="filter-input" @bind="_filterActionText" @bind:after="ApplyFilters">
+                    <option value="">— الكل —</option>
+                    <option value="1">إضافة</option>
+                    <option value="2">تعديل</option>
+                    <option value="3">حذف</option>
+                    <option value="4">عرض</option>
+                    <option value="5">طباعة</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">الجدول</label>
+                <select class="filter-input" @bind="_filter.TableName" @bind:after="ApplyFilters">
+                    <option value="">— الكل —</option>
+                    @foreach (var t in _tables)
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">معرّف السجل</label>
+                <input type="text" class="filter-input" placeholder="Record ID..."
+                       @bind="_filter.RecordID" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+
+            <div class="filter-group filter-actions">
+                <label class="filter-label">&nbsp;</label>
+                <button class="btn-filter-reset" @onclick="ResetFilters">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                    </svg>
+                    <span>إعادة تعيين</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ===== التحميل ===== -->
+    @if (_loading)
+    {
+        <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <span>جاري تحميل البيانات...</span>
+        </div>
+    }
+    else if (!_records.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                </svg>
+            </div>
+            <h3>لا يوجد سجلات</h3>
+            <p>لا توجد نتائج مطابقة للبحث</p>
+        </div>
+    }
+    else
+    {
+        <!-- ===== الجدول ===== -->
+        <div class="table-card">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="th-narrow">#</th>
+                            <th>التاريخ</th>
+                            <th>المستخدم</th>
+                            <th class="th-center">العملية</th>
+                            <th>الجدول</th>
+                            <th>السجل</th>
+                            <th>الوصف</th>
+                            <th>IP</th>
+                            <th class="th-center">التفاصيل</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ int rowNum = 0; }
+                        @foreach (var rec in _records)
+                        {
+                            rowNum++;
+                            <tr>
+                                <td class="td-narrow">@rowNum</td>
+                                <td>
+                                    <span class="cell-main">@rec.AuditDate.ToString("dd/MM/yyyy")</span>
+                                    <span class="cell-sub">@rec.AuditDate.ToString("hh:mm:ss tt")</span>
+                                </td>
+                                <td>
+                                    <span class="cell-main">@(rec.Username ?? "—")</span>
+                                </td>
+                                <td class="td-center">
+                                    <span class="badge @GetActionBadgeClass(rec.ActionType)">
+                                        @GetActionIcon(rec.ActionType) @rec.ActionTypeName
+                                    </span>
+                                </td>
+                                <td><span class="cell-mono">@rec.TableName</span></td>
+                                <td><span class="cell-mono">@(rec.RecordID ?? "—")</span></td>
+                                <td>
+                                    <span class="cell-desc" title="@rec.Description">
+                                        @TruncateText(rec.Description, 50)
+                                    </span>
+                                </td>
+                                <td><span class="cell-mono">@(rec.IPAddress ?? "—")</span></td>
+                                <td class="td-center">
+                                    @if (!string.IsNullOrEmpty(rec.OldValues) || !string.IsNullOrEmpty(rec.NewValues))
+                                    {
+                                        <button class="btn-icon btn-detail" @onclick="@(() => ShowDetails(rec))" title="عرض التفاصيل">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </svg>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- ===== Modal التفاصيل ===== -->
+    @if (_showDetail && _selectedRecord != null)
+    {
+        <div class="modal-overlay" @onclick="@(() => _showDetail = false)">
+            <div class="modal-box modal-wide" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3 class="modal-title">📋 تفاصيل العملية #@_selectedRecord.AuditID</h3>
+                    <button class="modal-close" @onclick="@(() => _showDetail = false)">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">المستخدم</span>
+                            <span class="detail-value">@_selectedRecord.Username</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">العملية</span>
+                            <span class="detail-value">@_selectedRecord.ActionTypeName</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">الجدول</span>
+                            <span class="detail-value">@_selectedRecord.TableName</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">معرّف السجل</span>
+                            <span class="detail-value">@(_selectedRecord.RecordID ?? "—")</span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_selectedRecord.ChangedColumns))
+                    {
+                        <div class="detail-section">
+                            <h4 class="detail-section-title">الأعمدة المُعدّلة</h4>
+                            <pre class="detail-json">@_selectedRecord.ChangedColumns</pre>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_selectedRecord.OldValues))
+                    {
+                        <div class="detail-section">
+                            <h4 class="detail-section-title">القيم القديمة</h4>
+                            <pre class="detail-json">@FormatJson(_selectedRecord.OldValues)</pre>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_selectedRecord.NewValues))
+                    {
+                        <div class="detail-section">
+                            <h4 class="detail-section-title">القيم الجديدة</h4>
+                            <pre class="detail-json">@FormatJson(_selectedRecord.NewValues)</pre>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .page-header-right { display: flex; align-items: center; gap: 12px; }
+    .page-header-left { display: flex; align-items: center; gap: 8px; }
+    .page-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 10px; margin: 0; }
+    .title-icon { width: 28px; height: 28px; color: #2563eb; }
+    .record-count { background: #f1f5f9; color: #64748b; padding: 4px 12px; border-radius: 20px; font-size: .78rem; font-weight: 700; }
+    .btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 10px; font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .2s; }
+    .btn-action svg { width: 16px; height: 16px; }
+    .btn-export { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-export:hover { background: #e2e8f0; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: white; border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px; border: 1px solid #e2e8f0; }
+    .stat-icon { font-size: 1.5rem; }
+    .stat-body { display: flex; flex-direction: column; }
+    .stat-num { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
+    .stat-label { font-size: .72rem; color: #94a3b8; font-weight: 600; }
+
+    .filters-card { background: white; border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(15,23,42,.06); border: 1px solid #e2e8f0; }
+    .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; align-items: end; }
+    .filter-group { display: flex; flex-direction: column; gap: 6px; }
+    .filter-label { font-size: .86rem; font-weight: 700; color: #475569; }
+    .filter-input { height: 44px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 14px; font-size: .9rem; background: #f8fafc; transition: all .2s; width: 100%; }
+    .filter-input:focus { border-color: #2563eb; background: white; outline: none; }
+    .btn-filter-reset { display: inline-flex; align-items: center; gap: 6px; height: 42px; padding: 0 16px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 10px; font-size: .8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .btn-filter-reset svg { width: 15px; height: 15px; }
+
+    .loading-container { display: flex; flex-direction: column; align-items: center; padding: 80px 20px; color: #64748b; gap: 16px; }
+    .loading-spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+    .empty-icon svg { width: 64px; height: 64px; opacity: .4; }
+    .empty-state h3 { font-size: 1.1rem; color: #475569; margin-bottom: 8px; }
+
+    .table-card { background: white; border-radius: 14px; box-shadow: 0 2px 8px rgba(15,23,42,.06); border: 1px solid #e2e8f0; overflow: hidden; }
+    .table-responsive { overflow-x: auto; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+    .data-table th { padding: 14px 12px; font-size: .86rem; font-weight: 800; color: #475569; text-align: right; white-space: nowrap; }
+    .data-table td { padding: 12px 14px; font-size: .9rem; color: #334155; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .data-table tbody tr:hover { background: #f8fafc; }
+    .th-narrow, .td-narrow { width: 50px; text-align: center; }
+    .th-center, .td-center { text-align: center; }
+    .cell-main { display: block; font-weight: 600; font-size: .9rem; }
+    .cell-sub { display: block; font-size: .78rem; color: #94a3b8; margin-top: 2px; }
+    .cell-mono { font-family: monospace; font-size: .84rem; color: #64748b; }
+    .cell-desc { font-size: .84rem; color: #475569; cursor: help; }
+    .cell-empty { color: #cbd5e1; }
+
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 8px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+    .badge-add { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .badge-edit { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .badge-delete { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .badge-view { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .badge-print { background: #fdf4ff; color: #86198f; border: 1px solid #e879f9; }
+
+    .btn-icon { width: 34px; height: 34px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; }
+    .btn-icon svg { width: 15px; height: 15px; }
+    .btn-detail { color: #2563eb; }
+    .btn-detail:hover { background: #eff6ff; border-color: #bfdbfe; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal-box { background: white; border-radius: 16px; width: 100%; max-width: 480px; box-shadow: 0 20px 60px rgba(15,23,42,.2); overflow: hidden; animation: modalIn .2s ease; }
+    .modal-wide { max-width: 700px; }
+    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .modal-title { font-size: .95rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .modal-close { width: 32px; height: 32px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-size: .9rem; color: #64748b; display: flex; align-items: center; justify-content: center; }
+    .modal-body { padding: 24px; max-height: 70vh; overflow-y: auto; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .detail-item { display: flex; flex-direction: column; gap: 4px; }
+    .detail-label { font-size: .74rem; font-weight: 700; color: #94a3b8; }
+    .detail-value { font-size: .88rem; font-weight: 600; color: #0f172a; }
+    .detail-section { margin-bottom: 16px; }
+    .detail-section-title { font-size: .82rem; font-weight: 800; color: #475569; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; }
+    .detail-json {
+        background: #1e293b; color: #e2e8f0; padding: 16px;
+        border-radius: 10px; font-family: monospace; font-size: .78rem;
+        white-space: pre-wrap; word-break: break-all; max-height: 200px;
+        overflow-y: auto; direction: ltr; text-align: left;
+    }
+
+    @@media (max-width: 640px) {
+        .stats-grid { grid-template-columns: 1fr; }
+        .filters-grid { grid-template-columns: 1fr; }
+        .detail-grid { grid-template-columns: 1fr; }
+        .modal-wide { max-width: 100%; }
+    }
+</style>
+
+@code {
+    private bool _authorized = false;
+    private bool _loading = true;
+    private List<AuditLogDto> _records = new();
+    private AuditLogFilterDto _filter = new();
+    private AuditStatsDto _stats = new();
+    private List<string> _tables = new();
+    private string _filterActionText = "";
+    private System.Timers.Timer? _searchTimer;
+
+    // Modal
+    private bool _showDetail = false;
+    private AuditLogDto? _selectedRecord;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (!UserSession.IsLoggedIn)
+            {
+                var restored = await UserSession.TryRestoreSessionAsync();
+                if (!restored) { Navigation.NavigateTo("/login"); return; }
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            }
+
+            if (!PermissionService.CanView("SCR_AUDIT"))
+            { Navigation.NavigateTo("/access-denied"); return; }
+
+            _authorized = true;
+
+            _filter.DateFrom = DateTime.Today.AddDays(-7);
+            _filter.DateTo = DateTime.Today;
+
+            await LoadLookups();
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadLookups()
+    {
+        try { _tables = await AuditLogService.GetDistinctTablesAsync(); }
+        catch { }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            _loading = true;
+            StateHasChanged();
+
+            _filter.ActionType = string.IsNullOrEmpty(_filterActionText) ? null : int.Parse(_filterActionText);
+
+            _records = await AuditLogService.GetAllAsync(_filter);
+            _stats = await AuditLogService.GetStatsAsync(_filter.DateFrom, _filter.DateTo);
+        }
+        catch { }
+        finally { _loading = false; }
+    }
+
+    private async Task ApplyFilters() => await LoadData();
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        _searchTimer?.Stop();
+        _searchTimer?.Dispose();
+        _searchTimer = new System.Timers.Timer(400);
+        _searchTimer.Elapsed += async (s, args) =>
+        {
+            _searchTimer?.Stop();
+            await InvokeAsync(async () => { await LoadData(); StateHasChanged(); });
+        };
+        _searchTimer.AutoReset = false;
+        _searchTimer.Start();
+    }
+
+    private async Task ResetFilters()
+    {
+        _filter = new AuditLogFilterDto
+        {
+            DateFrom = DateTime.Today.AddDays(-7),
+            DateTo = DateTime.Today
+        };
+        _filterActionText = "";
+        await LoadData();
+    }
+
+    private void ShowDetails(AuditLogDto rec)
+    {
+        _selectedRecord = rec;
+        _showDetail = true;
+    }
+
+    private string GetActionBadgeClass(int actionType) => actionType switch
+    {
+        1 => "badge-add",
+        2 => "badge-edit",
+        3 => "badge-delete",
+        4 => "badge-view",
+        5 => "badge-print",
+        _ => ""
+    };
+
+    private string GetActionIcon(int actionType) => actionType switch
+    {
+        1 => "➕",
+        2 => "✏️",
+        3 => "🗑️",
+        4 => "👁️",
+        5 => "🖨️",
+        _ => "📝"
+    };
+
+    private string TruncateText(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "—";
+        return text.Length > max ? text.Substring(0, max) + "..." : text;
+    }
+
+    private string FormatJson(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "";
+        try
+        {
+            var obj = System.Text.Json.JsonSerializer.Deserialize<object>(json);
+            return System.Text.Json.JsonSerializer.Serialize(obj,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return json; }
+    }
+
+    private void ExportData() { }
+}

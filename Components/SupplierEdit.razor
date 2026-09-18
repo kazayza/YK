@@ -1,0 +1,1342 @@
+﻿@page "/suppliers/new"
+@page "/suppliers/edit/{SupplierId:int}"
+@page "/suppliers/view/{SupplierId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@using System
+@using System.Collections.Generic
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using System.Threading.Tasks
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Rendering
+@using System.Linq
+
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SupplierService SupService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
+}
+else
+{
+    <div class="doc-page" dir="rtl" @onkeydown="OnKeyDown" @onkeydown:preventDefault="shouldPreventDefault">
+
+        <!-- Header -->
+        <div class="doc-header">
+            <div class="doc-header-right">
+                <button class="btn-m btn-ghost" @onclick="GoBack" title="رجوع (Escape)">→ رجوع</button>
+                <div>
+                    <h2 class="doc-title">@pageTitle</h2>
+                    @if (!string.IsNullOrEmpty(header.SupplierCode))
+                    {
+                        <div class="doc-num-wrap">
+                            <code class="doc-number" title="انقر للنسخ" @onclick='() => CopyToClipboard(header.SupplierCode)'>
+                                @header.SupplierCode
+                            </code>
+                            <span class="type-chip" style="--tc:@SupplierService.GetTypeColor(header.SupplierType)">
+                                @SupplierService.GetTypeName(header.SupplierType)
+                            </span>
+                            <span class="rating-chip">@(new string('⭐', header.Rating))</span>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="doc-header-left">
+                @if (permissions.CanPrint && SupplierId > 0)
+                {
+                    <button class="btn-m btn-outline" @onclick="PrintCard" disabled="@isPrintLoading" title="طباعة (Ctrl+P)">
+                        @if (isPrintLoading) { <div class="btn-spin"></div> } else { <span>🖨️</span> }
+                        طباعة
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-st"><div class="loader"></div></div>
+        }
+        else
+        {
+            <!-- Tabs -->
+            <div class="tabs-bar">
+                <button class="tab @(activeTab == 0 ? "tab-active" : "")" @onclick="() => SelectTab(0)">
+                    📝 البيانات الأساسية
+                </button>
+                @if (SupplierId > 0)
+                {
+                    <button class="tab @(activeTab == 1 ? "tab-active" : "")" @onclick="() => SelectTab(1)">
+                        👥 جهات الاتصال <span class="tab-count">@contacts.Count</span>
+                    </button>
+                    <button class="tab @(activeTab == 2 ? "tab-active" : "")" @onclick="() => SelectTab(2)">
+                        📦 الأصناف <span class="tab-count">@supplierItems.Count</span>
+                    </button>
+                    <button class="tab @(activeTab == 3 ? "tab-active" : "")" @onclick="() => SelectTab(3)">
+                        📊 كشف الحساب <span class="tab-count">@statement.Count</span>
+                    </button>
+                }
+            </div>
+
+            <!-- Tab 0: البيانات الأساسية -->
+            @if (activeTab == 0)
+            {
+                <div class="doc-section">
+                    <div class="sec-head"><div class="sec-icon blue">🏭</div><h3 class="sec-title">البيانات الأساسية</h3></div>
+                    <div class="form-grid c4">
+                        <div class="f-field">
+                            <label class="f-label">الكود</label>
+                            <input type="text" class="f-input" value="@(header.SupplierCode ?? "تلقائي")" disabled />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">اسم المورد (عربي)</label>
+                            <input type="text" class="f-input @(supplierErrors.ContainsKey(nameof(header.SupplierNameAr)) ? "input-error" : "")"
+                                   @bind="header.SupplierNameAr" disabled="@isReadOnly" placeholder="اسم المورد بالعربي..." />
+                            @if (supplierErrors.ContainsKey(nameof(header.SupplierNameAr)))
+                            {
+                                <span class="field-error">@supplierErrors[nameof(header.SupplierNameAr)]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">اسم المورد (إنجليزي)</label>
+                            <input type="text" class="f-input" @bind="header.SupplierNameEn" disabled="@isReadOnly" placeholder="Supplier name..." />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">النوع</label>
+                            <select class="f-input @(supplierErrors.ContainsKey(nameof(header.SupplierType)) ? "input-error" : "")"
+                                    @bind="header.SupplierType" disabled="@isReadOnly">
+                                <option value="1">🟣 مورد خامات</option>
+                                <option value="2">🔵 مورد تعبئة</option>
+                                <option value="3">🟠 مورد خدمات</option>
+                                <option value="4">⚪ مورد عام</option>
+                            </select>
+                            @if (supplierErrors.ContainsKey(nameof(header.SupplierType)))
+                            {
+                                <span class="field-error">@supplierErrors[nameof(header.SupplierType)]</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="doc-section">
+                    <div class="sec-head"><div class="sec-icon green">📞</div><h3 class="sec-title">بيانات التواصل</h3></div>
+                    <div class="form-grid c4">
+                        <div class="f-field">
+                            <label class="f-label">هاتف 1</label>
+                            <input type="text" class="f-input @(supplierErrors.ContainsKey("Phone1") ? "input-error" : "")"
+                                   @bind="header.Phone1" disabled="@isReadOnly" placeholder="رقم الهاتف..." />
+                            @if (supplierErrors.ContainsKey("Phone1"))
+                            {
+                                <span class="field-error">@supplierErrors["Phone1"]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">هاتف 2</label>
+                            <input type="text" class="f-input @(supplierErrors.ContainsKey("Phone2") ? "input-error" : "")"
+                                   @bind="header.Phone2" disabled="@isReadOnly" />
+                            @if (supplierErrors.ContainsKey("Phone2"))
+                            {
+                                <span class="field-error">@supplierErrors["Phone2"]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">موبايل</label>
+                            <input type="text" class="f-input @(supplierErrors.ContainsKey("Mobile") ? "input-error" : "")"
+                                   @bind="header.Mobile" disabled="@isReadOnly" />
+                            @if (supplierErrors.ContainsKey("Mobile"))
+                            {
+                                <span class="field-error">@supplierErrors["Mobile"]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">البريد الإلكتروني</label>
+                            <input type="email" class="f-input @(supplierErrors.ContainsKey(nameof(header.Email)) ? "input-error" : "")"
+                                   @bind="header.Email" disabled="@isReadOnly" />
+                            @if (supplierErrors.ContainsKey(nameof(header.Email)))
+                            {
+                                <span class="field-error">@supplierErrors[nameof(header.Email)]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">الموقع الإلكتروني</label>
+                            <input type="text" class="f-input" @bind="header.Website" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">المدينة</label>
+                            <input type="text" class="f-input" @bind="header.City" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">الدولة</label>
+                            <input type="text" class="f-input" @bind="header.Country" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">العنوان</label>
+                            <input type="text" class="f-input" @bind="header.Address" disabled="@isReadOnly" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="doc-section">
+                    <div class="sec-head"><div class="sec-icon orange">📋</div><h3 class="sec-title">البيانات القانونية والمالية</h3></div>
+                    <div class="form-grid c4">
+                        <div class="f-field">
+                            <label class="f-label">الرقم الضريبي</label>
+                            <input type="text" class="f-input" @bind="header.TaxNumber" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">السجل التجاري</label>
+                            <input type="text" class="f-input" @bind="header.CommercialRegister" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">شروط الدفع</label>
+                            <select class="f-input" @bind="header.PaymentTermID" disabled="@isReadOnly">
+                                <option value="0">-- اختر --</option>
+                                @if (paymentTerms != null)
+                                {
+                                    @foreach (var pt in paymentTerms)
+                                    {
+                                        <option value="@pt.Id">@pt.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">العملة</label>
+                            <select class="f-input" @bind="header.CurrencyID" disabled="@isReadOnly">
+                                <option value="0">-- اختر --</option>
+                                @if (currencies != null)
+                                {
+                                    @foreach (var c in currencies)
+                                    {
+                                        <option value="@c.Id">@c.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label required">حد الائتمان</label>
+                            <input type="number" class="f-input @(supplierErrors.ContainsKey(nameof(header.CreditLimit)) ? "input-error" : "")"
+                                   @bind="header.CreditLimit" step="0.01" disabled="@isReadOnly" />
+                            @if (supplierErrors.ContainsKey(nameof(header.CreditLimit)))
+                            {
+                                <span class="field-error">@supplierErrors[nameof(header.CreditLimit)]</span>
+                            }
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">الرصيد الافتتاحي</label>
+                            <input type="number" class="f-input" @bind="header.OpeningBalance" step="0.01"
+                                   disabled="@(isReadOnly || SupplierId > 0)" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">التقييم</label>
+                            <select class="f-input" @bind="header.Rating" disabled="@isReadOnly">
+                                @foreach (SupplierRating rating in Enum.GetValues(typeof(SupplierRating)))
+                                {
+                                    <option value="@((int)rating)">@GetRatingName(rating)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="doc-section">
+                    <div class="sec-head"><div class="sec-icon purple">🏦</div><h3 class="sec-title">البيانات البنكية</h3></div>
+                    <div class="form-grid c3">
+                        <div class="f-field">
+                            <label class="f-label">اسم البنك</label>
+                            <input type="text" class="f-input" @bind="header.BankName" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">رقم الحساب</label>
+                            <input type="text" class="f-input" @bind="header.BankAccountNumber" disabled="@isReadOnly" />
+                        </div>
+                        <div class="f-field">
+                            <label class="f-label">IBAN</label>
+                            <input type="text" class="f-input" @bind="header.IBAN" disabled="@isReadOnly" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="doc-section">
+                    <div class="form-grid c1">
+                        <div class="f-field">
+                            <label class="f-label">ملاحظات</label>
+                            <textarea class="f-input" rows="3" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات عامة..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                @if (!isViewMode)
+                {
+                    <div class="doc-actions">
+                        <div>
+                            <button class="btn-m btn-primary" @onclick="SaveSupplier" disabled="@isSaving" title="حفظ (Ctrl+S)">
+                                @if (isSaving) { <div class="btn-spin"></div> } @(isNewMode ? "💾 حفظ المورد" : "💾 حفظ التعديلات")
+                            </button>
+                            @if (!isNewMode && HasChanges())
+                            {
+                                <span class="unsaved-indicator">* هناك تعديلات غير محفوظة</span>
+                            }
+                        </div>
+                        <button class="btn-m btn-ghost" @onclick="GoBack" title="رجوع">رجوع</button>
+                    </div>
+                }
+            }
+
+            <!-- Tab 1: جهات الاتصال -->
+            @if (activeTab == 1 && SupplierId > 0)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon green">👥</div>
+                        <h3 class="sec-title">جهات الاتصال</h3>
+                        <span class="sec-badge">@contacts.Count</span>
+                        @if (!isViewMode)
+                        {
+                            <button class="btn-m btn-primary btn-sm" @onclick="ShowAddContact" style="margin-right:auto;">+ إضافة</button>
+                        }
+                    </div>
+
+                    @if (!contacts.Any() && !showContactForm)
+                    {
+                        <div class="empty-lines"><p>لا توجد جهات اتصال</p></div>
+                    }
+                    else if (contacts.Any())
+                    {
+                        <div class="tbl-card">
+                            <table class="tbl">
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>الاسم</th><th>المنصب</th><th>الهاتف</th><th>الموبايل</th><th>البريد</th>
+                                        <th class="tc">رئيسي</th>
+                                        @if (!isViewMode) { <th class="tc">إجراءات</th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ int cn = 0; }
+                                    @foreach (var c in contacts)
+                                    {
+                                        cn++;
+                                        <tr>
+                                            <td class="td-n">@cn</td>
+                                            <td class="td-name">@c.ContactName</td>
+                                            <td class="td-muted">@(c.JobTitle ?? "—")</td>
+                                            <td>@(c.Phone ?? "—")</td>
+                                            <td>@(c.Mobile ?? "—")</td>
+                                            <td>@(c.Email ?? "—")</td>
+                                            <td class="tc">@(c.IsPrimary ? "✅" : "")</td>
+                                            @if (!isViewMode)
+                                            {
+                                                <td class="tc">
+                                                    <button class="act-btn" @onclick="() => ShowDeleteContact(c.ContactID)" title="حذف">🗑️</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @if (showContactForm)
+                    {
+                        <div class="line-form">
+                            <div class="line-form-head">
+                                <h4>إضافة جهة اتصال</h4>
+                                <button class="btn-close-x" @onclick="() => showContactForm = false" title="إغلاق">✕</button>
+                            </div>
+                            <div class="form-grid c3">
+                                <div class="f-field">
+                                    <label class="f-label required">الاسم</label>
+                                    <input type="text" class="f-input @(contactErrors.ContainsKey(nameof(newContact.ContactName)) ? "input-error" : "")"
+                                           @bind="newContact.ContactName" />
+                                    @if (contactErrors.ContainsKey(nameof(newContact.ContactName)))
+                                    {
+                                        <span class="field-error">@contactErrors[nameof(newContact.ContactName)]</span>
+                                    }
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">المنصب</label>
+                                    <input type="text" class="f-input" @bind="newContact.JobTitle" />
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">الهاتف</label>
+                                    <input type="text" class="f-input @(contactErrors.ContainsKey("Phone") ? "input-error" : "")"
+                                           @bind="newContact.Phone" />
+                                    @if (contactErrors.ContainsKey("Phone"))
+                                    {
+                                        <span class="field-error">@contactErrors["Phone"]</span>
+                                    }
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">الموبايل</label>
+                                    <input type="text" class="f-input @(contactErrors.ContainsKey("Mobile") ? "input-error" : "")"
+                                           @bind="newContact.Mobile" />
+                                    @if (contactErrors.ContainsKey("Mobile"))
+                                    {
+                                        <span class="field-error">@contactErrors["Mobile"]</span>
+                                    }
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">البريد</label>
+                                    <input type="email" class="f-input @(contactErrors.ContainsKey(nameof(newContact.Email)) ? "input-error" : "")"
+                                           @bind="newContact.Email" />
+                                    @if (contactErrors.ContainsKey(nameof(newContact.Email)))
+                                    {
+                                        <span class="field-error">@contactErrors[nameof(newContact.Email)]</span>
+                                    }
+                                </div>
+                                <div class="f-field">
+                                    <label class="f-label">رئيسي؟</label>
+                                    <select class="f-input" @bind="newContact.IsPrimary">
+                                        <option value="false">لا</option>
+                                        <option value="true">نعم</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="line-form-btns">
+                                <button class="btn-m btn-primary" @onclick="SaveContact">💾 حفظ</button>
+                                <button class="btn-m btn-ghost" @onclick="() => showContactForm = false">إلغاء</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Tab 2: الأصناف -->
+            @if (activeTab == 2 && SupplierId > 0)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon blue">📦</div>
+                        <h3 class="sec-title">أصناف المورد</h3>
+                        <span class="sec-badge">@supplierItems.Count</span>
+                        @if (!isViewMode)
+                        {
+                            <button class="btn-m btn-primary btn-sm" @onclick="ShowAddItem" style="margin-right:auto;">+ إضافة صنف</button>
+                        }
+                    </div>
+
+                    @if (!supplierItems.Any() && !showItemForm)
+                    {
+                        <div class="empty-lines"><p>لا توجد أصناف مرتبطة</p></div>
+                    }
+                    else if (supplierItems.Any())
+                    {
+                        <div class="tbl-card">
+                            <table class="tbl">
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>الكود</th><th>الصنف</th><th>كود المورد</th><th class="tl">السعر</th>
+                                        <th class="tc">أقل كمية</th><th class="tc">مدة التوريد</th><th class="tc">رئيسي</th>
+                                        @if (!isViewMode) { <th class="tc">إجراءات</th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ int sn = 0; }
+                                    @foreach (var si in supplierItems)
+                                    {
+                                        sn++;
+                                        <tr>
+                                            <td class="td-n">@sn</td>
+                                            <td><code class="code-tag">@si.ItemCode</code></td>
+                                            <td class="td-name">@si.ItemNameAr</td>
+                                            <td class="td-muted">@(si.SupplierItemCode ?? "—")</td>
+                                            <td class="tl num-cell">@si.UnitPrice.ToString("#,##0.00")</td>
+                                            <td class="tc">@si.MinOrderQty.ToString("#,##0.##")</td>
+                                            <td class="tc">@si.LeadTimeDays يوم</td>
+                                            <td class="tc">@(si.IsPrimary ? "✅" : "")</td>
+                                            @if (!isViewMode)
+                                            {
+                                                <td class="tc">
+                                                    <button class="act-btn" @onclick="() => ShowDeleteItem(si.SupplierItemID)" title="حذف">🗑️</button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @if (showItemForm)
+                    {
+                        <div class="line-form">
+                            <div class="line-form-head">
+                                <h4>إضافة صنف للمورد</h4>
+                                <button class="btn-close-x" @onclick="() => showItemForm = false" title="إغلاق">✕</button>
+                            </div>
+                            @if (isLoadingItems)
+                            {
+                                <div class="loading-inline"><div class="loader-sm"></div> جاري التحميل...</div>
+                            }
+                            else
+                            {
+                                <div class="form-grid c3">
+                                    <div class="f-field">
+                                        <label class="f-label required">الصنف</label>
+                                        <select class="f-input @(itemErrors.ContainsKey(nameof(newItem.ItemID)) ? "input-error" : "")"
+                                                @onchange="@((ChangeEventArgs e) => { if (int.TryParse(e.Value?.ToString(), out int id)) HandleItemSelected(id); })">
+                                            <option value="0">-- اختر صنف --</option>
+                                            @if (allItems != null)
+                                            {
+                                                @foreach (var item in allItems)
+                                                {
+                                                    <option value="@item.Id" selected="@(newItem.ItemID == item.Id)">@(item.Code ?? "") - @item.Name</option>
+                                                }
+                                            }
+                                        </select>
+                                        @if (itemErrors.ContainsKey(nameof(newItem.ItemID)))
+                                        {
+                                            <span class="field-error">@itemErrors[nameof(newItem.ItemID)]</span>
+                                        }
+                                    </div>
+                                    <div class="f-field">
+                                        <label class="f-label">كود المورد للصنف</label>
+                                        <input type="text" class="f-input" @bind="newItem.SupplierItemCode" />
+                                    </div>
+                                    <div class="f-field">
+                                        <label class="f-label required">السعر</label>
+                                        <input type="number" class="f-input @(itemErrors.ContainsKey(nameof(newItem.UnitPrice)) ? "input-error" : "")"
+                                               @bind="newItem.UnitPrice" step="0.01" />
+                                        @if (itemErrors.ContainsKey(nameof(newItem.UnitPrice)))
+                                        {
+                                            <span class="field-error">@itemErrors[nameof(newItem.UnitPrice)]</span>
+                                        }
+                                    </div>
+                                    <div class="f-field">
+                                        <label class="f-label">أقل كمية طلب</label>
+                                        <input type="number" class="f-input @(itemErrors.ContainsKey(nameof(newItem.MinOrderQty)) ? "input-error" : "")"
+                                               @bind="newItem.MinOrderQty" step="0.01" />
+                                        @if (itemErrors.ContainsKey(nameof(newItem.MinOrderQty)))
+                                        {
+                                            <span class="field-error">@itemErrors[nameof(newItem.MinOrderQty)]</span>
+                                        }
+                                    </div>
+                                    <div class="f-field">
+                                        <label class="f-label">مدة التوريد (يوم)</label>
+                                        <input type="number" class="f-input @(itemErrors.ContainsKey(nameof(newItem.LeadTimeDays)) ? "input-error" : "")"
+                                               @bind="newItem.LeadTimeDays" />
+                                        @if (itemErrors.ContainsKey(nameof(newItem.LeadTimeDays)))
+                                        {
+                                            <span class="field-error">@itemErrors[nameof(newItem.LeadTimeDays)]</span>
+                                        }
+                                    </div>
+                                    <div class="f-field">
+                                        <label class="f-label">مورد رئيسي؟</label>
+                                        <select class="f-input" @bind="newItem.IsPrimary">
+                                            <option value="false">لا</option>
+                                            <option value="true">نعم</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+                            <div class="line-form-btns">
+                                <button class="btn-m btn-primary" @onclick="SaveItem" disabled="@isLoadingItems">💾 حفظ</button>
+                                <button class="btn-m btn-ghost" @onclick="() => showItemForm = false">إلغاء</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Tab 3: كشف الحساب -->
+            @if (activeTab == 3 && SupplierId > 0)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon orange">📊</div>
+                        <h3 class="sec-title">كشف حساب المورد</h3>
+                        <span class="sec-badge">@statement.Count حركة</span>
+                        @if (header.CurrentBalance != 0)
+                        {
+                            <span class="bal-chip @(header.CurrentBalance > 0 ? "bal-neg" : "bal-pos")">
+                                الرصيد: @header.CurrentBalance.ToString("#,##0.00") ج.م
+                            </span>
+                        }
+                    </div>
+
+                    @if (!statement.Any())
+                    {
+                        <div class="empty-lines"><p>لا توجد حركات</p></div>
+                    }
+                    else
+                    {
+                        <div class="tbl-card">
+                            <table class="tbl">
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>التاريخ</th><th>النوع</th><th>المستند</th><th class="tl">مدين (له)</th>
+                                        <th class="tl">دائن (منه)</th><th class="tl">الرصيد</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ int stn = 0; decimal runBal = 0; }
+                                    @foreach (var st in statement)
+                                    {
+                                        stn++;
+                                        runBal += st.DebitAmount - st.CreditAmount;
+                                        <tr>
+                                            <td class="td-n">@stn</td>
+                                            <td>@st.TransDate.ToString("dd/MM/yyyy")</td>
+                                            <td>@st.TransType</td>
+                                            <td><code class="code-tag">@st.DocNumber</code></td>
+                                            <td class="tl num-cell @(st.DebitAmount > 0 ? "amt-debit" : "")">
+                                                @(st.DebitAmount > 0 ? st.DebitAmount.ToString("#,##0.00") : "—")
+                                            </td>
+                                            <td class="tl num-cell @(st.CreditAmount > 0 ? "amt-credit" : "")">
+                                                @(st.CreditAmount > 0 ? st.CreditAmount.ToString("#,##0.00") : "—")
+                                            </td>
+                                            <td class="tl num-cell"><strong>@runBal.ToString("#,##0.00")</strong></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="total-row">
+                                        <td colspan="4" class="tl"><strong>الإجمالي</strong></td>
+                                        <td class="tl num-cell amt-debit"><strong>@statement.Sum(s => s.DebitAmount).ToString("#,##0.00")</strong></td>
+                                        <td class="tl num-cell amt-credit"><strong>@statement.Sum(s => s.CreditAmount).ToString("#,##0.00")</strong></td>
+                                        <td class="tl num-cell"><strong>@runBal.ToString("#,##0.00") ج.م</strong></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Delete Confirmation Dialogs -->
+    @if (showDeleteContactDialog && contactToDelete != null)
+    {
+        <div class="modal-ov" @onclick="() => showDeleteContactDialog = false">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <h4>🗑️ حذف جهة اتصال</h4>
+                <p>هل تريد حذف: <strong>@contactToDelete.ContactName</strong>؟</p>
+                <p class="modal-subtitle">هذا الإجراء لا يمكن التراجع عنه</p>
+                <div class="modal-btns">
+                    <button class="btn-m btn-danger" @onclick="ConfirmDeleteContact">🗑️ حذف نهائي</button>
+                    <button class="btn-m btn-ghost" @onclick="() => showDeleteContactDialog = false">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (showDeleteItemDialog && itemToDelete != null)
+    {
+        <div class="modal-ov" @onclick="() => showDeleteItemDialog = false">
+            <div class="modal-box" @onclick:stopPropagation="true">
+                <h4>🗑️ حذف صنف</h4>
+                <p>هل تريد حذف: <strong>@itemToDelete.ItemNameAr</strong>؟</p>
+                <p class="modal-subtitle">هذا الإجراء لا يمكن التراجع عنه</p>
+                <div class="modal-btns">
+                    <button class="btn-m btn-danger" @onclick="ConfirmDeleteItem">🗑️ حذف نهائي</button>
+                    <button class="btn-m btn-ghost" @onclick="() => showDeleteItemDialog = false">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Toast Notification -->
+    @if (!string.IsNullOrEmpty(toast))
+    {
+        <div class="toast-wrap">
+            <div class="toast @(toastOk ? "t-ok" : "t-err")">
+                <span>@toast</span>
+                <button @onclick='() => toast = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    /* ... Keep existing styles exactly as provided ... */
+    .doc-page{display:flex;flex-direction:column;gap:18px;max-width:1200px}
+    .doc-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}
+    .doc-header-right{display:flex;align-items:flex-start;gap:14px}.doc-header-left{display:flex;gap:8px}
+    .doc-title{font-weight:800;color:#0f172a;margin:0;font-size:1.2rem}
+    .doc-num-wrap{display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap}
+    .doc-number{background:#f1f5f9;padding:4px 14px;border-radius:8px;font-size:.88rem;color:#2563eb;font-weight:700;cursor:pointer;transition:.2s}
+    .doc-number:hover{background:#bfdbfe;color:#1e40af}
+    .type-chip{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc)}
+    .rating-chip{font-size:.82rem}
+
+    .tabs-bar{display:flex;gap:4px;background:#f1f5f9;border-radius:14px;padding:4px;flex-wrap:wrap}
+    .tab{padding:10px 18px;border-radius:10px;border:none;background:transparent;font-weight:700;font-size:.86rem;cursor:pointer;color:#64748b;transition:.2s;display:flex;align-items:center;gap:6px}
+    .tab:hover{background:rgba(255,255,255,.6)}
+    .tab-active{background:white!important;color:#0f172a;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    .tab-count{background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+    .tab-active .tab-count{background:#2563eb;color:white}
+
+    .doc-section{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:22px}
+    .sec-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+    .sec-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}
+    .sec-icon.blue{background:#eff6ff}.sec-icon.green{background:#ecfdf5}.sec-icon.orange{background:#fff7ed}.sec-icon.purple{background:#f5f3ff}
+    .sec-title{font-weight:800;color:#0f172a;margin:0;font-size:.98rem}
+    .sec-badge{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.78rem;font-weight:700}
+    .bal-chip{padding:5px 14px;border-radius:999px;font-size:.82rem;font-weight:800}.bal-neg{background:#fef2f2;color:#dc2626}.bal-pos{background:#ecfdf5;color:#059669}
+
+    .form-grid{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c1{grid-template-columns:1fr}
+    .f-field{display:flex;flex-direction:column;gap:5px}
+    .f-label{font-size:.82rem;font-weight:700;color:#334155}.required::after{content:' *';color:#ef4444}
+    .f-input{padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.88rem;background:white;outline:none;width:100%;transition:.2s}
+    .f-input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+    .f-input:disabled{background:#f8fafc;color:#64748b}
+    .f-input.input-error{border-color:#ef4444;background:#fef2f2}
+    .field-error{font-size:.75rem;color:#dc2626;font-weight:600;margin-top:2px}
+
+    .tbl-card{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;overflow-x:auto}
+    .tbl{width:100%;border-collapse:collapse;min-width:800px}.tbl thead{background:#f8fafc}
+    .tbl th{padding:11px 12px;font-size:.8rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}
+    .tbl td{padding:10px 12px;font-size:.86rem;color:#334155;border-bottom:1px solid #f1f5f9;line-height:1.5}
+    .tbl tbody tr:hover{background:#f8fafc}
+    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;text-align:center}.td-name{font-weight:800;color:#0f172a}.td-muted{color:#64748b}
+    .num-cell{font-family:monospace;font-weight:700}.code-tag{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.8rem;color:#2563eb;font-weight:700}
+    .total-row{background:#f8fafc!important}.total-row td{border-top:2px solid #e2e8f0;padding:12px}
+    .amt-debit{color:#dc2626}.amt-credit{color:#059669}
+
+    .line-form{margin-top:16px;padding:18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px}
+    .line-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+    .line-form-head h4{font-weight:800;margin:0}.btn-close-x{background:none;border:none;font-size:1.1rem;cursor:pointer;color:#94a3b8;opacity:.7;transition:.2s}
+    .btn-close-x:hover{opacity:1;color:#0f172a}
+    .line-form-btns{display:flex;gap:8px;margin-top:14px}
+    .empty-lines{text-align:center;padding:30px;color:#94a3b8}
+    .act-btn{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem;transition:.2s}
+    .act-btn:hover{background:#f8fafc}
+
+    .doc-actions{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:white;border:1px solid #e2e8f0;border-radius:16px;flex-wrap:wrap;gap:10px}
+    .unsaved-indicator{color:#f59e0b;font-size:.82rem;font-weight:600}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer;transition:.2s}
+    .btn-m:disabled{opacity:.6;cursor:not-allowed}
+    .btn-m.btn-sm{padding:7px 14px;font-size:.82rem}
+    .btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}
+    .btn-outline{background:white;color:#475569;border:1.5px solid #e2e8f0}
+    .btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
+    .btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}
+    .btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+
+    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal-box{background:white;border-radius:20px;padding:28px;max-width:420px;width:100%;text-align:center}
+    .modal-box h4{font-weight:800;margin:0 0 8px}
+    .modal-box p{color:#475569;margin:8px 0}
+    .modal-subtitle{font-size:.82rem;color:#94a3b8;margin-bottom:16px!important}
+    .modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:20px}
+
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}
+    .toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}
+    .t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto;transition:.2s}
+    .toast button:hover{opacity:1}
+
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}
+    .loading-inline{display:flex;align-items:center;gap:8px;padding:12px;color:#64748b;font-size:.86rem}
+    .loader-sm{width:16px;height:16px;border:2px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .6s linear infinite}
+
+    .no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @@media(max-width:768px){.c4,.c3{grid-template-columns:1fr}.doc-header{flex-direction:column}.tabs-bar{flex-direction:column}.modal-box{max-width:90vw}}
+</style>
+
+@code {
+    // ==========================================
+    // Original Code Behind (Unchanged)
+    // ==========================================
+    // Enum Definition
+    private enum SupplierRating
+    {
+        Poor = 1,           // ⭐ ضعيف
+        Acceptable = 2,     // ⭐⭐ مقبول
+        Good = 3,           // ⭐⭐⭐ جيد
+        VeryGood = 4,       // ⭐⭐⭐⭐ جيد جداً
+        Excellent = 5       // ⭐⭐⭐⭐⭐ ممتاز
+    }
+
+    [Parameter] public int SupplierId { get; set; }
+
+    // Models
+    private SupplierEditDto header = new() { SupplierType = 1, Rating = 3, Country = "مصر" };
+    private SupplierEditDto? originalHeader;
+    private List<SupplierContactDto> contacts = new();
+    private List<SupplierItemDto> supplierItems = new();
+    private List<SupplierStatementDto> statement = new();
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? paymentTerms, currencies;
+    private List<SearchableItem>? allItems;
+
+    // Form States
+    private int activeTab = 0;
+    private bool isLoading = true, isSaving = false, isLoadingItems = false, isPrintLoading = false;
+    private string toast = ""; private bool toastOk = true;
+    private bool shouldPreventDefault = false;
+
+    // Contact Form
+    private bool showContactForm = false, showDeleteContactDialog = false;
+    private SupplierContactDto newContact = new();
+    private SupplierContactDto? contactToDelete;
+    private Dictionary<string, string> contactErrors = new();
+
+    // Item Form
+    private bool showItemForm = false, showDeleteItemDialog = false;
+    private SupplierItemEditDto newItem = new();
+    private SupplierItemDto? itemToDelete;
+    private Dictionary<string, string> itemErrors = new();
+
+    // Validation
+    private Dictionary<string, string> supplierErrors = new();
+
+    // Properties
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => SupplierId == 0;
+    private bool isReadOnly => isViewMode;
+    private string pageTitle => isNewMode ? "مورد جديد" : isViewMode ? "عرض بيانات المورد" : "تعديل المورد";
+
+    // ==========================================
+    // Initialization
+    // ==========================================
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Security Checks
+            if (!UserSession.IsLoggedIn) 
+            { 
+                Navigation.NavigateTo("/login"); 
+                return; 
+            }
+
+            if (!PermissionService.IsLoaded) 
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            permissions = PermissionService.GetModule("SCR_SUPPLIERS");
+
+            if (permissions == null || !permissions.CanView) 
+                return;
+
+            // Mode-specific permission checks
+            if (isViewMode && !permissions.CanView)
+            {
+                toast = "ليس لديك صلاحية العرض";
+                toastOk = false;
+                return;
+            }
+
+            if (!isViewMode && SupplierId > 0 && !permissions.CanEdit)
+            {
+                toast = "ليس لديك صلاحية التعديل";
+                toastOk = false;
+                return;
+            }
+
+            if (isNewMode && !permissions.CanAdd)
+            {
+                toast = "ليس لديك صلاحية الإضافة";
+                toastOk = false;
+                return;
+            }
+
+            // Load Lookups
+            paymentTerms = await LookupService.GetPaymentTermsAsync();
+            currencies = await LookupService.GetCurrenciesAsync();
+
+            // Load Supplier Data
+            if (SupplierId > 0)
+            {
+                var loaded = await SupService.GetSupplierByIdAsync(SupplierId);
+                if (loaded != null)
+                {
+                    // Keep original for change detection
+                    originalHeader = JsonSerializer.Deserialize<SupplierEditDto>(
+                        JsonSerializer.Serialize(loaded)) ?? loaded;
+                    
+                    header = loaded;
+                    contacts = await SupService.GetContactsAsync(SupplierId);
+                    supplierItems = await SupService.GetSupplierItemsAsync(SupplierId);
+                    statement = await SupService.GetStatementAsync(SupplierId);
+                }
+                else 
+                { 
+                    await ShowToast("المورد غير موجود", false); 
+                }
+            }
+        }
+        catch (Exception ex) 
+        { 
+            await ShowToast($"خطأ: {ex.Message}", false); 
+        }
+        finally 
+        { 
+            isLoading = false; 
+            StateHasChanged(); 
+        }
+    }
+
+    // ==========================================
+    // Keyboard Shortcuts
+    // ==========================================
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // Ctrl+S للحفظ
+        if (e.CtrlKey && e.Key == "s")
+        {
+            // Prevent default is tricky in Blazor without JS interop for specific keys.
+            // We'll just call the method.
+            if (!isViewMode && !isSaving)
+                await SaveSupplier();
+        }
+
+        // Escape للإغلاق
+        if (e.Key == "Escape")
+        {
+            if (showContactForm)
+                showContactForm = false;
+            else if (showItemForm)
+                showItemForm = false;
+            else if (showDeleteContactDialog)
+                showDeleteContactDialog = false;
+            else if (showDeleteItemDialog)
+                showDeleteItemDialog = false;
+            else
+                GoBack();
+        }
+
+        // Ctrl+P للطباعة
+        if (e.CtrlKey && e.Key == "p")
+        {
+            if (SupplierId > 0 && permissions?.CanPrint == true)
+                await PrintCard();
+        }
+    }
+
+    // ==========================================
+    // Tab Navigation
+    // ==========================================
+    private async Task SelectTab(int tabIndex)
+    {
+        // Warn about unsaved changes
+        if (activeTab == 0 && HasChanges() && !isViewMode)
+        {
+            var confirmed = await JS.InvokeAsync<bool>("confirm",
+                "هناك تعديلات غير محفوظة. هل تريد المتابعة؟");
+
+            if (!confirmed) return;
+        }
+
+        activeTab = tabIndex;
+        StateHasChanged();
+    }
+
+    // ==========================================
+    // Validation Methods
+    // ==========================================
+    private bool HasChanges()
+    {
+        if (originalHeader == null) return false;
+        return !JsonSerializer.Serialize(header).Equals(
+            JsonSerializer.Serialize(originalHeader));
+    }
+
+    private List<string> ValidateSupplier()
+    {
+        supplierErrors.Clear();
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(header.SupplierNameAr))
+        {
+            errors.Add("اسم المورد (عربي) مطلوب");
+            supplierErrors[nameof(header.SupplierNameAr)] = "اسم المورد مطلوب";
+        }
+
+        if (header.SupplierType < 1 || header.SupplierType > 4)
+        {
+            errors.Add("نوع المورد غير صحيح");
+            supplierErrors[nameof(header.SupplierType)] = "نوع غير صحيح";
+        }
+
+        if (header.CreditLimit < 0)
+        {
+            errors.Add("حد الائتمان يجب أن يكون موجب أو صفر");
+            supplierErrors[nameof(header.CreditLimit)] = "يجب أن يكون موجب";
+        }
+
+        if (!string.IsNullOrEmpty(header.Email) && !IsValidEmail(header.Email))
+        {
+            errors.Add("البريد الإلكتروني غير صحيح");
+            supplierErrors[nameof(header.Email)] = "بريد غير صحيح";
+        }
+
+        if (!string.IsNullOrEmpty(header.Phone1) && !IsValidPhone(header.Phone1))
+        {
+            errors.Add("رقم الهاتف 1 غير صحيح");
+            supplierErrors["Phone1"] = "رقم غير صحيح";
+        }
+
+        if (!string.IsNullOrEmpty(header.Phone2) && !IsValidPhone(header.Phone2))
+        {
+            errors.Add("رقم الهاتف 2 غير صحيح");
+            supplierErrors["Phone2"] = "رقم غير صحيح";
+        }
+
+        if (!string.IsNullOrEmpty(header.Mobile) && !IsValidPhone(header.Mobile))
+        {
+            errors.Add("رقم الموبايل غير صحيح");
+            supplierErrors["Mobile"] = "رقم غير صحيح";
+        }
+
+        return errors;
+    }
+
+    private List<string> ValidateContact()
+    {
+        contactErrors.Clear();
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(newContact.ContactName))
+        {
+            errors.Add("اسم جهة الاتصال مطلوب");
+            contactErrors[nameof(newContact.ContactName)] = "مطلوب";
+        }
+
+        if (!string.IsNullOrEmpty(newContact.Email) && !IsValidEmail(newContact.Email))
+        {
+            errors.Add("البريد الإلكتروني غير صحيح");
+            contactErrors[nameof(newContact.Email)] = "بريد غير صحيح";
+        }
+
+        if (!string.IsNullOrEmpty(newContact.Phone) && !IsValidPhone(newContact.Phone))
+        {
+            errors.Add("رقم الهاتف غير صحيح");
+            contactErrors["Phone"] = "رقم غير صحيح";
+        }
+
+        if (!string.IsNullOrEmpty(newContact.Mobile) && !IsValidPhone(newContact.Mobile))
+        {
+            errors.Add("رقم الموبايل غير صحيح");
+            contactErrors["Mobile"] = "رقم غير صحيح";
+        }
+
+        return errors;
+    }
+
+    private List<string> ValidateItem()
+    {
+        itemErrors.Clear();
+        var errors = new List<string>();
+
+        if (newItem.ItemID <= 0)
+        {
+            errors.Add("اختر الصنف");
+            itemErrors[nameof(newItem.ItemID)] = "اختياري";
+        }
+
+        if (newItem.UnitPrice <= 0)
+        {
+            errors.Add("السعر يجب أن يكون أكبر من صفر");
+            itemErrors[nameof(newItem.UnitPrice)] = "يجب أن يكون موجب";
+        }
+
+        if (newItem.MinOrderQty < 0)
+        {
+            errors.Add("أقل كمية طلب لا يمكن أن تكون سالبة");
+            itemErrors[nameof(newItem.MinOrderQty)] = "لا تكن سالب";
+        }
+
+        if (newItem.LeadTimeDays < 0)
+        {
+            errors.Add("مدة التوريد لا يمكن أن تكون سالبة");
+            itemErrors[nameof(newItem.LeadTimeDays)] = "لا تكن سالب";
+        }
+
+        return errors;
+    }
+
+    // ==========================================
+    // Validation Helpers
+    // ==========================================
+    private bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch { return false; }
+    }
+
+    private bool IsValidPhone(string phone)
+    {
+        return Regex.IsMatch(phone, @"^[\d\s\-\+\(\)]{7,}$");
+    }
+
+    private string GetRatingName(SupplierRating rating) => rating switch
+    {
+        SupplierRating.Excellent => "⭐⭐⭐⭐⭐ ممتاز",
+        SupplierRating.VeryGood => "⭐⭐⭐⭐ جيد جداً",
+        SupplierRating.Good => "⭐⭐⭐ جيد",
+        SupplierRating.Acceptable => "⭐⭐ مقبول",
+        SupplierRating.Poor => "⭐ ضعيف",
+        _ => "غير معروف"
+    };
+
+    // ==========================================
+    // Save Methods
+    // ==========================================
+    private async Task SaveSupplier()
+    {
+        var errors = ValidateSupplier();
+        if (errors.Any())
+        {
+            await ShowToast(errors.First(), false);
+            StateHasChanged();
+            return;
+        }
+
+        isSaving = true;
+        StateHasChanged();
+        try
+        {
+            if (isNewMode)
+            {
+                header.SupplierCode = await SupService.GenerateSupplierCodeAsync();
+                var newId = await SupService.InsertSupplierAsync(header, UserSession.UserID);
+                SupplierId = newId;
+                header.SupplierID = newId;
+                
+                originalHeader = JsonSerializer.Deserialize<SupplierEditDto>(
+                    JsonSerializer.Serialize(header)) ?? header;
+                
+                await ShowToast($"✅ تم إنشاء المورد: {header.SupplierCode}", true);
+                await Task.Delay(1500);
+                Navigation.NavigateTo($"/suppliers/edit/{newId}", forceLoad: false);
+            }
+            else
+            {
+                await SupService.UpdateSupplierAsync(header, UserSession.UserID);
+                originalHeader = JsonSerializer.Deserialize<SupplierEditDto>(
+                    JsonSerializer.Serialize(header)) ?? header;
+                await ShowToast("✅ تم حفظ التعديلات", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // ==========================================
+    // Contact Methods
+    // ==========================================
+    private void ShowAddContact()
+    {
+        ResetContactForm();
+        showContactForm = true;
+    }
+
+    private void ResetContactForm()
+    {
+        newContact = new() { SupplierID = SupplierId };
+        contactErrors.Clear();
+    }
+
+    private async Task SaveContact()
+    {
+        var errors = ValidateContact();
+        if (errors.Any())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await SupService.InsertContactAsync(newContact, UserSession.UserID);
+            contacts = await SupService.GetContactsAsync(SupplierId);
+            ResetContactForm();
+            showContactForm = false;
+            await ShowToast("✅ تم إضافة جهة اتصال", true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+    }
+
+    private void ShowDeleteContact(int id)
+    {
+        contactToDelete = contacts.FirstOrDefault(c => c.ContactID == id);
+        showDeleteContactDialog = true;
+    }
+
+    private async Task ConfirmDeleteContact()
+    {
+        if (contactToDelete == null) return;
+        try
+        {
+            await SupService.DeleteContactAsync(contactToDelete.ContactID, UserSession.UserID);
+            contacts = await SupService.GetContactsAsync(SupplierId);
+            showDeleteContactDialog = false;
+            await ShowToast("✅ تم حذف جهة الاتصال", true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+    }
+
+    // ==========================================
+    // Item Methods
+    // ==========================================
+    private async Task ShowAddItem()
+    {
+        if (allItems == null)
+        {
+            isLoadingItems = true;
+            StateHasChanged();
+            try
+            {
+                allItems = await LookupService.GetItemsForPurchaseSearchableAsync();
+            }
+            catch (Exception ex)
+            {
+                await ShowToast($"❌ خطأ في تحميل الأصناف: {ex.Message}", false);
+                isLoadingItems = false;
+                StateHasChanged();
+                return;
+            }
+            finally
+            {
+                isLoadingItems = false;
+            }
+        }
+
+        newItem = new() { SupplierID = SupplierId };
+        itemErrors.Clear();
+        showItemForm = true;
+        StateHasChanged();
+    }
+
+    private void HandleItemSelected(int itemId)
+    {
+        newItem.ItemID = itemId;
+        if (itemId > 0 && itemErrors.ContainsKey(nameof(newItem.ItemID)))
+            itemErrors.Remove(nameof(newItem.ItemID));
+        StateHasChanged();
+    }
+
+    private async Task SaveItem()
+    {
+        var errors = ValidateItem();
+        if (errors.Any())
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await SupService.InsertSupplierItemAsync(newItem, UserSession.UserID);
+            supplierItems = await SupService.GetSupplierItemsAsync(SupplierId);
+            newItem = new() { SupplierID = SupplierId };
+            showItemForm = false;
+            await ShowToast("✅ تم إضافة صنف", true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+    }
+
+    private void ShowDeleteItem(int id)
+    {
+        itemToDelete = supplierItems.FirstOrDefault(i => i.SupplierItemID == id);
+        showDeleteItemDialog = true;
+    }
+
+    private async Task ConfirmDeleteItem()
+    {
+        if (itemToDelete == null) return;
+        try
+        {
+            await SupService.DeleteSupplierItemAsync(itemToDelete.SupplierItemID, UserSession.UserID);
+            supplierItems = await SupService.GetSupplierItemsAsync(SupplierId);
+            showDeleteItemDialog = false;
+            await ShowToast("✅ تم حذف الصنف", true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+    }
+
+    // ==========================================
+    // Print & Utility Methods
+    // ==========================================
+    private async Task PrintCard()
+    {
+        isPrintLoading = true;
+        StateHasChanged();
+        try
+        {
+            var html = await SupService.GenerateSupplierCardHtmlAsync(SupplierId, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+            await ShowToast("🖨️ تم الطباعة", true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"❌ خطأ: {ex.Message}", false);
+        }
+        finally
+        {
+            isPrintLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            await ShowToast($"📋 تم نسخ: {text}", true);
+            await Task.Delay(2000);
+            toast = "";
+        }
+        catch
+        {
+            await ShowToast("❌ خطأ في النسخ", false);
+        }
+    }
+
+    private async Task ShowToast(string message, bool isSuccess = true)
+    {
+        toast = message;
+        toastOk = isSuccess;
+        StateHasChanged();
+        await Task.Delay(3000);
+        toast = "";
+        StateHasChanged();
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/suppliers");
+}
+

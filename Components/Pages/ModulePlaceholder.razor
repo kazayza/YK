@@ -1,0 +1,87 @@
+﻿@page "/module/{ModuleCode}"
+@using YKCoatings.Services
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+<PageTitle>شاشة النظام</PageTitle>
+
+@if (module == null || !module.CanView)
+{
+    <div class="alert alert-danger">ليس لديك صلاحية لعرض هذه الشاشة.</div>
+}
+else
+{
+    <div class="placeholder-page">
+        <div class="placeholder-card">
+            <div class="placeholder-badge">قريباً</div>
+            <h2>@module.ModuleNameAr</h2>
+            <p>
+                هذه الشاشة ضمن صلاحياتك، لكنها لم تُبنَ بعد داخل النظام الجديد.
+            </p>
+
+            <div class="placeholder-code">@module.ModuleCode</div>
+
+            <button class="btn btn-primary mt-3" @onclick="GoDashboard">
+                الرجوع إلى الرئيسية
+            </button>
+        </div>
+    </div>
+}
+
+<style>
+    .placeholder-page {
+        min-height: 60vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .placeholder-card {
+        max-width: 520px;
+        width: 100%;
+        background: white;
+        border-radius: 24px;
+        padding: 40px;
+        text-align: center;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 16px 36px rgba(15,23,42,.06);
+    }
+
+    .placeholder-badge {
+        display: inline-block;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: #f3e8ff;
+        color: #1d4ed8;
+        font-weight: 700;
+        font-size: .8rem;
+        margin-bottom: 16px;
+    }
+
+    .placeholder-code {
+        margin-top: 14px;
+        color: #2563eb;
+        font-weight: 700;
+    }
+</style>
+
+@code {
+    [Parameter] public string ModuleCode { get; set; } = "";
+
+    private YKCoatings.Models.ModulePermissionDto? module;
+
+    protected override void OnParametersSet()
+    {
+        module = PermissionService.GetModule(ModuleCode);
+
+        if (module == null)
+        {
+            Navigation.NavigateTo("/dashboard");
+        }
+    }
+
+    private void GoDashboard()
+    {
+        Navigation.NavigateTo("/dashboard");
+    }
+}

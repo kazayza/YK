@@ -1,0 +1,408 @@
+﻿@page "/departments/new"
+@page "/departments/edit/{DepartmentId:int}"
+@page "/departments/view/{DepartmentId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject DepartmentService DepartmentService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !HasAccess())
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/departments")'>
+            العودة للأقسام
+        </button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state">
+        <div class="loader"></div>
+        <p>جاري التحميل...</p>
+    </div>
+}
+else
+{
+    <div class="form-page" dir="rtl">
+
+        <div class="page-header">
+            <div>
+                <div class="breadcrumb-line">
+                    <span class="crumb-link" @onclick='() => Navigation.NavigateTo("/departments")'>الأقسام</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@PageTitleText</span>
+                </div>
+                <h2 class="page-title">@PageTitleText</h2>
+            </div>
+
+            <div class="header-actions">
+                @if (!isNewMode)
+                {
+                    <span class="status-badge @(model.IsActive ? "status-active" : "status-inactive")">
+                        @(model.IsActive ? "نشط" : "غير نشط")
+                    </span>
+                }
+
+                @if (isViewMode && permissions.CanEdit && DepartmentId > 0)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="GoToEdit">تعديل</button>
+                }
+
+                @if (!isViewMode)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveDepartment" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <div class="btn-spinner-sm"></div>
+                            <span>جاري الحفظ...</span>
+                        }
+                        else
+                        {
+                            <span>@(isNewMode ? "حفظ القسم" : "حفظ التعديلات")</span>
+                        }
+                    </button>
+                }
+
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/departments")'>رجوع</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(formMessage))
+        {
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+        }
+
+        <div class="form-card">
+            <div class="section-title">بيانات القسم</div>
+
+            <div class="form-grid cols-3">
+                <div class="form-field">
+                    <label class="field-label">كود القسم</label>
+                    <input type="text" class="field-input" @bind="model.DepartmentCode" dir="ltr" disabled="@isNewMode || isViewMode"
+                           placeholder="سيولد تلقائياً" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label required-field">اسم القسم (عربي)</label>
+                    <input type="text" class="field-input" @bind="model.DepartmentNameAr" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">اسم القسم (إنجليزي)</label>
+                    <input type="text" class="field-input" @bind="model.DepartmentNameEn" dir="ltr" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">القسم الأب</label>
+                    <select class="field-select" @bind="model.ParentDepartmentID" disabled="@isViewMode">
+                        <option value="0">— بدون —</option>
+                        @if (parentDepartments != null)
+                        {
+                            @foreach (var item in parentDepartments)
+                            {
+                                <option value="@item.Id">@item.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">مدير القسم</label>
+                    <select class="field-select" @bind="model.ManagerEmployeeID" disabled="@isViewMode">
+                        <option value="0">— بدون —</option>
+                        @if (managers != null)
+                        {
+                            @foreach (var item in managers)
+                            {
+                                <option value="@item.Id">@item.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">الهاتف</label>
+                    <input type="text" class="field-input" @bind="model.Phone" dir="ltr" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">كود مركز التكلفة</label>
+                    <input type="text" class="field-input" @bind="model.CostCenterCode" dir="ltr" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">ترتيب العرض</label>
+                    <input type="number" class="field-input" @bind="model.SortOrder" disabled="@isViewMode" />
+                </div>
+
+                <div class="form-field">
+                    <label class="field-label">الحالة</label>
+                    @if (isNewMode)
+                    {
+                        <input type="text" class="field-input readonly-input" value="سيصبح نشطاً بعد الحفظ" disabled />
+                    }
+                    else
+                    {
+                        <input type="text" class="field-input readonly-input"
+                               value="@(model.IsActive ? "نشط" : "غير نشط")" disabled />
+                        <small class="field-hint">تغيير الحالة يتم من شاشة القائمة</small>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (!isViewMode)
+        {
+            <div class="footer-actions">
+                <button class="btn-modern btn-primary-modern" @onclick="SaveDepartment" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <div class="btn-spinner-sm"></div>
+                        <span>جاري الحفظ...</span>
+                    }
+                    else
+                    {
+                        <span>@(isNewMode ? "حفظ القسم" : "حفظ التعديلات")</span>
+                    }
+                </button>
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/departments")'>إلغاء</button>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .form-page { display: flex; flex-direction: column; gap: 18px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .page-title { margin: 0; color: #1f2937; font-weight: 800; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    .breadcrumb-line { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .85rem; }
+    .crumb-link { color: #1d4ed8; font-weight: 700; cursor: pointer; }
+    .crumb-sep { color: #9ca3af; }
+    .crumb-current { color: #6b7280; }
+
+    .status-badge { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: .78rem; font-weight: 800; }
+    .status-active { background: #ecfdf5; color: #059669; }
+    .status-inactive { background: #fef2f2; color: #dc2626; }
+
+    .form-card { background: white; border-radius: 24px; padding: 24px; border: 1px solid #eef2f7; box-shadow: 0 8px 22px rgba(15,23,42,.05); }
+    .section-title { font-size: .95rem; font-weight: 800; color: #1d4ed8; margin-bottom: 16px; }
+    .form-grid { display: grid; gap: 14px; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .field-label { font-size: .82rem; font-weight: 700; color: #374151; }
+    .required-field::after { content: " *"; color: #ef4444; }
+    .field-input, .field-select { width: 100%; padding: 11px 14px; border: 1.5px solid #e5e7eb; border-radius: 12px; background: white; font-size: .9rem; outline: none; transition: .2s; }
+    .field-input:focus, .field-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .readonly-input { background: #f9fafb; }
+    .field-hint { color: #9ca3af; font-size: .74rem; }
+
+    .form-message { padding: 12px 14px; border-radius: 14px; font-size: .86rem; font-weight: 700; }
+    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    .footer-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    .btn-modern { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 14px; border: none; font-weight: 700; font-size: .88rem; cursor: pointer; transition: .2s; }
+    .btn-modern:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,.25); }
+    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
+    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+    .btn-spinner-sm { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .6s linear infinite; }
+
+    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+
+    @@keyframes spin { to { transform: rotate(360deg); } }
+
+    @@media (max-width: 1024px) { .cols-3 { grid-template-columns: repeat(2, 1fr); } }
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .cols-3 { grid-template-columns: 1fr; }
+        .header-actions, .footer-actions { width: 100%; flex-direction: column; }
+        .btn-modern { width: 100%; }
+    }
+</style>
+
+@code {
+    [Parameter] public int DepartmentId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private DepartmentEditDto model = new();
+
+    private List<LookupDto>? parentDepartments;
+    private List<LookupDto>? managers;
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+
+    private string currentMode = "new";
+    private bool isNewMode => currentMode == "new";
+    private bool isEditMode => currentMode == "edit";
+    private bool isViewMode => currentMode == "view";
+
+    private string PageTitleText =>
+        isNewMode ? "إضافة قسم" :
+        isEditMode ? "تعديل قسم" :
+        "عرض قسم";
+
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_DEPARTMENTS");
+
+        DetectMode();
+
+        if (permissions == null || !HasAccess())
+        {
+            isLoading = false;
+            return;
+        }
+
+        await LoadPageAsync();
+    }
+
+    private void DetectMode()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();
+
+        if (path.StartsWith("departments/edit/"))
+            currentMode = "edit";
+        else if (path.StartsWith("departments/view/"))
+            currentMode = "view";
+        else
+            currentMode = "new";
+    }
+
+    private bool HasAccess()
+    {
+        if (permissions == null) return false;
+        if (isNewMode) return permissions.CanAdd;
+        if (isEditMode) return permissions.CanEdit;
+        return permissions.CanView;
+    }
+
+    private async Task LoadPageAsync()
+    {
+        isLoading = true;
+        formMessage = "";
+
+        try
+        {
+            parentDepartments = await LookupService.GetDepartmentsLookupAsync();
+            managers = await LookupService.GetManagersLookupAsync();
+
+            if (isNewMode)
+            {
+                model = new DepartmentEditDto
+                {
+                    SortOrder = 0,
+                    IsActive = true
+                };
+            }
+            else
+            {
+                var loaded = await DepartmentService.GetDepartmentByIdAsync(DepartmentId);
+
+                if (loaded == null)
+                {
+                    formMessage = "القسم غير موجود";
+                    formSuccess = false;
+                    model = new DepartmentEditDto();
+                }
+                else
+                {
+                    model = loaded;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveDepartment()
+    {
+        if (isViewMode) return;
+
+        formMessage = "";
+
+        if (string.IsNullOrWhiteSpace(model.DepartmentNameAr))
+        {
+            formMessage = "يجب إدخال اسم القسم بالعربي";
+            formSuccess = false;
+            return;
+        }
+
+        isSaving = true;
+
+        try
+        {
+            if (isNewMode)
+            {
+                var newId = await DepartmentService.InsertDepartmentAsync(model, UserSession.UserID);
+                formMessage = "تم إضافة القسم بنجاح ✅";
+                formSuccess = true;
+                Navigation.NavigateTo($"/departments/edit/{newId}");
+                return;
+            }
+            else
+            {
+                await DepartmentService.UpdateDepartmentAsync(model, UserSession.UserID);
+                formMessage = "تم حفظ التعديلات بنجاح ✅";
+                formSuccess = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void GoToEdit()
+    {
+        if (DepartmentId > 0)
+            Navigation.NavigateTo($"/departments/edit/{DepartmentId}");
+    }
+}

@@ -1,0 +1,1708 @@
+﻿@page "/dashboard"
+@using YKCoatings.Helpers
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject DashboardService DashboardService
+
+<PageTitle>الرئيسية - واي كي كوتينج ERP</PageTitle>
+
+@if (!_loaded)
+{
+    <div class="dash-loading" dir="rtl">
+        <div class="loading-spinner"></div>
+        <p>جاري التحميل...</p>
+    </div>
+}
+else if (!UserSession.IsLoggedIn)
+{
+    <div class="dash-alert" dir="rtl">⚠️ يجب تسجيل الدخول أولاً</div>
+}
+else
+{
+    <div class="dash @(_animateIn ? "dash-animate" : "")" dir="rtl">
+
+        <!-- ===== HERO ===== -->
+        <section class="dash-hero">
+            <div class="hero-content">
+                <div class="hero-greeting">
+                    <div class="hero-avatar">@GetInitials()</div>
+                    <div class="hero-text">
+                        <h1 class="hero-title">
+                            مرحباً، <span class="hero-name">@UserSession.FullName</span> 👋
+                        </h1>
+                        <div class="hero-meta">
+                            <span class="hero-role-badge">
+                                <span class="role-dot"></span>
+                                @UserSession.RoleName
+                            </span>
+                            <span class="hero-date">
+                                📅 @DateTime.Now.ToString("dddd dd MMMM yyyy",
+                                    new System.Globalization.CultureInfo("ar-EG"))
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hero-actions">
+                    @if (pending != null && pending.TotalPending > 0 && CanViewPurchases)
+                    {
+                        <div class="hero-pending" @onclick='@(() => ScrollTo("pending"))'>
+                            <div class="pending-pulse-ring"></div>
+                            <span class="pending-number">@pending.TotalPending</span>
+                            <div class="pending-info">
+                                <span class="pending-label">طلب بانتظار اعتمادك</span>
+                                <span class="pending-hint">اضغط للعرض</span>
+                            </div>
+                            <span class="pending-arrow">←</span>
+                        </div>
+                    }
+
+                    <!-- آخر تحديث -->
+                    <div class="hero-refresh">
+                        <span class="refresh-time">🕐 آخر تحديث: @_lastRefresh.ToString("hh:mm tt")</span>
+                        <button class="refresh-btn" @onclick="RefreshData" disabled="@_refreshing" title="تحديث البيانات">
+                            @if (_refreshing)
+                            {
+                                <div class="refresh-spinner"></div>
+                            }
+                            else
+                            {
+                                <span>🔄</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-decoration">
+                <div class="hero-circle c1"></div>
+                <div class="hero-circle c2"></div>
+                <div class="hero-circle c3"></div>
+            </div>
+        </section>
+
+        <!-- ===== PENDING APPROVALS ===== -->
+        @if (pending != null && pending.TotalPending > 0 && CanViewPurchases)
+        {
+            <section class="dash-section pending-section" id="pending">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <div class="section-icon-wrap" style="background:#fef3c7">⏳</div>
+                        <div>
+                            <h2 class="section-title">بانتظار الاعتماد</h2>
+                            <p class="section-sub">تحتاج مراجعتك الآن</p>
+                        </div>
+                    </div>
+                    <span class="section-badge urgent">@pending.TotalPending طلب</span>
+                </div>
+
+                <div class="pending-grid">
+                    @if (pending.PendingPR > 0)
+                    {
+                        <div class="pend-card" @onclick='@(() => GoTo("SCR_PR"))' style="--pc:#2563eb">
+                            <div class="pend-card-icon">📋</div>
+                            <div class="pend-card-info">
+                                <div class="pend-card-count">@pending.PendingPR</div>
+                                <div class="pend-card-label">طلب شراء</div>
+                            </div>
+                            <div class="pend-card-arrow">←</div>
+                        </div>
+                    }
+                    @if (pending.PendingPO > 0)
+                    {
+                        <div class="pend-card" @onclick='@(() => GoTo("SCR_PO"))' style="--pc:#2563eb">
+                            <div class="pend-card-icon">📄</div>
+                            <div class="pend-card-info">
+                                <div class="pend-card-count">@pending.PendingPO</div>
+                                <div class="pend-card-label">أمر شراء</div>
+                            </div>
+                            <div class="pend-card-arrow">←</div>
+                        </div>
+                    }
+                    @if (pending.PendingGRN > 0)
+                    {
+                        <div class="pend-card" @onclick='@(() => GoTo("SCR_GRN"))' style="--pc:#10b981">
+                            <div class="pend-card-icon">📦</div>
+                            <div class="pend-card-info">
+                                <div class="pend-card-count">@pending.PendingGRN</div>
+                                <div class="pend-card-label">إذن استلام</div>
+                            </div>
+                            <div class="pend-card-arrow">←</div>
+                        </div>
+                    }
+                    @if (pending.PendingInvoice > 0)
+                    {
+                        <div class="pend-card" @onclick='@(() => GoTo("SCR_PINV"))' style="--pc:#f59e0b">
+                            <div class="pend-card-icon">💰</div>
+                            <div class="pend-card-info">
+                                <div class="pend-card-count">@pending.PendingInvoice</div>
+                                <div class="pend-card-label">فاتورة</div>
+                            </div>
+                            <div class="pend-card-arrow">←</div>
+                        </div>
+                    }
+                    @if (pending.PendingReturn > 0)
+                    {
+                        <div class="pend-card" @onclick='@(() => GoTo("SCR_PRET"))' style="--pc:#ef4444">
+                            <div class="pend-card-icon">🔄</div>
+                            <div class="pend-card-info">
+                                <div class="pend-card-count">@pending.PendingReturn</div>
+                                <div class="pend-card-label">مرتجع</div>
+                            </div>
+                            <div class="pend-card-arrow">←</div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <!-- ===== STATS COUNTERS (تم تقديمه) ===== -->
+        @if (stats != null)
+        {
+            <div class="stats-grid">
+                <div class="stat-card" style="--ac:#2563eb">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-val">@stats.TotalItems.ToString("#,##0")</div>
+                    <div class="stat-lbl">إجمالي الأصناف</div>
+                    <div class="stat-bar"></div>
+                </div>
+                <div class="stat-card" style="--ac:#ef4444">
+                    <div class="stat-icon">🏭</div>
+                    <div class="stat-val">@stats.TotalSuppliers.ToString("#,##0")</div>
+                    <div class="stat-lbl">الموردين</div>
+                    <div class="stat-bar"></div>
+                </div>
+                <div class="stat-card" style="--ac:#10b981">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-val">@stats.TotalCustomers.ToString("#,##0")</div>
+                    <div class="stat-lbl">العملاء</div>
+                    <div class="stat-bar"></div>
+                </div>
+                <div class="stat-card" style="--ac:#2563eb">
+                    <div class="stat-icon">💼</div>
+                    <div class="stat-val">@stats.TotalEmployees.ToString("#,##0")</div>
+                    <div class="stat-lbl">الموظفين</div>
+                    <div class="stat-bar"></div>
+                </div>
+                <div class="stat-card" style="--ac:#f59e0b">
+                    <div class="stat-icon">🏪</div>
+                    <div class="stat-val">@stats.TotalWarehouses.ToString("#,##0")</div>
+                    <div class="stat-lbl">المخازن</div>
+                    <div class="stat-bar"></div>
+                </div>
+                <div class="stat-card" style="--ac:#06b6d4">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-val">@stats.TodayAuditActions.ToString("#,##0")</div>
+                    <div class="stat-lbl">عمليات اليوم</div>
+                    <div class="stat-bar"></div>
+                </div>
+            </div>
+        }
+
+        <!-- ===== BALANCES (تم تقديمه) ===== -->
+        @if (stats != null && CanViewFinance)
+        {
+            <div class="balances-row">
+                <div class="bal-card" style="--bc:linear-gradient(135deg,#ef4444,#b91c1c)">
+                    <div class="bal-icon">🏭</div>
+                    <div class="bal-info">
+                        <div class="bal-label">رصيد الموردين</div>
+                        <div class="bal-amount">
+                            @stats.SuppliersBalance.ToString("#,##0")
+                            <span class="bal-currency">ج.م</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bal-card" style="--bc:linear-gradient(135deg,#10b981,#047857)">
+                    <div class="bal-icon">👥</div>
+                    <div class="bal-info">
+                        <div class="bal-label">رصيد العملاء</div>
+                        <div class="bal-amount">
+                            @stats.CustomersBalance.ToString("#,##0")
+                            <span class="bal-currency">ج.م</span>
+                        </div>
+                    </div>
+                </div>
+                @if (invAlerts != null)
+                {
+                    <div class="bal-card" style="--bc:linear-gradient(135deg,#2563eb,#1e40af)">
+                        <div class="bal-icon">📦</div>
+                        <div class="bal-info">
+                            <div class="bal-label">قيمة المخزون</div>
+                            <div class="bal-amount">
+                                @invAlerts.TotalStockValue.ToString("#,##0")
+                                <span class="bal-currency">ج.م</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- ===== INVENTORY ALERTS ===== -->
+        @if (invAlerts != null && invAlerts.TotalAlerts > 0 && CanViewStock)
+        {
+            <section class="dash-section alerts-section">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <div class="section-icon-wrap" style="background:#fef2f2">🔔</div>
+                        <div>
+                            <h2 class="section-title">تنبيهات المخزون</h2>
+                            <p class="section-sub">تحتاج مراجعة فورية</p>
+                        </div>
+                    </div>
+                    <span class="section-badge danger">@invAlerts.TotalAlerts تنبيه</span>
+                </div>
+
+                <div class="alerts-row">
+                    @if (invAlerts.OutOfStock > 0)
+                    {
+                        <div class="alert-stat ad" @onclick='@(() => Navigation.NavigateTo("/stock-balances"))'>
+                            <div class="alert-stat-icon">❌</div>
+                            <div class="alert-stat-num">@invAlerts.OutOfStock</div>
+                            <div class="alert-stat-lbl">نفد المخزون</div>
+                        </div>
+                    }
+                    @if (invAlerts.BelowMinimum > 0)
+                    {
+                        <div class="alert-stat aw" @onclick='@(() => Navigation.NavigateTo("/stock-balances"))'>
+                            <div class="alert-stat-icon">⚠️</div>
+                            <div class="alert-stat-num">@invAlerts.BelowMinimum</div>
+                            <div class="alert-stat-lbl">تحت الحد الأدنى</div>
+                        </div>
+                    }
+                    @if (invAlerts.NearExpiry > 0)
+                    {
+                        <div class="alert-stat ao" @onclick='@(() => Navigation.NavigateTo("/stock-balances"))'>
+                            <div class="alert-stat-icon">⏰</div>
+                            <div class="alert-stat-num">@invAlerts.NearExpiry</div>
+                            <div class="alert-stat-lbl">قرب انتهاء الصلاحية</div>
+                        </div>
+                    }
+                    @if (invAlerts.Expired > 0)
+                    {
+                        <div class="alert-stat ad" @onclick='@(() => Navigation.NavigateTo("/stock-balances"))'>
+                            <div class="alert-stat-icon">🚫</div>
+                            <div class="alert-stat-num">@invAlerts.Expired</div>
+                            <div class="alert-stat-lbl">منتهي الصلاحية</div>
+                        </div>
+                    }
+                </div>
+
+                @if (itemAlerts != null && itemAlerts.Any())
+                {
+                    <div class="alert-tbl-wrap">
+                        <table class="dash-tbl">
+                            <thead>
+                                <tr>
+                                    <th>الكود</th>
+                                    <th>الصنف</th>
+                                    <th>المخزن</th>
+                                    <th class="tc">الرصيد الحالي</th>
+                                    <th class="tc">الحد الأدنى</th>
+                                    <th class="tc">الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var it in itemAlerts)
+                                {
+                                    <tr class="@(it.AlertLevel >= 2 ? "row-danger" : "")">
+                                        <td><code class="code-pill">@it.ItemCode</code></td>
+                                        <td class="td-bold">@it.ItemNameAr</td>
+                                        <td class="td-muted">@it.WarehouseNameAr</td>
+                                        <td class="tc td-num @(it.CurrentQty <= 0 ? "text-danger" : "")">
+                                            @it.CurrentQty.ToString("#,##0.##")
+                                        </td>
+                                        <td class="tc td-num">@it.MinStockLevel.ToString("#,##0.##")</td>
+                                        <td class="tc">
+                                            <span class="alert-pill" style="--ac:@GetAlertColor(it.AlertLevel)">
+                                                @it.AlertName
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+                <!-- ===== LIVE PRODUCTION TRACKING ===== -->
+        <CurrentProductionWidget />
+
+        <!-- ===== FINANCIAL + MONTHLY ===== -->
+        @if ((CanViewPurchases || CanViewFinance) && (overdue != null || purchaseStats != null))
+        {
+            <div class="two-col">
+                @if (overdue != null && CanViewFinance)
+                {
+                    <div class="dash-card">
+                        <div class="card-header">
+                            <div class="card-icon-wrap" style="background:#fff7ed;color:#f97316">💰</div>
+                            <h3 class="card-title">المستحقات المالية</h3>
+                        </div>
+                        <div class="fin-grid">
+                            <div class="fin-item">
+                                <div class="fin-item-label">فواتير غير مدفوعة</div>
+                                <div class="fin-item-count">@overdue.UnpaidInvoices</div>
+                                <div class="fin-item-amount">
+                                    @overdue.TotalUnpaidAmount.ToString("#,##0.00")
+                                    <span class="currency">ج.م</span>
+                                </div>
+                            </div>
+                            @if (overdue.OverdueInvoices > 0)
+                            {
+                                <div class="fin-item danger">
+                                    <div class="fin-item-label">متأخرة ⚠️</div>
+                                    <div class="fin-item-count text-danger">@overdue.OverdueInvoices</div>
+                                    <div class="fin-item-amount text-danger">
+                                        @overdue.OverdueAmount.ToString("#,##0.00")
+                                        <span class="currency">ج.م</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (purchaseStats != null && CanViewPurchases)
+                {
+                    <div class="dash-card">
+                        <div class="card-header">
+                            <div class="card-icon-wrap" style="background:#eff6ff;color:#2563eb">📊</div>
+                            <h3 class="card-title">مشتريات الشهر الحالي</h3>
+                        </div>
+                        <div class="monthly-grid">
+                            <div class="monthly-item">
+                                <div class="monthly-num">@purchaseStats.MonthlyPOs</div>
+                                <div class="monthly-lbl">أوامر شراء</div>
+                            </div>
+                            <div class="monthly-item">
+                                <div class="monthly-num">@purchaseStats.MonthlyGRNs</div>
+                                <div class="monthly-lbl">استلام بضاعة</div>
+                            </div>
+                            <div class="monthly-item">
+                                <div class="monthly-num">@purchaseStats.MonthlyInvoices</div>
+                                <div class="monthly-lbl">فواتير</div>
+                            </div>
+                            <div class="monthly-item">
+                                <div class="monthly-num text-danger">@purchaseStats.MonthlyReturns</div>
+                                <div class="monthly-lbl">مرتجعات</div>
+                            </div>
+                        </div>
+                        <div class="monthly-total">
+                            💰 إجمالي الشهر:
+                            <strong>@purchaseStats.MonthlyInvoiceAmount.ToString("#,##0.00") ج.م</strong>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- ===== CHART ===== -->
+        @if (chartData != null && chartData.Any() && CanViewPurchases)
+        {
+            <section class="dash-card">
+                <div class="card-header">
+                    <div class="card-icon-wrap" style="background:#f0fdf4;color:#10b981">📈</div>
+                    <h3 class="card-title">المشتريات — آخر 6 شهور</h3>
+                </div>
+                <div class="chart-wrap">
+                    @{
+                        var maxVal = chartData.Max(c => c.Amount);
+                        if (maxVal == 0) maxVal = 1;
+                    }
+                    @foreach (var bar in chartData)
+                    {
+                        var pct = (int)(bar.Amount / maxVal * 100);
+                        <div class="chart-col">
+                            <div class="chart-val">
+                                @(bar.Amount > 0 ? bar.Amount.ToString("#,##0") : "—")
+                            </div>
+                            <div class="chart-bar-track">
+                                <div class="chart-bar" style="height:@(Math.Max(pct, 4))%"></div>
+                            </div>
+                            <div class="chart-lbl">@GetArabicMonthName(bar.MonthKey)</div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <!-- ===== QUICK ACCESS (تم تقديمه) ===== -->
+        @{
+            var quick = PermissionService.GetQuickAccessModules(8).ToList();
+        }
+        @if (quick.Any())
+        {
+            <section class="dash-card">
+                <div class="card-header">
+                    <div class="section-header-left">
+                        <div class="card-icon-wrap" style="background:#eff6ff;color:#2563eb">⚡</div>
+                        <div>
+                            <h3 class="card-title">الوصول السريع</h3>
+                            <p class="card-sub">الشاشات المستخدمة بكثرة</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quick-grid">
+                    @{
+                        string[] qColors = { "#2563eb", "#10b981", "#2563eb", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#6366f1" };
+                        int qi = 0;
+                    }
+                    @foreach (var item in quick)
+                    {
+                        var cl = qColors[qi % qColors.Length];
+                        <button class="quick-btn" style="--qc:@cl" @onclick="@(() => GoTo(item.ModuleCode))">
+                            <div class="quick-btn-icon">@GetEmoji(item.ModuleCode)</div>
+                            <div class="quick-btn-info">
+                                <span class="quick-btn-name">@item.ModuleNameAr</span>
+                                <span class="quick-btn-hint">اضغط للفتح ←</span>
+                            </div>
+                        </button>
+                        qi++;
+                    }
+                </div>
+            </section>
+        }
+
+        <!-- ===== RECENT ACTIVITIES (تم تأخيره) ===== -->
+        @if (recentActivities != null && recentActivities.Any())
+        {
+            <section class="dash-card">
+                <div class="card-header">
+                    <div class="section-header-left">
+                        <div class="card-icon-wrap" style="background:#fef3c7;color:#f59e0b">🕐</div>
+                        <div>
+                            <h3 class="card-title">آخر العمليات</h3>
+                            <p class="card-sub">التحديثات الأخيرة في النظام</p>
+                        </div>
+                    </div>
+                    <div class="live-badge">
+                        <span class="live-dot"></span>
+                        مباشر
+                    </div>
+                </div>
+
+                <div class="activity-list">
+                    @{ int ai = 0; }
+                    @foreach (var act in recentActivities)
+                    {
+                        ai++;
+                        <div class="act-item @(ai == 1 ? "first" : "")">
+                            <div class="act-dot-wrap">
+                                <div class="act-dot"></div>
+                                @if (ai < recentActivities.Count) { <div class="act-line"></div> }
+                            </div>
+                            <div class="act-body">
+                                <div class="act-desc">@act.Description</div>
+                                <div class="act-meta">
+                                    <span>👤 @act.Username</span>
+                                    <span>·</span>
+                                    <span>🕐 @act.AuditDate.ToString("hh:mm tt")</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+    </div>
+}
+   <style>
+    /* ===== VARIABLES ===== */
+    :root {
+        --dash-gap: 20px;
+        --card-radius: 18px;
+        --card-shadow: 0 2px 16px rgba(15,23,42,.06);
+        --card-border: #e2e8f0;
+    }
+
+    /* ===== BASE ===== */
+    .dash {
+        display: flex;
+        flex-direction: column;
+        gap: var(--dash-gap);
+        max-width: 1400px;
+        margin: 0 auto;
+        padding-bottom: 24px;
+    }
+
+    .dash-animate > * {
+        animation: fadeUp .45s ease both;
+    }
+
+    .dash-animate > *:nth-child(1) { animation-delay: 0.05s; }
+    .dash-animate > *:nth-child(2) { animation-delay: 0.10s; }
+    .dash-animate > *:nth-child(3) { animation-delay: 0.15s; }
+    .dash-animate > *:nth-child(4) { animation-delay: 0.20s; }
+    .dash-animate > *:nth-child(5) { animation-delay: 0.25s; }
+    .dash-animate > *:nth-child(6) { animation-delay: 0.30s; }
+    .dash-animate > *:nth-child(7) { animation-delay: 0.35s; }
+    .dash-animate > *:nth-child(8) { animation-delay: 0.40s; }
+    .dash-animate > *:nth-child(9) { animation-delay: 0.45s; }
+    .dash-animate > *:nth-child(10) { animation-delay: 0.50s; }
+    .dash-animate > *:nth-child(11) { animation-delay: 0.55s; }
+    .dash-animate > *:nth-child(12) { animation-delay: 0.60s; }
+
+    @@keyframes fadeUp {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ===== LOADING ===== */
+    .dash-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 60vh;
+        gap: 16px;
+        color: #64748b;
+    }
+
+    .loading-spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+    }
+
+    @@keyframes spin { to { transform: rotate(360deg); } }
+
+    .dash-alert {
+        background: #fffbeb;
+        color: #92400e;
+        border: 1px solid #fde68a;
+        border-radius: var(--card-radius);
+        padding: 20px;
+        font-weight: 700;
+        text-align: center;
+    }
+
+    /* ===== HERO ===== */
+    .dash-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #1e293b 100%);
+        border-radius: 22px;
+        padding: 28px 32px;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 8px 32px rgba(15,23,42,.2);
+        border: 1px solid rgba(37,99,235,.15);
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .hero-greeting {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .hero-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #2563eb, #6366f1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 1.1rem;
+        color: white;
+        box-shadow: 0 4px 16px rgba(37,99,235,.4);
+        border: 2px solid rgba(255,255,255,.15);
+        flex-shrink: 0;
+    }
+
+    .hero-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin: 0;
+        line-height: 1.3;
+    }
+
+    .hero-name {
+        background: linear-gradient(135deg, #60a5fa, #93c5fd);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .hero-meta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+
+    .hero-role-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(34,197,94,.12);
+        color: #4ade80;
+        border: 1px solid rgba(34,197,94,.2);
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: .76rem;
+        font-weight: 700;
+    }
+
+    .role-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #22c55e;
+        animation: pulse 2s infinite;
+    }
+
+    .hero-date {
+        font-size: .78rem;
+        color: #64748b;
+    }
+
+    /* Hero Actions */
+    .hero-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+    }
+
+    /* Pending Chip */
+    .hero-pending {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(245,158,11,.12);
+        border: 1.5px solid rgba(245,158,11,.25);
+        padding: 12px 18px;
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all .25s;
+        position: relative;
+    }
+
+    .hero-pending:hover {
+        background: rgba(245,158,11,.2);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(245,158,11,.15);
+    }
+
+    .pending-pulse-ring {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #f59e0b;
+        box-shadow: 0 0 0 4px rgba(245,158,11,.2);
+        animation: pulseRing 2s infinite;
+    }
+
+    @@keyframes pulseRing {
+        0%, 100% { box-shadow: 0 0 0 4px rgba(245,158,11,.2); }
+        50% { box-shadow: 0 0 0 8px rgba(245,158,11,.08); }
+    }
+
+    .pending-number {
+        font-size: 1.6rem;
+        font-weight: 900;
+        color: #fbbf24;
+        line-height: 1;
+    }
+
+    .pending-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .pending-label {
+        font-size: .84rem;
+        font-weight: 700;
+        color: #fcd34d;
+    }
+
+    .pending-hint {
+        font-size: .7rem;
+        color: rgba(251,191,36,.6);
+    }
+
+    .pending-arrow {
+        color: #fbbf24;
+        font-size: 1.1rem;
+        transition: transform .2s;
+    }
+
+    .hero-pending:hover .pending-arrow {
+        transform: translateX(-4px);
+    }
+
+    /* Refresh */
+    .hero-refresh {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(255,255,255,.06);
+        border: 1px solid rgba(255,255,255,.1);
+        padding: 8px 14px;
+        border-radius: 12px;
+    }
+
+    .refresh-time {
+        font-size: .72rem;
+        color: rgba(255,255,255,.5);
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .refresh-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,.15);
+        background: rgba(255,255,255,.08);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all .25s;
+        font-size: 1rem;
+    }
+
+    .refresh-btn:hover:not(:disabled) {
+        background: rgba(37,99,235,.2);
+        border-color: rgba(37,99,235,.4);
+        transform: rotate(180deg);
+    }
+
+    .refresh-btn:disabled {
+        opacity: .5;
+        cursor: not-allowed;
+    }
+
+    .refresh-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin .7s linear infinite;
+    }
+
+    /* Hero Decoration */
+    .hero-decoration {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+    }
+
+    .hero-circle {
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(255,255,255,.03);
+    }
+
+    .hero-circle.c1 {
+        width: 200px;
+        height: 200px;
+        top: -80px;
+        left: -60px;
+        border: 1px solid rgba(255,255,255,.05);
+    }
+
+    .hero-circle.c2 {
+        width: 140px;
+        height: 140px;
+        bottom: -50px;
+        right: 200px;
+        border: 1px solid rgba(37,99,235,.1);
+    }
+
+    .hero-circle.c3 {
+        width: 80px;
+        height: 80px;
+        top: 20px;
+        right: 40px;
+        background: rgba(37,99,235,.05);
+    }
+
+    /* ===== SECTION ===== */
+    .dash-section {
+        background: white;
+        border: 1px solid var(--card-border);
+        border-radius: var(--card-radius);
+        padding: 22px;
+        box-shadow: var(--card-shadow);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 18px;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .section-header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .section-icon-wrap {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        flex-shrink: 0;
+    }
+
+    .section-title {
+        font-size: .98rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0;
+    }
+
+    .section-sub {
+        font-size: .76rem;
+        color: #64748b;
+        margin: 3px 0 0;
+        font-weight: 600;
+    }
+
+    .section-badge {
+        padding: 5px 14px;
+        border-radius: 999px;
+        font-size: .76rem;
+        font-weight: 800;
+    }
+
+    .section-badge.urgent {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+    }
+
+    .section-badge.danger {
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    /* ===== PENDING ===== */
+    .pending-section {
+        border-right: 4px solid #f59e0b;
+    }
+
+    .pending-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+    }
+
+    .pend-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        background: color-mix(in srgb, var(--pc, #2563eb) 6%, white);
+        border: 1.5px solid color-mix(in srgb, var(--pc, #2563eb) 15%, #e2e8f0);
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all .25s;
+    }
+
+    .pend-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 24px color-mix(in srgb, var(--pc, #2563eb) 15%, transparent);
+        border-color: color-mix(in srgb, var(--pc, #2563eb) 40%, #e2e8f0);
+    }
+
+    .pend-card-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .pend-card-info { flex: 1; }
+    .pend-card-count { font-size: 1.4rem; font-weight: 900; color: #0f172a; line-height: 1; }
+    .pend-card-label { font-size: .74rem; color: #64748b; font-weight: 600; margin-top: 2px; }
+    .pend-card-arrow { color: #94a3b8; font-size: .9rem; transition: all .2s; }
+    .pend-card:hover .pend-card-arrow { color: var(--pc, #2563eb); transform: translateX(-4px); }
+
+    /* ===== ALERTS ===== */
+    .alerts-section { border-right: 4px solid #ef4444; }
+
+    .alerts-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .alert-stat {
+        padding: 16px;
+        border-radius: 14px;
+        text-align: center;
+        cursor: pointer;
+        transition: all .25s;
+        border: 1.5px solid transparent;
+    }
+
+    .alert-stat:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,.08);
+    }
+
+    .ad { background: #fef2f2; border-color: #fecaca !important; }
+    .aw { background: #fffbeb; border-color: #fde68a !important; }
+    .ao { background: #fff7ed; border-color: #fed7aa !important; }
+
+    .alert-stat-icon { font-size: 1.6rem; margin-bottom: 6px; }
+    .alert-stat-num { font-size: 1.6rem; font-weight: 900; color: #0f172a; }
+    .alert-stat-lbl { font-size: .72rem; color: #64748b; font-weight: 700; margin-top: 3px; }
+
+    /* Alert Table */
+    .alert-tbl-wrap {
+        overflow-x: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        margin-top: 4px;
+    }
+
+    .dash-tbl { width: 100%; border-collapse: collapse; min-width: 600px; }
+    .dash-tbl thead { background: #f8fafc; }
+
+    .dash-tbl th {
+        padding: 10px 12px;
+        font-size: .76rem;
+        font-weight: 700;
+        color: #64748b;
+        text-align: right;
+        border-bottom: 2px solid #e2e8f0;
+        white-space: nowrap;
+    }
+
+    .dash-tbl td {
+        padding: 9px 12px;
+        font-size: .82rem;
+        color: #334155;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .dash-tbl tbody tr:last-child td { border-bottom: none; }
+    .dash-tbl tbody tr:hover { background: #f8fafc; }
+    .row-danger { background: #fef2f2 !important; }
+
+    .code-pill {
+        background: #f1f5f9;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: .76rem;
+        color: #2563eb;
+        font-weight: 700;
+    }
+
+    .td-bold { font-weight: 700; color: #0f172a; }
+    .td-muted { color: #64748b; }
+    .td-num { font-family: monospace; font-weight: 700; }
+    .tc { text-align: center; }
+    .text-danger { color: #dc2626 !important; }
+
+    .alert-pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 8px;
+        font-size: .72rem;
+        font-weight: 700;
+        background: color-mix(in srgb, var(--ac) 10%, white);
+        color: var(--ac);
+        border: 1px solid color-mix(in srgb, var(--ac) 20%, white);
+    }
+
+    /* ===== CARD ===== */
+    .dash-card {
+        background: white;
+        border: 1px solid var(--card-border);
+        border-radius: var(--card-radius);
+        padding: 22px;
+        box-shadow: var(--card-shadow);
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #f1f5f9;
+        flex-wrap: wrap;
+    }
+
+    .card-icon-wrap {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .card-title { font-weight: 800; font-size: .95rem; color: #0f172a; margin: 0; }
+    .card-sub { font-size: .74rem; color: #64748b; margin: 3px 0 0; font-weight: 600; }
+
+    /* ===== FINANCIAL ===== */
+    .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .fin-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .fin-item {
+        flex: 1;
+        min-width: 130px;
+        padding: 16px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        text-align: center;
+    }
+
+    .fin-item.danger { background: #fef2f2; border-color: #fecaca; }
+    .fin-item-label { font-size: .74rem; color: #64748b; font-weight: 700; margin-bottom: 6px; }
+    .fin-item-count { font-size: 1.5rem; font-weight: 900; color: #0f172a; line-height: 1; }
+    .fin-item-amount { font-size: .84rem; font-weight: 700; color: #475569; margin-top: 4px; }
+    .currency { font-size: .7rem; color: #94a3b8; margin-right: 3px; }
+
+    /* ===== MONTHLY ===== */
+    .monthly-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+    }
+
+    .monthly-item {
+        text-align: center;
+        padding: 12px 8px;
+        background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .monthly-num { font-size: 1.4rem; font-weight: 900; color: #0f172a; }
+    .monthly-lbl { font-size: .72rem; color: #64748b; font-weight: 700; margin-top: 3px; }
+
+    .monthly-total {
+        text-align: center;
+        margin-top: 14px;
+        padding: 10px;
+        background: linear-gradient(135deg, #eff6ff, #dbeafe);
+        border-radius: 10px;
+        font-size: .84rem;
+        color: #1e40af;
+        font-weight: 600;
+    }
+
+    .monthly-total strong { font-size: 1rem; font-weight: 900; }
+
+    /* ===== CHART ===== */
+    .chart-wrap {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-around;
+        gap: 10px;
+        height: 220px;
+        padding: 12px 0 0;
+    }
+
+    .chart-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        max-width: 80px;
+    }
+
+    .chart-val {
+        font-size: .68rem;
+        font-weight: 700;
+        color: #64748b;
+        text-align: center;
+        min-height: 20px;
+        display: flex;
+        align-items: center;
+    }
+
+    .chart-bar-track {
+        width: 100%;
+        height: 160px;
+        background: #f1f5f9;
+        border-radius: 10px 10px 0 0;
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        overflow: hidden;
+    }
+
+    .chart-bar {
+        width: 100%;
+        background: linear-gradient(180deg, #60a5fa 0%, #1e40af 100%);
+        border-radius: 10px 10px 0 0;
+        transition: height .8s cubic-bezier(.4,0,.2,1);
+        position: relative;
+    }
+
+    .chart-bar::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(255,255,255,.3), transparent 60%);
+        border-radius: inherit;
+    }
+
+    .chart-col:hover .chart-bar {
+        filter: brightness(1.1);
+        box-shadow: 0 -4px 16px rgba(37,99,235,.3);
+    }
+
+    .chart-lbl {
+        font-size: .7rem;
+        font-weight: 700;
+        color: #64748b;
+        white-space: nowrap;
+        text-align: center;
+    }
+
+    /* ===== BALANCES ===== */
+    .balances-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+    }
+
+    .bal-card {
+        background: var(--bc);
+        border-radius: 18px;
+        padding: 20px 22px;
+        color: white;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all .25s;
+        box-shadow: 0 4px 16px rgba(0,0,0,.1);
+    }
+
+    .bal-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 28px rgba(0,0,0,.15);
+    }
+
+    .bal-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: rgba(255,255,255,.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        flex-shrink: 0;
+    }
+
+    .bal-info { flex: 1; }
+    .bal-label { font-size: .8rem; opacity: .85; font-weight: 600; }
+    .bal-amount { font-size: 1.25rem; font-weight: 900; margin-top: 4px; }
+    .bal-currency { font-size: .7rem; opacity: .7; margin-right: 4px; }
+
+    /* ===== STATS ===== */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+    }
+
+    .stat-card {
+        background: white;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 18px 14px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        transition: all .3s;
+        cursor: default;
+    }
+
+    .stat-card::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: var(--ac);
+        border-radius: 16px 16px 0 0;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 32px rgba(15,23,42,.08);
+        border-color: color-mix(in srgb, var(--ac) 30%, #e2e8f0);
+    }
+
+    .stat-icon { font-size: 1.5rem; margin-bottom: 6px; }
+    .stat-val { font-size: 1.6rem; font-weight: 900; color: #0f172a; line-height: 1; }
+    .stat-lbl { font-size: .74rem; color: #64748b; font-weight: 700; margin-top: 4px; }
+
+    .stat-bar {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--ac), transparent);
+        opacity: 0;
+        transition: opacity .3s;
+    }
+
+    .stat-card:hover .stat-bar { opacity: 1; }
+
+    /* ===== LIVE BADGE ===== */
+    .live-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: #f0fdf4;
+        color: #16a34a;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        font-size: .76rem;
+        font-weight: 700;
+    }
+
+    .live-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #16a34a;
+        animation: pulse 2s infinite;
+    }
+
+    @@keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.3); opacity: .7; }
+    }
+
+    /* ===== ACTIVITY ===== */
+    .activity-list {
+        display: flex;
+        flex-direction: column;
+        padding-right: 4px;
+    }
+
+    .act-item {
+        display: flex;
+        gap: 14px;
+        padding: 10px 0;
+    }
+
+    .act-dot-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        flex-shrink: 0;
+        padding-top: 4px;
+    }
+
+    .act-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #cbd5e1;
+        flex-shrink: 0;
+        transition: all .2s;
+    }
+
+    .act-item.first .act-dot {
+        background: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37,99,235,.15);
+        width: 12px;
+        height: 12px;
+    }
+
+    .act-line {
+        width: 2px;
+        flex: 1;
+        background: #f1f5f9;
+        margin-top: 4px;
+        min-height: 20px;
+    }
+
+    .act-body { flex: 1; padding-bottom: 8px; }
+
+    .act-desc {
+        font-size: .84rem;
+        color: #0f172a;
+        font-weight: 600;
+        line-height: 1.5;
+    }
+
+    .act-meta {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+        font-size: .72rem;
+        color: #94a3b8;
+        font-weight: 600;
+        flex-wrap: wrap;
+    }
+
+    /* ===== QUICK ACCESS ===== */
+    .quick-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .quick-btn {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 18px;
+        border: 1.5px solid #e2e8f0;
+        background: white;
+        border-radius: 14px;
+        cursor: pointer;
+        transition: all .25s;
+        text-align: right;
+    }
+
+    .quick-btn:hover {
+        border-color: color-mix(in srgb, var(--qc) 40%, #e2e8f0);
+        background: color-mix(in srgb, var(--qc) 4%, white);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 24px rgba(0,0,0,.06);
+    }
+
+    .quick-btn-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 11px;
+        background: color-mix(in srgb, var(--qc) 10%, white);
+        border: 1px solid color-mix(in srgb, var(--qc) 18%, #e2e8f0);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        flex-shrink: 0;
+        transition: all .25s;
+    }
+
+    .quick-btn:hover .quick-btn-icon {
+        background: color-mix(in srgb, var(--qc) 18%, white);
+        transform: scale(1.05);
+    }
+
+    .quick-btn-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .quick-btn-name {
+        font-weight: 700;
+        font-size: .88rem;
+        color: #0f172a;
+        transition: color .2s;
+    }
+
+    .quick-btn:hover .quick-btn-name { color: var(--qc); }
+
+    .quick-btn-hint {
+        font-size: .7rem;
+        color: #94a3b8;
+        font-weight: 600;
+        transition: color .2s;
+    }
+
+    .quick-btn:hover .quick-btn-hint {
+        color: color-mix(in srgb, var(--qc) 70%, #94a3b8);
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @@media (max-width: 1200px) {
+        .stats-grid { grid-template-columns: repeat(3, 1fr); }
+        .balances-row { grid-template-columns: repeat(2, 1fr); }
+        .two-col { grid-template-columns: 1fr; }
+    }
+
+    @@media (max-width: 1024px) {
+        .stats-grid { grid-template-columns: repeat(3, 1fr); }
+        .monthly-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @@media (max-width: 768px) {
+        .dash { gap: 14px; }
+        .dash-hero { padding: 20px; }
+        .hero-content { flex-direction: column; align-items: flex-start; }
+        .hero-actions { width: 100%; }
+        .hero-pending { width: 100%; }
+        .hero-refresh { width: 100%; justify-content: space-between; }
+        .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        .balances-row { grid-template-columns: 1fr; }
+        .pending-grid { grid-template-columns: repeat(2, 1fr); }
+        .alerts-row { grid-template-columns: repeat(2, 1fr); }
+        .chart-wrap { height: 160px; }
+        .quick-grid { grid-template-columns: 1fr 1fr; }
+        .monthly-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @@media (max-width: 480px) {
+        .dash-hero { padding: 16px; }
+        .hero-title { font-size: 1rem; }
+        .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        .pending-grid { grid-template-columns: 1fr; }
+        .alerts-row { grid-template-columns: 1fr; }
+        .quick-grid { grid-template-columns: 1fr; }
+        .balances-row { grid-template-columns: 1fr; }
+        .chart-wrap { height: 140px; }
+    }
+</style>
+@code {
+    private DashboardStatsDto? stats;
+    private List<RecentActivityDto>? recentActivities;
+    private DashboardPendingDto? pending;
+    private DashboardInventoryAlertsDto? invAlerts;
+    private DashboardOverdueDto? overdue;
+    private DashboardPurchaseStatsDto? purchaseStats;
+    private List<DashboardItemAlertDto>? itemAlerts;
+    private List<MonthlyChartDto>? chartData;
+    private bool _loaded = false;
+    private bool _animateIn = false;
+    private bool _refreshing = false;
+    private DateTime _lastRefresh = DateTime.Now;
+
+    // ==========================================
+    // Permissions
+    // ==========================================
+    private bool CanViewPurchases =>
+        PermissionService.CanView("SCR_PR") ||
+        PermissionService.CanView("SCR_PO") ||
+        PermissionService.CanView("SCR_PINV");
+
+    private bool CanViewStock =>
+        PermissionService.CanView("SCR_STOCK") ||
+        PermissionService.CanView("SCR_WAREHOUSES");
+
+    private bool CanViewFinance =>
+        PermissionService.CanView("SCR_COA") ||
+        PermissionService.CanView("SCR_JV") ||
+        PermissionService.CanView("SCR_PINV");
+
+    // ==========================================
+    // Load Data
+    // ==========================================
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_loaded)
+        {
+            _loaded = true;
+
+            if (!UserSession.IsLoggedIn)
+            {
+                var restored = await UserSession.TryRestoreSessionAsync();
+                if (!restored)
+                {
+                    Navigation.NavigateTo("/login");
+                    return;
+                }
+            }
+
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            await LoadAllData();
+
+            _animateIn = true;
+            StateHasChanged();
+        }
+    }
+
+    // ==========================================
+    // تحميل كل البيانات
+    // ==========================================
+    private async Task LoadAllData()
+    {
+        try
+        {
+            var t1 = DashboardService.GetStatsAsync();
+            var t2 = DashboardService.GetRecentActivitiesAsync(8);
+            var t3 = CanViewPurchases
+                ? DashboardService.GetPendingApprovalsAsync()
+                : Task.FromResult<DashboardPendingDto?>(null)!;
+            var t4 = CanViewStock
+                ? DashboardService.GetInventoryAlertsAsync()
+                : Task.FromResult<DashboardInventoryAlertsDto?>(null)!;
+            var t5 = CanViewFinance
+                ? DashboardService.GetOverdueInfoAsync()
+                : Task.FromResult<DashboardOverdueDto?>(null)!;
+            var t6 = CanViewPurchases
+                ? DashboardService.GetMonthlyPurchaseStatsAsync()
+                : Task.FromResult<DashboardPurchaseStatsDto?>(null)!;
+            var t7 = CanViewStock
+                ? DashboardService.GetTopItemAlertsAsync(5)
+                : Task.FromResult<List<DashboardItemAlertDto>?>(null)!;
+            var t8 = CanViewPurchases
+                ? DashboardService.GetMonthlyPurchaseChartAsync()
+                : Task.FromResult<List<MonthlyChartDto>?>(null)!;
+
+            await Task.WhenAll(t1, t2, t3, t4, t5, t6, t7, t8);
+
+            stats = t1.Result;
+            recentActivities = t2.Result;
+            pending = t3.Result;
+            invAlerts = t4.Result;
+            overdue = t5.Result;
+            purchaseStats = t6.Result;
+            itemAlerts = t7.Result;
+            chartData = t8.Result;
+
+            _lastRefresh = DateTime.Now;
+        }
+        catch { /* Log if needed */ }
+    }
+
+    // ==========================================
+    // تحديث البيانات يدوياً
+    // ==========================================
+    private async Task RefreshData()
+    {
+        if (_refreshing) return;
+
+        _refreshing = true;
+        StateHasChanged();
+
+        await LoadAllData();
+
+        _refreshing = false;
+        StateHasChanged();
+    }
+
+    // ==========================================
+    // أسماء الشهور بالعربي
+    // ==========================================
+    private static readonly Dictionary<int, string> ArabicMonths = new()
+    {
+        { 1, "يناير" },
+        { 2, "فبراير" },
+        { 3, "مارس" },
+        { 4, "أبريل" },
+        { 5, "مايو" },
+        { 6, "يونيو" },
+        { 7, "يوليو" },
+        { 8, "أغسطس" },
+        { 9, "سبتمبر" },
+        { 10, "أكتوبر" },
+        { 11, "نوفمبر" },
+        { 12, "ديسمبر" }
+    };
+
+    private string GetArabicMonthName(string? monthKey)
+    {
+        if (string.IsNullOrEmpty(monthKey)) return "—";
+
+        try
+        {
+            // monthKey بيكون بالشكل "2026-04"
+            var parts = monthKey.Split('-');
+            if (parts.Length == 2 && int.TryParse(parts[1], out int monthNum))
+            {
+                return ArabicMonths.ContainsKey(monthNum) ? ArabicMonths[monthNum] : monthKey;
+            }
+        }
+        catch { }
+
+        return monthKey;
+    }
+
+    // ==========================================
+    // Helpers
+    // ==========================================
+    private void GoTo(string code) =>
+        Navigation.NavigateTo(ModuleRouteHelper.GetRoute(code));
+
+    private void ScrollTo(string id) { /* JS scroll if needed */ }
+
+    private string GetInitials()
+    {
+        if (string.IsNullOrWhiteSpace(UserSession.FullName)) return "U";
+        var parts = UserSession.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpper()
+            : parts[0][0].ToString().ToUpper();
+    }
+
+    private string GetEmoji(string? code) => (code?.ToUpper()) switch
+    {
+        "SCR_ITEMS" => "📦",
+        "SCR_CATEGORIES" => "📂",
+        "SCR_UNITS" => "📏",
+        "SCR_WAREHOUSES" => "🏪",
+        "SCR_SUPPLIERS" => "🏭",
+        "SCR_CUSTOMERS" => "👥",
+        "SCR_PR" => "📋",
+        "SCR_PO" => "📄",
+        "SCR_GRN" => "📦",
+        "SCR_PINV" => "💰",
+        "SCR_PRET" => "🔄",
+        "SCR_STOCK" => "📊",
+        "SCR_TRANS" => "📈",
+        "SCR_TRANSFER" => "🔀",
+        "SCR_COUNT" => "📝",
+        "SCR_USERS" => "👤",
+        "SCR_ROLES" => "🔐",
+        "SCR_AUDIT" => "📜",
+        "SCR_EMP" => "💼",
+        "SCR_DEPT" => "🏢",
+        "SCR_JOBTITLE" => "📌",
+        "SCR_ATTEND" => "⏰",
+        "SCR_LEAVES" => "🏖️",
+        "SCR_LOANS" => "💳",
+        "SCR_PENALTY" => "⚠️",
+        "SCR_PAYROLL" => "💰",
+        _ => "📋"
+    };
+
+    private static string GetAlertColor(int level) => level switch
+    {
+        0 => "#10b981",
+        1 => "#f59e0b",
+        2 => "#f97316",
+        3 => "#ef4444",
+        _ => "#6b7280"
+    };
+}

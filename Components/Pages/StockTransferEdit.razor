@@ -1,0 +1,337 @@
+﻿@page "/stock-transfers/new"
+@page "/stock-transfers/edit/{TransferId:int}"
+@page "/stock-transfers/view/{TransferId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject InventoryService InvService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+else if (permissions == null || !permissions.CanView)
+{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+else
+{
+    <div class="doc-page" dir="rtl">
+        <div class="doc-header">
+            <div class="doc-header-right">
+                <button class="btn-m btn-ghost" @onclick="GoBack">→ رجوع</button>
+                <div>
+                    <h2 class="doc-title">@pageTitle</h2>
+                    @if (!string.IsNullOrEmpty(header.TransferNumber))
+                    {
+                        <div class="doc-num-wrap">
+                            <code class="doc-number">@header.TransferNumber</code>
+                            <span class="status-chip" style="--sc:@InventoryService.GetTransferStatusColor(header.TransferStatus)">
+                                @InventoryService.GetTransferStatusName(header.TransferStatus)
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (canApprove)
+        {
+            <div class="approval-bar">
+                <span class="approval-label">📦 تحويل مخزني جاهز للاعتماد والتنفيذ</span>
+                <button type="button" class="appr-btn appr-quick" @onclick="ExecuteApprove" disabled="@isSaving">
+                    @if (isSaving) { <div class="btn-spin"></div> } else { <span>✅</span> }
+                    اعتماد وتنفيذ
+                </button>
+            </div>
+        }
+
+        @if (isLoading)
+        { <div class="loading-st"><div class="loader"></div></div> }
+        else
+        {
+            <div class="doc-section">
+                <div class="sec-head"><div class="sec-icon blue">📦</div><h3 class="sec-title">بيانات التحويل</h3></div>
+                <div class="form-grid c4">
+                    <div class="f-field"><label class="f-label">الرقم</label>
+                        <input type="text" class="f-input" value="@(header.TransferNumber ?? "تلقائي")" disabled /></div>
+                    <div class="f-field"><label class="f-label required">التاريخ</label>
+                        <input type="date" class="f-input" @bind="header.TransferDate" disabled="@isReadOnly" /></div>
+                    <div class="f-field"><label class="f-label required">من مخزن</label>
+                        <select class="f-input" @bind="header.FromWarehouseID" @bind:after="OnFromWarehouseChanged" disabled="@isReadOnly">
+                            <option value="0">-- اختر --</option>
+                            @if (warehouses != null) { @foreach (var w in warehouses) { <option value="@w.Id">@w.Name</option> } }
+                        </select></div>
+                    <div class="f-field"><label class="f-label required">إلى مخزن</label>
+                        <select class="f-input" @bind="header.ToWarehouseID" disabled="@isReadOnly">
+                            <option value="0">-- اختر --</option>
+                            @if (warehouses != null) { @foreach (var w in warehouses) { <option value="@w.Id">@w.Name</option> } }
+                        </select></div>
+                    <div class="f-field"><label class="f-label">الطالب</label>
+                        <select class="f-input" @bind="header.RequestedBy" disabled="@isReadOnly">
+                            <option value="0">-- اختر --</option>
+                            @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
+                        </select></div>
+                    <div class="f-field c3"><label class="f-label">السبب / الملاحظات</label>
+                        <input type="text" class="f-input" @bind="header.TransferReason" disabled="@isReadOnly" placeholder="سبب التحويل..." /></div>
+                </div>
+            </div>
+
+            @if (TransferId > 0 || header.FromWarehouseID > 0)
+            {
+                <div class="doc-section">
+                    <div class="sec-head">
+                        <div class="sec-icon green">📋</div><h3 class="sec-title">الأصناف</h3>
+                        <span class="sec-badge">@details.Count صنف</span>
+                        @if (!isReadOnly && permissions.CanAdd)
+                        { <button class="btn-m btn-primary btn-sm" @onclick="ShowAddLine" style="margin-right:auto;">+ إضافة</button> }
+                    </div>
+
+                    @if (!details.Any() && !showLineForm)
+                    { <div class="empty-lines"><p>لا توجد أصناف</p></div> }
+                    else
+                    {
+                        <div class="tbl-card"><table class="tbl">
+                            <thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th>
+                                <th class="tc">الكمية</th><th class="tl">التكلفة</th><th class="tl">الإجمالي</th>
+                                <th>الباتش</th><th class="tc">المتاح</th>
+                                @if (!isReadOnly) { <th class="tc">إجراءات</th> }
+                            </tr></thead>
+                            <tbody>
+                                @{ int n = 0; }
+                                @foreach (var d in details)
+                                {
+                                    n++;
+                                    <tr>
+                                        <td class="td-n">@n</td>
+                                        <td><code class="code-tag">@d.ItemCode</code></td>
+                                        <td class="td-bold">@d.ItemNameAr</td>
+                                        <td>@d.UnitName</td>
+                                        <td class="tc num-cell">@d.Quantity.ToString("#,##0.##")</td>
+                                        <td class="tl num-cell">@d.UnitCost.ToString("#,##0.00")</td>
+                                        <td class="tl num-cell"><strong>@d.TotalCost.ToString("#,##0.00")</strong></td>
+                                        <td class="td-muted">@(d.BatchNumber ?? "—")</td>
+                                        <td class="tc">@d.AvailableQty.ToString("#,##0.##")</td>
+                                        @if (!isReadOnly)
+                                        {
+                                            <td class="tc"><div class="line-actions">
+                                                @if (permissions.CanDelete) { <button class="act-btn" @onclick="() => DeleteLine(d.TransferDetailID)">🗑️</button> }
+                                            </div></td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot><tr class="total-row">
+                                <td colspan="6" class="tl"><strong>الإجمالي</strong></td>
+                                <td class="tl num-cell"><strong>@details.Sum(d => d.TotalCost).ToString("#,##0.00") ج.م</strong></td>
+                                <td colspan="@(!isReadOnly ? 3 : 2)"></td>
+                            </tr></tfoot>
+                        </table></div>
+                    }
+
+                    @if (showLineForm)
+                    {
+                        <div class="line-form">
+                            <div class="line-form-head"><h4>إضافة صنف</h4><button class="btn-close-x" @onclick="() => showLineForm = false">✕</button></div>
+                            <div class="form-grid c3">
+                                <div class="f-field"><label class="f-label required">الصنف</label>
+                                    <SearchableSelect Items="@(warehouseItems ?? allItems)" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." /></div>
+                                <div class="f-field"><label class="f-label required">الوحدة</label>
+                                    <select class="f-input" @bind="editLine.UnitID"><option value="0">--</option>
+                                        @if (units != null) { @foreach (var u in units) { <option value="@u.Id">@u.Name</option> } }</select></div>
+                                <div class="f-field"><label class="f-label required">الكمية</label>
+                                    <input type="number" class="f-input" @bind="editLine.Quantity" step="0.01" /></div>
+                                <div class="f-field"><label class="f-label">الباتش</label>
+                                    <input type="text" class="f-input" @bind="editLine.BatchNumber" /></div>
+                                <div class="f-field"><label class="f-label">الصلاحية</label>
+                                    <input type="date" class="f-input" @bind="editLine.ExpiryDate" /></div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(lineMsg)) { <div class="form-msg @(lineMsgOk ? "msg-ok" : "msg-err")">@lineMsg</div> }
+                            <div class="line-form-btns">
+                                <button class="btn-m btn-primary" @onclick="SaveLine" disabled="@isSavingLine">@if (isSavingLine) { <div class="btn-spin"></div> } إضافة</button>
+                                <button class="btn-m btn-ghost" @onclick="() => showLineForm = false">إلغاء</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!isViewMode && !canApprove)
+            {
+                <div class="doc-actions">
+                    <div class="doc-actions-right">
+                        @if (!isReadOnly)
+                        {
+                            <button class="btn-m btn-primary" @onclick="SaveTransfer" disabled="@isSaving">
+                                @if (isSaving) { <div class="btn-spin"></div> } @(isNewMode ? "حفظ" : "حفظ التعديلات")
+                            </button>
+                        }
+                    </div>
+                    <button class="btn-m btn-ghost" @onclick="GoBack">رجوع</button>
+                </div>
+            }
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(toast))
+    { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+}
+
+<style>
+    .doc-page{display:flex;flex-direction:column;gap:18px;max-width:1200px}.doc-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.doc-header-right{display:flex;align-items:flex-start;gap:14px}.doc-title{font-weight:800;color:#0f172a;margin:0;font-size:1.2rem}.doc-num-wrap{display:flex;align-items:center;gap:10px;margin-top:6px}.doc-number{background:#f1f5f9;padding:4px 14px;border-radius:8px;font-size:.88rem;color:#2563eb;font-weight:700}.status-chip{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
+    .approval-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1.5px solid #a7f3d0;border-radius:14px;flex-wrap:wrap}.approval-label{font-size:.82rem;font-weight:700;color:#065f46;padding-left:10px;border-left:2px solid #a7f3d0;margin-left:4px}.appr-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:10px;border:none;font-weight:700;font-size:.84rem;cursor:pointer}.appr-btn:disabled{opacity:.6}.appr-quick{background:linear-gradient(135deg,#059669,#10b981);color:white}
+    .doc-section{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:22px}.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}.sec-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}.sec-icon.blue{background:#eff6ff}.sec-icon.green{background:#ecfdf5}.sec-title{font-weight:800;color:#0f172a;margin:0;font-size:.98rem}.sec-badge{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.78rem;font-weight:700}
+    .form-grid{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.f-field{display:flex;flex-direction:column;gap:5px}.f-field.c3{grid-column:span 3}.f-label{font-size:.8rem;font-weight:700;color:#334155}.required::after{content:' *';color:#ef4444}.f-input{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.88rem;background:white;outline:none;width:100%}.f-input:focus{border-color:#2563eb}.f-input:disabled{background:#f8fafc;color:#64748b}
+    .tbl-card{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:900px}.tbl thead{background:#f8fafc}.tbl th{padding:11px 12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}.tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#94a3b8}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.num-cell{font-family:monospace;font-weight:600}.code-tag{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.78rem;color:#2563eb;font-weight:600}.total-row{background:#f8fafc!important}.total-row td{border-top:2px solid #e2e8f0;padding:12px}
+    .empty-lines{text-align:center;padding:30px;color:#94a3b8}.line-actions{display:flex;gap:4px;justify-content:center}.act-btn{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem}.act-btn:hover{background:#f8fafc}
+    .line-form{margin-top:16px;padding:18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px}.line-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.line-form-head h4{font-weight:800;margin:0}.btn-close-x{background:none;border:none;font-size:1.1rem;cursor:pointer;color:#94a3b8}.line-form-btns{display:flex;gap:8px;margin-top:14px}.form-msg{padding:8px 12px;border-radius:8px;font-size:.82rem;font-weight:600;margin-top:10px}.msg-ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .doc-actions{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:white;border:1px solid #e2e8f0;border-radius:16px}.doc-actions-right{display:flex;gap:10px}
+    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-m:disabled{opacity:.6}.btn-m.btn-sm{padding:7px 14px;font-size:.82rem}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:768px){.c4,.c3{grid-template-columns:1fr}.f-field.c3{grid-column:span 1}.doc-header{flex-direction:column}.approval-bar{flex-direction:column}}
+</style>
+
+@code {
+    [Parameter] public int TransferId { get; set; }
+
+    private StockTransferHeaderDto header = new() { TransferDate = DateTime.Today };
+    private List<StockTransferDetailDto> details = new();
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? warehouses, employees, units;
+    private List<SearchableItem>? allItems;
+    private List<SearchableItem>? warehouseItems;
+    private bool isLoading = true, isSaving = false;
+    private string toast = ""; private bool toastOk = true;
+    private bool showLineForm = false;
+    private StockTransferDetailEditDto editLine = new();
+    private bool isSavingLine = false;
+    private string lineMsg = ""; private bool lineMsgOk = true;
+
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => TransferId == 0;
+    private bool canApprove => !isNewMode && !isViewMode && header.TransferStatus == 1 && details.Any() && (permissions?.CanApprove ?? false);
+    private bool isReadOnly => isViewMode || (!isNewMode && header.TransferStatus != 1);
+    private string pageTitle => isNewMode ? "تحويل مخزني جديد" : isViewMode ? "عرض تحويل" : canApprove ? "اعتماد تحويل" : "تعديل تحويل";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_TRANSFER");
+            if (permissions == null || !permissions.CanView) return;
+            warehouses = await LookupService.GetWarehousesAsync();
+            employees = await LookupService.GetEmployeesAsync();
+            units = await LookupService.GetUnitsAsync();
+            allItems = await LookupService.GetItemsSearchableAsync();
+            if (TransferId > 0)
+            {
+                var loaded = await InvService.GetTransferByIdAsync(TransferId);
+                if (loaded != null) { header = loaded; details = await InvService.GetTransferDetailsAsync(TransferId); }
+                else { toast = "التحويل غير موجود"; toastOk = false; }
+            }
+            if (header.FromWarehouseID > 0)
+    warehouseItems = await LookupService.GetWarehouseItemsSearchableAsync(header.FromWarehouseID);
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private async Task OnItemSelected(SearchableItem? item)
+    {
+        if (item == null) return; editLine.ItemID = item.Id;
+        var info = await LookupService.GetItemQuickInfoAsync(item.Id);
+        if (info != null && info.UnitID > 0) editLine.UnitID = info.UnitID;
+        StateHasChanged();
+    }
+    private async Task OnFromWarehouseChanged()
+{
+    if (header.FromWarehouseID > 0)
+        warehouseItems = await LookupService.GetWarehouseItemsSearchableAsync(header.FromWarehouseID);
+    else
+        warehouseItems = null;
+    StateHasChanged();
+}
+
+    private async Task SaveTransfer()
+    {
+        if (header.FromWarehouseID <= 0) { toast = "اختر المخزن المصدر"; toastOk = false; StateHasChanged(); return; }
+        if (header.ToWarehouseID <= 0) { toast = "اختر المخزن المستقبل"; toastOk = false; StateHasChanged(); return; }
+        if (header.FromWarehouseID == header.ToWarehouseID) { toast = "المخزن المصدر لازم يختلف عن المستقبل"; toastOk = false; StateHasChanged(); return; }
+
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (isNewMode)
+            {
+                header.TransferNumber = await InvService.GenerateTransferNumberAsync();
+                var newId = await InvService.InsertTransferAsync(header, UserSession.UserID);
+                TransferId = newId; header.TransferID = newId;
+                toast = $"تم الإنشاء: {header.TransferNumber} ✅"; toastOk = true;
+                Navigation.NavigateTo($"/stock-transfers/edit/{newId}", forceLoad: false);
+            }
+            else
+            {
+                await InvService.UpdateTransferAsync(header, UserSession.UserID);
+                toast = "تم الحفظ ✅"; toastOk = true;
+            }
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private async Task ExecuteApprove()
+    {
+        try { var c = await JS.InvokeAsync<bool>("confirm", "هل تريد اعتماد وتنفيذ التحويل؟\n\nسيتم نقل الأصناف من المخزن المصدر إلى المستقبل."); if (!c) return; } catch { return; }
+        isSaving = true; toast = ""; StateHasChanged();
+        try
+        {
+            await InvService.ApproveAndExecuteTransferAsync(TransferId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header = await InvService.GetTransferByIdAsync(TransferId) ?? header;
+            details = await InvService.GetTransferDetailsAsync(TransferId);
+            isSaving = false; toast = "تم الاعتماد والتنفيذ ✅"; toastOk = true; StateHasChanged();
+            await Task.Delay(2000); Navigation.NavigateTo("/stock-transfers");
+        }
+        catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
+    }
+
+    private void ShowAddLine() { editLine = new() { TransferID = TransferId }; lineMsg = ""; showLineForm = true; }
+
+    private async Task SaveLine()
+    {
+        lineMsg = "";
+        if (editLine.ItemID == 0) { lineMsg = "اختر الصنف"; lineMsgOk = false; return; }
+        if (editLine.UnitID == 0) { lineMsg = "اختر الوحدة"; lineMsgOk = false; return; }
+        if (editLine.Quantity <= 0) { lineMsg = "أدخل الكمية"; lineMsgOk = false; return; }
+
+        if (isNewMode && TransferId == 0) { await SaveTransfer(); if (TransferId == 0) return; editLine.TransferID = TransferId; }
+
+        isSavingLine = true; StateHasChanged();
+        try
+        {
+            await InvService.InsertTransferDetailAsync(editLine, UserSession.UserID);
+            details = await InvService.GetTransferDetailsAsync(TransferId);
+            showLineForm = false; toast = "تم الإضافة ✅"; toastOk = true;
+        }
+        catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
+        finally { isSavingLine = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteLine(int id)
+    {
+        try { await InvService.DeleteTransferDetailAsync(id, UserSession.UserID);
+            details = await InvService.GetTransferDetailsAsync(TransferId); toast = "تم الحذف ✅"; toastOk = true; }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        StateHasChanged();
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/stock-transfers");
+}
+

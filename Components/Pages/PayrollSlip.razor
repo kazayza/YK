@@ -1,0 +1,214 @@
+﻿@page "/payroll/slip/{PayrollId:int}/{EmployeeId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject PayrollService PayrollService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>كشف مرتب - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
+}
+else if (isLoading)
+{
+    <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else if (payroll == null || detail == null)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">❌</div>
+        <h4>تعذر العثور على كشف المرتب</h4>
+        <button class="btn-modern btn-ghost" @onclick="GoBack">رجوع</button>
+    </div>
+}
+else
+{
+    <div class="slip-page" dir="rtl">
+        <div class="toolbar no-print">
+            <button class="btn-modern btn-primary-modern" @onclick="PrintPage">طباعة</button>
+            <button class="btn-modern btn-ghost" @onclick="GoBack">رجوع</button>
+        </div>
+
+        <div class="paper">
+            <div class="paper-header">
+                <div>
+                    <h1>واي كي كوتينج</h1>
+                    <div class="muted">كشف مرتب موظف</div>
+                </div>
+                <div class="header-meta">
+                    <div>رقم المسير: <strong>@payroll.PayrollNumber</strong></div>
+                    <div>الشهر: <strong>@payroll.PayrollMonth.ToString("MM/yyyy")</strong></div>
+                    <div>الفترة: <strong>@(payroll.PeriodName ?? $"#{payroll.PeriodID}")</strong></div>
+                </div>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-card"><span>كود الموظف</span><strong>@detail.EmployeeCode</strong></div>
+                <div class="info-card"><span>اسم الموظف</span><strong>@detail.EmployeeName</strong></div>
+                <div class="info-card"><span>القسم</span><strong>@(detail.DepartmentName ?? "—")</strong></div>
+                <div class="info-card"><span>الوظيفة</span><strong>@(detail.JobTitleName ?? "—")</strong></div>
+                <div class="info-card"><span>أيام الحضور</span><strong>@detail.PresentDays</strong></div>
+                <div class="info-card"><span>طريقة الدفع</span><strong>@detail.PaymentMethodName</strong></div>
+            </div>
+
+            <div class="section-grid">
+                <div class="section-card">
+                    <h3>الاستحقاقات</h3>
+                    <table class="slip-table">
+                        <tbody>
+                            <tr><td>المرتب الأساسي</td><td>@detail.BasicSalary.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدل انتقال</td><td>@detail.TransportAllowance.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدل سكن</td><td>@detail.HousingAllowance.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدل هاتف</td><td>@detail.PhoneAllowance.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدل طعام</td><td>@detail.FoodAllowance.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدلات أخرى</td><td>@detail.OtherAllowances.ToString("#,##0.00")</td></tr>
+                            <tr><td>بدل إضافي</td><td>@detail.OvertimeAmount.ToString("#,##0.00")</td></tr>
+                            <tr><td>حوافز</td><td>@detail.Incentives.ToString("#,##0.00")</td></tr>
+                            <tr><td>عمولات</td><td>@detail.Commissions.ToString("#,##0.00")</td></tr>
+                            <tr><td>مكافآت</td><td>@detail.Rewards.ToString("#,##0.00")</td></tr>
+                            <tr><td>استحقاقات أخرى</td><td>@detail.OtherEarnings.ToString("#,##0.00")</td></tr>
+                            <tr class="total-row"><td>إجمالي الاستحقاقات</td><td>@detail.GrossEarnings.ToString("#,##0.00")</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="section-card">
+                    <h3>الخصومات</h3>
+                    <table class="slip-table">
+                        <tbody>
+                            <tr><td>تأمينات الموظف</td><td>@detail.InsuranceEmployee.ToString("#,##0.00")</td></tr>
+                            <tr><td>ضريبة الدخل</td><td>@detail.IncomeTax.ToString("#,##0.00")</td></tr>
+                            <tr><td>أقساط سلف</td><td>@detail.LoanDeduction.ToString("#,##0.00")</td></tr>
+                            <tr><td>جزاءات</td><td>@detail.PenaltyDeduction.ToString("#,##0.00")</td></tr>
+                            <tr><td>خصم غياب</td><td>@detail.AbsenceDeduction.ToString("#,##0.00")</td></tr>
+                            <tr><td>خصم تأخير</td><td>@detail.LateDeduction.ToString("#,##0.00")</td></tr>
+                            <tr><td>خصومات أخرى</td><td>@detail.OtherDeductions.ToString("#,##0.00")</td></tr>
+                            <tr class="total-row"><td>إجمالي الخصومات</td><td>@detail.TotalDeductions.ToString("#,##0.00")</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="net-box">
+                <div class="net-label">صافي المرتب المستحق</div>
+                <div class="net-value">@detail.NetSalary.ToString("#,##0.00")</div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(detail.Notes))
+            {
+                <div class="notes-box">
+                    <h4>ملاحظات</h4>
+                    <div>@detail.Notes</div>
+                </div>
+            }
+
+            <div class="footer-line">
+                تم إنشاء هذا الكشف بتاريخ @DateTime.Now.ToString("dd/MM/yyyy HH:mm")
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .slip-page{padding:20px}
+    .toolbar{display:flex;gap:10px;justify-content:flex-end;margin-bottom:20px}
+    .paper{max-width:900px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:32px;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+    .paper-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:2px solid #f1f5f9;padding-bottom:20px;margin-bottom:20px}
+    .paper-header h1{margin:0;font-size:1.6rem;color:#111827}
+    .muted{color:#6b7280;font-size:.95rem;margin-top:6px}
+    .header-meta{display:flex;flex-direction:column;gap:6px;color:#374151;font-size:.92rem}
+    .info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+    .info-card{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:14px}
+    .info-card span{display:block;color:#6b7280;font-size:.8rem;margin-bottom:6px}
+    .info-card strong{color:#111827}
+    .section-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .section-card{border:1px solid #e5e7eb;border-radius:16px;padding:16px}
+    .section-card h3{margin:0 0 12px 0;color:#111827}
+    .slip-table{width:100%;border-collapse:collapse}
+    .slip-table td{padding:10px 8px;border-bottom:1px solid #f1f5f9}
+    .slip-table td:last-child{text-align:left;font-family:monospace;font-weight:700}
+    .total-row td{font-weight:800;color:#111827;background:#f8fafc}
+    .net-box{margin-top:20px;background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #bbf7d0;border-radius:18px;padding:20px;text-align:center}
+    .net-label{color:#166534;font-weight:700;margin-bottom:6px}
+    .net-value{font-size:2rem;color:#15803d;font-weight:900}
+    .notes-box{margin-top:20px;border:1px solid #e5e7eb;border-radius:16px;padding:16px;background:#fafafa}
+    .notes-box h4{margin:0 0 8px 0}
+    .footer-line{margin-top:24px;text-align:center;color:#6b7280;font-size:.85rem}
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+    @@keyframes spin{to{transform:rotate(360deg)}}
+    @@media(max-width:768px){
+        .paper{padding:18px}
+        .paper-header{flex-direction:column}
+        .info-grid{grid-template-columns:1fr}
+        .section-grid{grid-template-columns:1fr}
+        .toolbar{flex-direction:column}
+        .btn-modern{width:100%}
+    }
+    @@media print{
+        body{background:#fff}
+        .no-print{display:none !important}
+        .paper{box-shadow:none;border:none;border-radius:0;max-width:none;margin:0;padding:0}
+        .slip-page{padding:0}
+        @@page{size:A4;margin:12mm}
+    }
+</style>
+
+@code {
+    [Parameter] public int PayrollId { get; set; }
+    [Parameter] public int EmployeeId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private PayrollRunEditDto? payroll;
+    private PayrollDetailDto? detail;
+    private bool isLoading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_PAYROLL");
+
+        if (permissions == null || !permissions.CanView)
+        {
+            isLoading = false;
+            return;
+        }
+
+        isLoading = true;
+        try
+        {
+            payroll = await PayrollService.GetPayrollByIdAsync(PayrollId);
+            detail = await PayrollService.GetPayrollDetailByEmployeeAsync(PayrollId, EmployeeId);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GoBack() => Navigation.NavigateTo($"/payroll/details/{PayrollId}");
+
+    private async Task PrintPage() => await JS.InvokeVoidAsync("window.print");
+}

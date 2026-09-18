@@ -1,0 +1,334 @@
+﻿@page "/customers/print"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using Microsoft.AspNetCore.WebUtilities
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject CustomerService CustomerService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>طباعة تقرير العملاء - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView || !permissions.CanPrint)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية لطباعة التقرير</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/customers")'>
+            العودة لقائمة العملاء
+        </button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state">
+        <div class="loader"></div>
+        <p>جاري تجهيز التقرير...</p>
+    </div>
+}
+else
+{
+    <div class="print-page" dir="rtl">
+        <div class="print-toolbar no-print">
+            <button class="btn-modern btn-primary-modern" @onclick="PrintPage">طباعة / حفظ PDF</button>
+            <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/customers")'>رجوع</button>
+        </div>
+
+        <div class="report-card">
+            <div class="report-header">
+                <h1>تقرير العملاء</h1>
+                <div class="report-subtitle">مصنع واي كي كوتينج</div>
+                <div class="report-date">تاريخ التقرير: @DateTime.Now.ToString("dd/MM/yyyy hh:mm tt")</div>
+            </div>
+
+            <div class="filters-summary">
+                <div class="summary-box"><strong>البحث:</strong> @(string.IsNullOrWhiteSpace(filters.SearchText) ? "الكل" : filters.SearchText)</div>
+                <div class="summary-box"><strong>النوع:</strong> @GetCustomerTypeFilterName(filters.CustomerType)</div>
+                <div class="summary-box"><strong>المجموعة:</strong> @GetLookupName(customerGroups, filters.CustomerGroupID)</div>
+                <div class="summary-box"><strong>المندوب:</strong> @GetLookupName(salesReps, filters.SalesRepID)</div>
+                <div class="summary-box"><strong>الحالة:</strong> @statusText</div>
+                <div class="summary-box"><strong>إجمالي السجلات:</strong> @items.Count</div>
+            </div>
+
+            @if (!items.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">👥</div>
+                    <h4>لا توجد بيانات للطباعة</h4>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>الكود</th>
+                                <th>اسم العميل</th>
+                                <th>النوع</th>
+                                <th>المجموعة</th>
+                                <th>الهاتف</th>
+                                <th>المدينة</th>
+                                <th>العملة</th>
+                                <th>المندوب</th>
+                                <th>حد الائتمان</th>
+                                <th>الرصيد</th>
+                                <th>الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int row = 0;
+                            }
+                            @foreach (var cust in items)
+                            {
+                                row++;
+                                <tr>
+                                    <td>@row</td>
+                                    <td>@cust.CustomerCode</td>
+                                    <td>@cust.CustomerNameAr</td>
+                                    <td>@CustomerService.GetCustomerTypeName(cust.CustomerType)</td>
+                                    <td>@(cust.CustomerGroupName ?? "—")</td>
+                                    <td dir="ltr">@(cust.Phone1 ?? cust.Mobile ?? "—")</td>
+                                    <td>@(cust.City ?? "—")</td>
+                                    <td>@(cust.CurrencyName ?? "—")</td>
+                                    <td>@(cust.SalesRepName ?? "—")</td>
+                                    <td class="num-cell">@cust.CreditLimit.ToString("#,##0.00")</td>
+                                    <td class="num-cell">@cust.CurrentBalance.ToString("#,##0.00")</td>
+                                    <td>@(cust.IsActive ? "نشط" : "غير نشط")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="10"><strong>الإجمالي</strong></td>
+                                <td class="num-cell"><strong>@items.Sum(x => x.CurrentBalance).ToString("#,##0.00")</strong></td>
+                                <td><strong>@items.Count</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .print-page { padding: 20px; }
+    .print-toolbar { display: flex; gap: 10px; margin-bottom: 20px; }
+    .report-card { background: white; border: 1px solid #e5e7eb; border-radius: 20px; padding: 24px; }
+    .report-header { text-align: center; margin-bottom: 22px; }
+    .report-header h1 { margin: 0 0 6px; font-size: 1.8rem; color: #111827; }
+    .report-subtitle { color: #6b7280; font-weight: 700; margin-bottom: 6px; }
+    .report-date { color: #9ca3af; font-size: .9rem; }
+
+    .filters-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .summary-box {
+        background: #f9fafb;
+        border: 1px solid #eef2f7;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: .88rem;
+        color: #374151;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    .report-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1100px;
+    }
+
+    .report-table th,
+    .report-table td {
+        border: 1px solid #d1d5db;
+        padding: 10px 12px;
+        text-align: right;
+        font-size: .88rem;
+    }
+
+    .report-table thead th {
+        background: #f3f4f6;
+        color: #111827;
+        font-weight: 800;
+    }
+
+    .report-table tfoot td {
+        background: #faf5ff;
+    }
+
+    .num-cell {
+        text-align: left;
+        font-family: monospace;
+        font-weight: 700;
+    }
+
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 700;
+        font-size: .88rem;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; }
+    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
+    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+
+    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+    .empty-state { text-align: center; padding: 50px 20px; }
+    .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+
+    @@keyframes spin { to { transform: rotate(360deg); } }
+
+    @@media print {
+        .no-print { display: none !important; }
+        body { background: white !important; }
+        .print-page { padding: 0; }
+        .report-card {
+            border: none;
+            box-shadow: none;
+            padding: 0;
+        }
+    }
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private CustomerFilterDto filters = new();
+    private List<CustomerListDto> items = new();
+
+    private List<LookupDto>? customerGroups;
+    private List<LookupDto>? salesReps;
+
+    private bool isLoading = true;
+    private string statusText = "الكل";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_CUSTOMERS");
+
+        if (permissions == null || !permissions.CanView || !permissions.CanPrint)
+        {
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            ParseQuery();
+
+            customerGroups = await LookupService.GetCustomerGroupsAsync();
+            salesReps = await LookupService.GetSalesRepsAsync();
+
+            items = await CustomerService.GetCustomersReportAsync(filters);
+        }
+        catch
+        {
+            items = new List<CustomerListDto>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ParseQuery()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        filters.SearchText = GetQueryValue(query, "search");
+        filters.CustomerType = ParseInt(GetQueryValue(query, "type"));
+        filters.CustomerGroupID = ParseInt(GetQueryValue(query, "groupId"));
+        filters.SalesRepID = ParseInt(GetQueryValue(query, "salesRepId"));
+
+        var status = GetQueryValue(query, "status");
+
+        filters.IsActive = status switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+
+        statusText = status switch
+        {
+            "1" => "نشط فقط",
+            "0" => "غير نشط فقط",
+            _ => "الكل"
+        };
+    }
+
+    private static string GetQueryValue(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query, string key)
+    {
+        return query.TryGetValue(key, out var value) ? value.ToString() : "";
+    }
+
+    private static int ParseInt(string? value)
+    {
+        return int.TryParse(value, out var result) ? result : 0;
+    }
+
+    private string GetCustomerTypeFilterName(int type)
+    {
+        return type switch
+        {
+            1 => "جملة",
+            2 => "نص جملة",
+            3 => "تجزئة",
+            4 => "أونلاين",
+            5 => "مؤسسي",
+            _ => "الكل"
+        };
+    }
+
+    private string GetLookupName(List<LookupDto>? source, int? id)
+    {
+        if (source == null || (id ?? 0) == 0)
+            return "الكل";
+
+        return source.FirstOrDefault(x => x.Id == id)?.Name ?? "الكل";
+    }
+
+    private async Task PrintPage()
+    {
+        await JS.InvokeVoidAsync("print");
+    }
+}

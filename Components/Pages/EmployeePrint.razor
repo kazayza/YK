@@ -1,0 +1,293 @@
+﻿@page "/employees/print/{EmployeeId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject EmployeeService EmployeeService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>طباعة بيانات الموظف - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/employees")'>العودة</button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else if (model == null)
+{
+    <div class="no-access-card"><div class="no-access-icon">❌</div><h4>الموظف غير موجود</h4></div>
+}
+else
+{
+    <div class="print-page" dir="rtl">
+
+        <div class="print-toolbar no-print">
+            <button class="btn-modern btn-primary-modern" @onclick="DoPrint">طباعة / حفظ PDF</button>
+            <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo($"/employees/view/{EmployeeId}")'>رجوع</button>
+        </div>
+
+        <div class="report-card">
+            <div class="report-header">
+                <h1>بيانات الموظف</h1>
+                <div class="report-subtitle">مصنع واي كي كوتينج</div>
+                <div class="report-date">@DateTime.Now.ToString("dd/MM/yyyy hh:mm tt")</div>
+            </div>
+
+            <div class="emp-header-box">
+                <div class="emp-header-info">
+                    <div class="emp-name">@model.FirstNameAr @model.SecondNameAr @model.ThirdNameAr @model.LastNameAr</div>
+                    <div class="emp-code">كود: @model.EmployeeCode</div>
+                </div>
+                <div class="emp-header-status">
+                    <span class="print-status @(model.IsActive ? "active" : "inactive")">
+                        @(EmployeeService.GetEmployeeStatusName(model.EmployeeStatus))
+                    </span>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">البيانات الشخصية</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">الاسم الأول</span><span class="info-value">@model.FirstNameAr</span></div>
+                    <div class="info-item"><span class="info-label">الاسم الثاني</span><span class="info-value">@(model.SecondNameAr ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">الاسم الثالث</span><span class="info-value">@(model.ThirdNameAr ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">اسم العائلة</span><span class="info-value">@model.LastNameAr</span></div>
+                    <div class="info-item"><span class="info-label">الاسم (إنجليزي)</span><span class="info-value">@(model.FirstNameEn ?? "—") @((model.LastNameEn ?? ""))</span></div>
+                    <div class="info-item"><span class="info-label">الرقم القومي</span><span class="info-value" dir="ltr">@(model.NationalID ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">تاريخ الميلاد</span><span class="info-value">@(model.BirthDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">الجنس</span><span class="info-value">@(model.Gender == "M" ? "ذكر" : "أنثى")</span></div>
+                    <div class="info-item"><span class="info-label">الحالة الاجتماعية</span><span class="info-value">@GetMaritalStatus(model.MaritalStatus)</span></div>
+                    <div class="info-item"><span class="info-label">عدد الأطفال</span><span class="info-value">@model.NumberOfChildren</span></div>
+                    <div class="info-item"><span class="info-label">الجنسية</span><span class="info-value">@(model.Nationality ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">الديانة</span><span class="info-value">@(model.Religion ?? "—")</span></div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">بيانات التواصل</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">الهاتف</span><span class="info-value" dir="ltr">@(model.Phone ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">الموبايل</span><span class="info-value" dir="ltr">@(model.Mobile ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">البريد الشخصي</span><span class="info-value" dir="ltr">@(model.PersonalEmail ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">البريد الوظيفي</span><span class="info-value" dir="ltr">@(model.WorkEmail ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">المدينة</span><span class="info-value">@(model.City ?? "—")</span></div>
+                    <div class="info-item full-span"><span class="info-label">العنوان</span><span class="info-value">@(model.Address ?? "—")</span></div>
+                </div>
+                <div class="section-title-print" style="margin-top:14px">جهة اتصال الطوارئ</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">الاسم</span><span class="info-value">@(model.EmergencyContactName ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">الهاتف</span><span class="info-value" dir="ltr">@(model.EmergencyContactPhone ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">صلة القرابة</span><span class="info-value">@(model.EmergencyContactRelation ?? "—")</span></div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">البيانات الوظيفية</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">القسم</span><span class="info-value">@GetLookupName(departments, model.DepartmentID)</span></div>
+                    <div class="info-item"><span class="info-label">المسمى الوظيفي</span><span class="info-value">@GetLookupName(jobTitles, model.JobTitleID)</span></div>
+                    <div class="info-item"><span class="info-label">المدير المباشر</span><span class="info-value">@GetLookupName(managers, model.ManagerID)</span></div>
+                    <div class="info-item"><span class="info-label">تاريخ التعيين</span><span class="info-value">@(model.HireDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">نوع العقد</span><span class="info-value">@EmployeeService.GetContractTypeName(model.ContractType)</span></div>
+                    <div class="info-item"><span class="info-label">بداية العقد</span><span class="info-value">@(model.ContractStartDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">نهاية العقد</span><span class="info-value">@(model.ContractEndDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">نهاية الاختبار</span><span class="info-value">@(model.ProbationEndDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">حالة الموظف</span><span class="info-value">@EmployeeService.GetEmployeeStatusName(model.EmployeeStatus)</span></div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">البيانات المالية</div>
+                <table class="print-table">
+                    <thead>
+                        <tr><th>البند</th><th class="num-col">المبلغ</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>الراتب الأساسي</td><td class="num-col">@model.BasicSalary.ToString("#,##0.00")</td></tr>
+                        <tr><td>بدل نقل</td><td class="num-col">@model.TransportAllowance.ToString("#,##0.00")</td></tr>
+                        <tr><td>بدل سكن</td><td class="num-col">@model.HousingAllowance.ToString("#,##0.00")</td></tr>
+                        <tr><td>بدل هاتف</td><td class="num-col">@model.PhoneAllowance.ToString("#,##0.00")</td></tr>
+                        <tr><td>بدل طعام</td><td class="num-col">@model.FoodAllowance.ToString("#,##0.00")</td></tr>
+                        <tr><td>بدلات أخرى</td><td class="num-col">@model.OtherAllowances.ToString("#,##0.00")</td></tr>
+                    </tbody>
+                    <tfoot>
+                        <tr><td><strong>إجمالي الراتب الشهري</strong></td><td class="num-col"><strong>@TotalSalary.ToString("#,##0.00")</strong></td></tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">بيانات التأمينات</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">مؤمن عليه</span><span class="info-value">@(model.IsInsured ? "نعم" : "لا")</span></div>
+                    <div class="info-item"><span class="info-label">رقم التأمين</span><span class="info-value" dir="ltr">@(model.InsuranceNumber ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">أجر التأمين</span><span class="info-value">@model.InsuranceSalary.ToString("#,##0.00")</span></div>
+                    <div class="info-item"><span class="info-label">نسبة الموظف</span><span class="info-value">@model.InsurancePercEmployee%</span></div>
+                    <div class="info-item"><span class="info-label">خصم الموظف</span><span class="info-value">@InsEmp.ToString("#,##0.00")</span></div>
+                    <div class="info-item"><span class="info-label">نسبة الشركة</span><span class="info-value">@model.InsurancePercCompany%</span></div>
+                    <div class="info-item"><span class="info-label">مساهمة الشركة</span><span class="info-value">@InsComp.ToString("#,##0.00")</span></div>
+                    <div class="info-item"><span class="info-label">تاريخ بدء التأمين</span><span class="info-value">@(model.InsuranceStartDate?.ToString("dd/MM/yyyy") ?? "—")</span></div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">البيانات البنكية</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">اسم البنك</span><span class="info-value">@(model.BankName ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">رقم الحساب</span><span class="info-value" dir="ltr">@(model.BankAccountNumber ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">IBAN</span><span class="info-value" dir="ltr">@(model.IBAN ?? "—")</span></div>
+                    <div class="info-item"><span class="info-label">طريقة الدفع</span><span class="info-value">@EmployeeService.GetPaymentMethodName(model.PaymentMethod)</span></div>
+                </div>
+            </div>
+
+            <div class="section-box">
+                <div class="section-title-print">إعدادات أخرى</div>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">ساعات العمل / يوم</span><span class="info-value">@model.WorkingHoursPerDay</span></div>
+                    <div class="info-item"><span class="info-label">يوم الراحة</span><span class="info-value">@GetDayOff(model.WeeklyDaysOff)</span></div>
+                    <div class="info-item"><span class="info-label">رصيد الإجازة السنوية</span><span class="info-value">@model.AnnualLeaveBalance</span></div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(model.Notes))
+                {
+                    <div style="margin-top:12px">
+                        <span class="info-label">ملاحظات:</span>
+                        <span class="info-value">@model.Notes</span>
+                    </div>
+                }
+            </div>
+
+            <div class="signatures-row">
+                <div class="sig-box"><div class="sig-label">توقيع الموظف</div><div class="sig-line"></div></div>
+                <div class="sig-box"><div class="sig-label">توقيع مدير القسم</div><div class="sig-line"></div></div>
+                <div class="sig-box"><div class="sig-label">توقيع الموارد البشرية</div><div class="sig-line"></div></div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .print-page{padding:20px}
+    .print-toolbar{display:flex;gap:10px;margin-bottom:20px}
+    .report-card{background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:28px}
+    .report-header{text-align:center;margin-bottom:24px}
+    .report-header h1{margin:0 0 6px;font-size:1.7rem;color:#111827}
+    .report-subtitle{color:#6b7280;font-weight:700;margin-bottom:4px}
+    .report-date{color:#9ca3af;font-size:.88rem}
+
+    .emp-header-box{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#faf5ff,#f3e8ff);border:1.5px solid #e9d5ff;border-radius:16px;padding:18px 22px;margin-bottom:20px}
+    .emp-name{font-size:1.3rem;font-weight:800;color:#1f2937}
+    .emp-code{color:#1d4ed8;font-weight:700;margin-top:4px;font-size:.9rem}
+    .print-status{display:inline-block;padding:6px 16px;border-radius:999px;font-size:.82rem;font-weight:800}
+    .print-status.active{background:#ecfdf5;color:#059669}
+    .print-status.inactive{background:#fef2f2;color:#dc2626}
+
+    .section-box{border:1px solid #eef2f7;border-radius:14px;padding:16px;margin-bottom:16px;page-break-inside:avoid}
+    .section-title-print{font-size:.92rem;font-weight:800;color:#1d4ed8;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f3f4f6}
+
+    .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .info-item{display:flex;flex-direction:column;gap:3px;padding:6px 0}
+    .info-item.full-span{grid-column:1/-1}
+    .info-label{font-size:.78rem;color:#6b7280;font-weight:700}
+    .info-value{font-size:.9rem;color:#1f2937;font-weight:600}
+
+    .print-table{width:100%;border-collapse:collapse;margin-top:4px}
+    .print-table th,.print-table td{border:1px solid #d1d5db;padding:10px 14px;text-align:right;font-size:.88rem}
+    .print-table thead th{background:#f3f4f6;font-weight:800;color:#111827}
+    .print-table tfoot td{background:#faf5ff;font-weight:800}
+    .num-col{text-align:left;font-family:monospace;font-weight:700}
+
+    .signatures-row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:30px;padding-top:20px}
+    .sig-box{text-align:center}
+    .sig-label{font-size:.82rem;color:#6b7280;font-weight:700;margin-bottom:40px}
+    .sig-line{border-bottom:1.5px solid #374151}
+
+    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+    .btn-secondary-modern{background:#f3f4f6;color:#374151}
+    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+
+    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
+
+    @@keyframes spin{to{transform:rotate(360deg)}}
+
+    @@media print{
+        .no-print{display:none!important}
+        body{background:#fff!important}
+        .print-page{padding:0}
+        .report-card{border:none;box-shadow:none;padding:0;border-radius:0}
+        .section-box{break-inside:avoid}
+    }
+
+    @@media(max-width:768px){.info-grid{grid-template-columns:repeat(2,1fr)}.signatures-row{grid-template-columns:1fr}}
+</style>
+
+@code {
+    [Parameter] public int EmployeeId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private EmployeeEditDto? model;
+    private List<LookupDto>? departments;
+    private List<LookupDto>? jobTitles;
+    private List<LookupDto>? managers;
+    private bool isLoading = true;
+
+    private decimal TotalSalary =>
+        model != null ? model.BasicSalary + model.TransportAllowance + model.HousingAllowance
+        + model.PhoneAllowance + model.FoodAllowance + model.OtherAllowances : 0;
+
+    private decimal InsEmp => model != null && model.IsInsured ? Math.Round(model.InsuranceSalary * model.InsurancePercEmployee / 100, 2) : 0;
+    private decimal InsComp => model != null && model.IsInsured ? Math.Round(model.InsuranceSalary * model.InsurancePercCompany / 100, 2) : 0;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_EMP");
+        if (permissions == null || !permissions.CanView) { isLoading = false; return; }
+
+        isLoading = true;
+        try
+        {
+            departments = await LookupService.GetDepartmentsLookupAsync();
+            jobTitles = await LookupService.GetJobTitlesLookupAsync();
+            managers = await LookupService.GetManagersLookupAsync();
+            model = await EmployeeService.GetEmployeeByIdAsync(EmployeeId);
+        }
+        catch { model = null; }
+        finally { isLoading = false; }
+    }
+
+    private async Task DoPrint() => await JS.InvokeVoidAsync("print");
+
+    private string GetLookupName(List<LookupDto>? source, int? id)
+    {
+        if (source == null || (id ?? 0) == 0) return "—";
+        return source.FirstOrDefault(x => x.Id == id)?.Name ?? "—";
+    }
+
+    private string GetMaritalStatus(int s) => s switch
+    {
+        1 => "أعزب", 2 => "متزوج", 3 => "مطلق", 4 => "أرمل", _ => "—"
+    };
+
+    private string GetDayOff(int d) => d switch
+    {
+        1 => "الجمعة", 2 => "السبت", 3 => "الأحد", _ => "—"
+    };
+}

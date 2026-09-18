@@ -1,0 +1,1226 @@
+﻿@page "/customers/new"
+@page "/customers/edit/{CustomerId:int}"
+@page "/customers/view/{CustomerId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject CustomerService CustomerService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !HasAccessToCurrentMode())
+{
+    <div class="no-access-card">
+        <div class="no-access-icon">⛔</div>
+        <h4>ليس لديك صلاحية للوصول إلى هذه الصفحة</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/customers")'>
+            العودة لقائمة العملاء
+        </button>
+    </div>
+}
+else if (isLoading)
+{
+    <div class="loading-state">
+        <div class="loader"></div>
+        <p>جاري تحميل البيانات...</p>
+    </div>
+}
+else
+{
+    <div class="customer-form-page" dir="rtl">
+
+        <div class="page-header">
+            <div>
+                <div class="breadcrumb-line">
+                    <span class="crumb-link" @onclick='() => Navigation.NavigateTo("/customers")'>العملاء</span>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@PageTitleText</span>
+                </div>
+
+                <h2 class="page-title">@PageTitleText</h2>
+                <p class="page-subtitle">
+                    @if (isNewMode)
+                    {
+                        <span>إدخال بيانات عميل جديد</span>
+                    }
+                    else if (isEditMode)
+                    {
+                        <span>تعديل بيانات العميل وجهات الاتصال</span>
+                    }
+                    else
+                    {
+                        <span>عرض بيانات العميل وجهات الاتصال</span>
+                    }
+                </p>
+            </div>
+
+            <div class="header-actions">
+                @if (!isNewMode)
+                {
+                    <span class="status-badge @(model.IsActive ? "status-active" : "status-inactive")">
+                        @(model.IsActive ? "نشط" : "غير نشط")
+                    </span>
+                }
+
+                @if (isViewMode && permissions.CanEdit && CustomerId > 0)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="GoToEditMode">
+                        تعديل
+                    </button>
+                }
+
+                @if (!isViewMode)
+                {
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveCustomer" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <div class="btn-spinner-sm"></div>
+                            <span>جاري الحفظ...</span>
+                        }
+                        else
+                        {
+                            <span>@(isNewMode ? "حفظ العميل" : "حفظ التعديلات")</span>
+                        }
+                    </button>
+                }
+
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/customers")'>
+                    رجوع
+                </button>
+            </div>
+        </div>
+
+        <div class="summary-strip">
+            <div class="summary-item">
+                <div class="summary-label">كود العميل</div>
+                <div class="summary-value">@(string.IsNullOrWhiteSpace(model.CustomerCode) ? "سيولد عند الحفظ" : model.CustomerCode)</div>
+            </div>
+
+            <div class="summary-item">
+                <div class="summary-label">الرصيد الحالي</div>
+                <div class="summary-value">@model.CurrentBalance.ToString("#,##0.00")</div>
+            </div>
+
+            <div class="summary-item">
+                <div class="summary-label">العملة</div>
+                <div class="summary-value">@GetLookupName(currencies, model.CurrencyID)</div>
+            </div>
+
+            <div class="summary-item">
+                <div class="summary-label">المندوب</div>
+                <div class="summary-value">@GetLookupName(salesReps, model.SalesRepID)</div>
+            </div>
+        </div>
+
+        <div class="tabs-bar">
+            <button class="tab-btn @(activeTab == "basic" ? "active" : "")" @onclick='() => activeTab = "basic"'>
+                البيانات الأساسية
+            </button>
+            <button class="tab-btn @(activeTab == "contact" ? "active" : "")" @onclick='() => activeTab = "contact"'>
+                التواصل
+            </button>
+            <button class="tab-btn @(activeTab == "finance" ? "active" : "")" @onclick='() => activeTab = "finance"'>
+                المالية
+            </button>
+            <button class="tab-btn @(activeTab == "contacts" ? "active" : "")" @onclick='() => activeTab = "contacts"'>
+                جهات الاتصال
+            </button>
+            <button class="tab-btn @(activeTab == "notes" ? "active" : "")" @onclick='() => activeTab = "notes"'>
+                ملاحظات
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(formMessage))
+        {
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+        }
+
+        <div class="form-card">
+            @if (activeTab == "basic")
+            {
+                <div>
+                    <div class="section-title">البيانات الأساسية</div>
+
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label required-field">كود العميل</label>
+                            <input type="text"
+                                   class="field-input"
+                                   value="@(string.IsNullOrWhiteSpace(model.CustomerCode) ? "" : model.CustomerCode)"
+                                   @oninput="OnCustomerCodeChanged"
+                                   dir="ltr"
+                                   disabled="@isNewMode || isViewMode"
+                                   placeholder="سيولد تلقائياً عند الحفظ" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label required-field">اسم العميل (عربي)</label>
+                            <input type="text" class="field-input" @bind="model.CustomerNameAr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">اسم العميل (إنجليزي)</label>
+                            <input type="text" class="field-input" @bind="model.CustomerNameEn" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label required-field">نوع العميل</label>
+                            <select class="field-select" @bind="model.CustomerType" disabled="@isViewMode">
+                                <option value="0">-- اختر --</option>
+                                <option value="1">جملة</option>
+                                <option value="2">نص جملة</option>
+                                <option value="3">تجزئة</option>
+                                <option value="4">أونلاين</option>
+                                <option value="5">مؤسسي</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">مجموعة العميل</label>
+                            <select class="field-select" @bind="model.CustomerGroupID" disabled="@isViewMode">
+                                <option value="0">-- بدون --</option>
+                                @if (customerGroups != null)
+                                {
+                                    @foreach (var item in customerGroups)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الحالة</label>
+                            <input type="text"
+                                   class="field-input readonly-input"
+                                   value="@(isNewMode ? "سيصبح نشطًا بعد الحفظ" : (model.IsActive ? "نشط" : "غير نشط"))"
+                                   disabled />
+                            @if (!isNewMode)
+                            {
+                                <small class="field-hint">تغيير الحالة يتم من شاشة قائمة العملاء</small>
+                            }
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الرقم الضريبي</label>
+                            <input type="text" class="field-input" @bind="model.TaxNumber" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">السجل التجاري</label>
+                            <input type="text" class="field-input" @bind="model.CommercialRegister" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">التقييم</label>
+                            <select class="field-select" @bind="model.Rating" disabled="@isViewMode">
+                                <option value="1">⭐</option>
+                                <option value="2">⭐⭐</option>
+                                <option value="3">⭐⭐⭐</option>
+                                <option value="4">⭐⭐⭐⭐</option>
+                                <option value="5">⭐⭐⭐⭐⭐</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "contact")
+            {
+                <div>
+                    <div class="section-title">بيانات التواصل</div>
+
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">هاتف 1</label>
+                            <input type="text" class="field-input" @bind="model.Phone1" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">هاتف 2</label>
+                            <input type="text" class="field-input" @bind="model.Phone2" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">موبايل</label>
+                            <input type="text" class="field-input" @bind="model.Mobile" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">فاكس</label>
+                            <input type="text" class="field-input" @bind="model.Fax" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">البريد الإلكتروني</label>
+                            <input type="email" class="field-input" @bind="model.Email" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الموقع الإلكتروني</label>
+                            <input type="text" class="field-input" @bind="model.Website" dir="ltr" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الدولة</label>
+                            <input type="text" class="field-input" @bind="model.Country" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">المدينة</label>
+                            <input type="text" class="field-input" @bind="model.City" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">المنطقة</label>
+                            <input type="text" class="field-input" @bind="model.Region" disabled="@isViewMode" />
+                        </div>
+                    </div>
+
+                    <div class="form-field full-width">
+                        <label class="field-label">العنوان</label>
+                        <textarea class="field-input" rows="3" @bind="model.Address" disabled="@isViewMode"></textarea>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "finance")
+            {
+                <div>
+                    <div class="section-title">البيانات المالية والمبيعات</div>
+
+                    <div class="form-grid cols-3">
+                        <div class="form-field">
+                            <label class="field-label">شروط الدفع</label>
+                            <select class="field-select" @bind="model.PaymentTermID" disabled="@isViewMode">
+                                <option value="0">-- اختر --</option>
+                                @if (paymentTerms != null)
+                                {
+                                    @foreach (var item in paymentTerms)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label required-field">العملة</label>
+                            <select class="field-select" @bind="model.CurrencyID" disabled="@isViewMode">
+                                <option value="0">-- اختر --</option>
+                                @if (currencies != null)
+                                {
+                                    @foreach (var item in currencies)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">قائمة الأسعار</label>
+                            <select class="field-select" @bind="model.PriceListID" disabled="@isViewMode">
+                                <option value="0">-- اختر --</option>
+                                @if (priceLists != null)
+                                {
+                                    @foreach (var item in priceLists)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">مندوب المبيعات</label>
+                            <select class="field-select" @bind="model.SalesRepID" disabled="@isViewMode">
+                                <option value="0">-- بدون --</option>
+                                @if (salesReps != null)
+                                {
+                                    @foreach (var item in salesReps)
+                                    {
+                                        <option value="@item.Id">@item.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">حد الائتمان</label>
+                            <input type="number" class="field-input" @bind="model.CreditLimit" step="0.01" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">نسبة الخصم %</label>
+                            <input type="number" class="field-input" @bind="model.DiscountPercent" step="0.01" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الرصيد الافتتاحي</label>
+                            <input type="number" class="field-input" @bind="model.OpeningBalance" step="0.01" disabled="@(!isNewMode || isViewMode)" />
+                            @if (!isNewMode)
+                            {
+                                <small class="field-hint">لا يمكن تعديل الرصيد الافتتاحي بعد الحفظ</small>
+                            }
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">الرصيد الحالي</label>
+                            <input type="number" class="field-input readonly-input" value="@model.CurrentBalance.ToString("0.00")" disabled />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">اسم البنك</label>
+                            <input type="text" class="field-input" @bind="model.BankName" disabled="@isViewMode" />
+                        </div>
+
+                        <div class="form-field">
+                            <label class="field-label">رقم الحساب البنكي</label>
+                            <input type="text" class="field-input" @bind="model.BankAccountNumber" dir="ltr" disabled="@isViewMode" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (activeTab == "contacts")
+            {
+                <div>
+                    <div class="section-title contacts-header">
+                        <span>جهات الاتصال</span>
+
+                        @if (!isViewMode && model.CustomerID > 0)
+                        {
+                            <button class="btn-modern btn-primary-modern btn-sm" @onclick="ShowAddContactDialog">
+                                + إضافة جهة اتصال
+                            </button>
+                        }
+                    </div>
+
+                    @if (model.CustomerID <= 0)
+                    {
+                        <div class="notice-box">
+                            يجب حفظ العميل أولاً قبل إضافة جهات الاتصال.
+                        </div>
+                    }
+                    else if (isContactsLoading)
+                    {
+                        <div class="loading-inline">جاري تحميل جهات الاتصال...</div>
+                    }
+                    else if (!contacts.Any())
+                    {
+                        <div class="empty-inline">لا توجد جهات اتصال مسجلة لهذا العميل.</div>
+                    }
+                    else
+                    {
+                        <div class="table-card mini-table-card">
+                            <div class="table-responsive">
+                                <table class="data-table mini-table">
+                                    <thead>
+                                        <tr>
+                                            <th>الاسم</th>
+                                            <th>الوظيفة</th>
+                                            <th>الهاتف</th>
+                                            <th>الموبايل</th>
+                                            <th>البريد</th>
+                                            <th class="th-center">أساسي</th>
+                                            @if (!isViewMode)
+                                            {
+                                                <th class="th-actions">إجراءات</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in contacts)
+                                        {
+                                            <tr>
+                                                <td class="item-name">@item.ContactName</td>
+                                                <td>@(item.JobTitle ?? "—")</td>
+                                                <td dir="ltr">@(item.Phone ?? "—")</td>
+                                                <td dir="ltr">@(item.Mobile ?? "—")</td>
+                                                <td dir="ltr">@(item.Email ?? "—")</td>
+                                                <td class="td-center">
+                                                    @if (item.IsPrimary)
+                                                    {
+                                                        <span class="primary-badge">أساسي</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>—</span>
+                                                    }
+                                                </td>
+                                                @if (!isViewMode)
+                                                {
+                                                    <td class="td-actions">
+                                                        <div class="actions-wrap">
+                                                            <button class="action-btn edit-btn" @onclick="() => ShowEditContactDialog(item)">تعديل</button>
+                                                            <button class="action-btn delete-btn" @onclick="() => DeleteContact(item)">حذف</button>
+                                                        </div>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(contactMessage))
+                    {
+                        <div class="form-message @(contactSuccess ? "msg-success" : "msg-error")">@contactMessage</div>
+                    }
+                </div>
+            }
+
+            @if (activeTab == "notes")
+            {
+                <div>
+                    <div class="section-title">ملاحظات</div>
+                    <div class="form-field full-width">
+                        <label class="field-label">ملاحظات العميل</label>
+                        <textarea class="field-input" rows="6" @bind="model.Notes" disabled="@isViewMode"></textarea>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!isViewMode)
+        {
+            <div class="footer-actions">
+                <button class="btn-modern btn-primary-modern" @onclick="SaveCustomer" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <div class="btn-spinner-sm"></div>
+                        <span>جاري الحفظ...</span>
+                    }
+                    else
+                    {
+                        <span>@(isNewMode ? "حفظ العميل" : "حفظ التعديلات")</span>
+                    }
+                </button>
+
+                <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/customers")'>
+                    إلغاء
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (showContactDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseContactDialog">
+            <div class="modal-card form-modal-md" @onclick:stopPropagation="true">
+                <h3 class="modal-title">@(contactModel.ContactID == 0 ? "إضافة جهة اتصال" : "تعديل جهة اتصال")</h3>
+
+                <div class="form-grid cols-2">
+                    <div class="form-field">
+                        <label class="field-label required-field">الاسم</label>
+                        <input type="text" class="field-input" @bind="contactModel.ContactName" />
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">الوظيفة</label>
+                        <input type="text" class="field-input" @bind="contactModel.JobTitle" />
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">الهاتف</label>
+                        <input type="text" class="field-input" @bind="contactModel.Phone" dir="ltr" />
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">الموبايل</label>
+                        <input type="text" class="field-input" @bind="contactModel.Mobile" dir="ltr" />
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">البريد الإلكتروني</label>
+                        <input type="email" class="field-input" @bind="contactModel.Email" dir="ltr" />
+                    </div>
+
+                    <div class="form-field checkbox-field">
+                        <label class="checkbox-wrap">
+                            <input type="checkbox" @bind="contactModel.IsPrimary" />
+                            <span>جهة الاتصال الأساسية</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-field full-width">
+                    <label class="field-label">ملاحظات</label>
+                    <textarea class="field-input" rows="3" @bind="contactModel.Notes"></textarea>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(contactDialogMessage))
+                {
+                    <div class="form-message msg-error">@contactDialogMessage</div>
+                }
+
+                <div class="modal-buttons-row">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveContact" disabled="@isContactSaving">
+                        @if (isContactSaving)
+                        {
+                            <div class="btn-spinner-sm"></div>
+                            <span>جاري الحفظ...</span>
+                        }
+                        else
+                        {
+                            <span>حفظ</span>
+                        }
+                    </button>
+
+                    <button class="btn-modern btn-ghost" @onclick="CloseContactDialog" disabled="@isContactSaving">
+                        إلغاء
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        <div class="toast-container">
+            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
+                <span class="toast-text">@resultMessage</span>
+                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .customer-form-page { display: flex; flex-direction: column; gap: 18px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .page-title { margin: 0; color: #1f2937; font-weight: 800; }
+    .page-subtitle { margin: 4px 0 0; color: #6b7280; font-size: .9rem; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    .breadcrumb-line { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .85rem; }
+    .crumb-link { color: #1d4ed8; font-weight: 700; cursor: pointer; }
+    .crumb-sep { color: #9ca3af; }
+    .crumb-current { color: #6b7280; }
+
+    .summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .summary-item { background: white; border: 1px solid #eef2f7; border-radius: 18px; padding: 16px; box-shadow: 0 4px 14px rgba(15,23,42,.04); }
+    .summary-label { font-size: .78rem; color: #6b7280; font-weight: 700; margin-bottom: 6px; }
+    .summary-value { font-size: 1rem; color: #1f2937; font-weight: 800; }
+
+    .tabs-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab-btn { border: 1.5px solid #e5e7eb; background: white; color: #6b7280; padding: 10px 16px; border-radius: 14px; font-weight: 700; cursor: pointer; transition: .2s; }
+    .tab-btn.active { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; border-color: transparent; box-shadow: 0 4px 14px rgba(37,99,235,.22); }
+
+    .form-card { background: white; border-radius: 24px; padding: 24px; border: 1px solid #eef2f7; box-shadow: 0 8px 22px rgba(15,23,42,.05); }
+    .section-title { font-size: .95rem; font-weight: 800; color: #1d4ed8; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .contacts-header { margin-bottom: 14px; }
+
+    .form-grid { display: grid; gap: 14px; }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .full-width { margin-top: 14px; }
+    .field-label { font-size: .82rem; font-weight: 700; color: #374151; }
+    .required-field::after { content: " *"; color: #ef4444; }
+
+    .field-input, .field-select {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 12px;
+        background: white;
+        font-size: .9rem;
+        outline: none;
+        transition: .2s;
+    }
+
+    .field-input:focus, .field-select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+
+    .readonly-input { background: #f9fafb; }
+    .field-hint { color: #9ca3af; font-size: .74rem; }
+
+    .notice-box {
+        background: #fffbeb;
+        color: #92400e;
+        border: 1px solid #fde68a;
+        border-radius: 14px;
+        padding: 14px 16px;
+        font-size: .88rem;
+        font-weight: 700;
+    }
+
+    .loading-inline, .empty-inline {
+        padding: 20px;
+        border-radius: 16px;
+        background: #f9fafb;
+        color: #6b7280;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    .table-card { background: white; border-radius: 20px; overflow: hidden; border: 1px solid #eef2f7; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
+    .mini-table-card { margin-top: 10px; }
+    .table-responsive { overflow-x: auto; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead { background: #f8f9fc; }
+    .data-table th { padding: 13px 15px; font-size: .8rem; font-weight: 700; color: #6b7280; text-align: right; border-bottom: 2px solid #eef2f7; white-space: nowrap; }
+    .data-table td { padding: 12px 15px; font-size: .87rem; color: #374151; border-bottom: 1px solid #f3f4f6; }
+    .data-table tbody tr:hover { background: #faf7ff; }
+    .th-center, .td-center { text-align: center; }
+    .th-actions, .td-actions { text-align: center; }
+    .actions-wrap { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+    .item-name { font-weight: 700; color: #1f2937; }
+
+    .primary-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #059669;
+        font-size: .74rem;
+        font-weight: 800;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: .78rem;
+        font-weight: 800;
+    }
+
+    .status-active { background: #ecfdf5; color: #059669; }
+    .status-inactive { background: #fef2f2; color: #dc2626; }
+
+    .btn-modern {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 700;
+        font-size: .88rem;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+    .btn-modern:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-sm { padding: 8px 12px; font-size: .8rem; border-radius: 12px; }
+
+    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,.25); }
+    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
+    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+    .btn-ghost:hover:not(:disabled) { background: #f9fafb; }
+
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1.5px solid;
+        background: transparent;
+        font-size: .76rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: .2s;
+        min-width: 54px;
+    }
+
+    .edit-btn { color: #1d4ed8; border-color: #e9e0ff; }
+    .edit-btn:hover { background: #f5f3ff; }
+    .delete-btn { color: #ef4444; border-color: #fee2e2; }
+    .delete-btn:hover { background: #fef2f2; }
+
+    .form-message {
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: .86rem;
+        font-weight: 700;
+    }
+
+    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+    .footer-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.5);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 24px;
+        padding: 28px;
+        width: 92%;
+        box-shadow: 0 24px 48px rgba(0,0,0,.15);
+    }
+
+    .form-modal-md { max-width: 760px; }
+    .modal-title { margin: 0 0 18px; color: #1f2937; font-weight: 800; text-align: center; }
+    .modal-buttons-row { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; flex-wrap: wrap; }
+
+    .checkbox-field { justify-content: end; }
+    .checkbox-wrap { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #374151; min-height: 44px; }
+
+    .toast-container { position: fixed; bottom: 24px; left: 24px; z-index: 1050; }
+    .toast-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.12); min-width: 320px; }
+    .toast-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .toast-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .toast-text { flex: 1; font-weight: 600; font-size: .88rem; }
+    .toast-close { background: transparent; border: none; font-size: 1rem; cursor: pointer; color: inherit; opacity: .6; }
+
+    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
+
+    .btn-spinner-sm {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+    }
+
+    @@keyframes spin { to { transform: rotate(360deg); } }
+
+    @@media (max-width: 1024px) {
+        .cols-3 { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .tabs-bar { flex-direction: column; }
+        .tab-btn { width: 100%; }
+        .cols-3, .cols-2 { grid-template-columns: 1fr; }
+        .header-actions, .footer-actions { width: 100%; flex-direction: column; }
+        .btn-modern { width: 100%; }
+    }
+</style>
+
+@code {
+    [Parameter] public int CustomerId { get; set; }
+
+    private ModulePermissionDto? permissions;
+
+    private CustomerEditDto model = new();
+    private List<CustomerContactDto> contacts = new();
+
+    private List<LookupDto>? paymentTerms;
+    private List<LookupDto>? currencies;
+    private List<LookupDto>? customerGroups;
+    private List<LookupDto>? priceLists;
+    private List<LookupDto>? salesReps;
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isContactsLoading = false;
+    private string activeTab = "basic";
+
+    private string currentMode = "new";
+    private bool isNewMode => currentMode == "new";
+    private bool isEditMode => currentMode == "edit";
+    private bool isViewMode => currentMode == "view";
+
+    private string PageTitleText =>
+        isNewMode ? "إضافة عميل" :
+        isEditMode ? "تعديل عميل" :
+        "عرض عميل";
+
+    private string formMessage = "";
+    private bool formSuccess = true;
+
+    private string resultMessage = "";
+    private bool resultSuccess = true;
+
+    private bool showContactDialog = false;
+    private bool isContactSaving = false;
+    private CustomerContactDto contactModel = new();
+    private string contactDialogMessage = "";
+    private string contactMessage = "";
+    private bool contactSuccess = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_CUSTOMERS");
+
+        DetectMode();
+
+        if (permissions == null || !HasAccessToCurrentMode())
+        {
+            isLoading = false;
+            return;
+        }
+
+        await LoadPageAsync();
+    }
+
+    private void DetectMode()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();
+
+        if (path.StartsWith("customers/edit/"))
+            currentMode = "edit";
+        else if (path.StartsWith("customers/view/"))
+            currentMode = "view";
+        else
+            currentMode = "new";
+    }
+
+    private bool HasAccessToCurrentMode()
+    {
+        if (permissions == null)
+            return false;
+
+        if (isNewMode)
+            return permissions.CanAdd;
+
+        if (isEditMode)
+            return permissions.CanEdit;
+
+        return permissions.CanView;
+    }
+
+    private async Task LoadPageAsync()
+    {
+        isLoading = true;
+        formMessage = "";
+        contactMessage = "";
+
+        try
+        {
+            await LoadLookupsAsync();
+
+            if (isNewMode)
+            {
+                model = new CustomerEditDto
+                {
+                    Country = "مصر",
+                    Rating = 3,
+                    IsActive = true,
+                    CurrencyID = currencies?.FirstOrDefault()?.Id ?? 0
+                };
+
+                contacts = new List<CustomerContactDto>();
+            }
+            else
+            {
+                var loaded = await CustomerService.GetCustomerByIdAsync(CustomerId);
+
+                if (loaded == null)
+                {
+                    formMessage = "العميل غير موجود";
+                    formSuccess = false;
+                    model = new CustomerEditDto();
+                }
+                else
+                {
+                    model = loaded;
+                    await LoadContactsAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ أثناء تحميل البيانات: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        paymentTerms = await LookupService.GetPaymentTermsAsync();
+        currencies = await LookupService.GetCurrenciesAsync();
+        customerGroups = await LookupService.GetCustomerGroupsAsync();
+        priceLists = await LookupService.GetPriceListsAsync();
+        salesReps = await LookupService.GetSalesRepsAsync();
+    }
+
+    private async Task LoadContactsAsync()
+    {
+        if (model.CustomerID <= 0)
+        {
+            contacts = new List<CustomerContactDto>();
+            return;
+        }
+
+        isContactsLoading = true;
+
+        try
+        {
+            contacts = await CustomerService.GetCustomerContactsAsync(model.CustomerID);
+        }
+        catch (Exception ex)
+        {
+            contactMessage = "خطأ أثناء تحميل جهات الاتصال: " + ex.Message;
+            contactSuccess = false;
+        }
+        finally
+        {
+            isContactsLoading = false;
+        }
+    }
+
+    private async Task SaveCustomer()
+    {
+        if (isViewMode)
+            return;
+
+        formMessage = "";
+
+        if (string.IsNullOrWhiteSpace(model.CustomerNameAr))
+        {
+            formMessage = "يجب إدخال اسم العميل";
+            formSuccess = false;
+            activeTab = "basic";
+            return;
+        }
+
+        if (model.CustomerType == 0)
+        {
+            formMessage = "يجب اختيار نوع العميل";
+            formSuccess = false;
+            activeTab = "basic";
+            return;
+        }
+
+        if ((model.CurrencyID ?? 0) == 0)
+        {
+            formMessage = "يجب اختيار العملة";
+            formSuccess = false;
+            activeTab = "finance";
+            return;
+        }
+
+        if (model.CreditLimit < 0)
+        {
+            formMessage = "حد الائتمان لا يمكن أن يكون سالباً";
+            formSuccess = false;
+            activeTab = "finance";
+            return;
+        }
+
+        if (model.OpeningBalance < 0)
+        {
+            formMessage = "الرصيد الافتتاحي لا يمكن أن يكون سالباً";
+            formSuccess = false;
+            activeTab = "finance";
+            return;
+        }
+
+        if (model.DiscountPercent < 0 || model.DiscountPercent > 100)
+        {
+            formMessage = "نسبة الخصم يجب أن تكون بين 0 و 100";
+            formSuccess = false;
+            activeTab = "finance";
+            return;
+        }
+
+        if (model.Rating < 1 || model.Rating > 5)
+        {
+            formMessage = "التقييم يجب أن يكون بين 1 و 5";
+            formSuccess = false;
+            activeTab = "basic";
+            return;
+        }
+
+        isSaving = true;
+
+        try
+        {
+            if (isNewMode)
+            {
+                model.CustomerCode = await CustomerService.GenerateCustomerCodeAsync();
+                var newId = await CustomerService.InsertCustomerAsync(model, UserSession.UserID);
+
+                resultMessage = "تم إضافة العميل بنجاح ✅";
+                resultSuccess = true;
+
+                Navigation.NavigateTo($"/customers/edit/{newId}");
+                return;
+            }
+            else
+            {
+                await CustomerService.UpdateCustomerAsync(model, UserSession.UserID);
+                resultMessage = "تم حفظ التعديلات بنجاح ✅";
+                resultSuccess = true;
+                formMessage = "تم حفظ البيانات بنجاح";
+                formSuccess = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            formMessage = "خطأ: " + ex.Message;
+            formSuccess = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void OnCustomerCodeChanged(ChangeEventArgs e)
+    {
+        model.CustomerCode = e.Value?.ToString();
+    }
+
+    private void GoToEditMode()
+    {
+        if (model.CustomerID > 0)
+            Navigation.NavigateTo($"/customers/edit/{model.CustomerID}");
+    }
+
+    private string GetLookupName(List<LookupDto>? source, int? id)
+    {
+        if (source == null || (id ?? 0) == 0)
+            return "—";
+
+        return source.FirstOrDefault(x => x.Id == id)?.Name ?? "—";
+    }
+
+    private void ShowAddContactDialog()
+    {
+        contactModel = new CustomerContactDto
+        {
+            CustomerID = model.CustomerID,
+            IsPrimary = !contacts.Any()
+        };
+
+        contactDialogMessage = "";
+        showContactDialog = true;
+    }
+
+    private void ShowEditContactDialog(CustomerContactDto item)
+    {
+        contactModel = new CustomerContactDto
+        {
+            ContactID = item.ContactID,
+            CustomerID = item.CustomerID,
+            ContactName = item.ContactName,
+            JobTitle = item.JobTitle,
+            Phone = item.Phone,
+            Mobile = item.Mobile,
+            Email = item.Email,
+            IsPrimary = item.IsPrimary,
+            Notes = item.Notes,
+            IsActive = item.IsActive
+        };
+
+        contactDialogMessage = "";
+        showContactDialog = true;
+    }
+
+    private void CloseContactDialog()
+    {
+        showContactDialog = false;
+        contactDialogMessage = "";
+        contactModel = new CustomerContactDto();
+    }
+
+    private async Task SaveContact()
+    {
+        contactDialogMessage = "";
+
+        if (model.CustomerID <= 0)
+        {
+            contactDialogMessage = "يجب حفظ العميل أولاً";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(contactModel.ContactName))
+        {
+            contactDialogMessage = "اسم جهة الاتصال مطلوب";
+            return;
+        }
+
+        isContactSaving = true;
+
+        try
+        {
+            contactModel.CustomerID = model.CustomerID;
+
+            await CustomerService.SaveCustomerContactAsync(contactModel, UserSession.UserID);
+
+            contactMessage = contactModel.ContactID == 0
+                ? "تمت إضافة جهة الاتصال بنجاح ✅"
+                : "تم تعديل جهة الاتصال بنجاح ✅";
+
+            contactSuccess = true;
+
+            showContactDialog = false;
+            contactModel = new CustomerContactDto();
+
+            await LoadContactsAsync();
+        }
+        catch (Exception ex)
+        {
+            contactDialogMessage = "خطأ: " + ex.Message;
+        }
+        finally
+        {
+            isContactSaving = false;
+        }
+    }
+
+    private async Task DeleteContact(CustomerContactDto item)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"هل تريد حذف جهة الاتصال: {item.ContactName} ؟");
+        if (!confirmed)
+            return;
+
+        try
+        {
+            var result = await CustomerService.DeleteCustomerContactAsync(item.ContactID, UserSession.UserID);
+            contactMessage = result.Message + (result.Success ? " ✅" : "");
+            contactSuccess = result.Success;
+
+            await LoadContactsAsync();
+        }
+        catch (Exception ex)
+        {
+            contactMessage = "خطأ: " + ex.Message;
+            contactSuccess = false;
+        }
+    }
+}
