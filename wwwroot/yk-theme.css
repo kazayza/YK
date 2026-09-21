@@ -4,17 +4,17 @@
    هذا الملف يُطبَّق فوق Bootstrap ويوحّد شكل كل صفحات النظام
    ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap');
 
 :root {
-    --yk-primary: #2563eb;
-    --yk-primary-dark: #1d4ed8;
-    --yk-primary-deep: #1e40af;
-    --yk-primary-soft: rgba(37, 99, 235, .08);
-    --yk-primary-ring: rgba(37, 99, 235, .22);
-    --yk-accent: #f97316;
-    --yk-accent-dark: #ea580c;
-    --yk-accent-soft: rgba(249, 115, 22, .12);
+    --yk-primary: #D4AF37;
+    --yk-primary-dark: #9C7C2E;
+    --yk-primary-deep: #070B14;
+    --yk-primary-soft: rgba(212, 175, 55, .08);
+    --yk-primary-ring: rgba(212, 175, 55, .22);
+    --yk-accent: #D4AF37;
+    --yk-accent-dark: #9C7C2E;
+    --yk-accent-soft: rgba(212, 175, 55, .12);
     --yk-success: #16a34a;
     --yk-success-soft: rgba(22, 163, 74, .1);
     --yk-danger: #dc2626;
@@ -39,7 +39,7 @@
 
 /* ═══ الأساسيات ═══ */
 body {
-    font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+    font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
     background: var(--yk-bg);
     color: var(--yk-text);
     -webkit-font-smoothing: antialiased;
@@ -308,7 +308,7 @@ a:hover { color: var(--yk-primary-dark); }
     justify-content: center;
     gap: 22px;
     background: linear-gradient(135deg, #060b16 0%, #0b1526 45%, #14336b 100%);
-    font-family: 'Cairo', 'Segoe UI', sans-serif;
+    font-family: 'Tajawal', 'Segoe UI', sans-serif;
 }
 
 .app-boot-logo {

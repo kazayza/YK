@@ -10,470 +10,531 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>التصنيفات - واي كي كوتينج</PageTitle>
+<PageTitle>التصنيفات - واي كي كوتينج Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
-    <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
+    <div class="no-access-luxury" dir="rtl">
+        <div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <h4>يجب تسجيل الدخول أولاً</h4>
     </div>
 }
 else if (permissions == null || !permissions.CanView)
 {
-    <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+    <div class="no-access-luxury" dir="rtl">
+        <div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div>
         <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
-        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>
-            العودة للرئيسية
-        </button>
+        <button class="btn-luxury btn-secondary-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
     </div>
 }
 else
 {
-    <div class="items-page" dir="rtl">
+    <div class="luxury-page" dir="rtl">
 
-        <!-- ===== العنوان ===== -->
-        <div class="page-header">
-            <div>
-                <h2 class="page-title">التصنيفات</h2>
-                <p class="page-subtitle">إدارة تصنيفات المواد والمنتجات (شجرية)</p>
-            </div>
-            <div class="header-actions">
-                <span class="result-badge">@filteredCategories.Count تصنيف</span>
-
-                @if (permissions.CanExport)
-                {
-                    <button class="btn-modern btn-export" @onclick="ExportToExcel" disabled="@isExporting">
-                        @if (isExporting)
-                        {
-                            <div class="btn-spinner-sm"></div>
-                        }
-                        else
-                        {
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                 stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                <polyline points="7 10 12 15 17 10"/>
-                                <line x1="12" y1="15" x2="12" y2="3"/>
-                            </svg>
-                        }
-                        تصدير Excel
-                    </button>
-                }
-
-                @if (permissions.CanAdd)
-                {
-                    <button class="btn-modern btn-primary-modern" @onclick="ShowAddDialog">
-                        <span class="btn-icon">+</span>
-                        إضافة تصنيف
-                    </button>
-                }
+        <!-- HEADER HYBRID DARK GOLD -->
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text">
+                        <h2 class="lh-title">التصنيفات</h2>
+                        <p class="lh-subtitle">إدارة تصنيفات المواد والمنتجات - هيكل شجري احترافي</p>
+                    </div>
+                </div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filteredCategories.Count تصنيف</span>
+                    @if (permissions.CanExport)
+                    {
+                        <button class="btn-luxury btn-export-luxury" @onclick="ExportToExcel" disabled="@isExporting">
+                            @if (isExporting){<div class="btn-spinner-sm"></div>}
+                            else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>}
+                            تصدير Excel
+                        </button>
+                    }
+                    @if (permissions.CanAdd)
+                    {
+                        <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddDialog">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                            إضافة تصنيف
+                        </button>
+                    }
+                </div>
             </div>
         </div>
 
-        <!-- ===== الإحصائيات ===== -->
+        <!-- STATS LUXURY GOLD -->
         @if (categories != null)
         {
-            <div class="stats-grid">
-                <div class="stat-card stat-total">
-                    <div class="stat-value">@categories.Count</div>
-                    <div class="stat-label">إجمالي التصنيفات</div>
+            <div class="stats-luxury">
+                <div class="stat-luxury">
+                    <div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></div>
+                    <div class="st-info"><span class="st-value">@categories.Count</span><span class="st-label">إجمالي التصنيفات</span></div>
+                    <div class="st-gold-line"></div>
                 </div>
-                <div class="stat-card stat-raw">
-                    <div class="stat-value">@categories.Count(c => c.CategoryLevel == 1)</div>
-                    <div class="stat-label">تصنيفات رئيسية</div>
+                <div class="stat-luxury">
+                    <div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+                    <div class="st-info"><span class="st-value">@categories.Count(c => c.CategoryLevel == 1)</span><span class="st-label">رئيسية</span></div>
+                    <div class="st-gold-line"></div>
                 </div>
-                <div class="stat-card stat-pkg">
-                    <div class="stat-value">@categories.Count(c => c.CategoryLevel > 1)</div>
-                    <div class="stat-label">تصنيفات فرعية</div>
+                <div class="stat-luxury">
+                    <div class="st-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+                    <div class="st-info"><span class="st-value">@categories.Count(c => c.CategoryLevel > 1)</span><span class="st-label">فرعية</span></div>
+                    <div class="st-gold-line"></div>
                 </div>
-                <div class="stat-card stat-fin">
-                    <div class="stat-value">@categories.Sum(c => c.ItemCount)</div>
-                    <div class="stat-label">إجمالي الأصناف</div>
+                <div class="stat-luxury">
+                    <div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01 20.73 6.96"/><path d="M12 22.08V12"/></svg></div>
+                    <div class="st-info"><span class="st-value">@categories.Sum(c => c.ItemCount)</span><span class="st-label">إجمالي الأصناف</span></div>
+                    <div class="st-gold-line"></div>
                 </div>
             </div>
         }
 
-        <!-- ===== شريط البحث ===== -->
-        <div class="filter-bar">
-            <div class="search-box">
-                <span class="search-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="m21 21-4.3-4.3"/>
-                    </svg>
-                </span>
-                <input type="text" class="search-input"
-                       placeholder="بحث بالاسم أو الكود..."
-                       @bind="searchText" @bind:event="oninput" @onkeyup="Search" />
-                @if (!string.IsNullOrEmpty(searchText))
-                {
-                    <button class="clear-search" @onclick="ClearSearch">✕</button>
-                }
+        <!-- FILTER BAR LUXURY -->
+        <div class="filter-luxury">
+            <div class="search-luxury">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" placeholder="بحث بالاسم أو الكود..." @bind="searchText" @bind:event="oninput" @onkeyup="Search" />
+                @if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
             </div>
-
-            <select class="filter-select" @bind="filterLevel" @bind:after="Search">
-                <option value="0">كل المستويات</option>
-                <option value="1">رئيسية فقط</option>
-                <option value="2">فرعية فقط</option>
-            </select>
-
-            <button class="btn-modern btn-ghost" @onclick="LoadData">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="2">
-                    <path d="M21 2v6h-6"/>
-                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-                    <path d="M3 22v-6h6"/>
-                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-                </svg>
-                تحديث
+            <div class="select-wrap-luxury">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+                <select @bind="filterLevel" @bind:after="Search">
+                    <option value="0">كل المستويات</option>
+                    <option value="1">رئيسية فقط</option>
+                    <option value="2">فرعية فقط</option>
+                </select>
+                <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="view-toggle-luxury">
+                <button class="vt-btn @(viewMode=="table"?"active":"")" @onclick='() => viewMode="table"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg></button>
+                <button class="vt-btn @(viewMode=="tree"?"active":"")" @onclick='() => viewMode="tree"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M5 6v.01"/><path d="M5 12v.01"/><path d="M5 18v.01"/></svg></button>
+            </div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث
             </button>
         </div>
 
-        <!-- ===== الجدول ===== -->
+        <!-- CONTENT -->
         @if (categories == null)
         {
-            <div class="loading-state">
-                <div class="loader"></div>
-                <p>جاري تحميل البيانات...</p>
-            </div>
+            <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل التصنيفات...</p></div>
         }
         else if (!filteredCategories.Any())
         {
-            <div class="empty-state">
-                <div class="empty-icon">📂</div>
-                <h4>لا توجد تصنيفات</h4>
-                <p>لا توجد تصنيفات مطابقة لمعايير البحث</p>
+            <div class="empty-luxury">
+                <div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></div>
+                <h4>لا توجد تصنيفات</h4><p>لا توجد نتائج مطابقة لبحثك</p>
             </div>
         }
         else
         {
-            <div class="table-card">
-                <div class="table-responsive">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th class="th-num">#</th>
-                                <th>الكود</th>
-                                <th>اسم التصنيف (عربي)</th>
-                                <th>اسم التصنيف (إنجليزي)</th>
-                                <th>التصنيف الأب</th>
-                                <th class="th-center">المستوى</th>
-                                <th class="th-center">عدد الأصناف</th>
-                                <th class="th-center">الترتيب</th>
-                                <th class="th-actions">إجراءات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @{ int rowNum = 0; }
-                            @foreach (var cat in filteredCategories)
-                            {
-                                rowNum++;
-                                <tr class="@(cat.CategoryLevel == 1 ? "parent-row" : "child-row")">
-                                    <td class="td-num">@rowNum</td>
-                                    <td><code class="item-code">@cat.CategoryCode</code></td>
-                                    <td class="item-name">
-                                        @if (cat.CategoryLevel > 1)
-                                        {
-                                            <span class="tree-indent">↳</span>
-                                        }
-                                        @cat.CategoryNameAr
-                                    </td>
-                                    <td class="item-name-en">@cat.CategoryNameEn</td>
-                                    <td>
-                                        @if (!string.IsNullOrEmpty(cat.ParentCategoryName))
-                                        {
-                                            <span class="parent-badge">@cat.ParentCategoryName</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="no-value">—</span>
-                                        }
-                                    </td>
-                                    <td class="td-center">
-                                        <span class="level-badge level-@cat.CategoryLevel">@cat.CategoryLevel</span>
-                                    </td>
-                                    <td class="td-center">
-                                        @if (cat.ItemCount > 0)
-                                        {
-                                            <span class="count-badge">@cat.ItemCount</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="no-value">0</span>
-                                        }
-                                    </td>
-                                    <td class="td-center">@cat.SortOrder</td>
-                                    <td class="td-actions">
-                                        @if (permissions.CanEdit)
-                                        {
-                                            <button class="action-btn edit-btn" title="تعديل"
-                                                    @onclick="() => ShowEditDialog(cat)">
-                                                <svg width="15" height="15" viewBox="0 0 24 24"
-                                                     fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                                </svg>
-                                            </button>
-                                        }
-                                        @if (permissions.CanDelete)
-                                        {
-                                            <button class="action-btn delete-btn" title="حذف"
-                                                    @onclick="() => ShowDeleteConfirm(cat)">
-                                                <svg width="15" height="15" viewBox="0 0 24 24"
-                                                     fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M3 6h18"/>
-                                                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                                                </svg>
-                                            </button>
-                                        }
-                                    </td>
+            @if (viewMode == "table")
+            {
+                <div class="table-card-luxury">
+                    <div class="table-responsive">
+                        <table class="table-luxury">
+                            <thead>
+                                <tr>
+                                    <th class="th-num">#</th>
+                                    <th>الكود</th>
+                                    <th>اسم التصنيف</th>
+                                    <th>الإنجليزي</th>
+                                    <th>الأب</th>
+                                    <th class="th-center">المستوى</th>
+                                    <th class="th-center">الأصناف</th>
+                                    <th class="th-center">الترتيب</th>
+                                    <th class="th-actions">إجراءات</th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @{ int rowNum = 0; }
+                                @foreach (var cat in filteredCategories)
+                                {
+                                    rowNum++;
+                                    <tr class="@(cat.CategoryLevel==1?"row-parent":"row-child")">
+                                        <td class="td-num">@rowNum</td>
+                                        <td><span class="code-luxury">@cat.CategoryCode</span></td>
+                                        <td class="td-name">
+                                            <div class="cat-name-wrap">
+                                                @if (cat.CategoryLevel > 1){<span class="tree-branch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5A2.5 2.5 0 0 1 17 11.5v7.5"/></svg></span>}
+                                                <span class="cat-icon level-@cat.CategoryLevel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+                                                <strong>@cat.CategoryNameAr</strong>
+                                            </div>
+                                        </td>
+                                        <td class="td-muted">@cat.CategoryNameEn</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(cat.ParentCategoryName)){<span class="parent-badge-luxury">@cat.ParentCategoryName</span>}
+                                            else{<span class="no-val">— رئيسي</span>}
+                                        </td>
+                                        <td class="td-center"><span class="level-dot level-@cat.CategoryLevel">@cat.CategoryLevel</span></td>
+                                        <td class="td-center">
+                                            @if (cat.ItemCount > 0){<span class="count-badge-luxury">@cat.ItemCount</span>}
+                                            else{<span class="no-val">0</span>}
+                                        </td>
+                                        <td class="td-center"><span class="sort-badge">@cat.SortOrder</span></td>
+                                        <td class="td-actions">
+                                            @if (permissions.CanEdit)
+                                            {
+                                                <button class="act-btn edit" title="تعديل" @onclick="() => ShowEditDialog(cat)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                                </button>
+                                            }
+                                            @if (permissions.CanDelete)
+                                            {
+                                                <button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteConfirm(cat)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            }
+            else
+            {
+                <div class="tree-grid-luxury">
+                    @foreach (var cat in filteredCategories.Where(c=>c.CategoryLevel==1))
+                    {
+                        <div class="tree-card-luxury">
+                            <div class="tc-header">
+                                <div class="tc-icon parent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></div>
+                                <div class="tc-info"><strong>@cat.CategoryNameAr</strong><code>@cat.CategoryCode</code></div>
+                                <span class="count-badge-luxury">@cat.ItemCount صنف</span>
+                            </div>
+                            <div class="tc-children">
+                                @{
+                                    var children = filteredCategories.Where(c => c.ParentCategoryID == cat.CategoryID).ToList();
+                                }
+                                @if (children.Any())
+                                {
+                                    @foreach (var ch in children)
+                                    {
+                                        <div class="child-row-luxury">
+                                            <span class="child-dot"></span>
+                                            <span class="child-name">@ch.CategoryNameAr</span>
+                                            <code>@ch.CategoryCode</code>
+                                            <span class="child-count">@ch.ItemCount</span>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="no-children">لا توجد تصنيفات فرعية</div>
+                                }
+                            </div>
+                            <div class="tc-actions">
+                                <button class="btn-luxury btn-ghost-sm" @onclick="() => ShowEditDialog(cat)">تعديل</button>
+                                <button class="btn-luxury btn-primary-sm" @onclick="() => { isEditMode=false; editItem=new CategoryEditDto{ParentCategoryID=cat.CategoryID}; showFormDialog=true; }">+ فرعي</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
         }
     </div>
 
-    <!-- ===== مودال الإضافة/التعديل ===== -->
+    <!-- MODAL ADD/EDIT LUXURY GOLD HYBRID -->
     @if (showFormDialog)
     {
-        <div class="modal-overlay" @onclick="CloseDialog">
-            <div class="modal-card form-modal" @onclick:stopPropagation="true">
-                <h3 class="modal-title">@(isEditMode ? "تعديل تصنيف" : "إضافة تصنيف جديد")</h3>
-
-                <div class="form-grid-modal">
-                    <div class="form-field">
-                        <label class="field-label required-field">كود التصنيف</label>
-                        <input type="text" class="field-input" @bind="editItem.CategoryCode"
-                               placeholder="مثال: RAW-OIL" dir="ltr" />
-                    </div>
-
-                    <div class="form-field">
-                        <label class="field-label required-field">اسم التصنيف (عربي)</label>
-                        <input type="text" class="field-input" @bind="editItem.CategoryNameAr"
-                               placeholder="أدخل اسم التصنيف" />
-                    </div>
-
-                    <div class="form-field">
-                        <label class="field-label">اسم التصنيف (إنجليزي)</label>
-                        <input type="text" class="field-input" @bind="editItem.CategoryNameEn"
-                               placeholder="Category Name" dir="ltr" />
-                    </div>
-
-                    <div class="form-field">
-                        <label class="field-label">التصنيف الأب</label>
-                        <select class="field-select" @bind="editItem.ParentCategoryID">
-                            <option value="0">-- بدون (تصنيف رئيسي) --</option>
-                            @if (parentCategories != null)
-                            {
-                                @foreach (var p in parentCategories)
-                                {
-                                    <option value="@p.Id">@p.Name</option>
-                                }
-                            }
-                        </select>
-                    </div>
-
-                    <div class="form-field">
-                        <label class="field-label">الترتيب</label>
-                        <input type="number" class="field-input" @bind="editItem.SortOrder" />
-                    </div>
+        <div class="modal-overlay-luxury" @onclick="CloseDialog">
+            <div class="modal-card-luxury" @onclick:stopPropagation="true">
+                <div class="ml-gold-line"></div>
+                <div class="ml-header">
+                    <div class="ml-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></div>
+                    <div class="ml-text"><h3>@(isEditMode ? "تعديل تصنيف" : "إضافة تصنيف جديد")</h3><p>@(isEditMode ? "تحديث بيانات التصنيف" : "أدخل بيانات التصنيف الجديد")</p></div>
+                    <button class="ml-close" @onclick="CloseDialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
                 </div>
 
-                @if (!string.IsNullOrEmpty(formMessage))
-                {
-                    <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">
-                        @formMessage
+                <div class="ml-body">
+                    <div class="form-grid-luxury cols-2">
+                        <div class="field-luxury">
+                            <label class="fl-label required">كود التصنيف</label>
+                            <div class="input-wrap-luxury">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 15h6"/></svg>
+                                <input type="text" @bind="editItem.CategoryCode" placeholder="RAW-OIL" dir="ltr" />
+                            </div>
+                            <span class="fl-hint">كود فريد بالإنجليزي - مثال: RAW-OIL</span>
+                        </div>
+                        <div class="field-luxury">
+                            <label class="fl-label">الترتيب</label>
+                            <div class="input-wrap-luxury">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 5v.01"/><path d="M4 12v.01"/><path d="M4 19v.01"/></svg>
+                                <input type="number" @bind="editItem.SortOrder" placeholder="0" />
+                            </div>
+                        </div>
                     </div>
-                }
 
-                <div class="modal-buttons">
-                    <button class="btn-modern btn-primary-modern" @onclick="SaveCategory" disabled="@isSaving">
-                        @if (isSaving)
-                        {
-                            <div class="btn-spinner-sm"></div>
-                            <span>جاري الحفظ...</span>
-                        }
-                        else
-                        {
-                            <span>@(isEditMode ? "حفظ التعديلات" : "حفظ")</span>
-                        }
+                    <div class="form-grid-luxury cols-2">
+                        <div class="field-luxury">
+                            <label class="fl-label required">اسم التصنيف (عربي)</label>
+                            <div class="input-wrap-luxury">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                <input type="text" @bind="editItem.CategoryNameAr" placeholder="زيوت خام" />
+                            </div>
+                        </div>
+                        <div class="field-luxury">
+                            <label class="fl-label">اسم التصنيف (إنجليزي)</label>
+                            <div class="input-wrap-luxury">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                <input type="text" @bind="editItem.CategoryNameEn" placeholder="Raw Oils" dir="ltr" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="field-luxury">
+                        <label class="fl-label">التصنيف الأب</label>
+                        <div class="select-wrap-luxury-input">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            <select @bind="editItem.ParentCategoryID">
+                                <option value="0">-- بدون (تصنيف رئيسي) --</option>
+                                @if (parentCategories != null){@foreach(var p in parentCategories){<option value="@p.Id">@p.Name</option>}}
+                            </select>
+                            <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                        </div>
+                        <span class="fl-hint">اتركه فارغ ليكون تصنيف رئيسي - أو اختر أب ليكون فرعي</span>
+                    </div>
+
+                    <!-- PREVIEW CARD -->
+                    <div class="preview-card-luxury">
+                        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>معاينة التصنيف</h4>
+                        <div class="pc-body">
+                            <span class="code-luxury">@(string.IsNullOrWhiteSpace(editItem.CategoryCode) ? "CODE" : editItem.CategoryCode)</span>
+                            <strong>@(string.IsNullOrWhiteSpace(editItem.CategoryNameAr) ? "اسم التصنيف" : editItem.CategoryNameAr)</strong>
+                            <span class="pc-en">@(string.IsNullOrWhiteSpace(editItem.CategoryNameEn) ? "Category Name" : editItem.CategoryNameEn)</span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(formMessage))
+                    {<div class="msg-luxury @(formSuccess?"msg-success":"msg-error")">@formMessage</div>}
+                </div>
+
+                <div class="ml-footer">
+                    <button class="btn-luxury btn-primary-luxury" @onclick="SaveCategory" disabled="@isSaving">
+                        @if (isSaving){<div class="btn-spinner-sm"></div><span>جاري الحفظ...</span>}
+                        else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg><span>@(isEditMode?"حفظ التعديلات":"حفظ التصنيف")</span>}
                     </button>
-                    <button class="btn-modern btn-ghost" @onclick="CloseDialog">إلغاء</button>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="CloseDialog">إلغاء</button>
                 </div>
             </div>
         </div>
     }
 
-    <!-- ===== مودال تأكيد الحذف ===== -->
+    <!-- DELETE MODAL LUXURY -->
     @if (showDeleteDialog)
     {
-        <div class="modal-overlay" @onclick="CloseDeleteDialog">
-            <div class="modal-card" @onclick:stopPropagation="true">
-                <div class="modal-icon delete-modal-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="15" y1="9" x2="9" y2="15"/>
-                        <line x1="9" y1="9" x2="15" y2="15"/>
-                    </svg>
-                </div>
+        <div class="modal-overlay-luxury" @onclick="CloseDeleteDialog">
+            <div class="modal-card-luxury small" @onclick:stopPropagation="true">
+                <div class="ml-gold-line danger"></div>
+                <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
                 <h4>تأكيد الحذف</h4>
                 <p>هل أنت متأكد من حذف التصنيف:</p>
-                <p><strong>@deleteCategory?.CategoryNameAr</strong></p>
-                <p class="modal-hint">سيتم إيقاف تنشيط التصنيف</p>
-
-                @if (!string.IsNullOrEmpty(deleteMessage))
-                {
-                    <div class="form-message msg-error">@deleteMessage</div>
-                }
-
-                <div class="modal-buttons">
-                    <button class="btn-modern btn-danger-modern" @onclick="ConfirmDelete">
-                        تأكيد الحذف
-                    </button>
-                    <button class="btn-modern btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                <strong class="delete-name">@deleteCategory?.CategoryNameAr</strong>
+                <p class="delete-hint">سيتم إيقاف تنشيط التصنيف وليس حذفه نهائياً</p>
+                @if (!string.IsNullOrEmpty(deleteMessage)){<div class="msg-luxury msg-error">@deleteMessage</div>}
+                <div class="ml-footer center">
+                    <button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">تأكيد الحذف</button>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="CloseDeleteDialog">إلغاء</button>
                 </div>
             </div>
         </div>
     }
 
-    <!-- ===== رسالة النتيجة ===== -->
     @if (!string.IsNullOrEmpty(resultMessage))
     {
-        <div class="toast-container">
-            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
-                <span class="toast-text">@resultMessage</span>
-                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
-            </div>
-        </div>
+        <div class="toast-luxury"><div class="toast-card-luxury @(resultSuccess?"success":"error")"><span>@resultMessage</span><button @onclick='() => resultMessage=""'>✕</button></div></div>
     }
 }
 
 <style>
-    .items-page { display: flex; flex-direction: column; gap: 20px; }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}
+.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}
+.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}
+.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}
+.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}
+.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}
+@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}
+.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}
+.btn-primary-luxury:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(212,175,55,.35)}
+.btn-export-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 3px 12px rgba(16,185,129,.2)}
+.btn-secondary-luxury{background:#f3f4f6;color:#374151}
+.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
+.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}
+.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}
+.btn-luxury svg{width:14px;height:14px}
+.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@@keyframes spin{to{transform:rotate(360deg)}}
 
-    .page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
-    .page-title { font-weight: 800; color: #1f2937; margin: 0; }
-    .page-subtitle { color: #6b7280; font-size: .88rem; margin: 4px 0 0; }
-    .header-actions { display: flex; align-items: center; gap: 12px; }
-    .result-badge { background: #f3f4f6; color: #4b5563; padding: 8px 16px; border-radius: 999px; font-size: .82rem; font-weight: 700; }
+/* STATS */
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}
+.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}
+.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
+.st-icon.cyan{background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc}
+.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)}
+.st-icon svg{width:18px;height:18px}
+.st-info{display:flex;flex-direction:column}
+.st-value{font-size:1.2rem;font-weight:900;color:#0A0F1E;line-height:1}
+.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}
+.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}
+.stat-luxury:hover .st-gold-line{opacity:.8}
 
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
-    .stat-card { background: white; border-radius: 18px; padding: 18px; text-align: center; border: 1px solid #eef2f7; box-shadow: 0 4px 12px rgba(15,23,42,.04); transition: .2s ease; }
-    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,.08); }
-    .stat-value { font-size: 1.6rem; font-weight: 800; color: #1f2937; }
-    .stat-label { font-size: .8rem; color: #6b7280; margin-top: 4px; }
-    .stat-total { border-top: 3px solid #1f2937; }
-    .stat-raw { border-top: 3px solid #1d4ed8; }
-    .stat-pkg { border-top: 3px solid #06b6d4; }
-    .stat-fin { border-top: 3px solid #10b981; }
+/* FILTER */
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:240px;position:relative;display:flex;align-items:center}
+.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}
+.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}
+.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}
+.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}
+.select-wrap-luxury svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.select-wrap-luxury select{height:40px;padding:0 34px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:140px}
+.select-wrap-luxury select:focus{border-color:var(--gold)}
+.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.view-toggle-luxury{display:flex;background:#f8f6f0;border:1px solid #e8e2d0;border-radius:12px;padding:3px;gap:2px}
+.vt-btn{width:36px;height:32px;border-radius:8px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9ca3af;transition:.2s}
+.vt-btn.active{background:#fff;color:var(--gold-dark);box-shadow:0 2px 6px rgba(0,0,0,.06);border:1px solid rgba(212,175,55,.15)}
+.vt-btn svg{width:16px;height:16px}
 
-    .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .search-box { flex: 1; min-width: 280px; position: relative; display: flex; align-items: center; }
-    .search-icon { position: absolute; right: 14px; color: #9ca3af; pointer-events: none; }
-    .search-input { width: 100%; padding: 12px 44px 12px 40px; border: 1.5px solid #e5e7eb; border-radius: 14px; font-size: .92rem; background: white; outline: none; transition: .2s; }
-    .search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .clear-search { position: absolute; left: 12px; background: #f3f4f6; border: none; width: 24px; height: 24px; border-radius: 50%; font-size: .75rem; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6b7280; }
-    .filter-select { padding: 12px 16px; border: 1.5px solid #e5e7eb; border-radius: 14px; font-size: .88rem; background: white; min-width: 150px; outline: none; }
+/* TABLE */
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse}
+.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}
+.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
+.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+.table-luxury tbody tr{transition:.15s}
+.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:100px}
+.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-actions{text-align:center}
+.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}
+.row-parent{background:rgba(212,175,55,.02)}
+.code-luxury{background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:8px;font-size:.78rem;color:var(--gold-dark);font-weight:700;font-family:monospace}
+.cat-name-wrap{display:flex;align-items:center;gap:8px}
+.tree-branch{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#d1d5db}
+.tree-branch svg{width:14px;height:14px}
+.cat-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cat-icon.level-1{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)}
+.cat-icon.level-2{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.cat-icon svg{width:14px;height:14px}
+.parent-badge-luxury{background:#f5f3ff;color:#6d28d9;padding:3px 10px;border-radius:999px;font-size:.74rem;font-weight:700;border:1px solid #e9d5ff}
+.no-val{color:#d1d5db;font-size:.78rem}
+.level-dot{display:inline-flex;width:26px;height:26px;border-radius:50%;align-items:center;justify-content:center;font-size:.76rem;font-weight:800}
+.level-dot.level-1{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
+.level-dot.level-2{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.count-badge-luxury{background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:999px;font-size:.76rem;font-weight:700;border:1px solid #fde68a}
+.sort-badge{background:#f3f4f6;color:#6b7280;padding:3px 8px;border-radius:6px;font-size:.76rem;font-weight:600}
+.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s;margin:0 2px}
+.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}
+.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}
+.act-btn.delete{color:#ef4444;border-color:#fee2e2}
+.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}
+.act-btn svg{width:14px;height:14px}
 
-    .table-card { background: white; border-radius: 20px; overflow: hidden; border: 1px solid #eef2f7; box-shadow: 0 4px 16px rgba(15,23,42,.04); }
-    .data-table { width: 100%; border-collapse: collapse; }
-    .data-table thead { background: #f8f9fc; }
-    .data-table th { padding: 14px 16px; font-size: .82rem; font-weight: 700; color: #6b7280; text-align: right; border-bottom: 2px solid #eef2f7; white-space: nowrap; }
-    .data-table td { padding: 13px 16px; font-size: .88rem; color: #374151; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-    .data-table tbody tr { transition: .15s ease; }
-    .data-table tbody tr:hover { background: #f8f7ff; }
+/* TREE GRID */
+.tree-grid-luxury{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.tree-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);transition:.2s}
+.tree-card-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.06);border-color:rgba(212,175,55,.2)}
+.tc-header{display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid #f3f4f6}
+.tc-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tc-icon.parent{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}
+.tc-icon svg{width:18px;height:18px}
+.tc-info{flex:1;display:flex;flex-direction:column}
+.tc-info strong{font-size:.9rem;color:#0A0F1E}
+.tc-info code{font-size:.7rem;color:var(--gold-dark);background:#f8f6f0;padding:2px 6px;border-radius:4px;width:fit-content;margin-top:2px}
+.tc-children{padding:8px 14px;display:flex;flex-direction:column;gap:4px;min-height:60px}
+.child-row-luxury{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:#fcfaf6;border:1px solid #f1efe8;font-size:.8rem}
+.child-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0}
+.child-name{flex:1;font-weight:600;color:#374151}
+.child-row-luxury code{font-size:.7rem;background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #e8e2d0}
+.child-count{background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:999px;font-size:.7rem;font-weight:700}
+.no-children{text-align:center;padding:12px;color:#9ca3af;font-size:.78rem}
+.tc-actions{display:flex;gap:6px;padding:10px 14px;border-top:1px solid #f3f4f6;background:#fafaf8}
+.btn-ghost-sm{padding:6px 12px;font-size:.76rem;background:#fff;border:1px solid #e8e2d0;border-radius:8px;cursor:pointer}
+.btn-primary-sm{padding:6px 12px;font-size:.76rem;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);border:none;border-radius:8px;cursor:pointer;font-weight:700}
 
-    .th-num { width: 50px; text-align: center; }
-    .th-center { text-align: center; }
-    .th-actions { width: 130px; text-align: center; }
-    .td-num { text-align: center; color: #9ca3af; font-size: .82rem; }
-    .td-center { text-align: center; }
-    .td-actions { text-align: center; }
+/* MODAL LUXURY */
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:580px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}
+.modal-card-luxury.small{max-width:420px;text-align:center;padding:28px 24px}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.ml-header{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid #f1efe8;background:linear-gradient(135deg,#fcfaf6,#fff)}
+.ml-icon{width:42px;height:42px;border-radius:12px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);display:flex;align-items:center;justify-content:center;color:var(--gold-dark);flex-shrink:0}
+.ml-icon svg{width:20px;height:20px}
+.ml-text{flex:1}
+.ml-text h3{margin:0;font-size:1rem;font-weight:900;color:#0A0F1E}
+.ml-text p{margin:2px 0 0;font-size:.74rem;color:#8B95A5;font-weight:600}
+.ml-close{width:32px;height:32px;border-radius:10px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280;transition:.2s}
+.ml-close:hover{background:#f9fafb;color:#0A0F1E}
+.ml-close svg{width:14px;height:14px}
+.ml-body{padding:20px;display:flex;flex-direction:column;gap:14px;max-height:70vh;overflow-y:auto}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.form-grid-luxury{display:grid;gap:12px}
+.form-grid-luxury.cols-2{grid-template-columns:repeat(2,1fr)}
+.field-luxury{display:flex;flex-direction:column;gap:6px}
+.fl-label{font-size:.78rem;font-weight:700;color:#374151}
+.fl-label.required::after{content:' *';color:#ef4444}
+.input-wrap-luxury{position:relative;display:flex;align-items:center}
+.input-wrap-luxury svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.input-wrap-luxury input{width:100%;height:42px;padding:0 34px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff;transition:.2s}
+.input-wrap-luxury input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.select-wrap-luxury-input{position:relative;display:flex;align-items:center}
+.select-wrap-luxury-input svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.select-wrap-luxury-input select{width:100%;height:42px;padding:0 32px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none}
+.select-wrap-luxury-input select:focus{border-color:var(--gold)}
+.select-wrap-luxury-input .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.fl-hint{font-size:.68rem;color:#9ca3af;font-weight:600}
+.preview-card-luxury{background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;padding:12px}
+.preview-card-luxury h4{display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:800;color:#0A0F1E;margin:0 0 8px}
+.preview-card-luxury h4 svg{width:14px;height:14px;color:var(--gold-dark)}
+.pc-body{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pc-body strong{color:#0A0F1E}
+.pc-en{color:#9ca3af;font-size:.8rem}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin-bottom:12px}
+.delete-icon-luxury svg{width:32px;height:32px}
+.delete-name{display:block;font-size:1rem;font-weight:800;color:#0A0F1E;margin:8px 0}
+.delete-hint{font-size:.76rem;color:#9ca3af;margin:4px 0 0}
 
-    .parent-row { background: #faf9ff; }
-    .child-row td { padding-right: 24px; }
-    .tree-indent { color: #93c5fd; margin-left: 6px; font-weight: 800; }
-
-    .item-code { background: #f3f4f6; padding: 4px 10px; border-radius: 8px; font-size: .82rem; color: #1d4ed8; font-weight: 600; }
-    .item-name { font-weight: 700; color: #1f2937; }
-    .item-name-en { color: #9ca3af; font-size: .85rem; }
-    .no-value { color: #d1d5db; }
-
-    .parent-badge { background: #f5f3ff; color: #1d4ed8; padding: 4px 10px; border-radius: 8px; font-size: .78rem; font-weight: 700; }
-    .level-badge { display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; font-size: .82rem; font-weight: 800; text-align: center; }
-    .level-1 { background: #eff6ff; color: #2563eb; }
-    .level-2 { background: #ecfdf5; color: #059669; }
-    .count-badge { background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 8px; font-size: .82rem; font-weight: 700; }
-
-    .action-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 10px; border: 1.5px solid; background: transparent; font-size: .78rem; font-weight: 700; cursor: pointer; transition: .2s; }
-    .edit-btn { color: #1d4ed8; border-color: #e9e0ff; }
-    .edit-btn:hover { background: #f5f3ff; border-color: #1d4ed8; }
-    .delete-btn { color: #ef4444; border-color: #fee2e2; }
-    .delete-btn:hover { background: #fef2f2; border-color: #ef4444; }
-
-    .btn-modern { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 14px; border: none; font-weight: 700; font-size: .88rem; cursor: pointer; transition: .2s; }
-    .btn-modern:disabled { opacity: .6; cursor: not-allowed; }
-    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,.25); }
-    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(37,99,235,.35); }
-    .btn-danger-modern { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
-    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
-    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
-    .btn-ghost:hover { background: #f9fafb; }
-    .btn-export { background: linear-gradient(135deg, #059669, #10b981); color: white; box-shadow: 0 4px 16px rgba(16,185,129,.25); }
-    .btn-icon { font-size: 1.1rem; font-weight: 800; }
-    .btn-spinner-sm { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .6s linear infinite; }
-
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-card { background: white; border-radius: 24px; padding: 36px; max-width: 440px; width: 90%; text-align: center; box-shadow: 0 24px 48px rgba(0,0,0,.15); animation: modalIn .3s ease; }
-    .form-modal { max-width: 560px; text-align: right; }
-    .modal-title { font-weight: 800; color: #1f2937; margin-bottom: 20px; text-align: center; }
-    .modal-icon { width: 64px; height: 64px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
-    .delete-modal-icon { background: #fef2f2; color: #ef4444; }
-    .modal-hint { color: #9ca3af; font-size: .85rem; }
-    .modal-buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
-    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-
-    .form-grid-modal { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
-    .form-field { display: flex; flex-direction: column; gap: 6px; }
-    .field-label { font-size: .82rem; font-weight: 700; color: #374151; }
-    .required-field::after { content: ' *'; color: #ef4444; }
-    .field-input, .field-select { padding: 10px 14px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: .9rem; background: white; outline: none; width: 100%; transition: .2s; }
-    .field-input:focus, .field-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-
-    .form-message { padding: 10px 14px; border-radius: 12px; font-size: .85rem; font-weight: 600; margin-top: 12px; }
-    .msg-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-    .msg-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-
-    .toast-container { position: fixed; bottom: 24px; left: 24px; z-index: 1050; animation: toastIn .4s ease; }
-    .toast-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.12); min-width: 320px; }
-    .toast-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-    .toast-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
-    .toast-text { flex: 1; font-weight: 600; font-size: .88rem; }
-    .toast-close { background: transparent; border: none; font-size: 1rem; cursor: pointer; color: inherit; opacity: .6; }
-    @@keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
-    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
-    @@keyframes spin { to { transform: rotate(360deg); } }
-    .empty-state { text-align: center; padding: 60px 20px; background: white; border-radius: 20px; border: 1px solid #eef2f7; }
-    .empty-icon { font-size: 3rem; margin-bottom: 16px; }
-    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
-    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
-
-    @@media (max-width: 768px) {
-        .page-header { flex-direction: column; }
-        .stats-grid { grid-template-columns: repeat(2, 1fr); }
-        .filter-bar { flex-direction: column; }
-        .search-box { min-width: 100%; }
-        .form-grid-modal { grid-template-columns: 1fr; }
-    }
+/* STATES */
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}
+.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.empty-icon-luxury svg{width:28px;height:28px}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}
+.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}
+.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:768px){.lh-content{flex-direction:column;align-items:flex-start}.stats-luxury{grid-template-columns:repeat(2,1fr)}.form-grid-luxury.cols-2{grid-template-columns:1fr}.tree-grid-luxury{grid-template-columns:1fr}}
 </style>
 
 @code {
@@ -483,8 +544,8 @@ else
     private ModulePermissionDto? permissions;
     private string searchText = "";
     private int filterLevel = 0;
+    private string viewMode = "table";
 
-    // مودال الإضافة/التعديل
     private bool showFormDialog = false;
     private bool isEditMode = false;
     private CategoryEditDto editItem = new();
@@ -492,31 +553,20 @@ else
     private string formMessage = "";
     private bool formSuccess = true;
 
-    // مودال الحذف
     private bool showDeleteDialog = false;
     private CategoryListDto? deleteCategory;
     private string deleteMessage = "";
 
-    // Toast
     private string resultMessage = "";
     private bool resultSuccess = true;
     private bool isExporting = false;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn)
-        {
-            Navigation.NavigateTo("/login");
-            return;
-        }
-
-        if (!PermissionService.IsLoaded)
-            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-
+        if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
         permissions = PermissionService.GetModule("SCR_CATEGORIES");
-
-        if (permissions != null && permissions.CanView)
-            await LoadData();
+        if (permissions != null && permissions.CanView) await LoadData();
     }
 
     private async Task LoadData()
@@ -529,7 +579,6 @@ else
     private void Search()
     {
         if (categories == null) return;
-
         filteredCategories = categories.Where(c =>
             (filterLevel == 0 ||
              (filterLevel == 1 && c.CategoryLevel == 1) ||
@@ -541,13 +590,8 @@ else
         ).ToList();
     }
 
-    private void ClearSearch()
-    {
-        searchText = "";
-        Search();
-    }
+    private void ClearSearch(){searchText="";Search();}
 
-    // ===== إضافة =====
     private void ShowAddDialog()
     {
         isEditMode = false;
@@ -556,7 +600,6 @@ else
         showFormDialog = true;
     }
 
-    // ===== تعديل =====
     private void ShowEditDialog(CategoryListDto cat)
     {
         isEditMode = true;
@@ -573,127 +616,45 @@ else
         showFormDialog = true;
     }
 
-    private void CloseDialog()
-    {
-        showFormDialog = false;
-        formMessage = "";
-    }
-
-    // ===== حفظ =====
+    private void CloseDialog(){showFormDialog=false;formMessage="";}
     private async Task SaveCategory()
     {
-        formMessage = "";
-
-        if (string.IsNullOrWhiteSpace(editItem.CategoryCode))
-        {
-            formMessage = "يجب إدخال كود التصنيف";
-            formSuccess = false;
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(editItem.CategoryNameAr))
-        {
-            formMessage = "يجب إدخال اسم التصنيف بالعربي";
-            formSuccess = false;
-            return;
-        }
-
-        isSaving = true;
-        StateHasChanged();
-
+        formMessage="";
+        if (string.IsNullOrWhiteSpace(editItem.CategoryCode)){formMessage="يجب إدخال كود التصنيف";formSuccess=false;return;}
+        if (string.IsNullOrWhiteSpace(editItem.CategoryNameAr)){formMessage="يجب إدخال اسم التصنيف بالعربي";formSuccess=false;return;}
+        isSaving=true;StateHasChanged();
         try
         {
-            if (isEditMode)
-            {
-                await CategoryService.UpdateCategoryAsync(editItem, UserSession.UserID);
-                resultMessage = "تم تعديل التصنيف بنجاح ✅";
-            }
-            else
-            {
-                await CategoryService.InsertCategoryAsync(editItem, UserSession.UserID);
-                resultMessage = "تم إضافة التصنيف بنجاح ✅";
-            }
-
-            resultSuccess = true;
-            showFormDialog = false;
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            formMessage = "خطأ: " + ex.Message;
-            formSuccess = false;
-        }
-        finally
-        {
-            isSaving = false;
-        }
+            if (isEditMode){await CategoryService.UpdateCategoryAsync(editItem, UserSession.UserID);resultMessage="تم تعديل التصنيف بنجاح ✅";}
+            else{await CategoryService.InsertCategoryAsync(editItem, UserSession.UserID);resultMessage="تم إضافة التصنيف بنجاح ✅";}
+            resultSuccess=true;showFormDialog=false;await LoadData();
+        }catch(Exception ex){formMessage="خطأ: "+ex.Message;formSuccess=false;}
+        finally{isSaving=false;}
     }
 
-    // ===== حذف =====
-    private void ShowDeleteConfirm(CategoryListDto cat)
-    {
-        deleteCategory = cat;
-        deleteMessage = "";
-        showDeleteDialog = true;
-    }
-
-    private void CloseDeleteDialog()
-    {
-        showDeleteDialog = false;
-        deleteMessage = "";
-    }
-
+    private void ShowDeleteConfirm(CategoryListDto cat){deleteCategory=cat;deleteMessage="";showDeleteDialog=true;}
+    private void CloseDeleteDialog(){showDeleteDialog=false;deleteMessage="";}
     private async Task ConfirmDelete()
     {
-        if (deleteCategory == null) return;
-
+        if (deleteCategory==null) return;
         try
         {
             var result = await CategoryService.DeleteCategoryAsync(deleteCategory.CategoryID, UserSession.UserID);
-
-            if (result.Success)
-            {
-                resultMessage = result.Message + " ✅";
-                resultSuccess = true;
-                showDeleteDialog = false;
-                await LoadData();
-            }
-            else
-            {
-                deleteMessage = result.Message;
-            }
-        }
-        catch (Exception ex)
-        {
-            deleteMessage = "خطأ: " + ex.Message;
-        }
+            if (result.Success){resultMessage=result.Message+" ✅";resultSuccess=true;showDeleteDialog=false;await LoadData();}
+            else{deleteMessage=result.Message;}
+        }catch(Exception ex){deleteMessage="خطأ: "+ex.Message;}
     }
 
-    // ===== تصدير =====
     private async Task ExportToExcel()
     {
-        if (filteredCategories == null || !filteredCategories.Any()) return;
-
-        isExporting = true;
-        StateHasChanged();
-
+        if (filteredCategories==null || !filteredCategories.Any()) return;
+        isExporting=true;StateHasChanged();
         try
         {
             var fileBytes = await CategoryService.ExportCategoriesToExcelAsync(filteredCategories, UserSession.UserID);
             var base64 = Convert.ToBase64String(fileBytes);
-            var fileName = $"Categories_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
-
-            await JS.InvokeVoidAsync("downloadFile", fileName,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
-        }
-        catch (Exception ex)
-        {
-            resultMessage = "خطأ في التصدير: " + ex.Message;
-            resultSuccess = false;
-        }
-        finally
-        {
-            isExporting = false;
-        }
+            await JS.InvokeVoidAsync("downloadFile", $"Categories_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+        }catch(Exception ex){resultMessage="خطأ في التصدير: "+ex.Message;resultSuccess=false;}
+        finally{isExporting=false;}
     }
 }

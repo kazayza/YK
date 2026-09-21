@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("YKCoatings")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+90bc5b29b85b57c8a14cd0ae646cfac5b8f147c5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2ef0ab62f3745114781bf68d86b13366c3088300")]
 [assembly: System.Reflection.AssemblyProductAttribute("YKCoatings")]
 [assembly: System.Reflection.AssemblyTitleAttribute("YKCoatings")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

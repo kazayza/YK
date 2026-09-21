@@ -17,12 +17,16 @@
       "PackagePath": "staticwebassets\\bootstrap\\bootstrap.min.css.map"
     },
     {
-      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-icon.svg",
-      "PackagePath": "staticwebassets\\images\\yk-icon.svg"
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-icon-gold.png",
+      "PackagePath": "staticwebassets\\images\\yk-icon-gold.png"
     },
     {
-      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo.svg",
-      "PackagePath": "staticwebassets\\images\\yk-logo.svg"
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo-gold.png",
+      "PackagePath": "staticwebassets\\images\\yk-logo-gold.png"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo-white.png",
+      "PackagePath": "staticwebassets\\images\\yk-logo-white.png"
     },
     {
       "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\js\\app.js",
@@ -35,6 +39,10 @@
     {
       "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\sounds\\notification.mp3",
       "PackagePath": "staticwebassets\\sounds\\notification.mp3"
+    },
+    {
+      "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\yk-theme-gold.css",
+      "PackagePath": "staticwebassets\\yk-theme-gold.css"
     },
     {
       "Id": "D:\\YK Coatings\\YkWeb\\wwwroot\\yk-theme.css",

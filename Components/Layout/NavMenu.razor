@@ -2,516 +2,233 @@
 @using YKCoatings.Services
 @using YKCoatings.Helpers
 @using YKCoatings.Models
-@using Microsoft.AspNetCore.Components.Routing
 @inject PermissionService PermissionService
 @inject UserSessionService UserSession
 @inject NavigationManager Navigation
 
 @if (isLoading)
 {
-    <div class="nm-loading">
-        @for (int i = 0; i < 5; i++)
-        {
-            <div class="nm-skel @(i % 3 == 0 ? "short" : "")"></div>
-        }
+    <div class="nm-skeleton" aria-busy="true" aria-label="جاري تحميل القائمة">
+        @for (int i = 0; i < 3; i++){<div class="nm-skel-item"></div>}
+        <div class="nm-skel-item" style="height:12px;width:60%;margin-right:8px"></div>
+        @for (int i = 0; i < 3; i++){<div class="nm-skel-item"></div>}
     </div>
 }
 else
 {
     <nav class="nm-root" role="navigation" aria-label="القائمة الرئيسية">
-
         @if (!IsCollapsed)
         {
-            <div class="nm-section-label">القائمة الرئيسية</div>
+            <div class="nm-section-label"><span>القائمة الرئيسية</span></div>
         }
 
-        <!-- Home -->
-        <NavLink class="@GetItemClass()" 
-                 href="/dashboard" 
-                 Match="NavLinkMatch.All" 
-                 title="الرئيسية">
-            <span class="nm-icon" style="--ic:#2563eb">
-                @((MarkupString)NavMenuIcons.Home())
+        <NavLink class="@GetItemClass()" href="/dashboard" Match="NavLinkMatch.All" title="الرئيسية">
+            <span class="nm-icon" style="--ic:#D4AF37">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z"/><path d="M9 21V12h6v9"/></svg>
             </span>
-            @if (!IsCollapsed)
-            {
-                <span class="nm-label">الرئيسية</span>
-            }
+            @if (!IsCollapsed){<span class="nm-label">الرئيسية</span>}
         </NavLink>
 
-        <!-- Dynamic Modules -->
-        @foreach (var mod in mainModules)
+        @if (filteredModules.Any() && !IsCollapsed)
+        {
+            <div class="nm-section-label alt"><span>الأقسام والوحدات</span></div>
+        }
+
+        @foreach (var mod in filteredModules)
         {
             var kids = PermissionService.GetChildModules(mod.ModuleID).ToList();
-            var modColor = NavMenuIcons.GetColor(mod.ModuleCode);
+            var modColor = GetModuleColor(mod, kids);
             var groupClass = GetGroupClass(mod);
+            var isVisible = IsModuleVisible(mod, kids);
+            @if (!isVisible) { continue; }
 
             @if (kids.Any())
             {
-                <!-- Group with Children -->
-                <div class="@groupClass" style="@($"--mc:{modColor}")">
-
-                    <button class="nm-group-btn" 
-                            @onclick="@(() => Toggle(mod.ModuleID))" 
-                            @onkeydown="@((e) => HandleKeyDown(e, mod.ModuleID))"
-                            title="@mod.ModuleNameAr"
-                            aria-expanded="@expandedGroups.Contains(mod.ModuleID)">
-                        <span class="nm-icon" style="@($"--ic:{modColor}")">
-                            @((MarkupString)NavMenuIcons.Get(mod.ModuleCode))
-                        </span>
+                <div class="@groupClass" style="@($"--mc:{modColor}" )">
+                    <span class="nm-rail"></span>
+                    <button class="nm-group-btn" @onclick="@(() => Toggle(mod.ModuleID))" title="@mod.ModuleNameAr" aria-expanded="@expandedGroups.Contains(mod.ModuleID)">
+                        <span class="nm-icon" style="@($"--ic:{modColor}")">@((MarkupString)NavMenuIcons.Get(mod.ModuleCode))</span>
                         @if (!IsCollapsed)
                         {
                             <span class="nm-label">@mod.ModuleNameAr</span>
-                            <span class="nm-badge">@kids.Count</span>
-                            <span class="nm-arrow">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                    <path d="m6 9 6 6 6-6"/>
-                                </svg>
-                            </span>
+                            <span class="nm-badge">@kids.Count(k => IsChildVisible(k))</span>
+                            <span class="nm-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
                         }
                     </button>
-
                     @if (!IsCollapsed)
                     {
-                        <div class="nm-sub-panel">
-                            <div class="nm-sub-list" style="@($"--mc:{modColor}")">
-                                @foreach (var kid in kids)
-                                {
-                                    <NavLink class="nm-sub-item"
-                                             href="@ModuleRouteHelper.GetRoute(kid.ModuleCode)"
-                                             Match="NavLinkMatch.Prefix"
-                                             title="@kid.ModuleNameAr">
-                                        <span class="nm-sub-dot"></span>
-                                        <span class="nm-sub-text">@kid.ModuleNameAr</span>
-                                    </NavLink>
-                                }
-                            </div>
-                        </div>
+                        <div class="nm-sub-panel"><div class="nm-sub-list" style="@($"--mc:{modColor}")">
+                            @foreach (var kid in kids.Where(k => IsChildVisible(k)))
+                            {
+                                <NavLink class="nm-sub-item" href="@ModuleRouteHelper.GetRoute(kid.ModuleCode)" Match="NavLinkMatch.Prefix" title="@kid.ModuleNameAr">
+                                    <span class="nm-sub-dot"></span><span class="nm-sub-text">@kid.ModuleNameAr</span>
+                                    <svg class="nm-sub-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m15 18-6-6 6-6"/></svg>
+                                </NavLink>
+                            }
+                        </div></div>
                     }
                 </div>
             }
             else
             {
-                <!-- Single Item -->
-                <NavLink class="@GetItemClass()" 
-                         href="@ModuleRouteHelper.GetRoute(mod.ModuleCode)"
-                         Match="NavLinkMatch.Prefix"
-                         title="@mod.ModuleNameAr"
-                         style="@($"--mc:{modColor}")">
-                    <span class="nm-icon" style="@($"--ic:{modColor}")">
-                        @((MarkupString)NavMenuIcons.Get(mod.ModuleCode))
-                    </span>
-                    @if (!IsCollapsed)
-                    {
-                        <span class="nm-label">@mod.ModuleNameAr</span>
-                    }
+                <NavLink class="@GetItemClass()" href="@ModuleRouteHelper.GetRoute(mod.ModuleCode)" Match="NavLinkMatch.Prefix" title="@mod.ModuleNameAr" style="@($"--mc:{modColor}")">
+                    <span class="nm-icon" style="@($"--ic:{modColor}")">@((MarkupString)NavMenuIcons.Get(mod.ModuleCode))</span>
+                    @if (!IsCollapsed){<span class="nm-label">@mod.ModuleNameAr</span>}
                 </NavLink>
             }
+        }
+
+        @if (!filteredModules.Any() && !string.IsNullOrWhiteSpace(SearchText))
+        {
+            <div class="nm-empty"><div class="nm-empty-icon">🔍</div><span>لا توجد نتائج لـ "@SearchText"</span></div>
         }
     </nav>
 }
 
 <style>
-        /* ===== LOADING SKELETON ===== */
-    .nm-loading {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding: 8px 4px;
-    }
-
-    .nm-skel {
-        height: 46px;
-        border-radius: 12px;
-        background: linear-gradient(
-            90deg,
-            rgba(148,163,184,.06) 0%,
-            rgba(148,163,184,.12) 50%,
-            rgba(148,163,184,.06) 100%
-        );
-        background-size: 200% 100%;
-        animation: nmShimmer 1.8s ease infinite;
-    }
-
-    .nm-skel.short {
-        width: 55%;
-        height: 14px;
-        border-radius: 6px;
-        margin-right: 8px;
-    }
-
-    @@keyframes nmShimmer {
-        0%   { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
-
-    /* ===== ROOT ===== */
-    .nm-root {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding: 4px 2px;
-    }
-
-    /* ===== SECTION LABEL ===== */
-    .nm-section-label {
-        padding: 14px 8px 6px;
-        font-size: .6rem;
-        font-weight: 800;
-        letter-spacing: 1.2px;
-        color: rgba(148,163,184,.4);
-        text-transform: uppercase;
-    }
-
-    /* ===== SINGLE ITEM ===== */
-    .nm-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 8px 10px;
-        border-radius: 12px;
-        text-decoration: none;
-        color: #94a3b8;
-        font-size: .85rem;
-        font-weight: 600;
-        transition: all .2s ease;
-        border: 1px solid transparent;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .nm-item::after {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 3px;
-        height: 0;
-        background: var(--mc, #2563eb);
-        border-radius: 0 4px 4px 0;
-        transition: height .25s cubic-bezier(.4,0,.2,1);
-        box-shadow: 0 0 8px var(--mc, #2563eb);
-    }
-
-    .nm-item:hover {
-        background: rgba(255,255,255,.05);
-        color: #cbd5e1;
-        border-color: rgba(255,255,255,.04);
-    }
-
-    .nm-item:hover::after { height: 50%; }
-
-    .nm-item.active {
-        background: linear-gradient(
-            to left,
-            color-mix(in srgb, var(--mc, #2563eb) 12%, transparent),
-            color-mix(in srgb, var(--mc, #2563eb) 4%, transparent)
-        );
-        color: #f1f5f9;
-        border-color: color-mix(in srgb, var(--mc, #2563eb) 15%, transparent);
-    }
-
-    .nm-item.active::after {
-        height: 65%;
-        box-shadow:
-            0 0 10px color-mix(in srgb, var(--mc, #2563eb) 60%, transparent),
-            0 0 20px color-mix(in srgb, var(--mc, #2563eb) 20%, transparent);
-    }
-
-    .nm-item.compact {
-        justify-content: center;
-        padding: 10px;
-    }
-
-    /* ===== ICON ===== */
-    .nm-icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 11px;
-        background: color-mix(in srgb, var(--ic, #6366f1) 10%, transparent);
-        border: 1px solid color-mix(in srgb, var(--ic, #6366f1) 15%, transparent);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        color: color-mix(in srgb, var(--ic, #6366f1) 75%, white);
-        transition: all .25s ease;
-    }
-
-    .nm-icon svg {
-        width: 20px;
-        height: 20px;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        transition: transform .25s ease;
-    }
-
-    .nm-item:hover .nm-icon,
-    .nm-group-btn:hover .nm-icon {
-        background: color-mix(in srgb, var(--ic, #2563eb) 18%, transparent);
-        border-color: color-mix(in srgb, var(--ic, #2563eb) 25%, transparent);
-        color: color-mix(in srgb, var(--ic, #2563eb) 90%, white);
-        box-shadow: 0 0 16px color-mix(in srgb, var(--ic, #2563eb) 15%, transparent);
-    }
-
-    .nm-item:hover .nm-icon svg,
-    .nm-group-btn:hover .nm-icon svg {
-        transform: scale(1.08);
-    }
-
-    .nm-item.active .nm-icon {
-        background: color-mix(in srgb, var(--ic, #2563eb) 22%, transparent);
-        border-color: color-mix(in srgb, var(--ic, #2563eb) 30%, transparent);
-        color: color-mix(in srgb, var(--ic, #2563eb) 95%, white);
-        box-shadow:
-            0 0 0 3px color-mix(in srgb, var(--ic, #2563eb) 8%, transparent),
-            0 0 20px color-mix(in srgb, var(--ic, #2563eb) 20%, transparent);
-    }
-
-    .nm-group.has-active .nm-icon {
-        background: color-mix(in srgb, var(--mc, #2563eb) 18%, transparent);
-        border-color: color-mix(in srgb, var(--mc, #2563eb) 25%, transparent);
-        color: color-mix(in srgb, var(--mc, #2563eb) 90%, white);
-    }
-
-    /* ===== LABEL ===== */
-    .nm-label {
-        flex: 1;
-        min-width: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        line-height: 1.3;
-        letter-spacing: .01em;
-    }
-
-    /* ===== GROUP ===== */
-    .nm-group {
-        border-radius: 12px;
-        border: 1px solid transparent;
-        transition: all .2s ease;
-        position: relative;
-    }
-
-    .nm-group.has-active {
-        background: color-mix(in srgb, var(--mc, #2563eb) 4%, transparent);
-        border-color: color-mix(in srgb, var(--mc, #2563eb) 10%, transparent);
-    }
-
-    .nm-group-btn {
-        width: 100%;
-        border: none;
-        background: transparent;
-        color: #94a3b8;
-        padding: 8px 10px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        font-size: .85rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all .2s ease;
-        border-radius: 12px;
-        font-family: inherit;
-        letter-spacing: .01em;
-    }
-
-    .nm-group-btn:hover {
-        background: rgba(255,255,255,.05);
-        color: #cbd5e1;
-    }
-
-    .nm-group.has-active .nm-group-btn {
-        color: #e2e8f0;
-    }
-
-    .nm-group.compact .nm-group-btn {
-        justify-content: center;
-        padding: 10px;
-    }
-
-    .nm-group-btn:focus-visible {
-        outline: 2px solid var(--mc, #2563eb);
-        outline-offset: 2px;
-    }
-
-    /* Badge */
-    .nm-badge {
-        min-width: 20px;
-        height: 18px;
-        border-radius: 6px;
-        background: rgba(148,163,184,.08);
-        color: #64748b;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: .62rem;
-        font-weight: 800;
-        flex-shrink: 0;
-        padding: 0 5px;
-        transition: all .2s;
-        letter-spacing: .02em;
-    }
-
-    .nm-group.has-active .nm-badge {
-        background: color-mix(in srgb, var(--mc, #2563eb) 18%, transparent);
-        color: color-mix(in srgb, var(--mc, #2563eb) 85%, white);
-    }
-
-    /* Arrow */
-    .nm-arrow {
-        width: 18px;
-        height: 18px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform .3s cubic-bezier(.4,0,.2,1);
-        flex-shrink: 0;
-        color: #475569;
-    }
-
-    .nm-arrow svg { width: 12px; height: 12px; }
-
-    .nm-group.open .nm-arrow {
-        transform: rotate(180deg);
-        color: #94a3b8;
-    }
-
-    /* ===== SUBMENU ===== */
-    .nm-sub-panel {
-        display: grid;
-        grid-template-rows: 0fr;
-        transition: grid-template-rows .3s cubic-bezier(.4,0,.2,1), opacity .25s ease;
-        opacity: 0;
-    }
-
-    .nm-group.open .nm-sub-panel {
-        grid-template-rows: 1fr;
-        opacity: 1;
-    }
-
-    .nm-sub-list {
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        gap: 1px;
-        padding: 4px 6px 8px 6px;
-        margin-right: 28px;
-        position: relative;
-    }
-
-    .nm-sub-list::before {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 8px;
-        bottom: 12px;
-        width: 1.5px;
-        background: linear-gradient(
-            to bottom,
-            color-mix(in srgb, var(--mc, #2563eb) 30%, transparent),
-            color-mix(in srgb, var(--mc, #2563eb) 10%, transparent)
-        );
-        border-radius: 2px;
-    }
-
-    .nm-sub-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 7px 10px 7px 8px;
-        border-radius: 9px;
-        text-decoration: none;
-        color: #64748b;
-        font-size: .81rem;
-        font-weight: 600;
-        transition: all .2s ease;
-        border: 1px solid transparent;
-        position: relative;
-    }
-
-    .nm-sub-item:hover {
-        background: rgba(255,255,255,.05);
-        color: #cbd5e1;
-    }
-
-    .nm-sub-item.active {
-        background: color-mix(in srgb, var(--mc, #2563eb) 12%, transparent);
-        color: #e2e8f0;
-        border-color: color-mix(in srgb, var(--mc, #2563eb) 18%, transparent);
-    }
-
-    .nm-sub-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        border: 1.5px solid #334155;
-        background: transparent;
-        flex-shrink: 0;
-        transition: all .2s ease;
-    }
-
-    .nm-sub-item:hover .nm-sub-dot {
-        border-color: #64748b;
-        background: #334155;
-    }
-
-    .nm-sub-item.active .nm-sub-dot {
-        border-color: color-mix(in srgb, var(--mc, #2563eb) 80%, white);
-        background: color-mix(in srgb, var(--mc, #2563eb) 80%, white);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--mc, #2563eb) 15%, transparent);
-    }
-
-    .nm-sub-text {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex: 1;
-    }
-
-    /* ===== REDUCED MOTION ===== */
-    @@media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
-            animation-duration: .01ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: .01ms !important;
-        }
-    }
+.nm-root{display:flex;flex-direction:column;gap:3px;padding:2px}
+.nm-section-label{padding:14px 12px 8px;font-size:.6rem;font-weight:800;letter-spacing:1.6px;color:rgba(212,175,55,.5);display:flex;align-items:center;gap:8px}
+.nm-section-label::before{content:'';width:5px;height:5px;border-radius:50%;background:#D4AF37;box-shadow:0 0 9px rgba(212,175,55,.85);flex-shrink:0}
+.nm-section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(212,175,55,.2),transparent)}
+.nm-section-label.alt{padding-top:18px}
+.nm-item{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:13px;text-decoration:none;color:#8B95A5;font-size:.875rem;font-weight:600;transition:background .25s,color .25s,transform .25s,border-color .25s,box-shadow .25s;border:1px solid transparent;position:relative;overflow:hidden}
+.nm-item::before{content:'';position:absolute;inset:0;background:linear-gradient(to left,rgba(255,255,255,.055),transparent 60%);opacity:0;transition:opacity .25s;pointer-events:none}
+.nm-item::after{content:'';position:absolute;right:0;top:50%;transform:translateY(-50%);width:3px;height:0;background:var(--mc,#D4AF37);border-radius:0 4px 4px 0;transition:height .3s cubic-bezier(.4,0,.2,1);box-shadow:0 0 10px var(--mc,#D4AF37)}
+.nm-item:hover{background:rgba(255,255,255,.045);color:#F5E6C8;border-color:rgba(212,175,55,.12);transform:translateX(-3px)}
+.nm-item:hover::before{opacity:1}
+.nm-item:hover::after{height:52%}
+.nm-item.active{background:linear-gradient(to left,rgba(212,175,55,.20),rgba(212,175,55,.05));color:#FFF6DF;border-color:rgba(212,175,55,.28);font-weight:800;box-shadow:0 6px 20px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05)}
+.nm-item.active::before{opacity:1}
+.nm-item.active::after{height:70%;box-shadow:0 0 14px var(--mc,#D4AF37)}
+.nm-item.compact{justify-content:center;padding:11px 8px;gap:0}
+.nm-icon{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ic,#D4AF37);transition:background .28s,border-color .28s,box-shadow .28s,transform .28s}
+.nm-icon svg{width:18px;height:18px;stroke-linecap:round;stroke-linejoin:round;transition:transform .28s;stroke-width:1.5;fill:none}
+.nm-item:hover .nm-icon,.nm-group-btn:hover .nm-icon{border-color:var(--ic,#D4AF37);background:rgba(255,255,255,.07);box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.nm-item:hover .nm-icon svg,.nm-group-btn:hover .nm-icon svg{transform:scale(1.1)}
+.nm-item.active .nm-icon{border-color:var(--ic,#D4AF37);background:rgba(255,255,255,.09);box-shadow:0 0 0 3px rgba(212,175,55,.08),0 4px 16px rgba(0,0,0,.3)}
+.nm-group.has-active .nm-icon{border-color:var(--ic,#D4AF37)}
+.nm-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.nm-group{border-radius:14px;border:1px solid transparent;transition:background .25s,border-color .25s;position:relative;overflow:hidden}
+.nm-group.open{background:rgba(255,255,255,.022);border-color:rgba(212,175,55,.10)}
+.nm-group.has-active{background:linear-gradient(to left,rgba(212,175,55,.07),transparent);border-color:rgba(212,175,55,.16)}
+.nm-rail{position:absolute;right:0;top:12px;bottom:12px;width:2px;border-radius:2px;background:linear-gradient(to bottom,transparent,var(--mc,#D4AF37),transparent);opacity:0;transition:opacity .25s;pointer-events:none;z-index:2}
+.nm-group.has-active .nm-rail{opacity:.85}
+.nm-group-btn{width:100%;border:none;background:transparent;color:#8B95A5;padding:9px 11px;display:flex;align-items:center;gap:12px;font-size:.875rem;font-weight:600;cursor:pointer;transition:color .22s,background .22s;border-radius:14px;font-family:'Tajawal',inherit}
+.nm-group-btn:hover{background:rgba(255,255,255,.04);color:#F5E6C8}
+.nm-group.has-active .nm-group-btn{color:#F5E6C8;font-weight:700}
+.nm-group.compact .nm-group-btn{justify-content:center;padding:11px 8px}
+.nm-group-btn:focus-visible{outline:2px solid var(--mc,#D4AF37);outline-offset:2px}
+.nm-badge{min-width:22px;height:19px;border-radius:7px;background:rgba(255,255,255,.055);color:#7A8598;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;flex-shrink:0;padding:0 6px;border:1px solid rgba(255,255,255,.05);transition:all .25s}
+.nm-group.has-active .nm-badge{background:rgba(212,175,55,.16);color:#D4AF37;border-color:rgba(212,175,55,.25)}
+.nm-arrow{width:18px;height:18px;display:flex;align-items:center;justify-content:center;transition:transform .3s,color .25s;flex-shrink:0;color:#5A6577}
+.nm-arrow svg{width:12px;height:12px}
+.nm-group:hover .nm-arrow{color:#8B95A5}
+.nm-group.open .nm-arrow{transform:rotate(180deg);color:var(--mc,#D4AF37)}
+.nm-sub-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s cubic-bezier(.4,0,.2,1),opacity .26s;opacity:0}
+.nm-group.open .nm-sub-panel{grid-template-rows:1fr;opacity:1}
+.nm-sub-list{overflow:hidden;display:flex;flex-direction:column;gap:2px;padding:5px 6px 10px 6px;margin-right:26px;position:relative}
+.nm-sub-list::before{content:'';position:absolute;right:0;top:8px;bottom:14px;width:1.5px;background:linear-gradient(to bottom,var(--mc,#D4AF37),rgba(212,175,55,.08));border-radius:2px;opacity:.5}
+.nm-sub-item{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 8px;border-radius:10px;text-decoration:none;color:#6C7789;font-size:.82rem;font-weight:600;transition:background .22s,color .22s,padding .22s,border-color .22s;border:1px solid transparent}
+.nm-sub-item:hover{background:rgba(255,255,255,.045);color:#F5E6C8;padding-right:13px}
+.nm-sub-item.active{background:linear-gradient(to left,rgba(212,175,55,.15),rgba(212,175,55,.03));color:#FFF6DF;border-color:rgba(212,175,55,.20);font-weight:700}
+.nm-sub-dot{width:6px;height:6px;border-radius:50%;border:1.5px solid #3A4555;background:transparent;flex-shrink:0;transition:all .22s}
+.nm-sub-item:hover .nm-sub-dot{border-color:var(--mc,#D4AF37);background:rgba(212,175,55,.35)}
+.nm-sub-item.active .nm-sub-dot{border-color:var(--mc,#D4AF37);background:var(--mc,#D4AF37);box-shadow:0 0 0 3px rgba(212,175,55,.15)}
+.nm-sub-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.nm-sub-arrow{width:11px;height:11px;opacity:0;transition:opacity .22s,transform .22s;color:var(--mc,#D4AF37);flex-shrink:0}
+.nm-sub-item:hover .nm-sub-arrow{opacity:.7;transform:translateX(-2px)}
+.nm-skeleton{display:flex;flex-direction:column;gap:7px;padding:6px 2px}
+.nm-skel-item{height:38px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.03) 25%,rgba(255,255,255,.07) 50%,rgba(255,255,255,.03) 75%);background-size:200% 100%;animation:nmShimmer 1.3s infinite}
+@@keyframes nmShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.nm-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 12px;color:#5A6577;font-size:.84rem;text-align:center}
+.nm-empty-icon{font-size:1.8rem;opacity:.6}
+@@media(prefers-reduced-motion:reduce){.nm-item,.nm-icon,.nm-arrow,.nm-sub-item,.nm-rail{transition:none!important}.nm-skel-item{animation:none!important}}
 </style>
 
 @code {
     [Parameter] public bool IsCollapsed { get; set; }
-
+    [Parameter] public string SearchText { get; set; } = "";
     private bool isLoading = true;
     private List<ModulePermissionDto> mainModules = new();
     private HashSet<int> expandedGroups = new();
     private string? lastRoute;
 
+    // ===== ألوان الموديولات - حسب العائلة الوظيفية =====
+    private static readonly Dictionary<string, string> ColorByCode = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // البيانات الأساسية - ذهبي
+        ["SCR_ITEMS"] = "#D4AF37", ["SCR_CATEGORIES"] = "#D4AF37", ["SCR_UNITS"] = "#D4AF37",
+        ["SCR_CURRENCIES"] = "#D4AF37", ["SCR_PAYTERMS"] = "#D4AF37", ["SCR_PRICELISTS"] = "#D4AF37",
+        ["SCR_SETTINGS"] = "#D4AF37",
+        // المشتريات - سماوي
+        ["SCR_PR"] = "#0ea5e9", ["SCR_PO"] = "#0ea5e9", ["SCR_GRN"] = "#0ea5e9",
+        ["SCR_PINV"] = "#0ea5e9", ["SCR_PRET"] = "#0ea5e9", ["SCR_SUPPLIERS"] = "#0ea5e9",
+        // التصنيع - بنفسجي
+        ["SCR_BOM"] = "#8b5cf6", ["SCR_PRODORD"] = "#8b5cf6", ["SCR_MATISS"] = "#8b5cf6",
+        ["SCR_BATCH"] = "#8b5cf6", ["SCR_QC"] = "#8b5cf6", ["SCR_CONTRACT"] = "#8b5cf6",
+        // المخازن - برتقالي
+        ["SCR_STOCK"] = "#f97316", ["SCR_TRANS"] = "#f97316", ["SCR_TRANSFER"] = "#f97316",
+        ["SCR_COUNT"] = "#f97316", ["SCR_WAREHOUSES"] = "#f97316",
+        // المبيعات - أخضر
+        ["SCR_QUOT"] = "#10b981", ["SCR_SO"] = "#10b981", ["SCR_SINV"] = "#10b981",
+        ["SCR_SRET"] = "#10b981", ["SCR_RECV"] = "#10b981", ["SCR_CUSTOMERS"] = "#10b981",
+        // الحسابات - سماوي مزرق
+        ["SCR_COA"] = "#06b6d4", ["SCR_JV"] = "#06b6d4", ["SCR_PAYV"] = "#06b6d4",
+        ["SCR_BANKS"] = "#06b6d4", ["SCR_CHEQUES"] = "#06b6d4", ["SCR_COSTCARD"] = "#06b6d4",
+        // الموارد البشرية - وردي
+        ["SCR_DEPARTMENTS"] = "#ec4899", ["SCR_JOBTITLES"] = "#ec4899", ["SCR_EMP"] = "#ec4899",
+        ["SCR_ATTEND"] = "#ec4899", ["SCR_LEAVE"] = "#ec4899", ["SCR_PAYROLL"] = "#ec4899",
+        ["SCR_LOANS"] = "#ec4899", ["SCR_PENALTY"] = "#ec4899", ["SCR_HOLIDAYS"] = "#ec4899",
+        ["SCR_LV_BALANCE"] = "#ec4899", ["SCR_LV_TYPE"] = "#ec4899",
+        // إدارة النظام - أحمر
+        ["SCR_USERS"] = "#ef4444", ["SCR_ROLES"] = "#ef4444", ["SCR_AUDIT"] = "#ef4444",
+        ["SCR_LOGINLOG"] = "#ef4444", ["SCR_SYSSET"] = "#ef4444", ["SCR_BACKUP"] = "#ef4444"
+    };
+    private static readonly string[] ColorPalette = { "#D4AF37", "#0ea5e9", "#10b981", "#8b5cf6", "#f97316", "#06b6d4", "#ec4899", "#ef4444", "#84cc16" };
+
+    /// <summary>لون الموديول: من الخريطة الدلالية، أو من أول شاشة فرعية، أو من اللوحة حسب المعرّف (ثابت)</summary>
+    private string GetModuleColor(ModulePermissionDto mod, List<ModulePermissionDto> kids)
+    {
+        if (!string.IsNullOrWhiteSpace(mod.ModuleCode) && ColorByCode.TryGetValue(mod.ModuleCode, out var c)) return c;
+        foreach (var k in kids)
+        {
+            if (!string.IsNullOrWhiteSpace(k.ModuleCode) && ColorByCode.TryGetValue(k.ModuleCode, out var kc)) return kc;
+        }
+        if (kids.Any()) return ColorPalette[Math.Abs(mod.ModuleID) % ColorPalette.Length];
+        return "#D4AF37";
+    }
+
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += OnNav;
-
-        if (!UserSession.IsLoggedIn)
-        {
-            Navigation.NavigateTo("/login");
-            return;
-        }
-
-        if (!PermissionService.IsLoaded)
-            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-
+        if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
         mainModules = PermissionService.GetMainModules().ToList();
         SyncRoute();
-
-        if (!expandedGroups.Any() && mainModules.Any())
-            expandedGroups.Add(mainModules.First().ModuleID);
-
+        if (!expandedGroups.Any() && mainModules.Any()) expandedGroups.Add(mainModules.First().ModuleID);
         isLoading = false;
     }
-
+    private List<ModulePermissionDto> filteredModules
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(SearchText)) return mainModules;
+            return mainModules.Where(m => IsModuleVisible(m, PermissionService.GetChildModules(m.ModuleID).ToList())).ToList();
+        }
+    }
+    private bool IsModuleVisible(ModulePermissionDto mod, List<ModulePermissionDto> kids)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return true;
+        var s = SearchText.Trim();
+        if (mod.ModuleNameAr.Contains(s, StringComparison.OrdinalIgnoreCase)) return true;
+        return kids.Any(k => k.ModuleNameAr.Contains(s, StringComparison.OrdinalIgnoreCase));
+    }
+    private bool IsChildVisible(ModulePermissionDto kid)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return true;
+        return kid.ModuleNameAr.Contains(SearchText.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
     private string GetItemClass() => IsCollapsed ? "nm-item compact" : "nm-item";
-
     private string GetGroupClass(ModulePermissionDto mod)
     {
         var classes = new List<string> { "nm-group" };
@@ -520,49 +237,10 @@ else
         if (IsCollapsed) classes.Add("compact");
         return string.Join(" ", classes);
     }
-
-    private void Toggle(int id)
-    {
-        if (!expandedGroups.Add(id))
-            expandedGroups.Remove(id);
-    }
-
-    private async Task HandleKeyDown(KeyboardEventArgs e, int moduleId)
-    {
-        if (e.Key == "Enter" || e.Key == " ")
-        {
-            Toggle(moduleId);
-        }
-        else if (e.Key == "ArrowRight" && !expandedGroups.Contains(moduleId))
-        {
-            expandedGroups.Add(moduleId);
-        }
-        else if (e.Key == "ArrowLeft" && expandedGroups.Contains(moduleId))
-        {
-            expandedGroups.Remove(moduleId);
-        }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private void OnNav(object? s, LocationChangedEventArgs e)
-    {
-        if (lastRoute == e.Location) return;
-        lastRoute = e.Location;
-        SyncRoute();
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void SyncRoute()
-    {
-        foreach (var m in mainModules)
-            if (HasActiveChild(m.ModuleID))
-                expandedGroups.Add(m.ModuleID);
-    }
-
-    private bool HasActiveChild(int id)
-        => PermissionService.GetChildModules(id)
-            .Any(c => IsCurrent(ModuleRouteHelper.GetRoute(c.ModuleCode)));
-
+    private void Toggle(int id){if (!expandedGroups.Add(id)) expandedGroups.Remove(id);}
+    private void OnNav(object? s, LocationChangedEventArgs e){if (lastRoute == e.Location) return;lastRoute = e.Location;SyncRoute();InvokeAsync(StateHasChanged);}
+    private void SyncRoute(){foreach (var m in mainModules) if (HasActiveChild(m.ModuleID)) expandedGroups.Add(m.ModuleID);}
+    private bool HasActiveChild(int id) => PermissionService.GetChildModules(id).Any(c => IsCurrent(ModuleRouteHelper.GetRoute(c.ModuleCode)));
     private bool IsCurrent(string? route)
     {
         if (string.IsNullOrWhiteSpace(route)) return false;
@@ -570,7 +248,6 @@ else
         var tgt = Norm(route);
         return cur == tgt || (tgt != "/" && cur.StartsWith(tgt + "/"));
     }
-
     private static string Norm(string r)
     {
         r = (r ?? "/").Split('?', '#')[0].Trim();
@@ -578,57 +255,5 @@ else
         r = r.TrimEnd('/').ToLowerInvariant();
         return string.IsNullOrEmpty(r) ? "/" : r;
     }
-
-    private static string GetModuleColor(string? code) => (code?.ToUpper()) switch
-    {
-        "SCR_ITEMS" or "SCR_CATEGORIES" or "SCR_UNITS" => "#2563eb",
-        "SCR_WAREHOUSES" or "SCR_STOCK" or "SCR_TRANS" or "SCR_TRANSFER" or "SCR_COUNT" => "#10b981",
-        "SCR_PR" or "SCR_PO" or "SCR_GRN" => "#2563eb",
-        "SCR_PINV" or "SCR_PRET" => "#f59e0b",
-        "SCR_SUPPLIERS" => "#ef4444",
-        "SCR_CUSTOMERS" => "#06b6d4",
-        "SCR_COA" or "SCR_JV" => "#f97316",
-        "SCR_USERS" or "SCR_ROLES" or "SCR_AUDIT" => "#64748b",
-        "SCR_EMP" => "#ec4899",
-        _ => "#6366f1"
-    };
-
-    private MarkupString HomeIcon() => S(
-        "<path d='M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z'/>" +
-        "<path d='M9 21V12h6v9'/>");
-
-    private MarkupString Icon(string? code, string? name)
-    {
-        return (code?.ToUpper()) switch
-        {
-            "SCR_ITEMS" => S("<path d='M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z'/><path d='M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z'/><path d='M12 12v5'/><path d='M9.5 14.5l2.5-2.5 2.5 2.5'/>"),
-            "SCR_CATEGORIES" => S("<path d='M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z'/>"),
-            "SCR_UNITS" => S("<path d='M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z'/>"),
-            "SCR_WAREHOUSES" => S("<path d='M3 3h18v18H3z'/><path d='M3 9h18'/><path d='M3 15h18'/><path d='M9 9v12'/><path d='M15 9v12'/>"),
-            "SCR_STOCK" => S("<path d='M18 20V10'/><path d='M12 20V4'/><path d='M6 20v-6'/>"),
-            "SCR_TRANS" => S("<path d='M3 12h18'/><path d='M3 6h18'/><path d='M3 18h18'/>"),
-            "SCR_TRANSFER" => S("<path d='M7 16V4m0 0L3 8m4-4l4 4'/><path d='M17 8v12m0 0l4-4m-4 4l-4-4'/>"),
-            "SCR_COUNT" => S("<path d='M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2'/><rect x='9' y='3' width='6' height='4' rx='1'/><path d='M9 12h6'/><path d='M9 16h4'/>"),
-            "SCR_PR" => S("<path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><path d='M14 2v6h6'/><path d='M16 13H8'/><path d='M16 17H8'/><path d='M10 9H8'/>"),
-            "SCR_PO" => S("<path d='M20 12V22H4V12'/><path d='M22 7H2v5h20V7z'/><path d='M12 22V7'/><path d='M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z'/><path d='M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z'/>"),
-            "SCR_GRN" => S("<path d='M5 8h14'/><path d='M5 12h14'/><path d='M5 16h14'/><rect x='3' y='4' width='18' height='16' rx='2'/>"),
-            "SCR_PINV" => S("<path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z'/><path d='M14 2v6h6'/><path d='M12 18v-6'/><path d='M9 15h6'/>"),
-            "SCR_PRET" => S("<path d='M3 12a9 9 0 109 9'/><path d='M3 3v9h9'/><path d='M9 15l3 3-3 3'/>"),
-            "SCR_SUPPLIERS" => S("<path d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z'/><polyline points='9 22 9 12 15 12 15 22'/>"),
-            "SCR_CUSTOMERS" => S("<path d='M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M23 21v-2a4 4 0 00-3-3.87'/><path d='M16 3.13a4 4 0 010 7.75'/>"),
-            "SCR_COA" => S("<rect x='2' y='3' width='20' height='14' rx='2'/><path d='M8 21h8'/><path d='M12 17v4'/><path d='M6 8h4'/><path d='M6 12h8'/>"),
-            "SCR_JV" => S("<path d='M4 19.5A2.5 2.5 0 016.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z'/>"),
-            "SCR_EMP" => S("<path d='M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2'/><circle cx='12' cy='7' r='4'/>"),
-            "SCR_USERS" => S("<path d='M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M23 21v-2a4 4 0 00-3-3.87'/><path d='M16 3.13a4 4 0 010 7.75'/>"),
-            "SCR_ROLES" => S("<rect x='3' y='11' width='18' height='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0110 0v4'/>"),
-            "SCR_AUDIT" => S("<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><path d='M9 12l2 2 4-4'/>"),
-            "SCR_REPORTS" => S("<path d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/><polyline points='14 2 14 8 20 8'/><line x1='16' y1='13' x2='8' y2='13'/><line x1='16' y1='17' x2='8' y2='17'/><polyline points='10 9 9 9 8 9'/>"),
-            _ => S("<rect x='3' y='3' width='18' height='18' rx='2'/><path d='M9 9h6'/><path d='M9 12h6'/><path d='M9 15h4'/>")
-        };
-    }
-
-    private static MarkupString S(string paths) =>
-        new($"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>{paths}</svg>");
-
     public void Dispose() => Navigation.LocationChanged -= OnNav;
 }

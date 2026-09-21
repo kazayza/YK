@@ -1,3 +1,0 @@
-﻿1226 :: await InitializeSessionTimeoutAsync();
-1389 :: private async Task InitializeSessionTimeoutAsync()
-1412 :: private async Task StayLoggedIn()

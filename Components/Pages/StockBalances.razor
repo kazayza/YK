@@ -12,331 +12,145 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>أرصدة المخزون - واي كي كوتينج</PageTitle>
+<PageTitle>أرصدة المخزون - واي كي كوتينج Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
-{
-    <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
-}
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{
-    <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div>
-}
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
 {
-    <div class="page-wrap" dir="rtl">
-
-        <div class="page-hdr">
-            <div>
-                <h2 class="page-title">أرصدة المخزون</h2>
-                <p class="page-sub">مراقبة الأرصدة والتنبيهات وإدارة المخزون</p>
-            </div>
-            <div class="hdr-actions">
-                <span class="badge-count">@filtered.Count صنف</span>
-                <button class="btn-m btn-alert" @onclick="CheckAlerts" disabled="@isChecking">
-                    @if (isChecking) { <div class="btn-spin"></div> } else { <span>🔔</span> }
-                    فحص التنبيهات
-                </button>
-                @if (permissions.CanAdd)
-                {
-                    <button class="btn-m btn-primary" @onclick="ShowOpeningBalance">📥 رصيد افتتاحي</button>
-                }
-                @if (permissions.CanPrint)
-                {
-                    <button class="btn-m btn-print" @onclick="PrintReport">🖨️ طباعة</button>
-                }
-                @if (permissions.CanExport)
-                {
-                    <button class="btn-m btn-export" @onclick="ExportExcel" disabled="@isExporting">
-                        @if (isExporting) { <div class="btn-spin"></div> } else { <span>📥</span> }
-                        Excel
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">أرصدة المخزون</h2><p class="lh-subtitle">مراقبة الأرصدة والتنبيهات وإدارة المخزون — تحديث لحظي</p></div>
+                </div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count صنف</span>
+                    <button class="btn-luxury btn-alert-luxury" @onclick="CheckAlerts" disabled="@isChecking">
+                        @if (isChecking){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 6 5 6 10H0s6-3 6-10"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>}
+                        فحص التنبيهات
                     </button>
-                }
+                    @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="ShowOpeningBalance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>رصيد افتتاحي</button>}
+                    @if (permissions.CanPrint){<button class="btn-luxury btn-ghost-luxury" @onclick="PrintReport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
+                    @if (permissions.CanExport){<button class="btn-luxury btn-export-luxury" @onclick="ExportExcel" disabled="@isExporting">@if(isExporting){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>}Excel</button>}
+                </div>
             </div>
         </div>
 
         @if (dashboard != null)
         {
-            <div class="stats-row">
-                <div class="stat-box" style="border-top-color:#2563eb">
-                    <div class="stat-n">@dashboard.ItemsWithStock</div>
-                    <div class="stat-l">أصناف بمخزون</div>
-                </div>
-                <div class="stat-box" style="border-top-color:#10b981">
-                    <div class="stat-n">@dashboard.TotalStockValue.ToString("#,##0")</div>
-                    <div class="stat-l">قيمة المخزون</div>
-                </div>
-                <div class="stat-box" style="border-top-color:#f59e0b">
-                    <div class="stat-n">@dashboard.ItemsBelowMin</div>
-                    <div class="stat-l">تحت الحد الأدنى</div>
-                </div>
-                <div class="stat-box" style="border-top-color:#ef4444">
-                    <div class="stat-n">@dashboard.ItemsOutOfStock</div>
-                    <div class="stat-l">نفد المخزون</div>
-                </div>
-                <div class="stat-box" style="border-top-color:#f97316">
-                    <div class="stat-n">@dashboard.BatchesNearExpiry</div>
-                    <div class="stat-l">قرب الانتهاء</div>
-                </div>
-                <div class="stat-box" style="border-top-color:#dc2626">
-                    <div class="stat-n">@dashboard.BatchesExpired</div>
-                    <div class="stat-l">منتهي الصلاحية</div>
-                </div>
+            <div class="stats-luxury">
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsWithStock</span><span class="st-label">أصناف بمخزون</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@dashboard.TotalStockValue.ToString("#,##0")</span><span class="st-label">قيمة المخزون ج.م</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsBelowMin</span><span class="st-label">تحت الحد الأدنى</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsOutOfStock</span><span class="st-label">نفد المخزون</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@dashboard.BatchesNearExpiry</span><span class="st-label">قرب الانتهاء</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div><div class="st-info"><span class="st-value">@dashboard.BatchesExpired</span><span class="st-label">منتهي الصلاحية</span></div><div class="st-gold-line"></div></div>
             </div>
         }
 
-        <div class="filter-row">
-            <div class="search-wrap">
-                <input class="search-inp" type="text" placeholder="بحث بالكود أو الصنف أو المخزن..."
-                       @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
-                @if (!string.IsNullOrEmpty(searchText))
-                {
-                    <button class="search-clr" @onclick="ClearSearch">✕</button>
-                }
-            </div>
-            <select class="filter-sel" @bind="filterWarehouse" @bind:after="LoadBalances">
-                <option value="0">كل المخازن</option>
-                @if (warehouses != null)
-                {
-                    @foreach (var w in warehouses)
-                    {
-                        <option value="@w.Id">@w.Name</option>
-                    }
-                }
-            </select>
-            <select class="filter-sel" @bind="filterType" @bind:after="LoadBalances">
-                <option value="0">كل الأنواع</option>
-                <option value="1">🟣 خام</option>
-                <option value="2">🔵 تعبئة</option>
-                <option value="3">🟠 نصف مصنع</option>
-                <option value="4">🟢 تام</option>
-                <option value="5">⚪ تشغيل</option>
-            </select>
-            <select class="filter-sel" @bind="filterAlert" @bind:after="Filter">
-                <option value="-1">كل الحالات</option>
-                <option value="0">طبيعي ✅</option>
-                <option value="1">أقل من الحد 🔶</option>
-                <option value="2">تحت نقطة الطلب ⚠️</option>
-                <option value="3">نفد ❌</option>
-            </select>
-            @if (ItemIdParam > 0)
-            {
-                <button class="btn-m btn-ghost" @onclick="ClearItemFilter">✕ عرض الكل</button>
-            }
-            <button class="btn-m btn-ghost" @onclick="LoadData">🔄</button>
+        <div class="filter-luxury">
+            <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث بالكود أو الصنف أو المخزن..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="M3 9V7a2 2 0 0 1 2-2h2"/><path d="M19 9V7a2 2 0 0 0-2-2h-2"/></svg><select @bind="filterWarehouse" @bind:after="LoadBalances"><option value="0">كل المخازن</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterType" @bind:after="LoadBalances"><option value="0">كل الأنواع</option><option value="1">خام</option><option value="2">تعبئة</option><option value="3">نصف مصنع</option><option value="4">تام</option><option value="5">تشغيل</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><select @bind="filterAlert" @bind:after="Filter"><option value="-1">كل الحالات</option><option value="0">طبيعي ✅</option><option value="1">أقل من الحد 🔶</option><option value="2">تحت نقطة الطلب ⚠️</option><option value="3">نفد ❌</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            @if (ItemIdParam > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="ClearItemFilter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>عرض الكل</button>}
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
         @if (balances == null)
-        {
-            <div class="loading-st"><div class="loader"></div><p>جاري التحميل...</p></div>
-        }
+        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
         else if (!filtered.Any())
-        {
-            <div class="empty-st"><h4>لا توجد أرصدة</h4></div>
-        }
+        {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أرصدة</h4></div>}
         else
         {
-            <div class="tbl-card">
-                <table class="tbl">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الكود</th>
-                            <th>الصنف</th>
-                            <th>النوع</th>
-                            <th>المخزن</th>
-                            <th>الوحدة</th>
-                            <th class="tc">الرصيد</th>
-                            <th class="tc">المحجوز</th>
-                            <th class="tc">المتاح</th>
-                            <th class="tl">التكلفة</th>
-                            <th class="tl">القيمة</th>
-                            <th class="tc">الحالة</th>
-                            <th class="tc">إجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{
-                            int n = 0;
-                        }
-                        @foreach (var b in filtered)
-                        {
-                            n++;
-                            <tr class="@(b.StockAlert >= 2 ? "tr-alert" : "") @(b.CurrentQty < 0 ? "tr-negative" : "")">
-                                <td class="td-n">@n</td>
-                                <td><code class="code-tag">@b.ItemCode</code></td>
-                                <td class="td-item-name">@b.ItemNameAr</td>
-                                <td>
-                                    <span class="type-tag" style="--tc:@GetItemTypeColor(b.ItemType)">@b.ItemTypeName</span>
-                                </td>
-                                <td class="td-warehouse">@b.WarehouseNameAr</td>
-                                <td>@b.PrimaryUnitName</td>
-                                <td class="tc num-cell @(b.CurrentQty <= 0 ? "qty-danger" : "")">@b.CurrentQty.ToString("#,##0.##")</td>
-                                <td class="tc">@b.ReservedQty.ToString("#,##0.##")</td>
-                                <td class="tc num-cell">
-                                    <strong class="@(b.AvailableQty <= 0 ? "qty-danger" : "")">@b.AvailableQty.ToString("#,##0.##")</strong>
-                                </td>
-                                <td class="tl num-cell">@b.AverageCost.ToString("#,##0.00")</td>
-                                <td class="tl num-cell"><strong>@b.TotalValue.ToString("#,##0.00")</strong></td>
-                                <td class="tc">
-                                    <span class="alert-badge" style="--ac:@GetAlertColor(b.StockAlert)">@b.StockAlertName</span>
-                                </td>
-                                <td class="tc">
-                                    <button class="act-btn" title="كارت الصنف" @onclick="() => ViewCard(b.ItemID)">📋</button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                    <tfoot>
-                        <tr class="total-row">
-                            <td colspan="10" class="tl"><strong>إجمالي القيمة</strong></td>
-                            <td class="tl num-cell"><strong>@filtered.Sum(b => b.TotalValue).ToString("#,##0.00") ج.م</strong></td>
-                            <td colspan="2"></td>
-                        </tr>
-                    </tfoot>
-                </table>
+            <div class="table-card-luxury">
+                <div class="table-responsive">
+                    <table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>الكود</th><th>الصنف</th><th>النوع</th><th>المخزن</th><th>الوحدة</th><th class="th-center">الرصيد</th><th class="th-center">المحجوز</th><th class="th-center">المتاح</th><th>التكلفة</th><th>القيمة</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach (var b in filtered){n++;
+                                <tr class="@(b.StockAlert>=2?"row-alert":"") @(b.CurrentQty<0?"row-negative":"")">
+                                    <td class="td-num">@n</td>
+                                    <td><code class="code-tag-luxury">@b.ItemCode</code></td>
+                                    <td class="td-name">@b.ItemNameAr</td>
+                                    <td><span class="type-tag-luxury" style="--tc:@GetItemTypeColor(b.ItemType)">@b.ItemTypeName</span></td>
+                                    <td class="td-muted">@b.WarehouseNameAr</td>
+                                    <td class="td-muted">@b.PrimaryUnitName</td>
+                                    <td class="td-center"><span class="qty-luxury @(b.CurrentQty<=0?"danger":"")">@b.CurrentQty.ToString("#,##0.##")</span></td>
+                                    <td class="td-center td-muted">@b.ReservedQty.ToString("#,##0.##")</td>
+                                    <td class="td-center"><strong class="qty-luxury @(b.AvailableQty<=0?"danger":"")">@b.AvailableQty.ToString("#,##0.##")</strong></td>
+                                    <td class="td-muted num">@b.AverageCost.ToString("#,##0.00")</td>
+                                    <td><span class="amount-luxury">@b.TotalValue.ToString("#,##0.00")</span></td>
+                                    <td class="td-center"><span class="alert-badge-luxury" style="--ac:@GetAlertColor(b.StockAlert)"><span class="alert-dot" style="background:var(--ac)"></span>@b.StockAlertName</span></td>
+                                    <td class="td-center"><button class="act-btn-luxury view" title="كارت الصنف" @onclick="() => ViewCard(b.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot><tr class="total-row-luxury"><td colspan="10" class="tl"><strong>إجمالي القيمة</strong></td><td class="tl"><span class="amount-luxury total">@filtered.Sum(b => b.TotalValue).ToString("#,##0.00") ج.م</span></td><td colspan="2"></td></tr></tfoot>
+                    </table>
+                </div>
             </div>
         }
     </div>
 
     @if (showOBDialog)
     {
-        <div class="modal-ov" @onclick="() => showOBDialog = false">
-            <div class="modal-box" @onclick:stopPropagation="true">
-                <h4>📥 إضافة رصيد افتتاحي</h4>
-                <div class="ob-form">
-                    <div class="f-field">
-                        <label class="f-label required">الصنف</label>
-                        <SearchableSelect Items="@allItems" @bind-SelectedId="obItem" Placeholder="اختر الصنف..." />
-                    </div>
-                    <div class="f-field">
-                        <label class="f-label required">المخزن</label>
-                        <select class="f-input" @bind="obWarehouse">
-                            <option value="0">-- اختر --</option>
-                            @if (warehouses != null)
-                            {
-                                @foreach (var w in warehouses)
-                                {
-                                    <option value="@w.Id">@w.Name</option>
-                                }
-                            }
-                        </select>
-                    </div>
-                    <div class="ob-row">
-                        <div class="f-field">
-                            <label class="f-label required">الكمية</label>
-                            <input type="number" class="f-input" @bind="obQty" step="0.01" />
-                        </div>
-                        <div class="f-field">
-                            <label class="f-label required">تكلفة الوحدة</label>
-                            <input type="number" class="f-input" @bind="obCost" step="0.01" />
-                        </div>
-                    </div>
-                </div>
-                @if (!string.IsNullOrEmpty(obMsg))
-                {
-                    <div class="form-msg @(obMsgOk ? "msg-ok" : "msg-err")">@obMsg</div>
-                }
-                <div class="modal-btns">
-                    <button class="btn-m btn-primary" @onclick="SaveOpeningBalance" disabled="@isSavingOB">
-                        @if (isSavingOB) { <div class="btn-spin"></div> }
-                        حفظ الرصيد
-                    </button>
-                    <button class="btn-m btn-ghost" @onclick="() => showOBDialog = false">إلغاء</button>
-                </div>
+        <div class="modal-overlay-luxury" @onclick="() => showOBDialog = false"><div class="modal-card-luxury" @onclick:stopPropagation="true">
+            <div class="ml-gold-line"></div>
+            <div class="modal-head-luxury"><div class="mh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></div><div><h4>إضافة رصيد افتتاحي</h4><p>إدخال رصيد بداية المدة للصنف في المخزن</p></div><button class="btn-close-x-luxury" @onclick="() => showOBDialog = false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+            <div class="ob-form-luxury">
+                <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@allItems" @bind-SelectedId="obItem" Placeholder="اختر الصنف..." /></div>
+                <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="obWarehouse"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                <div class="form-grid-luxury c2"><div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="obQty" step="0.01" /></div><div class="f-field-luxury"><label class="f-label-luxury required">تكلفة الوحدة</label><input type="number" class="f-input-luxury" @bind="obCost" step="0.01" /></div></div>
             </div>
-        </div>
+            @if (!string.IsNullOrEmpty(obMsg)){<div class="form-msg-luxury @(obMsgOk?"ok":"err")">@obMsg</div>}
+            <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveOpeningBalance" disabled="@isSavingOB">@if(isSavingOB){<div class="btn-spinner-sm"></div>}حفظ الرصيد</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showOBDialog = false">إلغاء</button></div>
+        </div></div>
     }
 
-    @if (!string.IsNullOrEmpty(toast))
-    {
-        <div class="toast-wrap">
-            <div class="toast @(toastOk ? "t-ok" : "t-err")">
-                <span>@toast</span>
-                <button @onclick='() => toast = ""'>✕</button>
-            </div>
-        </div>
-    }
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div>}
 }
 
 <style>
-    .page-wrap{display:flex;flex-direction:column;gap:18px}
-    .page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}
-    .page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.35rem}
-    .page-sub{color:#64748b;font-size:.84rem;margin:3px 0 0}
-    .hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
-    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
-    .stat-box{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:16px;text-align:center;border-top:3px solid;transition:.2s}
-    .stat-box:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(15,23,42,.06)}
-    .stat-n{font-size:1.6rem;font-weight:900;color:#0f172a}
-    .stat-l{font-size:.78rem;color:#64748b;margin-top:3px;font-weight:600}
-    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .search-wrap{flex:1;min-width:260px;position:relative}
-    .search-inp{width:100%;padding:10px 14px 10px 36px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none;transition:.2s}
-    .search-inp:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-    .search-clr{position:absolute;left:10px;top:50%;transform:translateY(-50%);background:#f1f5f9;border:none;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:.7rem;display:flex;align-items:center;justify-content:center}
-    .filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white;outline:none}
-    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 16px rgba(15,23,42,.04);overflow-x:auto}
-    .tbl{width:100%;border-collapse:collapse;min-width:1200px}
-    .tbl thead{background:#f8fafc}
-    .tbl th{padding:13px 14px;font-size:.82rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}
-    .tbl td{padding:12px 14px;font-size:.88rem;color:#334155;border-bottom:1px solid #f1f5f9;line-height:1.5}
-    .tbl tbody tr{transition:.15s}
-    .tbl tbody tr:hover{background:#f8fafc}
-    .tr-alert{background:#fef2f2!important}
-    .tr-negative{background:#fef2f2!important;border-right:3px solid #ef4444}
-    .tc{text-align:center}
-    .tl{text-align:left}
-    .td-n{color:#94a3b8;font-size:.82rem;text-align:center}
-    .td-item-name{font-weight:800;color:#0f172a;font-size:.9rem}
-    .td-warehouse{color:#475569;font-weight:600}
-    .num-cell{font-family:'Courier New',monospace;font-weight:700;font-size:.88rem}
-    .qty-danger{color:#dc2626!important;font-weight:900}
-    .code-tag{background:#f1f5f9;padding:3px 10px;border-radius:6px;font-size:.82rem;color:#2563eb;font-weight:700}
-    .total-row{background:#f8fafc!important}
-    .total-row td{border-top:2px solid #e2e8f0;padding:14px;font-size:.9rem}
-    .type-tag{display:inline-block;padding:4px 12px;border-radius:8px;font-size:.78rem;font-weight:800;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc);border:1.5px solid color-mix(in srgb,var(--tc) 25%,white);letter-spacing:.3px}
-    .alert-badge{display:inline-block;padding:4px 12px;border-radius:8px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--ac) 10%,white);color:var(--ac);border:1px solid color-mix(in srgb,var(--ac) 20%,white)}
-    .act-btn{width:32px;height:32px;border-radius:8px;border:1.5px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:.2s}
-    .act-btn:hover{background:#eff6ff;border-color:#bfdbfe}
-    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer;transition:.2s}
-    .btn-m:disabled{opacity:.6;cursor:not-allowed}
-    .btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white;box-shadow:0 4px 14px rgba(37,99,235,.25)}
-    .btn-primary:hover:not(:disabled){transform:translateY(-1px)}
-    .btn-export{background:linear-gradient(135deg,#059669,#10b981);color:white}
-    .btn-print{background:linear-gradient(135deg,#0891b2,#06b6d4);color:white}
-    .btn-alert{background:linear-gradient(135deg,#d97706,#f59e0b);color:white}
-    .btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
-    .btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
-    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
-    .modal-box{background:white;border-radius:22px;padding:32px;max-width:500px;width:100%;text-align:right;box-shadow:0 20px 48px rgba(0,0,0,.15)}
-    .modal-box h4{font-weight:800;color:#0f172a;margin:0 0 16px;font-size:1.1rem;text-align:center}
-    .modal-btns{display:flex;gap:8px;margin-top:20px}
-    .ob-form{display:flex;flex-direction:column;gap:14px}
-    .ob-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    .f-field{display:flex;flex-direction:column;gap:5px}
-    .f-label{font-size:.82rem;font-weight:700;color:#334155}
-    .required::after{content:' *';color:#ef4444}
-    .f-input{padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.88rem;background:white;outline:none;width:100%;transition:.2s}
-    .f-input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-    .form-msg{padding:10px 14px;border-radius:10px;font-size:.84rem;font-weight:600;margin-top:12px}
-    .msg-ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-    .msg-err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}
-    .toast{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.12);min-width:320px;font-weight:600;font-size:.88rem}
-    .t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
-    .t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
-    .toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto;font-size:1.1rem}
-    .loading-st{text-align:center;padding:50px 20px;color:#64748b}
-    .loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
-    .empty-st{text-align:center;padding:50px 20px;background:white;border-radius:18px;border:1px solid #e2e8f0}
-    .empty-st h4{color:#64748b;margin:0}
-    .no-access{text-align:center;padding:60px 20px;background:white;border-radius:20px;border:1px solid #e2e8f0}
-    .na-icon{font-size:3rem;margin-bottom:12px}
-    @@keyframes spin{to{transform:rotate(360deg)}}
-    @@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}.stats-row{grid-template-columns:repeat(2,1fr)}.ob-row{grid-template-columns:1fr}.hdr-actions{width:100%}}
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto;position:relative}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:visible !important;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:5}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;overflow:visible !important}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;overflow:visible !important}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-primary-luxury:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(212,175,55,.35)}.btn-export-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-alert-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.amber{background:#fef3c7;color:#d97706;border:1px solid #fde68a}.st-icon.red{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}.st-icon.orange{background:#fff7ed;color:#ea580c;border:1px solid #fed7aa}.st-icon.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.select-wrap-luxury select{height:40px;padding:0 34px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury select:focus{border-color:var(--gold)}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:1200px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.table-luxury .row-alert{background:#fff7f7}.table-luxury .row-negative{background:#fff7f7;border-right:3px solid #ef4444}.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-name{font-weight:800;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}.num{font-family:monospace;font-weight:600}
+.code-tag-luxury{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.76rem;color:#2563eb;font-weight:600}.type-tag-luxury{display:inline-block;padding:4px 12px;border-radius:8px;font-size:.72rem;font-weight:800;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc);border:1px solid color-mix(in srgb,var(--tc) 25%,white)}.qty-luxury{font-family:monospace;font-weight:700}.qty-luxury.danger{color:#dc2626;font-weight:900}.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.total{background:linear-gradient(135deg,var(--black),var(--black2));color:var(--gold);border-color:var(--border-gold)}
+.alert-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--ac) 12%,white);color:var(--ac);border:1px solid color-mix(in srgb,var(--ac) 25%,white)}.alert-dot{width:6px;height:6px;border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 15%,transparent)}
+.act-btn-luxury{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn-luxury.view{color:#2563eb;border-color:#bfdbfe}.act-btn-luxury.view:hover{background:#eff6ff}.act-btn-luxury svg{width:14px;height:14px}
+.total-row-luxury{background:#fcfaf6 !important}.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:500px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.modal-head-luxury{display:flex;align-items:center;gap:14px;padding:20px 22px;border-bottom:1px solid #f1efe8;text-align:right}.modal-head-luxury .mh-icon{width:44px;height:44px;border-radius:12px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.modal-head-luxury .mh-icon svg{width:20px;height:20px}.modal-head-luxury h4{margin:0;font-weight:800;color:#0A0F1E}.modal-head-luxury p{margin:4px 0 0;font-size:.78rem;color:#8B95A5}.modal-head-luxury .btn-close-x-luxury{margin-right:auto}.btn-close-x-luxury{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x-luxury svg{width:12px;height:12px}
+.ob-form-luxury{padding:20px 22px;display:flex;flex-direction:column;gap:14px}.form-grid-luxury{display:grid;gap:14px}.c2{grid-template-columns:repeat(2,1fr)}.f-field-luxury{display:flex;flex-direction:column;gap:5px}.f-label-luxury{font-size:.78rem;font-weight:700;color:#374151}.required::after{content:' *';color:#ef4444}.f-input-luxury{padding:9px 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;outline:none;transition:.2s;width:100%;font-family:'Tajawal'}.f-input-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.form-msg-luxury{padding:10px 14px;border-radius:10px;font-size:.82rem;font-weight:600;margin:0 22px}.form-msg-luxury.ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.form-msg-luxury.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:768px){.lh-content{flex-direction:column;align-items:flex-start}.stats-luxury{grid-template-columns:repeat(2,1fr)}.c2{grid-template-columns:1fr}}
 </style>
 
 @code {
@@ -500,7 +314,7 @@ else
         }
         var totalValue = filtered.Sum(b => b.TotalValue);
         var alertItems = filtered.Count(b => b.StockAlert >= 2);
-        var html = $@"<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>أرصدة المخزون</title><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:'Cairo','Segoe UI',sans-serif;padding:25px;color:#0f172a;font-size:11px}}.header{{text-align:center;border-bottom:3px solid #1e293b;padding-bottom:18px;margin-bottom:18px}}.company{{font-size:20px;font-weight:800}}.report-title{{font-size:14px;color:#475569;margin-top:4px}}.report-date{{font-size:10px;color:#94a3b8;margin-top:4px}}.summary{{display:flex;justify-content:center;gap:24px;margin-bottom:18px;flex-wrap:wrap}}.summary-item{{text-align:center;padding:10px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;min-width:100px}}.summary-value{{font-size:16px;font-weight:900}}.summary-label{{font-size:9px;color:#64748b;margin-top:2px}}table{{width:100%;border-collapse:collapse}}th{{background:#1e293b;color:white;padding:8px;font-size:10px;text-align:right;white-space:nowrap}}td{{padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:10px}}tr:nth-child(even){{background:#f8fafc}}.total-row{{font-weight:800;background:#f1f5f9!important;border-top:2px solid #1e293b}}.footer{{text-align:center;margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8}}</style></head><body><div class='header'><div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div><div class='report-title'>تقرير أرصدة المخزون</div><div class='report-date'>تاريخ التقرير: {DateTime.Now:dd/MM/yyyy hh:mm tt}</div></div><div class='summary'><div class='summary-item'><div class='summary-value'>{filtered.Count}</div><div class='summary-label'>عدد الأصناف</div></div><div class='summary-item'><div class='summary-value'>{totalValue:#,##0}</div><div class='summary-label'>قيمة المخزون</div></div><div class='summary-item'><div class='summary-value' style='color:#ef4444'>{alertItems}</div><div class='summary-label'>تحتاج انتباه</div></div></div><table><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>النوع</th><th>المخزن</th><th>الوحدة</th><th>الرصيد</th><th>المتاح</th><th>التكلفة</th><th>القيمة</th><th>الحالة</th></tr></thead><tbody>{rows}<tr class='total-row'><td colspan='9' style='text-align:left'><strong>الإجمالي</strong></td><td style='text-align:left'><strong>{totalValue:#,##0.00} ج.م</strong></td><td></td></tr></tbody></table><div class='footer'>تم الطباعة: {DateTime.Now:dd/MM/yyyy hh:mm tt} — واي كي كوتينج ERP v2.0</div></body></html>";
+        var html = $@"<!DOCTYPE html><html dir='rtl' lang='ar'><head><meta charset='utf-8'><title>أرصدة المخزون</title><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:'Tajawal','Cairo','Segoe UI',sans-serif;padding:25px;color:#0f172a;font-size:11px}}.header{{text-align:center;border-bottom:3px solid #0A0F1E;padding-bottom:18px;margin-bottom:18px}}.company{{font-size:20px;font-weight:800}}.report-title{{font-size:14px;color:#475569;margin-top:4px}}.report-date{{font-size:10px;color:#94a3b8;margin-top:4px}}.summary{{display:flex;justify-content:center;gap:24px;margin-bottom:18px;flex-wrap:wrap}}.summary-item{{text-align:center;padding:10px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;min-width:100px}}.summary-value{{font-size:16px;font-weight:900}}.summary-label{{font-size:9px;color:#64748b;margin-top:2px}}table{{width:100%;border-collapse:collapse}}th{{background:#0A0F1E;color:#F5E6C8;padding:8px;font-size:10px;text-align:right;white-space:nowrap}}td{{padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:10px}}tr:nth-child(even){{background:#f8fafc}}.total-row{{font-weight:800;background:#f1f5f9!important;border-top:2px solid #0A0F1E}}.footer{{text-align:center;margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8}}</style></head><body><div class='header'><div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div><div class='report-title'>تقرير أرصدة المخزون</div><div class='report-date'>تاريخ التقرير: {DateTime.Now:dd/MM/yyyy hh:mm tt}</div></div><div class='summary'><div class='summary-item'><div class='summary-value'>{filtered.Count}</div><div class='summary-label'>عدد الأصناف</div></div><div class='summary-item'><div class='summary-value'>{totalValue:#,##0}</div><div class='summary-label'>قيمة المخزون</div></div><div class='summary-item'><div class='summary-value' style='color:#ef4444'>{alertItems}</div><div class='summary-label'>تحتاج انتباه</div></div></div><table><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>النوع</th><th>المخزن</th><th>الوحدة</th><th>الرصيد</th><th>المتاح</th><th>التكلفة</th><th>القيمة</th><th>الحالة</th></tr></thead><tbody>{rows}<tr class='total-row'><td colspan='9' style='text-align:left'><strong>الإجمالي</strong></td><td style='text-align:left'><strong>{totalValue:#,##0.00} ج.م</strong></td><td></td></tr></tbody></table><div class='footer'>تم الطباعة: {DateTime.Now:dd/MM/yyyy hh:mm tt} — واي كي كوتينج ERP Gold v2.0</div></body></html>";
         await JS.InvokeVoidAsync("printHtml", html);
     }
 

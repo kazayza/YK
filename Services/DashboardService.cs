@@ -196,15 +196,45 @@ namespace YKCoatings.Services
             return (await connection.QueryAsync<DashboardItemAlertDto>(sql, new { Take = take })).ToList();
         }
         // ==========================================
-// مشتريات آخر 6 شهور (للرسم البياني)
-// ==========================================
-public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync()
+        // دلتا إحصائيات الكروت — مقارنة بالشهر السابق
+        // ==========================================
+        public async Task<DashboardDeltasDto> GetStatsDeltasAsync()
+        {
+            try
+            {
+                using var connection = CreateConnection();
+                var monthStart = "DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)";
+                var prevStart = "DATEADD(MONTH,-1,DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))";
+                var sql = $@"
+                    SELECT
+                        (SELECT COUNT(*) FROM dbo.Items WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {monthStart}) AS NewItems,
+                        (SELECT COUNT(*) FROM dbo.Items WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {prevStart} AND CAST(CreatedDate AS DATE) < {monthStart}) AS PrevItems,
+                        (SELECT COUNT(*) FROM dbo.Suppliers WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {monthStart}) AS NewSuppliers,
+                        (SELECT COUNT(*) FROM dbo.Suppliers WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {prevStart} AND CAST(CreatedDate AS DATE) < {monthStart}) AS PrevSuppliers,
+                        (SELECT COUNT(*) FROM dbo.Customers WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {monthStart}) AS NewCustomers,
+                        (SELECT COUNT(*) FROM dbo.Customers WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {prevStart} AND CAST(CreatedDate AS DATE) < {monthStart}) AS PrevCustomers,
+                        (SELECT COUNT(*) FROM dbo.Employees WHERE IsActive = 1 AND EmployeeStatus = 1 AND CAST(HireDate AS DATE) >= {monthStart}) AS NewEmployees,
+                        (SELECT COUNT(*) FROM dbo.Employees WHERE IsActive = 1 AND EmployeeStatus = 1 AND CAST(HireDate AS DATE) >= {prevStart} AND CAST(HireDate AS DATE) < {monthStart}) AS PrevEmployees,
+                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {monthStart}) AS NewPOs,
+                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {prevStart} AND CAST(OrderDate AS DATE) < {monthStart}) AS PrevPOs";
+                return await connection.QueryFirstOrDefaultAsync<DashboardDeltasDto>(sql) ?? new DashboardDeltasDto();
+            }
+            catch { return new DashboardDeltasDto(); }
+        }
+        // ==========================================
+        // مشتريات آخر N شهر (للرسم البياني) — 6 أو 12
+        // ==========================================
+public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync(int months = 6)
 {
+    if (months < 1) months = 6;
+    if (months > 12) months = 12;
     using var connection = CreateConnection();
     var sql = @"
         ;WITH Months AS (
             SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2
             UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+            UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8
+            UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
         )
         SELECT
             FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM') AS MonthKey,
@@ -214,10 +244,11 @@ public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync()
         LEFT JOIN dbo.PurchaseInvoices pi
             ON FORMAT(pi.InvoiceDate, 'yyyy-MM') = FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM')
             AND pi.InvoiceStatus NOT IN (7)
+        WHERE m.N < @Months
         GROUP BY m.N, FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM'),
                  DATENAME(MONTH, DATEADD(MONTH, -m.N, GETDATE()))
         ORDER BY MonthKey ASC";
-    return (await connection.QueryAsync<MonthlyChartDto>(sql)).ToList();
+    return (await connection.QueryAsync<MonthlyChartDto>(sql, new { Months = months })).ToList();
 }
         // ==========================================
         // أوامر التصنيع الحالية - متابعة لحظية
@@ -497,6 +528,104 @@ ORDER BY pb.ProductionOrderID, pbs.StageOrder";
             });
 
             return result.ToList();
+        }
+
+        public class GlobalSearchResultDto
+        {
+            public string Type { get; set; } = "";      // item/customer/supplier/employee/user/document
+            public string TypeLabel { get; set; } = "";
+            public string Title { get; set; } = "";
+            public string? SubTitle { get; set; }
+            public string Route { get; set; } = "";
+        }
+
+        public async Task<List<GlobalSearchResultDto>> GlobalSearchAsync(string term, bool items, bool customers, bool suppliers, bool employees, bool users, bool invoices, bool pos, bool prs)
+        {
+            var results = new List<GlobalSearchResultDto>();
+            var t = (term ?? "").Trim();
+            if (t.Length < 2) return results;
+
+            using var connection = CreateConnection();
+            var p = "%" + t + "%";
+
+            async Task QueryAsync(string type, string typeLabel, string sub, string routeTpl, string sql)
+            {
+                try
+                {
+                    var rows = await connection.QueryAsync<SearchRowDto>(sql, new { p });
+                    foreach (var r in rows)
+                    {
+                        if (string.IsNullOrWhiteSpace(r.T1)) continue;
+                        results.Add(new GlobalSearchResultDto
+                        {
+                            Type = type,
+                            TypeLabel = typeLabel,
+                            Title = r.T1,
+                            SubTitle = string.IsNullOrWhiteSpace(r.T2) ? sub : $"{r.T2} — {sub}",
+                            Route = routeTpl.Replace("{id}", r.Id.ToString())
+                        });
+                    }
+                }
+                catch { /* الجدول أو العمود غير موجود → نتجاهل هذا النوع فقط */ }
+            }
+
+            var tasks = new List<Task>();
+
+            if (items)
+                tasks.Add(QueryAsync("item", "صنف", "الأصناف", "/items/edit/{id}",
+                    @"SELECT TOP 5 ItemID AS Id, ItemNameAr AS T1, ItemCode AS T2 FROM dbo.Items
+                      WHERE IsActive = 1 AND (ItemNameAr LIKE @p OR ItemCode LIKE @p) ORDER BY ItemNameAr"));
+
+            if (customers)
+                tasks.Add(QueryAsync("customer", "عميل", "العملاء", "/customers/view/{id}",
+                    @"SELECT TOP 5 CustomerID AS Id, CustomerNameAr AS T1, CustomerCode AS T2 FROM dbo.Customers
+                      WHERE IsActive = 1 AND (CustomerNameAr LIKE @p OR CustomerCode LIKE @p) ORDER BY CustomerNameAr"));
+
+            if (suppliers)
+                tasks.Add(QueryAsync("supplier", "مورد", "الموردين", "/suppliers/edit/{id}",
+                    @"SELECT TOP 5 SupplierID AS Id, SupplierNameAr AS T1, SupplierCode AS T2 FROM dbo.Suppliers
+                      WHERE IsActive = 1 AND (SupplierNameAr LIKE @p OR SupplierCode LIKE @p) ORDER BY SupplierNameAr"));
+
+            if (employees)
+                tasks.Add(QueryAsync("employee", "موظف", "الموظفين", "/employees/view/{id}",
+                    @"SELECT TOP 5 e.EmployeeID AS Id, e.FullNameAr AS T1,
+                             ISNULL(d.DepartmentNameAr, e.EmployeeCode) AS T2
+                      FROM dbo.Employees e
+                      LEFT JOIN dbo.Departments d ON e.DepartmentID = d.DepartmentID
+                      WHERE e.IsActive = 1 AND (e.FullNameAr LIKE @p OR e.EmployeeCode LIKE @p) ORDER BY e.FullNameAr"));
+
+            if (users)
+                tasks.Add(QueryAsync("user", "مستخدم", "المستخدمين", "/users/edit/{id}",
+                    @"SELECT TOP 5 UserID AS Id, FullName AS T1, Username AS T2 FROM dbo.SystemUsers
+                      WHERE IsActive = 1 AND (FullName LIKE @p OR Username LIKE @p) ORDER BY FullName"));
+
+            if (invoices)
+                tasks.Add(QueryAsync("document", "فاتورة شراء", "المشتريات", "/purchase-invoices/view/{id}",
+                    @"SELECT TOP 5 pi.InvoiceID AS Id, pi.InvoiceNumber AS T1, s.SupplierNameAr AS T2 FROM dbo.PurchaseInvoices pi
+                      LEFT JOIN dbo.Suppliers s ON pi.SupplierID = s.SupplierID
+                      WHERE pi.InvoiceNumber LIKE @p ORDER BY pi.InvoiceID DESC"));
+
+            if (pos)
+                tasks.Add(QueryAsync("document", "أمر شراء", "المشتريات", "/purchase-orders/view/{id}",
+                    @"SELECT TOP 5 po.PurchaseOrderID AS Id, po.PONumber AS T1, s.SupplierNameAr AS T2 FROM dbo.PurchaseOrders po
+                      LEFT JOIN dbo.Suppliers s ON po.SupplierID = s.SupplierID
+                      WHERE po.PONumber LIKE @p ORDER BY po.PurchaseOrderID DESC"));
+
+            if (prs)
+                tasks.Add(QueryAsync("document", "طلب شراء", "المشتريات", "/purchase-requests/view/{id}",
+                    @"SELECT TOP 5 pr.RequestID AS Id, pr.RequestNumber AS T1, e.FullNameAr AS T2 FROM dbo.PurchaseRequests pr
+                      LEFT JOIN dbo.Employees e ON pr.RequestedBy = e.EmployeeID
+                      WHERE pr.RequestNumber LIKE @p ORDER BY pr.RequestID DESC"));
+
+            await Task.WhenAll(tasks);
+            return results.Take(24).ToList();
+        }
+
+        private class SearchRowDto
+        {
+            public int Id { get; set; }
+            public string? T1 { get; set; }
+            public string? T2 { get; set; }
         }
     }
 }

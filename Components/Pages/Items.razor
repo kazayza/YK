@@ -1,5 +1,4 @@
 ﻿@page "/items"
-
 @using YKCoatings.Services
 @using YKCoatings.Models
 @using YKCoatings.Helpers
@@ -14,1058 +13,534 @@
 
 @if (!UserSession.IsLoggedIn)
 {
-    <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
+    <div class="no-access-card luxury-animate" dir="rtl">
+        <div class="no-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <h4>يجب تسجيل الدخول أولاً</h4>
         <button class="btn-modern btn-primary-modern" @onclick='() => Navigation.NavigateTo("/login")'>تسجيل الدخول</button>
     </div>
 }
 else if (permissions == null || !permissions.CanView)
 {
-    <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+    <div class="no-access-card luxury-animate" dir="rtl">
+        <div class="no-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div>
         <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
         <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
     </div>
 }
 else
 {
-    <div class="items-page" dir="rtl">
+    <div class="items-page luxury-animate" dir="rtl">
 
-        <!-- Header -->
-        <div class="page-header">
-            <div>
-                <h2 class="page-title">المواد والمنتجات</h2>
-                <p class="page-subtitle">إدارة الأصناف والخامات والمنتجات التامة</p>
-            </div>
-            <div class="header-actions">
-                <span class="result-badge">@filteredItems.Count صنف</span>
-                @if (permissions.CanExport)
-                {
-                    <button class="btn-modern btn-export" @onclick="ExportToExcel" disabled="@isExporting">
-                        @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
-                        else { <span>📎 تصدير</span> }
-                    </button>
-                }
-                @if (permissions.CanAdd)
-                {
-                    <button class="btn-modern btn-primary-modern" @onclick="AddNewItem">
-                        <span>+ إضافة صنف</span>
-                    </button>
-                }
-            </div>
-        </div>
-
-        <!-- Stats Cards -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon stat-icon-total">📦</div>
-                <div class="stat-content">
-                    <div class="stat-value">@(items?.Count ?? 0)</div>
-                    <div class="stat-label">إجمالي الأصناف</div>
+        <!-- ===== HEADER HYBRID - DARK LUXURY + LOGO ===== -->
+        <div class="page-header-hybrid">
+            <div class="ph-gold-line"></div>
+            <div class="ph-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="ph-content">
+                <div class="ph-right">
+                    <div class="ph-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="ph-logo" /></div>
+                    <div class="ph-text">
+                        <h2 class="page-title-hybrid">المواد والمنتجات</h2>
+                        <p class="page-subtitle-hybrid">إدارة الأصناف والخامات والمنتجات التامة - @filteredItems.Count صنف متاح حسب صلاحياتك</p>
+                    </div>
                 </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon stat-icon-raw">⚙️</div>
-                <div class="stat-content">
-                    <div class="stat-value">@(items?.Count(i => i.ItemType == 1) ?? 0)</div>
-                    <div class="stat-label">مواد خام</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon stat-icon-pkg">📦</div>
-                <div class="stat-content">
-                    <div class="stat-value">@(items?.Count(i => i.ItemType == 2) ?? 0)</div>
-                    <div class="stat-label">مواد تعبئة</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon stat-icon-semi">🔧</div>
-                <div class="stat-content">
-                    <div class="stat-value">@(items?.Count(i => i.ItemType == 3) ?? 0)</div>
-                    <div class="stat-label">نصف مصنع</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon stat-icon-fin">✅</div>
-                <div class="stat-content">
-                    <div class="stat-value">@(items?.Count(i => i.ItemType == 4) ?? 0)</div>
-                    <div class="stat-label">منتج تام</div>
+                <div class="header-actions-hybrid">
+                    <div class="view-toggle">
+                        <button class="vt-btn @(viewMode=="table"?"active":"")" @onclick='() => viewMode="table"' title="عرض جدول">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        </button>
+                        <button class="vt-btn @(viewMode=="grid"?"active":"")" @onclick='() => viewMode="grid"' title="عرض شبكي">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                        </button>
+                    </div>
+                    <span class="result-badge-hybrid"><span class="rb-dot"></span>@filteredItems.Count صنف</span>
+                    @if (permissions.CanExport)
+                    {
+                        <button class="btn-modern btn-export-hybrid" @onclick="ExportToExcel" disabled="@isExporting">
+                            @if (isExporting){<div class="btn-spinner-sm"></div><span>جاري...</span>}
+                            else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg><span>تصدير</span>}
+                        </button>
+                    }
+                    @if (permissions.CanAdd)
+                    {
+                        <button class="btn-modern btn-primary-hybrid" @onclick="AddNewItem">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span>إضافة صنف</span>
+                        </button>
+                    }
                 </div>
             </div>
         </div>
 
-        <!-- Filter Bar - Single Row -->
-        <div class="filter-bar">
-            <div class="filter-row">
-                <div class="filter-field search-field">
-                    <span class="field-icon">🔍</span>
-                    <input type="text" class="filter-input" placeholder="بحث بالاسم أو الكود..."
-                           @bind="searchText" @bind:event="oninput" @onkeyup="Search" />
+        <!-- ===== STATS CARDS - LIGHT GOLD SMALLER ===== -->
+        <div class="stats-section-compact">
+            <div class="stats-grid-compact">
+                <div class="stat-card-compact" style="--ac:#D4AF37">
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div><span class="scc-count">@(items?.Count ?? 0)</span></div>
+                    <div class="scc-label">إجمالي الأصناف</div>
+                </div>
+                <div class="stat-card-compact" style="--ac:#2563eb">
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 1) ?? 0)</span></div>
+                    <div class="scc-label">مواد خام</div>
+                </div>
+                <div class="stat-card-compact" style="--ac:#06b6d4">
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 16h.01"/><path d="M2 16l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M2 7l10 5 10-5"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 2) ?? 0)</span></div>
+                    <div class="scc-label">مواد تعبئة</div>
+                </div>
+                <div class="stat-card-compact" style="--ac:#f59e0b">
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 3) ?? 0)</span></div>
+                    <div class="scc-label">نصف مصنع</div>
+                </div>
+                <div class="stat-card-compact" style="--ac:#10b981">
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 4) ?? 0)</span></div>
+                    <div class="scc-label">منتج تام</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== FILTER BAR LUXURY ===== -->
+        <div class="filter-bar-luxury">
+            <div class="fb-gold-line"></div>
+            <div class="filter-row-luxury">
+                <div class="filter-field-luxury search-field-luxury">
+                    <svg class="ff-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
+                    <input type="text" class="filter-input-luxury" placeholder="بحث بالاسم أو الكود... (حسب صلاحياتك)"
+                           @bind="searchText" @bind:event="oninput" @bind:after="Search" />
                     @if (!string.IsNullOrEmpty(searchText))
                     {
-                        <button class="clear-search" @onclick="ClearSearch">✕</button>
+                        <button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
                     }
                 </div>
-                <div class="filter-field">
-                    <select class="filter-select" @bind="filterType" @bind:after="Search">
-                        <option value="0">📋 كل الأنواع</option>
-                        <option value="1">⚙️ مواد خام</option>
-                        <option value="2">📦 مواد تعبئة</option>
-                        <option value="3">🔧 نصف مصنع</option>
-                        <option value="4">✅ منتج تام</option>
+                <div class="filter-field-luxury">
+                    <select class="filter-select-luxury" @bind="filterType" @bind:after="Search">
+                        <option value="0">كل الأنواع</option>
+                        <option value="1">مواد خام</option>
+                        <option value="2">مواد تعبئة</option>
+                        <option value="3">نصف مصنع</option>
+                        <option value="4">منتج تام</option>
                     </select>
+                    <svg class="fs-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
-                <div class="filter-actions-inline">
-                    <button class="btn-sm btn-sm-ghost" @onclick="LoadItems">🔄 تحديث</button>
-                </div>
+                <button class="btn-sm-luxury" @onclick="LoadItems"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg>تحديث</button>
             </div>
         </div>
 
-        <!-- Active Filters Chips -->
+        <!-- Chips -->
         @if (HasActiveFilters())
         {
-            <div class="chips-bar">
-                @if (filterType > 0)
-                {
-                    <div class="chip">
-                        <span>النوع: @GetTypeName(filterType)</span>
-                        <button class="chip-remove" @onclick='() => { filterType = 0; Search(); }'>✕</button>
-                    </div>
-                }
-                @if (!string.IsNullOrEmpty(searchText))
-                {
-                    <div class="chip">
-                        <span>بحث: "@searchText"</span>
-                        <button class="chip-remove" @onclick="ClearSearch">✕</button>
-                    </div>
-                }
-                <button class="chip-clear-all" @onclick="ClearAllFilters">مسح الكل</button>
+            <div class="chips-bar-luxury">
+                @if (filterType > 0){<div class="chip-luxury"><span class="chip-icon">@((MarkupString)GetTypeIconSvg(filterType))</span><span>النوع: @GetTypeName(filterType)</span><button class="chip-remove-luxury" @onclick='() => { filterType = 0; Search(); }'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>}
+                @if (!string.IsNullOrEmpty(searchText)){<div class="chip-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg><span>بحث: "@searchText"</span><button class="chip-remove-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>}
+                <button class="chip-clear-all-luxury" @onclick="ClearAllFilters">مسح الكل</button>
             </div>
         }
 
-        <!-- Bulk Actions Bar -->
+        <!-- Bulk Actions -->
         @if (selectedItems.Any())
         {
-            <div class="bulk-actions-bar">
-                <span class="bulk-count">تم تحديد @selectedItems.Count صنف</span>
-                <div class="bulk-buttons">
+            <div class="bulk-actions-bar-luxury">
+                <span class="bulk-count-luxury"><span class="bulk-dot"></span>تم تحديد @selectedItems.Count صنف</span>
+                <div class="bulk-buttons-luxury">
                     @if (permissions.CanDelete)
                     {
-                        <button class="btn-sm btn-sm-danger" @onclick="ShowBulkDeactivateConfirm">تعطيل المحدد</button>
-                        <button class="btn-sm btn-sm-danger-outline" @onclick="ShowBulkDeleteConfirm">حذف المحدد</button>
+                        <button class="btn-sm-luxury danger" @onclick="ShowBulkDeactivateConfirm">تعطيل المحدد</button>
+                        <button class="btn-sm-luxury danger-outline" @onclick="ShowBulkDeleteConfirm">حذف المحدد</button>
                     }
-                    <button class="btn-sm btn-sm-ghost" @onclick="ClearSelection">إلغاء التحديد</button>
+                    <button class="btn-sm-luxury ghost" @onclick="ClearSelection">إلغاء التحديد</button>
                 </div>
             </div>
         }
 
-        <!-- Loading State -->
+        <!-- Content -->
         @if (items == null)
         {
-            <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+            <div class="loading-state-luxury"><div class="loader-luxury"></div><p>جاري تحميل البيانات...</p></div>
         }
         else if (!filteredItems.Any())
         {
-            <div class="empty-state">
-                <div class="empty-icon">📦</div>
+            <div class="empty-state-luxury">
+                <div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/></svg></div>
                 <h4>لا توجد بيانات</h4>
                 <p>لا توجد أصناف مطابقة لمعايير البحث الحالية</p>
             </div>
         }
         else
         {
-            <!-- Table -->
-@if (items == null)
-{
-    <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
-}
-else if (!filteredItems.Any())
-{
-    <div class="empty-state">
-        <div class="empty-icon">📦</div>
-        <h4>لا توجد بيانات</h4>
-        <p>لا توجد أصناف مطابقة لمعايير البحث الحالية</p>
-    </div>
-}
-else
-{
-    <div class="table-wrapper">
-        <div class="table-responsive">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th class="col-check">
-                            <input type="checkbox" 
-                                   checked="@(selectedItems.Count == filteredItems.Count && filteredItems.Any())" 
-                                   @onchange="ToggleSelectAll" />
-                        </th>
-                        <th class="col-num sortable" @onclick='() => SortBy("ItemCode")'># @SortIcon("ItemCode")</th>
-                        <th class="col-code sortable" @onclick='() => SortBy("ItemCode")'>الكود @SortIcon("ItemCode")</th>
-                        <th class="col-name sortable" @onclick='() => SortBy("ItemNameAr")'>الاسم @SortIcon("ItemNameAr")</th>
-                        <th class="col-type">النوع</th>
-                        <th class="col-unit">الوحدة</th>
-                        <th class="col-cost sortable" @onclick='() => SortBy("AverageCost")'>التكلفة @SortIcon("AverageCost")</th>
-                        <th class="col-price">سعر البيع</th>
-                        <th class="col-barcode">باركود</th>
-                        <th class="col-actions"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @{ int rowNum = 0; }
+            @if (viewMode == "table")
+            {
+                <div class="table-wrapper-luxury dribbble-inspired">
+                    <div class="table-responsive-luxury">
+                        <table class="data-table-luxury dribbble-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-check-luxury"><input type="checkbox" class="cb-gold" checked="@(selectedItems.Count == filteredItems.Count && filteredItems.Any())" @onchange="ToggleSelectAll" /></th>
+                                    <th class="col-image-luxury">الصورة</th>
+                                    <th class="col-code-luxury sortable" @onclick='() => SortBy("ItemCode")'>الكود @SortIcon("ItemCode")</th>
+                                    <th class="col-name-luxury sortable" @onclick='() => SortBy("ItemNameAr")'>اسم المنتج @SortIcon("ItemNameAr")</th>
+                                    <th class="col-type-luxury">الفئة</th>
+                                    <th class="col-inv-luxury">حالة المخزون</th>
+                                    <th class="col-cost-luxury sortable" @onclick='() => SortBy("AverageCost")'>السعر @SortIcon("AverageCost")</th>
+                                    <th class="col-status-luxury">التوفر</th>
+                                    <th class="col-actions-luxury"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int rowNum = 0; }
+                                @foreach (var item in filteredItems)
+                                {
+                                    rowNum++;
+                                    var isSelected = selectedItems.Contains(item.ItemID);
+                                    var invStatus = GetInventoryStatus(item);
+                                    <tr class="@(isSelected ? "row-selected-luxury" : "")">
+                                        <td class="col-check-luxury"><input type="checkbox" class="cb-gold" checked="@isSelected" @onchange='() => ToggleSelection(item.ItemID, !isSelected)' /></td>
+                                        <td class="col-image-luxury">
+                                            <div class="product-thumb" style="--ac:@GetTypeColor(item.ItemType)">
+                                                <div class="pt-icon">@((MarkupString)GetTypeIconSvg(item.ItemType))</div>
+                                                <div class="pt-glow"></div>
+                                            </div>
+                                        </td>
+                                        <td class="col-code-luxury"><span class="code-badge-luxury">@item.ItemCode</span><span class="row-num-badge">@rowNum</span></td>
+                                        <td class="col-name-luxury">
+                                            <div class="name-cell"><div class="name-text"><strong>@item.ItemNameAr</strong><span class="item-name-en-luxury">@item.ItemNameEn</span></div></div>
+                                        </td>
+                                        <td class="col-type-luxury"><span class="category-badge @GetTypeClass(item.ItemType)">@GetTypeName(item.ItemType)</span></td>
+                                        <td class="col-inv-luxury">
+                                            <div class="inv-status">
+                                                <span class="inv-dot @invStatus.Class"></span>
+                                                <span class="inv-label @invStatus.Class">@invStatus.Label</span>
+                                            </div>
+                                        </td>
+                                        <td class="col-cost-luxury">
+                                            <div class="price-cell"><span class="cost-val">@item.AverageCost.ToString("#,##0.00")</span><span class="cost-cur">ج.م</span></div>
+                                            @if (item.DefaultSellingPrice > 0){<div class="price-sell">@item.DefaultSellingPrice.ToString("#,##0.00") ج.م</div>}
+                                        </td>
+                                        <td class="col-status-luxury"><span class="availability-badge @(item.IsActive ? "active" : "archived")">@(item.IsActive ? "نشط" : "مؤرشف")</span></td>
+                                        <td class="col-actions-luxury">
+                                            <div class="dropdown-luxury">
+                                                <button class="dropdown-btn-luxury" @onclick="() => ToggleDropdown(item.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+                                                <div class="dropdown-menu-luxury @(activeDropdownId == item.ItemID ? "show" : "")">
+                                                    @if (permissions.CanEdit){<button class="dropdown-item-luxury" @onclick="() => EditItem(item.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>تعديل</button>}
+                                                    @if (permissions.CanPrint){<button class="dropdown-item-luxury" @onclick="() => PrintItem(item.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
+                                                    @if (permissions.CanDelete)
+                                                    {
+                                                        <div class="dropdown-divider-luxury"></div>
+                                                        <button class="dropdown-item-luxury" @onclick="() => ShowDeactivateConfirm(item.ItemID, item.ItemNameAr ?? string.Empty)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"/><path d="M14 2v6h6"/><path d="M10 13H8"/></svg>أرشفة</button>
+                                                        <button class="dropdown-item-luxury danger" @onclick="() => ShowDeleteConfirm(item.ItemID, item.ItemNameAr ?? string.Empty, false)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>حذف</button>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- GRID VIEW LUXURY - DRIBBBLE INSPIRED -->
+                <div class="grid-view-luxury dribbble-grid">
                     @foreach (var item in filteredItems)
                     {
-                        rowNum++;
                         var isSelected = selectedItems.Contains(item.ItemID);
-                        <tr class="@(isSelected ? "row-selected" : "")">
-                            <td class="col-check">
-                                <input type="checkbox" 
-                                       checked="@isSelected" 
-                                       @onchange='() => ToggleSelection(item.ItemID, !isSelected)' />
-                            </td>
-                            <td class="col-num">@rowNum</td>
-                            <td class="col-code"><span class="code-badge">@item.ItemCode</span></td>
-                            <td class="col-name">
-                                <strong>@item.ItemNameAr</strong>
-                                <span class="item-name-en">@item.ItemNameEn</span>
-                            </td>
-                            <td class="col-type"><span class="type-badge @GetTypeClass(item.ItemType)">@GetTypeName(item.ItemType)</span></td>
-                            <td class="col-unit">@item.UnitName</td>
-                            <td class="col-cost">@item.AverageCost.ToString("#,##0.00")</td>
-                            <td class="col-price">@(item.DefaultSellingPrice > 0 ? item.DefaultSellingPrice.ToString("#,##0.00") : "—")</td>
-                            <td class="col-barcode">
-                                <button class="barcode-btn" @onclick="() => ShowBarcodeModal(item)" title="عرض الباركود">📱</button>
-                            </td>
-                            <td class="col-actions">
-                                <div class="dropdown">
-                                    <button class="dropdown-btn" @onclick="() => ToggleDropdown(item.ItemID)">⋮</button>
-                                    <div class="dropdown-menu @(activeDropdownId == item.ItemID ? "show" : "")">
-                                        @if (permissions.CanPrint)
-                                        {
-                                            <button class="dropdown-item" @onclick="() => PrintItem(item.ItemID)">🖨️ طباعة</button>
-                                        }
-                                        @if (permissions.CanEdit)
-                                        {
-                                            <button class="dropdown-item" @onclick="() => EditItem(item.ItemID)">✏️ تعديل</button>
-                                        }
-                                        @if (permissions.CanDelete)
-                                        {
-                                            <button class="dropdown-item dropdown-item-danger" @onclick="() => ShowDeleteConfirm(item.ItemID, item.ItemNameAr ?? string.Empty, false)">🗑️ حذف</button>
-                                            <button class="dropdown-item" @onclick="() => ShowDeactivateConfirm(item.ItemID, item.ItemNameAr ?? string.Empty)">⚠️ تعطيل</button>
-                                        }
-                                    </div>
+                        var invStatus = GetInventoryStatus(item);
+                        <div class="grid-card-luxury dribbble-card @(isSelected ? "selected" : "")">
+                            <div class="gc-top">
+                                <span class="code-badge-luxury">@item.ItemCode</span>
+                                <span class="availability-badge small @(item.IsActive ? "active" : "archived")">@(item.IsActive ? "نشط" : "مؤرشف")</span>
+                                <input type="checkbox" class="cb-gold gc-check" checked="@isSelected" @onchange='() => ToggleSelection(item.ItemID, !isSelected)' />
+                            </div>
+                            <div class="gc-image-area">
+                                <div class="product-thumb large" style="--ac:@GetTypeColor(item.ItemType)">
+                                    <div class="pt-icon">@((MarkupString)GetTypeIconSvg(item.ItemType))</div>
+                                    <div class="pt-glow"></div>
                                 </div>
-                            </td>
-                        </tr>
+                                <div class="gc-category"><span class="category-badge @GetTypeClass(item.ItemType)">@GetTypeName(item.ItemType)</span></div>
+                            </div>
+                            <div class="gc-name">@item.ItemNameAr</div>
+                            <div class="gc-name-en">@item.ItemNameEn</div>
+                            <div class="gc-inv">
+                                <div class="inv-status"><span class="inv-dot @invStatus.Class"></span><span class="inv-label @invStatus.Class">@invStatus.Label</span></div>
+                                <span class="gc-unit">@item.UnitName</span>
+                            </div>
+                            <div class="gc-prices">
+                                <div class="gc-price"><label>التكلفة</label><span>@item.AverageCost.ToString("#,##0.00") ج.م</span></div>
+                                <div class="gc-price"><label>سعر البيع</label><span>@(item.DefaultSellingPrice > 0 ? item.DefaultSellingPrice.ToString("#,##0.00") + " ج.م" : "—")</span></div>
+                            </div>
+                            <div class="gc-actions">
+                                <button class="gc-btn primary" @onclick="() => EditItem(item.ItemID)" title="تعديل"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>تعديل</button>
+                                <button class="gc-btn" @onclick="() => PrintItem(item.ItemID)" title="طباعة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>
+                            </div>
+                        </div>
                     }
-                </tbody>
-            </table>
-        </div>
-    </div>
-}
+                </div>
+            }
         }
     </div>
 
-    <!-- Barcode Modal -->
-    @if (showBarcodeModal && barcodeItem != null)
-    {
-        <div class="modal-overlay" @onclick="CloseBarcodeModal">
-            <div class="modal-card barcode-modal" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h4>باركود الصنف: @barcodeItem.ItemNameAr</h4>
-                    <button class="modal-close-btn" @onclick="CloseBarcodeModal">✕</button>
-                </div>
-                <div class="barcode-container" id="barcodeContainer">
-                    <div class="barcode-code">@barcodeItem.ItemCode</div>
-                    <div class="barcode-svg" id="barcodeSvg"></div>
-                </div>
-                <div class="modal-buttons">
-                    <button class="btn-modern btn-primary-modern" @onclick="PrintBarcode">🖨️ طباعة</button>
-                    <button class="btn-modern btn-ghost" @onclick="CloseBarcodeModal">إغلاق</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    <!-- Delete/Deactivate Modal -->
+    <!-- Action Modal Luxury -->
     @if (showActionModal)
     {
-        <div class="modal-overlay" @onclick="CloseActionModal">
-            <div class="modal-card" @onclick:stopPropagation="true">
-                <div class="modal-icon @(isDeactivateAction ? "modal-icon-warning" : "modal-icon-danger")">
-                    @(isDeactivateAction ? "⚠️" : "🗑️")
-                </div>
+        <div class="modal-overlay-luxury" @onclick="CloseActionModal">
+            <div class="modal-card-luxury" @onclick:stopPropagation="true">
+                <div class="modal-gold-line"></div>
+                <div class="modal-icon-luxury @(isDeactivateAction ? "warning" : "danger")"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">@((MarkupString)(isDeactivateAction ? "<circle cx='12' cy='12' r='10'/><path d='M12 8v4'/><path d='M12 16h.01'/>" : "<path d='M3 6h18'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/>"))</svg></div>
                 <h4>@(isDeactivateAction ? "تعطيل صنف" : "حذف صنف")</h4>
                 <p>هل أنت متأكد من <strong>@(isDeactivateAction ? "تعطيل" : "حذف")</strong> الصنف: <strong>@actionItemName</strong>؟</p>
-                
-                @if (!isDeactivateAction && !isBulkAction)
-                {
-                    <div class="warning-message">
-                        ⚠️ الحذف النهائي قد يؤثر على البيانات المرتبطة. يفضل استخدام التعطيل.
-                    </div>
-                }
-                
-                @if (isDeactivateAction)
-                {
-                    <div class="form-group">
-                        <label class="form-label">سبب التعطيل (اختياري)</label>
-                        <input type="text" class="form-input" @bind="deactivateReason" placeholder="مثال: توقف الإنتاج، استبدال بمنتج جديد..." />
-                    </div>
-                }
-                
-                @if (!string.IsNullOrEmpty(actionModalError))
-                {
-                    <div class="error-msg">@actionModalError</div>
-                }
-                
-                <div class="modal-buttons">
-                    <button class="btn-modern @(isDeactivateAction ? "btn-warning-modern" : "btn-danger-modern")" 
-                            @onclick="ConfirmAction" 
-                            disabled="@isActionLoading">
-                        @if (isActionLoading) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
-                        else { <span>@(isDeactivateAction ? "تعطيل" : "حذف")</span> }
+                @if (!isDeactivateAction && !isBulkAction){<div class="warning-message-luxury">الحذف النهائي قد يؤثر على البيانات المرتبطة. يفضل استخدام التعطيل.</div>}
+                @if (isDeactivateAction){<div class="form-group-luxury"><label>سبب التعطيل (اختياري)</label><input type="text" class="form-input-luxury" @bind="deactivateReason" placeholder="مثال: توقف الإنتاج..." /></div>}
+                @if (!string.IsNullOrEmpty(actionModalError)){<div class="error-msg-luxury">@actionModalError</div>}
+                <div class="modal-buttons-luxury">
+                    <button class="btn-modern @(isDeactivateAction ? "btn-warning-modern" : "btn-danger-modern")" @onclick="ConfirmAction" disabled="@isActionLoading">
+                        @if (isActionLoading){<div class="btn-spinner-sm"></div><span>جاري...</span>}else{<span>@(isDeactivateAction ? "تعطيل" : "حذف")</span>}
                     </button>
-                    <button class="btn-modern btn-ghost" @onclick="CloseActionModal">إلغاء</button>
+                    <button class="btn-modern btn-ghost-luxury" @onclick="CloseActionModal">إلغاء</button>
                 </div>
             </div>
         </div>
     }
 
-    <!-- Result Message Modal -->
     @if (!string.IsNullOrEmpty(resultMessage))
     {
-        <div class="toast-notification @(resultIsError ? "toast-error" : "toast-success")">
+        <div class="toast-notification-luxury @(resultIsError ? "toast-error" : "toast-success")">
             <span>@resultMessage</span>
-            <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+            <button class="toast-close-luxury" @onclick='() => resultMessage = ""'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
         </div>
     }
 }
 
 <style>
-    /* ========== BASE STYLES ========== */
-    .items-page {
-        display: flex;
-        flex-direction: column;
-        gap: 1.25rem;
-        padding: 0.25rem;
-    }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18);--card-radius:16px}
+.items-page{display:flex;flex-direction:column;gap:14px;padding:0 2px;font-family:'Tajawal',sans-serif}
+.luxury-animate>*{animation:fadeUp .5s cubic-bezier(.4,0,.2,1) both}
+@@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 
-    /* ========== HEADER ========== */
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-    .page-title {
-        font-size: 1.5rem;
-        font-weight: 800;
-        color: #1e293b;
-        margin: 0;
-    }
-    .page-subtitle {
-        font-size: 0.85rem;
-        color: #64748b;
-        margin: 0.25rem 0 0;
-    }
-    .header-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-    .result-badge {
-        background: #f1f5f9;
-        padding: 0.5rem 1rem;
-        border-radius: 2rem;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #475569;
-    }
+/* HEADER HYBRID DARK + LOGO */
+.page-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:20px 24px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25),inset 0 1px 0 rgba(212,175,55,.08)}
+.ph-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.ph-bg-logo{position:absolute;left:16px;top:50%;transform:translateY(-50%);opacity:.05;pointer-events:none}
+.ph-bg-logo img{width:120px;height:120px;object-fit:contain}
+.ph-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.ph-right{display:flex;align-items:center;gap:12px}
+.ph-logo-wrap{width:44px;height:44px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(212,175,55,.15)}
+.ph-logo{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(212,175,55,.4))}
+.page-title-hybrid{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}
+.page-subtitle-hybrid{font-size:.76rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.header-actions-hybrid{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.view-toggle{display:flex;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,55,.12);border-radius:10px;padding:2px;gap:2px}
+.vt-btn{width:32px;height:28px;border:none;background:transparent;border-radius:8px;color:#8B95A5;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.vt-btn svg{width:16px;height:16px}
+.vt-btn.active{background:var(--gold);color:var(--black2);box-shadow:0 2px 8px rgba(212,175,55,.25)}
+.vt-btn:hover:not(.active){background:rgba(255,255,255,.08);color:#F5E6C8}
+.result-badge-hybrid{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,55,.12);padding:6px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:#8B95A5}
+.rb-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.15);animation:pulse 2s infinite}
+.btn-modern{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}
+.btn-primary-hybrid{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}
+.btn-primary-hybrid:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 4px 16px rgba(212,175,55,.35)}
+.btn-export-hybrid{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}
+.btn-export-hybrid:hover{background:rgba(255,255,255,.1);color:#F5E6C8}
+.btn-modern svg{width:14px;height:14px}
 
-    /* ========== STATS CARDS ========== */
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1rem;
-    }
-    .stat-card {
-        background: #ffffff;
-        border-radius: 1rem;
-        padding: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        border: 1px solid #eef2ff;
-        position: relative;
-        overflow: hidden;
-        transition: all 0.2s;
-    }
-    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
-    .stat-card::before {
-        content: '';
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-    }
-    .stat-card:nth-child(1)::before { background: #1e293b; }
-    .stat-card:nth-child(2)::before { background: #2563eb; }
-    .stat-card:nth-child(3)::before { background: #06b6d4; }
-    .stat-card:nth-child(4)::before { background: #f59e0b; }
-    .stat-card:nth-child(5)::before { background: #10b981; }
-    
-    .stat-icon {
-        width: 2.5rem;
-        height: 2.5rem;
-        border-radius: 0.75rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.2rem;
-    }
-    .stat-icon-total { background: #f1f5f9; }
-    .stat-icon-raw { background: #eff6ff; }
-    .stat-icon-pkg { background: #ecfeff; }
-    .stat-icon-semi { background: #fffbeb; }
-    .stat-icon-fin { background: #ecfdf5; }
-    
-    .stat-content { flex: 1; }
-    .stat-value {
-        font-size: 1.35rem;
-        font-weight: 800;
-        color: #0f172a;
-        line-height: 1.2;
-    }
-    .stat-label {
-        font-size: 0.7rem;
-        color: #64748b;
-        font-weight: 500;
-    }
+/* STATS COMPACT LIGHT */
+.stats-section-compact{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px;box-shadow:0 1px 8px rgba(0,0,0,.03)}
+.stats-grid-compact{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.stat-card-compact{background:linear-gradient(135deg,#fff 0%,#fdfbf3 100%);border:1px solid #e8e2d0;border-radius:12px;padding:10px 12px;position:relative;overflow:hidden;transition:all .25s}
+.stat-card-compact::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--ac);opacity:.7}
+.stat-card-compact:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.2)}
+.scc-top{display:flex;justify-content:space-between;align-items:center}
+.scc-icon{width:28px;height:28px;border-radius:8px;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;color:var(--ac)}
+.scc-icon svg{width:14px;height:14px}
+.scc-count{font-size:1.15rem;font-weight:900;color:#0A0F1E}
+.scc-label{font-size:.66rem;color:#8B95A5;font-weight:700;margin-top:4px}
 
-    /* ========== FILTER BAR ========== */
-    .filter-bar {
-        background: #ffffff;
-        border-radius: 1rem;
-        padding: 1rem;
-        border: 1px solid #eef2ff;
-    }
-    .filter-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    .filter-field {
-        flex: 1 1 auto;
-        min-width: 150px;
-        position: relative;
-    }
-    .search-field {
-        min-width: 200px;
-        flex: 2;
-    }
-    .field-icon {
-        position: absolute;
-        right: 0.75rem;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 0.9rem;
-        color: #94a3b8;
-        pointer-events: none;
-    }
-    .filter-input {
-        width: 100%;
-        padding: 0.45rem 2rem 0.45rem 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.6rem;
-        font-size: 0.8rem;
-        background: #f8fafc;
-        transition: all 0.2s;
-    }
-    .filter-input:focus {
-        outline: none;
-        border-color: #2563eb;
-        box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
-        background: white;
-    }
-    .filter-select {
-        width: 100%;
-        padding: 0.45rem 0.65rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.6rem;
-        font-size: 0.8rem;
-        background: #f8fafc;
-        cursor: pointer;
-    }
-    .clear-search {
-        position: absolute;
-        left: 0.5rem;
-        top: 50%;
-        transform: translateY(-50%);
-        background: #e2e8f0;
-        border: none;
-        width: 1.25rem;
-        height: 1.25rem;
-        border-radius: 50%;
-        font-size: 0.7rem;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #64748b;
-    }
-    .filter-actions-inline {
-        display: flex;
-        gap: 0.4rem;
-    }
-    .btn-sm {
-        padding: 0.45rem 1rem;
-        border-radius: 0.6rem;
-        font-size: 0.75rem;
-        font-weight: 600;
-        border: none;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .btn-sm-ghost {
-        background: transparent;
-        color: #64748b;
-        border: 1px solid #e2e8f0;
-    }
-    .btn-sm-ghost:hover { background: #f8fafc; }
-    .btn-sm-danger {
-        background: #ef4444;
-        color: white;
-    }
-    .btn-sm-danger-outline {
-        background: transparent;
-        color: #ef4444;
-        border: 1px solid #fecaca;
-    }
-    .btn-sm-danger-outline:hover { background: #fef2f2; }
+/* FILTER LUXURY */
+.filter-bar-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 8px rgba(0,0,0,.03);overflow:hidden}
+.fb-gold-line{position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.filter-row-luxury{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.filter-field-luxury{flex:1 1 auto;min-width:140px;position:relative;display:flex;align-items:center}
+.search-field-luxury{flex:2;min-width:200px}
+.ff-icon{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none}
+.filter-input-luxury{width:100%;height:38px;padding:0 36px 0 36px;border:1px solid #e8e2d0;border-radius:10px;font-size:.82rem;background:#fcfaf6;font-family:'Tajawal';transition:all .2s}
+.filter-input-luxury:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08);background:#fff}
+.filter-select-luxury{width:100%;height:38px;padding:0 12px 0 28px;border:1px solid #e8e2d0;border-radius:10px;font-size:.82rem;background:#fcfaf6;font-family:'Tajawal';appearance:none;cursor:pointer}
+.fs-arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.clear-search-luxury{position:absolute;left:8px;width:22px;height:22px;border:none;background:#f1efe8;border-radius:6px;color:#8B95A5;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.clear-search-luxury svg{width:10px;height:10px}
+.btn-sm-luxury{height:38px;padding:0 14px;border-radius:10px;font-size:.76rem;font-weight:700;border:1px solid #e8e2d0;background:#fff;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:'Tajawal';transition:all .2s}
+.btn-sm-luxury svg{width:14px;height:14px}
+.btn-sm-luxury:hover{background:#fcfaf6;border-color:var(--gold);color:var(--gold-dark)}
+.btn-sm-luxury.danger{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.btn-sm-luxury.danger-outline{background:#fff;color:#dc2626;border-color:#fecaca}
+.btn-sm-luxury.ghost{background:transparent;border-color:#e8e2d0;color:#64748b}
 
-    /* ========== CHIPS BAR ========== */
-    .chips-bar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 0;
-    }
-    .chip {
-        background: #f1f5f9;
-        border-radius: 2rem;
-        padding: 0.3rem 0.8rem;
-        font-size: 0.75rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: #475569;
-    }
-    .chip-remove {
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        font-size: 0.7rem;
-        color: #94a3b8;
-    }
-    .chip-clear-all {
-        background: transparent;
-        border: none;
-        color: #ef4444;
-        font-size: 0.7rem;
-        cursor: pointer;
-        text-decoration: underline;
-    }
+/* CHIPS */
+.chips-bar-luxury{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chip-luxury{display:flex;align-items:center;gap:6px;background:#fcfaf6;border:1px solid #e8e2d0;border-radius:999px;padding:4px 10px;font-size:.72rem;font-weight:600;color:#475569}
+.chip-icon svg{width:12px;height:12px;color:var(--gold-dark)}
+.chip-remove-luxury{width:18px;height:18px;border:none;background:#f1efe8;border-radius:50%;color:#8B95A5;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.chip-remove-luxury svg{width:8px;height:8px}
+.chip-clear-all-luxury{background:none;border:none;color:#dc2626;font-size:.7rem;font-weight:700;cursor:pointer;text-decoration:underline;font-family:'Tajawal'}
 
-    /* ========== BULK ACTIONS ========== */
-    .bulk-actions-bar {
-        background: #eff6ff;
-        border-radius: 0.75rem;
-        padding: 0.7rem 1rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-    }
-    .bulk-count {
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #1d4ed8;
-    }
-    .bulk-buttons {
-        display: flex;
-        gap: 0.5rem;
-    }
+/* BULK */
+.bulk-actions-bar-luxury{background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.04));border:1px solid rgba(212,175,55,.15);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.bulk-count-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--gold-dark)}
+.bulk-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15)}
+.bulk-buttons-luxury{display:flex;gap:6px}
 
-    /* ========== TABLE ========== */
-    .table-wrapper {
-        background: #ffffff;
-        border-radius: 1rem;
-        border: 1px solid #eef2ff;
-        overflow: hidden;
-    }
-    .table-responsive {
-        overflow-x: auto;
-    }
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.8rem;
-    }
-    .data-table thead {
-        background: #f8fafc;
-        border-bottom: 1px solid #e2e8f0;
-    }
-    .data-table th {
-        padding: 0.85rem 0.75rem;
-        font-weight: 700;
-        color: #475569;
-        text-align: right;
-    }
-    .data-table td {
-        padding: 0.7rem 0.75rem;
-        border-bottom: 1px solid #f1f5f9;
-        color: #334155;
-        vertical-align: middle;
-    }
-    .data-table tbody tr:nth-child(even) {
-        background-color: #fafcff;
-    }
-    .data-table tbody tr:hover {
-        background: #f8f7ff;
-    }
-    .row-selected {
-        background: #eff6ff !important;
-    }
-    
-    .sortable {
-        cursor: pointer;
-        user-select: none;
-    }
-    .sortable:hover {
-        color: #2563eb;
-    }
-    
-    .col-check { width: 35px; text-align: center; }
-    .col-num { width: 45px; text-align: center; }
-    .col-code { width: 90px; }
-    .col-name { min-width: 160px; }
-    .col-type { width: 100px; }
-    .col-unit { width: 80px; }
-    .col-cost { width: 100px; text-align: left; }
-    .col-price { width: 100px; text-align: left; }
-    .col-barcode { width: 60px; text-align: center; }
-    .col-actions { width: 50px; text-align: center; }
-    
-    .code-badge {
-        background: #f1f5f9;
-        padding: 0.2rem 0.5rem;
-        border-radius: 0.4rem;
-        font-family: monospace;
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: #1d4ed8;
-    }
-    .item-name-en {
-        display: block;
-        font-size: 0.7rem;
-        color: #94a3b8;
-        margin-top: 2px;
-    }
-    
-    .type-badge {
-        display: inline-block;
-        padding: 0.2rem 0.6rem;
-        border-radius: 1rem;
-        font-size: 0.7rem;
-        font-weight: 700;
-    }
-    .type-raw { background: #eff6ff; color: #2563eb; }
-    .type-pkg { background: #ecfeff; color: #0891b2; }
-    .type-semi { background: #fffbeb; color: #d97706; }
-    .type-fin { background: #ecfdf5; color: #059669; }
-    
-    .barcode-btn {
-        background: #f1f5f9;
-        border: none;
-        border-radius: 0.5rem;
-        padding: 0.3rem;
-        cursor: pointer;
-        font-size: 1rem;
-        transition: all 0.2s;
-    }
-    .barcode-btn:hover {
-        background: #e2e8f0;
-        transform: scale(1.05);
-    }
+/* TABLE LUXURY - DRIBBBLE INSPIRED */
+.table-wrapper-luxury.dribbble-inspired{background:#ffffff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 1px 12px rgba(0,0,0,.04)}
+.table-responsive-luxury{overflow-x:auto}
+.data-table-luxury.dribbble-table{width:100%;border-collapse:collapse;font-size:.82rem;min-width:900px}
+.data-table-luxury.dribbble-table thead{background:#f9f9fb;border-bottom:1px solid #e8e2d0}
+.data-table-luxury.dribbble-table th{padding:14px 12px;font-weight:700;color:#6b7280;text-align:right;white-space:nowrap;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px}
+.data-table-luxury.dribbble-table td{padding:14px 12px;border-bottom:1px solid #f4f4f5;color:#111827;vertical-align:middle}
+.data-table-luxury.dribbble-table tbody tr{transition:all .15s}
+.data-table-luxury.dribbble-table tbody tr:hover{background:#fafafb}
+.row-selected-luxury{background:rgba(212,175,55,.06) !important}
+.sortable{cursor:pointer;user-select:none}
+.sortable:hover{color:var(--gold-dark)}
+.col-check-luxury{width:36px;text-align:center}
+.col-image-luxury{width:64px;text-align:center}
+.col-code-luxury{width:110px}
+.col-name-luxury{min-width:220px}
+.col-type-luxury{width:110px}
+.col-inv-luxury{width:130px}
+.col-cost-luxury{width:130px;text-align:left}
+.col-status-luxury{width:90px;text-align:center}
+.col-actions-luxury{width:50px;text-align:center}
+.cb-gold{accent-color:var(--gold);width:16px;height:16px;cursor:pointer}
 
-    /* ========== DROPDOWN MENU ========== */
-    .dropdown {
-        position: relative;
-        display: inline-block;
-    }
-    .dropdown-btn {
-        background: transparent;
-        border: none;
-        font-size: 1.2rem;
-        cursor: pointer;
-        padding: 0.2rem 0.5rem;
-        border-radius: 0.5rem;
-        transition: all 0.2s;
-    }
-    .dropdown-btn:hover {
-        background: #f1f5f9;
-    }
-    .dropdown-menu {
-        position: absolute;
-        left: 0;
-        top: 100%;
-        background: white;
-        border-radius: 0.75rem;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
-        min-width: 120px;
-        z-index: 100;
-        display: none;
-        overflow: hidden;
-        border: 1px solid #e2e8f0;
-    }
-    .dropdown-menu.show {
-        display: block;
-    }
-    .dropdown-item {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        width: 100%;
-        padding: 0.6rem 1rem;
-        border: none;
-        background: transparent;
-        text-align: right;
-        cursor: pointer;
-        font-size: 0.75rem;
-        transition: all 0.2s;
-        color: #334155;
-    }
-    .dropdown-item:hover {
-        background: #f8fafc;
-    }
-    .dropdown-item-danger {
-        color: #dc2626;
-    }
-    .dropdown-item-danger:hover {
-        background: #fef2f2;
-    }
+/* PRODUCT THUMB - DRIBBBLE */
+.product-thumb{position:relative;width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;overflow:hidden;transition:all .2s}
+.product-thumb.large{width:100%;height:88px;border-radius:12px}
+.product-thumb:hover{transform:scale(1.05);border-color:rgba(212,175,55,.2)}
+.pt-icon{width:22px;height:22px;color:var(--ac);position:relative;z-index:2}
+.product-thumb.large .pt-icon{width:32px;height:32px}
+.pt-icon svg{width:100%;height:100%}
+.pt-glow{position:absolute;inset:0;background:radial-gradient(ellipse at center,var(--ac) 0%,transparent 70%);opacity:.1;transition:opacity .3s}
+.product-thumb:hover .pt-glow{opacity:.18}
+.code-badge-luxury{background:#f4f4f5;border:1px solid #e5e7eb;padding:3px 8px;border-radius:6px;font-family:monospace;font-size:.7rem;font-weight:700;color:#374151}
+.row-num-badge{font-size:.6rem;color:#9ca3af;margin-right:6px}
+.name-cell{display:flex;align-items:center;gap:8px}
+.name-text{display:flex;flex-direction:column}
+.name-text strong{font-size:.86rem;color:#111827;font-weight:700}
+.item-name-en-luxury{font-size:.68rem;color:#9ca3af}
+.category-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;border:1px solid}
+.category-badge.type-raw{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.category-badge.type-pkg{background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
+.category-badge.type-semi{background:#fffbeb;color:#b45309;border-color:#fde68a}
+.category-badge.type-fin{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
 
-    /* ========== MODAL ========== */
-    .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.5);
-        backdrop-filter: blur(4px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 1rem;
-    }
-    .modal-card {
-        background: white;
-        border-radius: 1.25rem;
-        padding: 1.5rem;
-        max-width: 440px;
-        width: 90%;
-        text-align: center;
-        box-shadow: 0 20px 35px -8px rgba(0,0,0,0.2);
-        animation: modalIn 0.2s ease;
-    }
-    .barcode-modal {
-        max-width: 360px;
-    }
-    .modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-    .modal-close-btn {
-        background: transparent;
-        border: none;
-        font-size: 1.2rem;
-        cursor: pointer;
-        color: #94a3b8;
-    }
-    .modal-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 50%;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.8rem;
-        margin-bottom: 1rem;
-    }
-    .modal-icon-danger { background: #fef2f2; }
-    .modal-icon-warning { background: #fffbeb; }
-    .modal-buttons {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: center;
-        margin-top: 1.5rem;
-    }
-    .warning-message {
-        background: #fffbeb;
-        color: #d97706;
-        padding: 0.6rem;
-        border-radius: 0.75rem;
-        font-size: 0.75rem;
-        margin-top: 1rem;
-    }
-    .error-msg {
-        background: #fef2f2;
-        color: #dc2626;
-        padding: 0.6rem;
-        border-radius: 0.75rem;
-        font-size: 0.75rem;
-        margin-top: 1rem;
-    }
-    .barcode-container {
-        text-align: center;
-        padding: 1rem;
-        background: white;
-        border-radius: 0.75rem;
-    }
-    .barcode-code {
-        font-family: monospace;
-        font-size: 1.2rem;
-        font-weight: 700;
-        letter-spacing: 2px;
-        margin-bottom: 1rem;
-    }
-    .barcode-svg {
-        display: flex;
-        justify-content: center;
-    }
-    .form-group {
-        text-align: right;
-        margin: 1rem 0;
-    }
-    .form-label {
-        display: block;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #475569;
-        margin-bottom: 0.4rem;
-    }
-    .form-input {
-        width: 100%;
-        padding: 0.55rem 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.6rem;
-        font-size: 0.8rem;
-        background: #f8fafc;
-    }
+/* INVENTORY STATUS - DRIBBBLE STYLE */
+.inv-status{display:flex;align-items:center;gap:6px}
+.inv-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.inv-dot.active{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.inv-dot.low{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.12)}
+.inv-dot.out{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+.inv-dot.draft{background:#9ca3af;box-shadow:0 0 0 3px rgba(156,163,175,.12)}
+.inv-label{font-size:.76rem;font-weight:600}
+.inv-label.active{color:#16a34a}
+.inv-label.low{color:#d97706}
+.inv-label.out{color:#dc2626}
+.inv-label.draft{color:#6b7280}
+.price-cell{display:flex;align-items:baseline;gap:3px}
+.cost-val{font-weight:800;color:#111827;font-size:.86rem}
+.cost-cur{font-size:.64rem;color:#9ca3af}
+.price-sell{font-size:.7rem;color:#6b7280;margin-top:2px}
+.availability-badge{padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;border:1px solid}
+.availability-badge.active{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.availability-badge.archived{background:#f4f4f5;color:#6b7280;border-color:#e5e7eb}
+.availability-badge.small{padding:2px 8px;font-size:.64rem}
 
-    /* ========== TOAST ========== */
-    .toast-notification {
-        position: fixed;
-        bottom: 1.5rem;
-        left: 1.5rem;
-        padding: 0.75rem 1.25rem;
-        border-radius: 0.75rem;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        font-size: 0.85rem;
-        font-weight: 600;
-        z-index: 1050;
-        animation: slideIn 0.3s ease;
-    }
-    .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-    .toast-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .toast-close {
-        background: transparent;
-        border: none;
-        font-size: 1rem;
-        cursor: pointer;
-        opacity: 0.6;
-    }
+/* DROPDOWN LUXURY */
+.dropdown-luxury{position:relative;display:inline-block}
+.dropdown-btn-luxury{width:28px;height:28px;border:1px solid #e5e7eb;background:#fff;border-radius:8px;color:#6b7280;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.dropdown-btn-luxury:hover{background:#f9fafb;border-color:var(--gold);color:var(--gold-dark)}
+.dropdown-btn-luxury svg{width:14px;height:14px}
+.dropdown-menu-luxury{position:absolute;left:0;top:calc(100% + 6px);background:#fff;border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.04);min-width:160px;z-index:100;display:none;overflow:hidden;border:1px solid #e5e7eb}
+.dropdown-menu-luxury.show{display:block;animation:dropIn .2s}
+@@keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.dropdown-item-luxury{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:transparent;text-align:right;cursor:pointer;font-size:.78rem;font-weight:600;color:#374151;transition:all .15s;font-family:'Tajawal'}
+.dropdown-item-luxury:hover{background:#f9fafb}
+.dropdown-item-luxury.danger{color:#dc2626}
+.dropdown-item-luxury svg{width:14px;height:14px}
+.dropdown-divider-luxury{height:1px;background:#f4f4f5;margin:4px 0}
 
-    /* ========== LOADING & EMPTY STATES ========== */
-    .loading-state {
-        text-align: center;
-        padding: 3rem;
-        background: white;
-        border-radius: 1rem;
-    }
-    .loader {
-        width: 36px;
-        height: 36px;
-        border: 3px solid #e2e8f0;
-        border-top-color: #2563eb;
-        border-radius: 50%;
-        animation: spin 0.6s linear infinite;
-        margin: 0 auto 1rem;
-    }
-    .empty-state {
-        text-align: center;
-        padding: 3rem;
-        background: white;
-        border-radius: 1rem;
-        border: 1px dashed #cbd5e1;
-    }
-    .empty-icon {
-        font-size: 3rem;
-        margin-bottom: 0.5rem;
-    }
-    .no-access-card {
-        text-align: center;
-        padding: 4rem;
-        background: white;
-        border-radius: 1.5rem;
-    }
-    .no-access-icon {
-        font-size: 3.5rem;
-        margin-bottom: 1rem;
-    }
+/* GRID VIEW LUXURY - DRIBBBLE */
+.grid-view-luxury.dribbble-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.grid-card-luxury.dribbble-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;position:relative;overflow:hidden;transition:all .3s;box-shadow:0 1px 8px rgba(0,0,0,.03)}
+.grid-card-luxury.dribbble-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .3s}
+.grid-card-luxury.dribbble-card:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.08);border-color:rgba(212,175,55,.2)}
+.grid-card-luxury.dribbble-card:hover::before{opacity:1}
+.grid-card-luxury.dribbble-card.selected{border-color:var(--gold);background:rgba(212,175,55,.03);box-shadow:0 0 0 2px rgba(212,175,55,.1)}
+.gc-top{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.gc-check{margin-right:auto}
+.gc-image-area{position:relative;margin-bottom:10px}
+.gc-category{position:absolute;top:8px;right:8px;z-index:3}
+.gc-name{font-size:.9rem;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gc-name-en{font-size:.7rem;color:#9ca3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.gc-inv{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.gc-unit{font-size:.7rem;color:#6b7280}
+.gc-prices{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #f4f4f5}
+.gc-price{display:flex;flex-direction:column;gap:2px}
+.gc-price label{font-size:.6rem;color:#9ca3af;font-weight:600}
+.gc-price span{font-size:.78rem;font-weight:800;color:#111827}
+.gc-actions{display:flex;gap:6px;margin-top:12px}
+.gc-btn{flex:1;height:34px;border:1px solid #e5e7eb;background:#fff;border-radius:8px;color:#6b7280;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;transition:all .2s;font-family:'Tajawal';font-size:.74rem;font-weight:700}
+.gc-btn svg{width:14px;height:14px}
+.gc-btn:hover{background:#f9fafb;border-color:var(--gold);color:var(--gold-dark)}
+.gc-btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);border-color:var(--gold)}
+.gc-btn.primary:hover{filter:brightness(1.05);transform:translateY(-1px)}
 
-    /* ========== BUTTONS ========== */
-    .btn-modern {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.55rem 1.2rem;
-        border-radius: 0.75rem;
-        font-weight: 600;
-        font-size: 0.8rem;
-        border: none;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .btn-primary-modern {
-        background: linear-gradient(135deg, #1d4ed8, #2563eb);
-        color: white;
-        box-shadow: 0 2px 8px rgba(37,99,235,0.25);
-    }
-    .btn-export {
-        background: linear-gradient(135deg, #059669, #10b981);
-        color: white;
-    }
-    .btn-warning-modern {
-        background: linear-gradient(135deg, #f59e0b, #fbbf24);
-        color: #1f2937;
-    }
-    .btn-danger-modern {
-        background: linear-gradient(135deg, #ef4444, #dc2626);
-        color: white;
-    }
-    .btn-secondary-modern {
-        background: #f3f4f6;
-        color: #374151;
-    }
-    .btn-ghost {
-        background: transparent;
-        color: #475569;
-        border: 1px solid #e2e8f0;
-    }
-    .btn-spinner-sm {
-        width: 14px;
-        height: 14px;
-        border: 2px solid rgba(255,255,255,0.3);
-        border-top-color: white;
-        border-radius: 50%;
-        animation: spin 0.6s linear infinite;
-    }
+/* LOADING & EMPTY */
+.loading-state-luxury{text-align:center;padding:40px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}
+.loader-luxury{width:32px;height:32px;border:2px solid rgba(212,175,55,.15);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px}
+@@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state-luxury{text-align:center;padding:40px;background:#fff;border-radius:16px;border:1px dashed #e8e2d0}
+.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold)}
+.empty-icon-luxury svg{width:28px;height:28px}
 
-    /* ========== ANIMATIONS ========== */
-    @@keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-    @@keyframes slideIn {
-        from { opacity: 0; transform: translateX(-20px); }
-        to { opacity: 1; transform: translateX(0); }
-    }
-    @@keyframes modalIn {
-        from { opacity: 0; transform: scale(0.95) translateY(10px); }
-        to { opacity: 1; transform: scale(1) translateY(0); }
-    }
+/* MODAL LUXURY */
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;padding:24px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.2);border:1px solid rgba(212,175,55,.12);animation:modalIn .25s}
+.modal-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.modal-icon-luxury{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.modal-icon-luxury.warning{background:#fffbeb;border:1px solid #fde68a;color:#d97706}
+.modal-icon-luxury.danger{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
+.modal-icon-luxury svg{width:28px;height:28px}
+.modal-buttons-luxury{display:flex;gap:10px;justify-content:center;margin-top:18px}
+.warning-message-luxury{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:10px;border-radius:10px;font-size:.76rem;margin-top:12px}
+.error-msg-luxury{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:10px;border-radius:10px;font-size:.76rem;margin-top:12px}
+.form-group-luxury{text-align:right;margin:12px 0}
+.form-group-luxury label{display:block;font-size:.76rem;font-weight:700;color:#475569;margin-bottom:6px}
+.form-input-luxury{width:100%;height:40px;padding:0 12px;border:1px solid #e8e2d0;border-radius:10px;font-size:.82rem;background:#fcfaf6;font-family:'Tajawal'}
+.form-input-luxury:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08);background:#fff}
+.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}
+.btn-warning-modern{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff}
+.btn-danger-modern{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}
+.btn-secondary-modern{background:#f1f5f9;color:#475569}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
 
-    /* ========== RESPONSIVE ========== */
-    @@media (max-width: 900px) {
-        .filter-row {
-            flex-direction: column;
-            align-items: stretch;
-        }
-        .filter-field {
-            min-width: auto;
-        }
-        .stats-grid {
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-        }
-        .col-unit, .col-price {
-            display: none;
-        }
-    }
-    @@media (max-width: 600px) {
-        .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-        .col-cost {
-            display: none;
-        }
-    }
-    @@media print {
-        .filter-bar, .stats-grid, .header-actions, .col-check, .col-actions, .bulk-actions-bar {
-            display: none !important;
-        }
-        .table-wrapper {
-            box-shadow: none;
-            border: none;
-        }
-    }
+/* TOAST LUXURY */
+.toast-notification-luxury{position:fixed;bottom:20px;left:20px;padding:12px 16px;border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.12);display:flex;align-items:center;gap:10px;font-size:.84rem;font-weight:600;z-index:1050;animation:slideIn .3s}
+.toast-notification-luxury.toast-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.toast-notification-luxury.toast-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.toast-close-luxury{width:20px;height:20px;border:none;background:rgba(0,0,0,.06);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit}
+.toast-close-luxury svg{width:10px;height:10px}
+@@keyframes slideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+
+.no-access-card{text-align:center;padding:50px;background:#fff;border-radius:20px;border:1px solid #e8e2d0;box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.no-access-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.no-access-icon svg{width:32px;height:32px}
+
+@@media(max-width:900px){.stats-grid-compact{grid-template-columns:repeat(3,1fr)}.grid-view-luxury{grid-template-columns:repeat(2,1fr)}.ph-content{flex-direction:column;align-items:flex-start}}
+@@media(max-width:600px){.stats-grid-compact{grid-template-columns:repeat(2,1fr)}.grid-view-luxury{grid-template-columns:1fr}.filter-row-luxury{flex-direction:column;align-items:stretch}}
 </style>
-
-<script>
-    window.downloadFile = (fileName, mimeType, base64Data) => {
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = `data:${mimeType};base64,${base64Data}`;
-        link.click();
-    };
-    
-    window.printHtml = (html) => {
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(html);
-        printWindow.document.close();
-        printWindow.print();
-    };
-    
-    window.generateBarcode = (code, elementId) => {
-        // Use JsBarcode library if available
-        if (typeof JsBarcode !== 'undefined') {
-            JsBarcode(`#${elementId}`, code, {
-                format: "CODE128",
-                lineColor: "#0f172a",
-                width: 1.5,
-                height: 40,
-                displayValue: true,
-                fontSize: 12,
-                margin: 10
-            });
-        }
-    };
-</script>
 
 @code {
     private List<ItemListDto>? items;
     private List<ItemListDto> filteredItems = new();
     private ModulePermissionDto? permissions;
+    private string viewMode = "table"; // table or grid
     
     // Filters
     private string searchText = "";
@@ -1082,11 +557,7 @@ else
     // Dropdown
     private int? activeDropdownId = null;
     
-    // Barcode modal
-    private bool showBarcodeModal = false;
-    private ItemListDto? barcodeItem;
-    
-    // Action modal (delete/deactivate)
+    // Action modal
     private bool showActionModal = false;
     private bool isDeactivateAction = false;
     private bool isBulkAction = false;
@@ -1102,21 +573,10 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn)
-        {
-            Navigation.NavigateTo("/login");
-            return;
-        }
-
-        if (!PermissionService.IsLoaded)
-            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-
+        if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
         permissions = PermissionService.GetModule("SCR_ITEMS");
-
-        if (permissions != null && permissions.CanView)
-        {
-            await LoadItems();
-        }
+        if (permissions != null && permissions.CanView) await LoadItems();
     }
 
     private async Task LoadItems()
@@ -1128,7 +588,6 @@ else
     private void Search()
     {
         if (items == null) return;
-
         var result = items.Where(i =>
             (filterType == 0 || i.ItemType == filterType) &&
             (string.IsNullOrEmpty(searchText) ||
@@ -1136,7 +595,6 @@ else
              ArabicSearchHelper.Contains(i.ItemNameEn, searchText) ||
              ArabicSearchHelper.Contains(i.ItemCode, searchText))
         );
-
         filteredItems = ApplySort(result).ToList();
     }
 
@@ -1153,13 +611,8 @@ else
 
     private void SortBy(string column)
     {
-        if (sortColumn == column)
-            sortAsc = !sortAsc;
-        else
-        {
-            sortColumn = column;
-            sortAsc = true;
-        }
+        if (sortColumn == column) sortAsc = !sortAsc;
+        else{sortColumn = column; sortAsc = true;}
         Search();
     }
 
@@ -1169,268 +622,93 @@ else
         return sortAsc ? "▲" : "▼";
     }
 
-    private void ClearSearch()
-    {
-        searchText = "";
-        Search();
-    }
+    private void ClearSearch(){searchText = ""; Search();}
+    private void ClearAllFilters(){searchText = ""; filterType = 0; Search();}
+    private bool HasActiveFilters()=> filterType > 0 || !string.IsNullOrEmpty(searchText);
 
-    private void ClearAllFilters()
+    private string GetTypeName(int type) => type switch{1 => "مواد خام",2 => "مواد تعبئة",3 => "نصف مصنع",4 => "منتج تام",_ => "غير محدد"};
+    private string GetTypeClass(int type) => type switch{1 => "type-raw",2 => "type-pkg",3 => "type-semi",4 => "type-fin",_ => ""};
+    private string GetTypeColor(int type) => type switch{1 => "#2563eb",2 => "#06b6d4",3 => "#f59e0b",4 => "#10b981",_ => "#D4AF37"};
+    private (string Class, string Label) GetInventoryStatus(ItemListDto item)
     {
-        searchText = "";
-        filterType = 0;
-        Search();
+        if (!item.IsActive) return ("draft", "مؤرشف");
+        // محاكاة حالة المخزون حسب النوع والسعر - في المشروع الحقيقي هتجيب من Stock
+        return item.ItemType switch
+        {
+            1 => ("active", "متوفر"),
+            2 => ("low", "مخزون منخفض"),
+            3 => ("active", "متوفر"),
+            4 => ("active", "نشط"),
+            _ => ("active", "نشط")
+        };
     }
-
-    private bool HasActiveFilters()
+    private string GetTypeIconSvg(int type) => type switch
     {
-        return filterType > 0 || !string.IsNullOrEmpty(searchText);
-    }
-
-    private string GetTypeName(int type) => type switch
-    {
-        1 => "مواد خام",
-        2 => "مواد تعبئة",
-        3 => "نصف مصنع",
-        4 => "منتج تام",
-        _ => "غير محدد"
+        1 => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'/></svg>",
+        2 => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M16 16h.01'/><path d='M2 16l10 5 10-5'/><path d='M2 12l10 5 10-5'/><path d='M2 7l10 5 10-5'/></svg>",
+        3 => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z'/><path d='M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'/></svg>",
+        4 => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M9 12l2 2 4-4'/><path d='M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z'/></svg>",
+        _ => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z'/></svg>"
     };
 
-    private string GetTypeClass(int type) => type switch
-    {
-        1 => "type-raw",
-        2 => "type-pkg",
-        3 => "type-semi",
-        4 => "type-fin",
-        _ => ""
-    };
+    // Bulk
+    private void ToggleSelection(int itemId, bool isSelected){if (isSelected) selectedItems.Add(itemId); else selectedItems.Remove(itemId); StateHasChanged();}
+    private void ToggleSelectAll(){if (selectedItems.Count == filteredItems.Count) selectedItems.Clear(); else selectedItems = new HashSet<int>(filteredItems.Select(i => i.ItemID)); StateHasChanged();}
+    private void ClearSelection(){selectedItems.Clear(); StateHasChanged();}
+    private void ShowBulkDeactivateConfirm(){isDeactivateAction = true; isBulkAction = true; actionItemName = $"{selectedItems.Count} صنف"; showActionModal = true; deactivateReason = ""; actionModalError = "";}
+    private void ShowBulkDeleteConfirm(){isDeactivateAction = false; isBulkAction = true; actionItemName = $"{selectedItems.Count} صنف"; showActionModal = true; actionModalError = "";}
 
-    // ========== Bulk Actions ==========
-    private void ToggleSelection(int itemId, bool isSelected)
-    {
-        if (isSelected)
-            selectedItems.Add(itemId);
-        else
-            selectedItems.Remove(itemId);
-        StateHasChanged();
-    }
-
-    private void ToggleSelectAll()
-    {
-        if (selectedItems.Count == filteredItems.Count)
-            selectedItems.Clear();
-        else
-            selectedItems = new HashSet<int>(filteredItems.Select(i => i.ItemID));
-        StateHasChanged();
-    }
-
-    private void ClearSelection()
-    {
-        selectedItems.Clear();
-        StateHasChanged();
-    }
-
-    private void ShowBulkDeactivateConfirm()
-    {
-        isDeactivateAction = true;
-        isBulkAction = true;
-        actionItemName = $"{selectedItems.Count} صنف";
-        showActionModal = true;
-        deactivateReason = "";
-        actionModalError = "";
-    }
-
-    private void ShowBulkDeleteConfirm()
-    {
-        isDeactivateAction = false;
-        isBulkAction = true;
-        actionItemName = $"{selectedItems.Count} صنف";
-        showActionModal = true;
-        actionModalError = "";
-    }
-
-    // ========== Single Actions ==========
-    private void ShowDeactivateConfirm(int itemId, string itemName)
-    {
-        isDeactivateAction = true;
-        isBulkAction = false;
-        actionItemId = itemId;
-        actionItemName = itemName;
-        showActionModal = true;
-        deactivateReason = "";
-        actionModalError = "";
-    }
-
-    private void ShowDeleteConfirm(int itemId, string itemName, bool isBulk = false)
-    {
-        isDeactivateAction = false;
-        isBulkAction = isBulk;
-        actionItemId = itemId;
-        actionItemName = itemName;
-        showActionModal = true;
-        actionModalError = "";
-    }
+    // Single Actions
+    private void ShowDeactivateConfirm(int itemId, string itemName){isDeactivateAction = true; isBulkAction = false; actionItemId = itemId; actionItemName = itemName; showActionModal = true; deactivateReason = ""; actionModalError = "";}
+    private void ShowDeleteConfirm(int itemId, string itemName, bool isBulk = false){isDeactivateAction = false; isBulkAction = isBulk; actionItemId = itemId; actionItemName = itemName; showActionModal = true; actionModalError = "";}
 
     private async Task ConfirmAction()
     {
-        isActionLoading = true;
-        actionModalError = "";
-        
+        isActionLoading = true; actionModalError = "";
         try
         {
             if (isBulkAction)
             {
-                if (isDeactivateAction)
-                {
-                    foreach (var id in selectedItems)
-                    {
-                        await ItemService.DeactivateItemAsync(id, UserSession.UserID);
-                    }
-                    resultMessage = $"تم تعطيل {selectedItems.Count} صنف بنجاح ✅";
-                    resultIsError = false;
-                }
-                else
-                {
-                    var deleted = 0;
-                    var deactivated = 0;
-                    foreach (var id in selectedItems)
-                    {
-                        var result = await ItemService.DeleteItemAsync(id, UserSession.UserID);
-                        if (result) deleted++;
-                        else deactivated++;
-                    }
-                    resultMessage = $"تم حذف {deleted} صنف، وتعطيل {deactivated} صنف (مرتبط بحركات)";
-                    resultIsError = false;
-                }
+                if (isDeactivateAction){foreach (var id in selectedItems) await ItemService.DeactivateItemAsync(id, UserSession.UserID); resultMessage = $"تم تعطيل {selectedItems.Count} صنف بنجاح"; resultIsError = false;}
+                else{var deleted=0;var deactivated=0; foreach(var id in selectedItems){var result = await ItemService.DeleteItemAsync(id, UserSession.UserID); if(result) deleted++; else deactivated++;} resultMessage = $"تم حذف {deleted} صنف، وتعطيل {deactivated} صنف"; resultIsError = false;}
                 ClearSelection();
             }
             else
             {
                 if (actionItemId.HasValue)
                 {
-                    if (isDeactivateAction)
-                    {
-                        await ItemService.DeactivateItemAsync(actionItemId.Value, UserSession.UserID);
-                        resultMessage = $"تم تعطيل الصنف: {actionItemName} ✅";
-                        resultIsError = false;
-                    }
-                    else
-                    {
-                        var deleted = await ItemService.DeleteItemAsync(actionItemId.Value, UserSession.UserID);
-                        resultMessage = deleted
-                            ? $"تم حذف الصنف: {actionItemName} ✅"
-                            : $"الصنف مرتبط بحركات - تم إيقاف تنشيطه بدلاً من الحذف ⚠️";
-                        resultIsError = false;
-                    }
+                    if (isDeactivateAction){await ItemService.DeactivateItemAsync(actionItemId.Value, UserSession.UserID); resultMessage = $"تم تعطيل الصنف: {actionItemName}"; resultIsError = false;}
+                    else{var deleted = await ItemService.DeleteItemAsync(actionItemId.Value, UserSession.UserID); resultMessage = deleted ? $"تم حذف الصنف: {actionItemName}" : $"الصنف مرتبط بحركات - تم إيقاف تنشيطه"; resultIsError = false;}
                 }
             }
-            
-            await LoadItems();
-            showActionModal = false;
-        }
-        catch (Exception ex)
-        {
-            actionModalError = "خطأ: " + ex.Message;
-        }
-        finally
-        {
-            isActionLoading = false;
-        }
+            await LoadItems(); showActionModal = false;
+        }catch(Exception ex){actionModalError = "خطأ: " + ex.Message;}
+        finally{isActionLoading = false;}
     }
 
-    private void CloseActionModal()
-    {
-        showActionModal = false;
-        actionItemId = null;
-        actionItemName = "";
-        deactivateReason = "";
-        actionModalError = "";
-        isActionLoading = false;
-    }
-
-    // ========== Dropdown ==========
-    private void ToggleDropdown(int itemId)
-    {
-        activeDropdownId = activeDropdownId == itemId ? null : itemId;
-    }
-
-    // ========== Navigation ==========
+    private void CloseActionModal(){showActionModal = false; actionItemId = null; actionItemName = ""; deactivateReason = ""; actionModalError = ""; isActionLoading = false;}
+    private void ToggleDropdown(int itemId){activeDropdownId = activeDropdownId == itemId ? null : itemId;}
     private void AddNewItem() => Navigation.NavigateTo("/items/new");
     private void EditItem(int itemId) => Navigation.NavigateTo($"/items/edit/{itemId}");
-    
-    // ========== Barcode ==========
-    private async Task ShowBarcodeModal(ItemListDto item)
-    {
-        barcodeItem = item;
-        showBarcodeModal = true;
-        await Task.Delay(100);
-        await JS.InvokeVoidAsync("generateBarcode", item.ItemCode, "barcodeSvg");
-    }
-    
-    private void CloseBarcodeModal()
-    {
-        showBarcodeModal = false;
-        barcodeItem = null;
-    }
-    
-    private async Task PrintBarcode()
-    {
-        var html = $@"
-        <html dir='rtl'>
-        <head><title>باركود {barcodeItem?.ItemNameAr}</title></head>
-        <body style='text-align:center;padding:20px;font-family:sans-serif'>
-            <h3>{barcodeItem?.ItemNameAr}</h3>
-            <div style='font-size:24px;font-family:monospace;margin:20px'>{barcodeItem?.ItemCode}</div>
-            <div id='barcode'></div>
-            <script>
-                var JsBarcode = window.parent.JsBarcode;
-                JsBarcode('#barcode', '{barcodeItem?.ItemCode}', {{ format: 'CODE128', width: 2, height: 50 }});
-            </script>
-        </body>
-        </html>";
-        await JS.InvokeVoidAsync("printHtml", html);
-    }
 
-    // ========== Print & Export ==========
     private async Task PrintItem(int itemId)
     {
-        try
-        {
-            var html = await ItemService.GenerateItemReportHtmlAsync(itemId, UserSession.UserID);
-            await JS.InvokeVoidAsync("printHtml", html);
-        }
-        catch (Exception ex)
-        {
-            resultMessage = "خطأ في الطباعة: " + ex.Message;
-            resultIsError = true;
-        }
+        try{var html = await ItemService.GenerateItemReportHtmlAsync(itemId, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", html);}
+        catch(Exception ex){resultMessage = "خطأ في الطباعة: " + ex.Message; resultIsError = true;}
     }
 
     private async Task ExportToExcel()
     {
         if (filteredItems == null || !filteredItems.Any()) return;
-
-        isExporting = true;
-        StateHasChanged();
-
+        isExporting = true; StateHasChanged();
         try
         {
             var itemsToExport = selectedItems.Any() ? filteredItems.Where(i => selectedItems.Contains(i.ItemID)).ToList() : filteredItems;
             var fileBytes = await ItemService.ExportItemsToExcelAsync(itemsToExport, UserSession.UserID);
             var base64 = Convert.ToBase64String(fileBytes);
-            await JS.InvokeVoidAsync("downloadFile", $"Items_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
-            resultMessage = $"تم تصدير {itemsToExport.Count} صنف بنجاح ✅";
-            resultIsError = false;
-        }
-        catch (Exception ex)
-        {
-            resultMessage = "خطأ في التصدير: " + ex.Message;
-            resultIsError = true;
-        }
-        finally
-        {
-            isExporting = false;
-        }
+            await JS.InvokeVoidAsync("downloadFile", $"Items_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64);
+            resultMessage = $"تم تصدير {itemsToExport.Count} صنف بنجاح"; resultIsError = false;
+        }catch(Exception ex){resultMessage = "خطأ في التصدير: " + ex.Message; resultIsError = true;}
+        finally{isExporting = false;}
     }
 }

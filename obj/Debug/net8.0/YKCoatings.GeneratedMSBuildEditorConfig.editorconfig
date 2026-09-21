@@ -298,6 +298,14 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSb2xlcy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/SalesInvoiceEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTYWxlc0ludm9pY2VFZGl0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/SalesInvoices.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTYWxlc0ludm9pY2VzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/SearchableSelect.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTZWFyY2hhYmxlU2VsZWN0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 

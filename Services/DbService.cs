@@ -295,6 +295,29 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
         public decimal CustomersBalance { get; set; }
     }
 
+    // دلتا الكروت — مقارنة الشهر الحالي بالشهر السابق
+    public class DashboardDeltasDto
+    {
+        public int NewItems { get; set; }
+        public int PrevItems { get; set; }
+        public int NewSuppliers { get; set; }
+        public int PrevSuppliers { get; set; }
+        public int NewCustomers { get; set; }
+        public int PrevCustomers { get; set; }
+        public int NewEmployees { get; set; }
+        public int PrevEmployees { get; set; }
+        public int NewPOs { get; set; }
+        public int PrevPOs { get; set; }
+
+        public static string Percent(int current, int previous)
+        {
+            if (previous <= 0) return current > 0 ? "جديد" : "—";
+            var pct = (int)Math.Round((current - previous) * 100.0 / previous);
+            return (pct >= 0 ? "+" : "") + pct + "%";
+        }
+        public static bool IsUp(int current, int previous) => current >= previous;
+    }
+
     public class RecentActivityDto
     {
         public DateTime AuditDate { get; set; }
@@ -383,7 +406,20 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
     {
         public int UnitID { get; set; }
         public decimal EstimatedPrice { get; set; }
+        public decimal SalesPrice { get; set; }
     }
+
+    public class CustomerQuickInfoDto
+{
+    public int CustomerID { get; set; }
+    public string? CustomerNameAr { get; set; }
+    public string? CustomerCode { get; set; }
+    public int? PaymentTermID { get; set; }
+    public int? CurrencyID { get; set; }
+    public decimal ExchangeRate { get; set; } = 1;
+    public decimal CreditLimit { get; set; }
+    public decimal CurrentBalance { get; set; }
+}
 
     public class ApprovedQtyDto
     {

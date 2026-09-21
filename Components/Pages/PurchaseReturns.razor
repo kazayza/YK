@@ -1,187 +1,214 @@
 ﻿@page "/purchase-returns"
-@page "/purchase-return"
 
 @using YKCoatings.Services
 @using YKCoatings.Models
 @using YKCoatings.Helpers
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
-@inject PurchaseReturnService RetService
+@inject PurchaseReturnService ReturnService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>مرتجعات المشتريات - واي كي كوتينج</PageTitle>
+<PageTitle>مرتجعات المشتريات - واي كي كوتينج Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
-{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4>
-    <button class="btn-m btn-ghost" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
 {
-    <div class="page-wrap" dir="rtl">
-        <div class="page-hdr">
-            <div>
-                <h2 class="page-title">مرتجعات المشتريات</h2>
-                <p class="page-sub">إدارة مرتجعات الموردين</p>
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid" style="overflow:visible !important">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content" style="overflow:visible !important">
+                <div class="lh-right">
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">مرتجعات المشتريات</h2><p class="lh-subtitle">إرجاع بضاعة معيبة/غير مطابقة/زائدة - الورك فلو 5</p></div>
+                </div>
+                <div class="lh-actions" style="overflow:visible !important">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count مرتجع</span>
+                    @if (permissions.CanExport)
+                    {
+                        <button class="btn-luxury btn-export-luxury" @onclick="ExportExcel" disabled="@isExporting">
+                            @if (isExporting){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>}
+                            Excel
+                        </button>
+                    }
+                    @if (permissions.CanAdd)
+                    {
+                        <div class="add-dropdown-wrap-luxury" style="overflow:visible !important">
+                            <button class="btn-luxury btn-primary-luxury" @onclick="ToggleAddMenu">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مرتجع جديد
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px"><path d="m6 9 6 6 6-6"/></svg>
+                            </button>
+                        </div>
+                    }
+                </div>
             </div>
-            <div class="hdr-actions">
-                <span class="badge-count">@filtered.Count مرتجع</span>
-                @if (permissions.CanExport)
-                {
-                    <button class="btn-m btn-export" @onclick="ExportExcel" disabled="@isExporting">
-                        @if (isExporting) { <div class="btn-spin"></div> } else { <span>📥</span> } Excel
-                    </button>
-                }
-                @if (permissions.CanAdd)
-                {
-                    <div class="add-dropdown-wrap">
-                        <button class="btn-m btn-primary" @onclick="ToggleAddMenu">➕ مرتجع جديد ▾</button>
-                        @if (showAddMenu)
-                        {
-                            <div class="add-dropdown">
-                                <div class="add-opt" @onclick="AddFromInvoice">
-                                    <span class="add-opt-icon" style="background:#ecfeff;color:#0891b2;">📄</span>
-                                    <div><div class="add-opt-title">من فاتورة</div><div class="add-opt-desc">مرتجع بناءً على فاتورة مشتريات</div></div>
-                                </div>
-                                <div class="add-opt" @onclick="AddDirect">
-                                    <span class="add-opt-icon" style="background:#fff7ed;color:#f97316;">✏️</span>
-                                    <div><div class="add-opt-title">مرتجع مباشر</div><div class="add-opt-desc">مرتجع بدون فاتورة</div></div>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
+        </div>
+
+        @if (showAddMenu)
+        {
+            <div class="add-dropdown-portal-luxury" dir="rtl">
+                <div class="ml-gold-line"></div>
+                <div class="portal-head"><span>اختر مصدر المرتجع</span><button class="btn-close-x" @onclick="CloseAddMenu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+                <div class="add-opt-luxury" @onclick="AddFromInvoice"><span class="add-opt-icon" style="background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></span><div><div class="add-opt-title">من فاتورة مشتريات</div><div class="add-opt-desc">مرتجع مرتبط بفاتورة معتمدة</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                <div class="add-opt-luxury" @onclick="AddDirect"><span class="add-opt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></span><div><div class="add-opt-title">مرتجع مباشر</div><div class="add-opt-desc">مرتجع بدون فاتورة - إشعار دائن</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
             </div>
+            <div class="add-overlay-portal-luxury" @onclick="CloseAddMenu"></div>
+        }
+
+        <div class="workflow-luxury">
+            <div class="wf-step done"><span class="wf-num">1</span><span>طلب</span><div class="wf-line"></div></div>
+            <div class="wf-step done"><span class="wf-num">2</span><span>أمر</span><div class="wf-line"></div></div>
+            <div class="wf-step done"><span class="wf-num">3</span><span>استلام</span><div class="wf-line"></div></div>
+            <div class="wf-step done"><span class="wf-num">4</span><span>فاتورة</span><div class="wf-line"></div></div>
+            <div class="wf-step active"><span class="wf-num">5</span><span>مرتجع</span></div>
         </div>
 
         @if (returns != null)
         {
-            <div class="stats-row">
-                <div class="stat-box" style="border-top-color:#64748b"><div class="stat-n">@returns.Count(r => r.ReturnStatus == 1)</div><div class="stat-l">مسودة</div></div>
-                <div class="stat-box" style="border-top-color:#f59e0b"><div class="stat-n">@returns.Count(r => r.ReturnStatus == 2)</div><div class="stat-l">انتظار اعتماد</div></div>
-                <div class="stat-box" style="border-top-color:#10b981"><div class="stat-n">@returns.Count(r => r.ReturnStatus == 3)</div><div class="stat-l">معتمد</div></div>
-                <div class="stat-box" style="border-top-color:#ef4444"><div class="stat-n">@returns.Count(r => r.ReturnType == 1)</div><div class="stat-l">معيب</div></div>
-                <div class="stat-box" style="border-top-color:#6366f1"><div class="stat-n">@returns.Sum(r => r.TotalAmount).ToString("#,##0")</div><div class="stat-l">إجمالي ج.م</div></div>
+            <div class="stats-luxury">
+                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="st-info"><span class="st-value">@returns.Count(r => r.ReturnStatus == 1)</span><span class="st-label">مسودة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@returns.Count(r => r.ReturnStatus == 2)</span><span class="st-label">انتظار اعتماد</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@returns.Count(r => r.ReturnStatus == 3)</span><span class="st-label">معتمد</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></div><div class="st-info"><span class="st-value">@returns.Count(r => r.ReturnType == 1)</span><span class="st-label">معيب</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></div><div class="st-info"><span class="st-value">@returns.Sum(r => r.TotalAmount).ToString("#,##0")</span><span class="st-label">إجمالي المرتجعات</span></div><div class="st-gold-line"></div></div>
             </div>
         }
 
-        <div class="filter-row">
-            <div class="search-wrap">
-                <svg class="search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <input class="search-inp" type="text" placeholder="بحث برقم المرتجع أو المورد..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
-                @if (!string.IsNullOrEmpty(searchText)) { <button class="search-clr" @onclick="ClearSearch">✕</button> }
-            </div>
-            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
-                <option value="0">كل الحالات</option>
-                <option value="1">مسودة</option><option value="2">انتظار اعتماد</option>
-                <option value="3">معتمد</option><option value="4">مرفوض</option><option value="5">ملغي</option>
-            </select>
-            <button class="btn-m btn-ghost" @onclick="LoadData">🔄 تحديث</button>
+        <div class="filter-luxury">
+            <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم المرتجع أو المورد أو الفاتورة..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">انتظار اعتماد</option><option value="3">معتمد</option><option value="4">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterType" @bind:after="Filter"><option value="0">كل الأنواع</option><option value="1">معيب</option><option value="2">غير مطابق</option><option value="3">زائد</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
         @if (returns == null)
-        { <div class="loading-st"><div class="loader"></div><p>جاري التحميل...</p></div> }
+        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
         else if (!filtered.Any())
-        { <div class="empty-st"><h4>لا توجد مرتجعات</h4></div> }
+        {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a2.5 2.5 0 0 1 0 5H11"/></svg></div><h4>لا توجد مرتجعات</h4></div>}
         else
         {
-            <div class="tbl-card">
-                <table class="tbl">
-                    <thead><tr>
-                        <th>#</th><th>رقم المرتجع</th><th>التاريخ</th><th>المورد</th><th>الفاتورة</th>
-                        <th class="tc">النوع</th><th class="tc">أصناف</th><th class="tl">الإجمالي</th>
-                        <th class="tc">الحالة</th><th class="tc">إجراءات</th>
-                    </tr></thead>
-                    <tbody>
-                        @{ int n = 0; }
-                        @foreach (var ret in filtered)
-                        {
-                            n++;
-                            <tr class="@(ret.ReturnStatus == 1 ? "tr-draft" : "")">
-                                <td class="td-n">@n</td>
-                                <td><span class="doc-num" @onclick="() => ViewReturn(ret.ReturnID)" style="cursor:pointer">@ret.ReturnNumber</span></td>
-                                <td>@ret.ReturnDate.ToString("dd/MM/yyyy")</td>
-                                <td class="td-bold">@(ret.SupplierNameAr ?? "—")</td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(ret.LinkedInvoiceNumber))
-                                    { <code class="inv-link">@ret.LinkedInvoiceNumber</code> }
-                                    else { <span class="td-muted">مباشر</span> }
-                                </td>
-                                <td class="tc"><span class="type-badge" style="--tc:@PurchaseReturnService.GetReturnTypeColor(ret.ReturnType)">@PurchaseReturnService.GetReturnTypeName(ret.ReturnType)</span></td>
-                                <td class="tc"><span class="cnt-badge">@ret.ItemCount</span></td>
-                                <td class="tl"><span class="amount-cell">@ret.TotalAmount.ToString("#,##0.00")</span></td>
-                                <td class="tc"><span class="status-badge" style="--sc:@PurchaseReturnService.GetStatusColor(ret.ReturnStatus)">@PurchaseReturnService.GetStatusName(ret.ReturnStatus)</span></td>
-                                <td class="tc">
-                                    <div class="actions-wrap">
-                                        @if (permissions.CanEdit && ret.ReturnStatus == 1)
-                                        { <button class="act-btn edit" @onclick="() => EditReturn(ret.ReturnID)">✏️</button> }
-                                        else
-                                        { <button class="act-btn view" @onclick="() => ViewReturn(ret.ReturnID)">👁️</button> }
-                                        @if (permissions.CanPrint)
-                                        { <button class="act-btn print" @onclick="() => PrintReturn(ret.ReturnID)">🖨️</button> }
-                                        @if (permissions.CanApprove && ret.ReturnStatus == 2)
-                                        { <button class="act-btn approve" @onclick="() => EditReturn(ret.ReturnID)">✅</button> }
-                                        @if (permissions.CanDelete && ret.ReturnStatus == 1)
-                                        { <button class="act-btn del" @onclick="() => ShowDeleteDialog(ret)">🗑️</button> }
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+            <div class="table-card-luxury">
+                <div class="table-responsive">
+                    <table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>رقم المرتجع</th><th>التاريخ</th><th>المورد</th><th>فاتورة الشراء</th><th class="th-center">النوع</th><th class="th-center">أصناف</th><th>الإجمالي</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach (var ret in filtered){n++;
+                                <tr class="@(ret.ReturnStatus==1?"row-draft":"")">
+                                    <td class="td-num">@n</td>
+                                    <td><span class="doc-num-luxury" @onclick="() => ViewReturn(ret.ReturnID)">@ret.ReturnNumber</span></td>
+                                    <td class="td-muted">@ret.ReturnDate.ToString("dd/MM/yyyy")</td>
+                                    <td class="td-name">@(ret.SupplierNameAr ?? "—")</td>
+                                    <td>@if (!string.IsNullOrEmpty(ret.LinkedInvoiceNumber)){<code class="inv-link-luxury">@ret.LinkedInvoiceNumber</code>}else{<span class="no-val">مباشر</span>}</td>
+                                    <td class="td-center"><span class="type-badge-luxury" style="--tc:@PurchaseReturnService.GetReturnTypeColor(ret.ReturnType)">@PurchaseReturnService.GetReturnTypeName(ret.ReturnType)</span></td>
+                                    <td class="td-center"><span class="cnt-badge-luxury">@ret.ItemCount</span></td>
+                                    <td><span class="amount-luxury">@ret.TotalAmount.ToString("#,##0.00")</span></td>
+                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@PurchaseReturnService.GetStatusColor(ret.ReturnStatus)">@PurchaseReturnService.GetStatusName(ret.ReturnStatus)</span></td>
+                                    <td class="td-center"><div class="actions-wrap-luxury">
+                                        @if (permissions.CanEdit && ret.ReturnStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                        else{<button class="act-btn view" title="عرض" @onclick="() => ViewReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
+                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
+                                        @if (permissions.CanApprove && ret.ReturnStatus == 2){<button class="act-btn approve" title="اعتماد" @onclick="() => EditReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
+                                        @if (permissions.CanDelete && ret.ReturnStatus == 1){<button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(ret)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             </div>
         }
     </div>
 
     @if (showDeleteDialog)
     {
-        <div class="modal-ov" @onclick="CloseDeleteDialog">
-            <div class="modal-box" @onclick:stopPropagation="true">
-                <h4>تأكيد الحذف</h4>
-                <p>حذف المرتجع: <strong>@deleteReturn?.ReturnNumber</strong>؟</p>
-                @if (!string.IsNullOrEmpty(deleteMsg)) { <div class="form-msg err">@deleteMsg</div> }
-                <div class="modal-btns">
-                    <button class="btn-m btn-danger" @onclick="ConfirmDelete">تأكيد الحذف</button>
-                    <button class="btn-m btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
-                </div>
-            </div>
-        </div>
+        <div class="modal-overlay-luxury" @onclick="CloseDeleteDialog"><div class="modal-card-luxury small" @onclick:stopPropagation="true">
+            <div class="ml-gold-line danger"></div>
+            <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
+            <h4>تأكيد الحذف</h4><p>هل أنت متأكد من حذف المرتجع: <strong class="delete-name">@deleteReturn?.ReturnNumber</strong>؟</p>
+            @if (!string.IsNullOrEmpty(deleteMsg)){<div class="msg-luxury msg-error">@deleteMsg</div>}
+            <div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">تأكيد الحذف</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseDeleteDialog">إلغاء</button></div>
+        </div></div>
     }
 
-    @if (!string.IsNullOrEmpty(toast))
-    { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div>}
 }
 
-@if (showAddMenu) { <div class="add-overlay" @onclick="CloseAddMenu"></div> }
-
 <style>
-    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem;margin:3px 0 0}.hdr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
-    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}.stat-box{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:16px;text-align:center;border-top:3px solid;transition:.2s}.stat-box:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(15,23,42,.06)}.stat-n{font-size:1.6rem;font-weight:900;color:#0f172a}.stat-l{font-size:.78rem;color:#64748b;margin-top:3px}
-    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-ic{position:absolute;right:12px;color:#94a3b8;pointer-events:none}.search-inp{width:100%;padding:10px 38px 10px 36px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.search-inp:focus{border-color:#2563eb}.search-clr{position:absolute;left:10px;background:#f1f5f9;border:none;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:.7rem;display:flex;align-items:center;justify-content:center}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
-    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1000px}.tbl thead{background:#f8fafc}.tbl th{padding:13px 14px;font-size:.8rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:12px 14px;font-size:.86rem;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:middle}.tbl tbody tr:hover{background:#f8fafc}.tr-draft{opacity:.8}
-    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;font-size:.8rem;text-align:center}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.doc-num{color:#2563eb;font-weight:700;font-size:.88rem;text-decoration:underline}.cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}.amount-cell{font-family:monospace;font-weight:700;color:#0f172a}.inv-link{background:#ecfeff;color:#0891b2;padding:2px 8px;border-radius:6px;font-size:.75rem;font-weight:600}
-    .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.type-badge{display:inline-block;padding:4px 10px;border-radius:8px;font-size:.72rem;font-weight:700;background:color-mix(in srgb,var(--tc) 10%,white);color:var(--tc);border:1px solid color-mix(in srgb,var(--tc) 20%,white)}
-    .add-dropdown-wrap{position:relative}.add-dropdown{position:absolute;top:calc(100% + 6px);left:0;background:white;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.12);z-index:600;min-width:260px;overflow:hidden}.add-opt{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;transition:.15s}.add-opt:hover{background:#f8fafc}.add-opt-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}.add-opt-title{font-weight:700;font-size:.88rem;color:#0f172a}.add-opt-desc{font-size:.76rem;color:#64748b;margin-top:2px}.add-overlay{position:fixed;inset:0;z-index:500}
-    .actions-wrap{display:flex;gap:5px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s;font-size:.8rem}.act-btn:hover{background:#f8fafc}
-    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer;transition:.2s}.btn-m:disabled{opacity:.6}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-export{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
-    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}.modal-box{background:white;border-radius:22px;padding:32px;max-width:420px;width:100%;text-align:center}.modal-box h4{font-weight:800;margin:0 0 8px}.modal-box p{color:#475569;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;font-weight:600;margin-top:10px}.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050;animation:toastIn .35s ease}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.12);min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.empty-st h4{color:#64748b}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
-    @@keyframes spin{to{transform:rotate(360deg)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}.stats-row{grid-template-columns:repeat(2,1fr)}}
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto;position:relative}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:visible !important;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:5}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;overflow:visible !important}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;overflow:visible !important}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-primary-luxury:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(212,175,55,.35)}.btn-export-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.workflow-luxury{display:flex;align-items:center;gap:0;background:#fff;border:1px solid #e8e2d0;border-radius:14px;padding:10px 16px;overflow-x:auto}
+.wf-step{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;color:#9ca3af;white-space:nowrap}
+.wf-step.active{color:var(--gold-dark)}.wf-step.done{color:#059669}
+.wf-num{width:24px;height:24px;border-radius:50%;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900}
+.wf-step.active .wf-num{background:rgba(212,175,55,.15);border-color:rgba(212,175,55,.25);color:var(--gold-dark)}
+.wf-step.done .wf-num{background:#ecfdf5;border-color:#a7f3d0;color:#059669}
+.wf-line{width:24px;height:2px;background:#e5e7eb;margin:0 8px}.wf-step.done .wf-line{background:#a7f3d0}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.amber{background:#fef3c7;color:#d97706;border:1px solid #fde68a}.st-icon.red{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.select-wrap-luxury select{height:40px;padding:0 34px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury select:focus{border-color:var(--gold)}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.table-luxury .row-draft{opacity:.8}.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:160px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.86rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px;cursor:pointer;transition:.2s}.doc-num-luxury:hover{background:rgba(212,175,55,.15);border-color:var(--gold)}
+.cnt-badge-luxury{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.74rem;font-weight:700}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}
+.inv-link-luxury{background:#ecfeff;color:#0891b2;padding:2px 8px;border-radius:6px;font-size:.72rem;font-weight:600;border:1px solid #a5f3fc}
+.type-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc);border:1px solid color-mix(in srgb,var(--tc) 25%,white)}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.add-dropdown-wrap-luxury{position:relative;overflow:visible !important}
+.add-dropdown-portal-luxury{position:fixed;top:155px;left:24px;background:#fff;border:1.5px solid #e8e2d0;border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.22),0 0 0 1px rgba(212,175,55,.12);z-index:99999;min-width:360px;max-width:92vw;animation:portalIn .26s cubic-bezier(.34,1.56,.64,1);overflow:hidden}
+.portal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;font-weight:800;font-size:.86rem;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.add-opt-luxury{display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;transition:.18s;border-bottom:1px solid #f8f7f4;position:relative}
+.add-opt-luxury:last-child{border-bottom:none}
+.add-opt-luxury:hover{background:linear-gradient(135deg,#fcfaf6,#fff);transform:translateX(-2px)}
+.add-opt-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.06)}.add-opt-icon svg{width:20px;height:20px}
+.add-opt-title{font-weight:800;font-size:.9rem;color:#0A0F1E}.add-opt-desc{font-size:.76rem;color:#8B95A5;margin-top:3px}
+.opt-arrow{width:16px;height:16px;color:#cbd5e1;margin-right:auto;flex-shrink:0}
+.add-overlay-portal-luxury{position:fixed;inset:0;z-index:99998;background:rgba(7,11,20,.12);backdrop-filter:blur(1px)}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+@@keyframes portalIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.view{color:#2563eb;border-color:#bfdbfe}.act-btn.view:hover{background:#eff6ff}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}.act-btn.print{color:#0891b2;border-color:#a5f3fc}.act-btn.print:hover{background:#ecfeff}.act-btn.approve{color:#059669;border-color:#a7f3d0}.act-btn.approve:hover{background:#ecfdf5}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}.act-btn svg{width:14px;height:14px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;text-align:center;padding:28px 24px}.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:center}.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin-bottom:12px}.delete-icon-luxury svg{width:32px;height:32px}.delete-name{display:block;font-size:1rem;font-weight:800;color:#0A0F1E;margin:8px 0}.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.no-val{color:#d1d5db;font-size:.78rem}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:768px){.lh-content{flex-direction:column;align-items:flex-start}.stats-luxury{grid-template-columns:repeat(2,1fr)}.add-dropdown-portal-luxury{top:150px !important;left:12px !important;right:12px !important;min-width:auto !important;width:calc(100vw - 24px)}}
 </style>
 
 @code {
     private List<PurchaseReturnListDto>? returns;
     private List<PurchaseReturnListDto> filtered = new();
     private ModulePermissionDto? permissions;
-    private string searchText = ""; private int filterStatus = 0;
+    private string searchText = "";
+    private int filterStatus = 0;
+    private int filterType = 0;
     private bool isExporting = false;
-    private string toast = ""; private bool toastOk = true;
+    private string toast = "";
+    private bool toastOk = true;
     private bool showAddMenu = false;
     private bool showDeleteDialog = false;
-    private PurchaseReturnListDto? deleteReturn; private string deleteMsg = "";
+    private PurchaseReturnListDto? deleteReturn;
+    private string deleteMsg = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -191,13 +218,18 @@ else
         if (permissions != null && permissions.CanView) await LoadData();
     }
 
-    private async Task LoadData() { returns = await RetService.GetReturnsListAsync(); Filter(); }
+    private async Task LoadData()
+    {
+        returns = await ReturnService.GetReturnsListAsync();
+        Filter();
+    }
 
     private void Filter()
     {
         if (returns == null) return;
         filtered = returns.Where(r =>
             (filterStatus == 0 || r.ReturnStatus == filterStatus) &&
+            (filterType == 0 || r.ReturnType == filterType) &&
             (string.IsNullOrEmpty(searchText) ||
              ArabicSearchHelper.Contains(r.ReturnNumber, searchText) ||
              ArabicSearchHelper.Contains(r.SupplierNameAr, searchText) ||
@@ -208,39 +240,69 @@ else
     private void ClearSearch() { searchText = ""; Filter(); }
     private void ToggleAddMenu() { showAddMenu = !showAddMenu; }
     private void CloseAddMenu() { showAddMenu = false; }
-    private void AddFromInvoice() { showAddMenu = false; Navigation.NavigateTo("/purchase-returns/new?source=invoice"); }
-    private void AddDirect() { showAddMenu = false; Navigation.NavigateTo("/purchase-returns/new?source=direct"); }
+
+    private void AddFromInvoice()
+    {
+        showAddMenu = false;
+        Navigation.NavigateTo("/purchase-returns/new?source=invoice");
+    }
+
+    private void AddDirect()
+    {
+        showAddMenu = false;
+        Navigation.NavigateTo("/purchase-returns/new?source=direct");
+    }
 
     private void ViewReturn(int id)
     {
         var ret = returns?.FirstOrDefault(r => r.ReturnID == id);
         if (ret != null && ret.ReturnStatus == 2 && permissions != null && permissions.CanApprove)
             Navigation.NavigateTo($"/purchase-returns/edit/{id}");
-        else Navigation.NavigateTo($"/purchase-returns/view/{id}");
+        else
+            Navigation.NavigateTo($"/purchase-returns/view/{id}");
     }
+
     private void EditReturn(int id) => Navigation.NavigateTo($"/purchase-returns/edit/{id}");
 
     private async Task PrintReturn(int id)
-    { try { var h = await RetService.GenerateReportHtmlAsync(id, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", h); } catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; } }
+    {
+        try
+        {
+            var html = await ReturnService.GenerateReportHtmlAsync(id, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+    }
 
     private async Task ExportExcel()
     {
-        if (!filtered.Any()) return; isExporting = true; StateHasChanged();
-        try { var b = await RetService.ExportToExcelAsync(filtered, UserSession.UserID);
-            await JS.InvokeVoidAsync("downloadFile", $"PurchaseReturns_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(b)); }
+        if (!filtered.Any()) return;
+        isExporting = true; StateHasChanged();
+        try
+        {
+            var bytes = await ReturnService.ExportToExcelAsync(filtered, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile",
+                $"PurchaseReturns_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
         finally { isExporting = false; }
     }
 
-    private void ShowDeleteDialog(PurchaseReturnListDto r) { deleteReturn = r; deleteMsg = ""; showDeleteDialog = true; }
+    private void ShowDeleteDialog(PurchaseReturnListDto ret)
+    { deleteReturn = ret; deleteMsg = ""; showDeleteDialog = true; }
     private void CloseDeleteDialog() { showDeleteDialog = false; }
+
     private async Task ConfirmDelete()
     {
         if (deleteReturn == null) return;
-        try { var res = await RetService.DeleteReturnAsync(deleteReturn.ReturnID, UserSession.UserID);
-            if (res.Success) { toast = res.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
-            else { deleteMsg = res.Message; } }
+        try
+        {
+            var result = await ReturnService.DeleteReturnAsync(deleteReturn.ReturnID, UserSession.UserID);
+            if (result.Success) { toast = result.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+            else { deleteMsg = result.Message; }
+        }
         catch (Exception ex) { deleteMsg = "خطأ: " + ex.Message; }
     }
 }

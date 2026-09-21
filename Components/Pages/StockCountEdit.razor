@@ -12,180 +12,88 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
-{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
 {
-    <div class="doc-page" dir="rtl">
-        <div class="doc-header">
-            <div class="doc-header-right">
-                <button class="btn-m btn-ghost" @onclick="GoBack">→ رجوع</button>
-                <div>
-                    <h2 class="doc-title">@pageTitle</h2>
-                    @if (!string.IsNullOrEmpty(header.CountNumber))
-                    {
-                        <div class="doc-num-wrap">
-                            <code class="doc-number">@header.CountNumber</code>
-                            <span class="status-chip" style="--sc:@InventoryService.GetCountStatusColor(header.CountStatus)">@InventoryService.GetCountStatusName(header.CountStatus)</span>
-                        </div>
-                    }
+    <div class="luxury-doc-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <button class="btn-luxury btn-back-luxury" @onclick="GoBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19 7-7-7-7"/></svg>رجوع</button>
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">@pageTitle</h2><div class="lh-meta">@if (!string.IsNullOrEmpty(header.CountNumber)){<code class="doc-num-luxury">@header.CountNumber</code><span class="status-badge-luxury" style="--sc:@InventoryService.GetCountStatusColor(header.CountStatus)">@InventoryService.GetCountStatusName(header.CountStatus)</span>}</div></div>
                 </div>
+                <div class="lh-actions"><div class="workflow-mini"><span class="wm-dot">رصيد</span><span class="wm-line"></span><span class="wm-dot">تحويل</span><span class="wm-line"></span><span class="wm-dot active">جرد</span><span class="wm-line"></span><span class="wm-dot">حركة</span></div></div>
             </div>
         </div>
 
-        @if (isLoading) { <div class="loading-st"><div class="loader"></div></div> }
+        @if (isLoading) { <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div> }
         else
         {
-            <div class="doc-section">
-                <div class="sec-head"><div class="sec-icon blue">📋</div><h3 class="sec-title">بيانات الجرد</h3></div>
-                <div class="form-grid c4">
-                    <div class="f-field"><label class="f-label">الرقم</label><input type="text" class="f-input" value="@(header.CountNumber ?? "تلقائي")" disabled /></div>
-                    <div class="f-field"><label class="f-label required">التاريخ</label><input type="date" class="f-input" @bind="header.CountDate" disabled="@isReadOnly" /></div>
-                    <div class="f-field"><label class="f-label required">المخزن</label>
-                        <select class="f-input" @bind="header.WarehouseID" disabled="@(isReadOnly || CountId > 0)">
-                            <option value="0">-- اختر --</option>
-                            @if (warehouses != null) { @foreach (var w in warehouses) { <option value="@w.Id">@w.Name</option> } }
-                        </select></div>
-                    <div class="f-field"><label class="f-label required">النوع</label>
-                        <select class="f-input" @bind="header.CountType" disabled="@(isReadOnly || CountId > 0)">
-                            <option value="1">جرد شامل</option><option value="2">جرد جزئي</option><option value="3">جرد عشوائي</option>
-                        </select></div>
+            <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">بيانات الجرد</h3></div>
+                <div class="form-grid-luxury c4">
+                    <div class="f-field-luxury"><label class="f-label-luxury">الرقم</label><input type="text" class="f-input-luxury readonly" value="@(header.CountNumber ?? "تلقائي")" disabled /></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.CountDate" disabled="@isReadOnly" /></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@(isReadOnly || CountId > 0)"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">النوع</label><select class="f-input-luxury" @bind="header.CountType" disabled="@(isReadOnly || CountId > 0)"><option value="1">جرد شامل</option><option value="2">جرد جزئي</option><option value="3">جرد عشوائي</option></select></div>
                     @if (header.CountType == 2)
                     {
-                        <div class="f-field"><label class="f-label">التصنيف</label>
-                            <select class="f-input" @bind="header.CategoryID" disabled="@(isReadOnly || CountId > 0)">
-                                <option value="0">الكل</option>
-                                @if (categories != null) { @foreach (var c in categories) { <option value="@c.Id">@c.Name</option> } }
-                            </select></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">التصنيف</label><select class="f-input-luxury" @bind="header.CategoryID" disabled="@(isReadOnly || CountId > 0)"><option value="0">الكل</option>@if (categories != null){@foreach (var c in categories){<option value="@c.Id">@c.Name</option>}}</select></div>
                     }
-                    <div class="f-field"><label class="f-label">القائم بالعد والجرد</label>
-                        <select class="f-input" @bind="header.CountedBy" disabled="@isReadOnly">
-                            <option value="0">--</option>
-                            @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
-                        </select></div>
-                    <div class="f-field"><label class="f-label">المشرف</label>
-                        <select class="f-input" @bind="header.SupervisorID" disabled="@isReadOnly">
-                            <option value="0">--</option>
-                            @if (employees != null) { @foreach (var e in employees) { <option value="@e.Id">@e.Name</option> } }
-                        </select></div>
-                    <div class="f-field"><label class="f-label">ملاحظات</label><input type="text" class="f-input" @bind="header.Notes" disabled="@isReadOnly" /></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury">القائم بالعد والجرد</label><select class="f-input-luxury" @bind="header.CountedBy" disabled="@isReadOnly"><option value="0">--</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury">المشرف</label><select class="f-input-luxury" @bind="header.SupervisorID" disabled="@isReadOnly"><option value="0">--</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="header.Notes" disabled="@isReadOnly" /></div>
                 </div>
             </div>
 
             @if (CountId > 0 && details.Any())
             {
-                <div class="doc-section">
-                    <div class="sec-head">
-                        <div class="sec-icon green">📦</div><h3 class="sec-title">أصناف الجرد</h3>
-                        <span class="sec-badge">@details.Count صنف | تم جرد @details.Count(d => d.CountedQty.HasValue)</span>
-                    </div>
-
-                    <div class="tbl-card"><table class="tbl">
-                        <thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th>
-                            <th class="tc">الدفتري</th>
-                            <th class="tc">الفعلي</th>
-                            <th class="tc">الفرق</th><th class="tl">قيمة الفرق</th>
-                            @if (header.CountStatus == 3 && permissions.CanApprove) { <th class="tc">اعتماد</th> }
-                        </tr></thead>
-                        <tbody>
-                            @{ int n = 0; }
-                            @foreach (var d in details)
-                            {
-                                n++;
-                                var variance = (d.CountedQty ?? 0) - d.SystemQty;
-                                <tr class="@(variance != 0 ? (variance > 0 ? "tr-surplus" : "tr-shortage") : "")">
-                                    <td class="td-n">@n</td>
-                                    <td><code class="code-tag">@d.ItemCode</code></td>
-                                    <td class="td-bold">@d.ItemNameAr</td>
-                                    <td>@d.UnitName</td>
-                                    <td class="tc num-cell">@d.SystemQty.ToString("#,##0.##")</td>
-                                    <td class="tc">
-                                        @if (!isReadOnly && header.CountStatus <= 2)
-                                        {
-                                            <input type="number" class="count-input" value="@d.CountedQty"
-                                                   @onchange="(e) => OnCountedQtyChanged(d.CountDetailID, e)" step="0.01" />
-                                        }
-                                        else
-                                        {
-                                            <span class="num-cell">@(d.CountedQty?.ToString("#,##0.##") ?? "—")</span>
-                                        }
-                                    </td>
-                                    <td class="tc num-cell">
-                                        @if (d.CountedQty.HasValue)
-                                        {
-                                            <strong class="@(variance > 0 ? "var-surplus" : variance < 0 ? "var-shortage" : "")">
-                                                @variance.ToString("+#,##0.##;-#,##0.##;0")
-                                            </strong>
-                                        }
-                                        else { <span>—</span> }
-                                    </td>
-                                    <td class="tl num-cell">@(d.CountedQty.HasValue ? d.VarianceValue.ToString("#,##0.00") : "—")</td>
-                                    @if (header.CountStatus == 3 && permissions.CanApprove)
-                                    {
-                                        <td class="tc">
-                                            @if (variance != 0)
-                                            { <input type="checkbox" checked="@d.AdjustmentApproved" @onchange="(e) => OnApprovalChanged(d.CountDetailID, e)" /> }
-                                        </td>
-                                    }
-                                </tr>
-                            }
-                        </tbody>
-                        <tfoot><tr class="total-row">
-                            <td colspan="6" class="tl"><strong>الإجمالي</strong></td>
-                            <td class="tc num-cell"><strong>@details.Where(d => d.CountedQty.HasValue).Sum(d => (d.CountedQty ?? 0) - d.SystemQty).ToString("+#,##0.##;-#,##0.##;0")</strong></td>
-                            <td class="tl num-cell"><strong>@details.Sum(d => d.VarianceValue).ToString("#,##0.00") ج.م</strong></td>
-                            @if (header.CountStatus == 3 && permissions.CanApprove) { <td></td> }
-                        </tr></tfoot>
-                    </table></div>
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">أصناف الجرد</h3><span class="sec-badge-luxury">@details.Count صنف | تم جرد @details.Count(d => d.CountedQty.HasValue)</span><span class="total-mini-luxury">فرق: @details.Sum(d=>d.VarianceValue).ToString("#,##0.00")</span></div>
+                    <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">الدفتري</th><th class="tc">الفعلي</th><th class="tc">الفرق</th><th class="tl">قيمة الفرق</th>@if (header.CountStatus == 3 && permissions.CanApprove){<th class="tc">اعتماد</th>}</tr></thead><tbody>@{int n=0;}@foreach (var d in details){n++;var variance=(d.CountedQty ?? 0)-d.SystemQty;<tr class="@(variance!=0?(variance>0?"row-surplus":"row-shortage"):"")"><td class="td-n">@n</td><td><code class="code-tag-luxury">@d.ItemCode</code></td><td class="td-bold">@d.ItemNameAr</td><td class="td-muted">@d.UnitName</td><td class="tc num-cell">@d.SystemQty.ToString("#,##0.##")</td><td class="tc">@if (!isReadOnly && header.CountStatus <= 2){<input type="number" class="count-input-luxury" value="@d.CountedQty" @onchange="(e) => OnCountedQtyChanged(d.CountDetailID, e)" step="0.01" />}else{<span class="num-cell">@(d.CountedQty?.ToString("#,##0.##") ?? "—")</span>}</td><td class="tc num-cell">@if (d.CountedQty.HasValue){<strong class="@(variance>0?"var-surplus":variance<0?"var-shortage":"")">@variance.ToString("+#,##0.##;-#,##0.##;0")</strong>}else{<span>—</span>}</td><td class="tl num-cell">@(d.CountedQty.HasValue ? d.VarianceValue.ToString("#,##0.00") : "—")</td>@if (header.CountStatus == 3 && permissions.CanApprove){<td class="tc">@if (variance != 0){<label class="chk-luxury"><input type="checkbox" checked="@d.AdjustmentApproved" @onchange="(e) => OnApprovalChanged(d.CountDetailID, e)" /><span class="chk-box"></span></label>}</td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="6" class="tl"><strong>الإجمالي</strong></td><td class="tc num-cell"><strong>@details.Where(d => d.CountedQty.HasValue).Sum(d => (d.CountedQty ?? 0) - d.SystemQty).ToString("+#,##0.##;-#,##0.##;0")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.VarianceValue).ToString("#,##0.00") ج.م</strong></td>@if (header.CountStatus == 3 && permissions.CanApprove){<td></td>}</tr></tfoot></table></div></div>
                 </div>
             }
 
-            <div class="doc-actions">
-                <div class="doc-actions-right">
-                    @if (isNewMode)
-                    {
-                        <button class="btn-m btn-primary" @onclick="CreateCount" disabled="@isSaving">
-                            @if (isSaving) { <div class="btn-spin"></div> } إنشاء وتحميل الأصناف
-                        </button>
-                    }
-                    else if (header.CountStatus <= 2 && !isViewMode)
-                    {
-                        <button class="btn-m btn-primary" @onclick="SaveCountedQties" disabled="@isSaving">
-                            @if (isSaving) { <div class="btn-spin"></div> } حفظ الكميات الفعلية
-                        </button>
-                    }
-                    else if (header.CountStatus == 3 && permissions.CanApprove && !isViewMode)
-                    {
-                        <button class="btn-m btn-success" @onclick="ApproveAdjustments" disabled="@isSaving">
-                            @if (isSaving) { <div class="btn-spin"></div> } ✅ اعتماد التسويات
-                        </button>
-                    }
-                </div>
-                <button class="btn-m btn-ghost" @onclick="GoBack">رجوع</button>
-            </div>
+            <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">
+                @if (isNewMode){<button class="btn-luxury btn-primary-luxury" @onclick="CreateCount" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}إنشاء وتحميل الأصناف</button>}
+                else if (header.CountStatus <= 2 && !isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="SaveCountedQties" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ الكميات الفعلية</button>}
+                else if (header.CountStatus == 3 && permissions.CanApprove && !isViewMode){<button class="btn-luxury btn-approve-quick" @onclick="ApproveAdjustments" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد التسويات</button>}
+            </div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
         }
     </div>
-    @if (!string.IsNullOrEmpty(toast)) { <div class="toast-wrap"><div class="toast @(toastOk ? "t-ok" : "t-err")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
+    @if (!string.IsNullOrEmpty(toast)) { <div class="toast-luxury"><div class="toast-card-luxury @(toastOk ? "success" : "error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div> }
 }
 
 <style>
-    .doc-page{display:flex;flex-direction:column;gap:18px;max-width:1200px}.doc-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.doc-header-right{display:flex;align-items:flex-start;gap:14px}.doc-title{font-weight:800;color:#0f172a;margin:0;font-size:1.2rem}.doc-num-wrap{display:flex;align-items:center;gap:10px;margin-top:6px}.doc-number{background:#f1f5f9;padding:4px 14px;border-radius:8px;font-size:.88rem;color:#2563eb;font-weight:700}.status-chip{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
-    .doc-section{background:white;border:1px solid #e2e8f0;border-radius:18px;padding:22px}.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}.sec-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem}.sec-icon.blue{background:#eff6ff}.sec-icon.green{background:#ecfdf5}.sec-title{font-weight:800;color:#0f172a;margin:0;font-size:.98rem}.sec-badge{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.78rem;font-weight:700}
-    .form-grid{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.f-field{display:flex;flex-direction:column;gap:5px}.f-label{font-size:.8rem;font-weight:700;color:#334155}.required::after{content:' *';color:#ef4444}.f-input{padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:.88rem;background:white;outline:none;width:100%}.f-input:focus{border-color:#2563eb}.f-input:disabled{background:#f8fafc;color:#64748b}
-    .tbl-card{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:900px}.tbl thead{background:#f8fafc}.tbl th{padding:11px 12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}
-    .tr-surplus{background:#ecfdf5!important}.tr-shortage{background:#fef2f2!important}
-    .tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#94a3b8}.td-bold{font-weight:700;color:#0f172a}.num-cell{font-family:monospace;font-weight:600}.code-tag{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.78rem;color:#2563eb;font-weight:600}.total-row{background:#f8fafc!important}.total-row td{border-top:2px solid #e2e8f0;padding:12px}
-    .count-input{width:100px;padding:6px 8px;border:1.5px solid #2563eb;border-radius:8px;font-size:.86rem;text-align:center;background:#eff6ff;font-weight:700}.count-input:focus{box-shadow:0 0 0 2px rgba(37,99,235,.2)}
-    .var-surplus{color:#059669}.var-shortage{color:#dc2626}
-    .doc-actions{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:white;border:1px solid #e2e8f0;border-radius:16px}.doc-actions-right{display:flex;gap:10px}
-    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-m:disabled{opacity:.6}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-success{background:linear-gradient(135deg,#059669,#10b981);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}.btn-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
-    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
-    @@keyframes spin{to{transform:rotate(360deg)}}@@media(max-width:768px){.c4{grid-template-columns:1fr}.doc-header{flex-direction:column}}
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-doc-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1300px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.15rem;font-weight:900;color:#F5E6C8;margin:0}.lh-meta{display:flex;gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-back-luxury{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#F5E6C8}.btn-approve-quick{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 3px 12px rgba(16,185,129,.25)}.btn-luxury svg{width:14px;height:14px}
+.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.doc-num-luxury{background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.25);color:var(--gold);padding:4px 10px;border-radius:8px;font-weight:800;font-size:.84rem}.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 18%,rgba(255,255,255,.08));color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,transparent)}.workflow-mini{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);padding:6px 12px;border-radius:999px}.wm-dot{font-size:.66rem;font-weight:700;color:#8B95A5}.wm-dot.active{color:var(--gold)}.wm-line{width:10px;height:1px;background:rgba(255,255,255,.15)}
+.doc-section-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:18px;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.04);overflow:hidden}.sec-head-luxury{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f1efe8;flex-wrap:wrap}.sec-icon-luxury{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}.sec-icon-luxury.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.sec-icon-luxury.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.sec-icon-luxury svg{width:18px;height:18px}.sec-title-luxury{font-weight:800;color:#0A0F1E;margin:0;font-size:.96rem}.sec-badge-luxury{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.74rem;font-weight:700}.total-mini-luxury{margin-right:auto;background:#fcfaf6;border:1px solid #e8e2d0;padding:4px 10px;border-radius:8px;font-weight:800;font-size:.8rem;color:#0A0F1E}
+.form-grid-luxury{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.f-field-luxury{display:flex;flex-direction:column;gap:5px}.f-label-luxury{font-size:.78rem;font-weight:700;color:#374151}.required::after{content:' *';color:#ef4444}.f-input-luxury{padding:9px 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;outline:none;transition:.2s;width:100%;font-family:'Tajawal'}.f-input-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.f-input-luxury.readonly,.f-input-luxury:disabled{background:#f8fafc;color:#9ca3af}
+.tbl-card-luxury{border:1px solid #e8e2d0;border-radius:14px;overflow:hidden}.tbl-luxury{width:100%;border-collapse:collapse;min-width:900px}.tbl-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.tbl-luxury th{padding:11px 12px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e2e2d0;white-space:nowrap}.tbl-luxury td{padding:10px 12px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6}.tbl-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.tbl-luxury .row-surplus{background:#ecfdf5 !important}.tbl-luxury .row-shortage{background:#fef2f2 !important}.tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#9ca3af}.td-bold{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af}.num-cell{font-family:monospace;font-weight:600}.code-tag-luxury{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.76rem;color:#2563eb;font-weight:600}.total-row-luxury{background:#fcfaf6 !important}.total-row-luxury td{border-top:2px solid #e2e2d0;padding:12px}
+.count-input-luxury{width:110px;padding:6px 10px;border:1.5px solid var(--gold);border-radius:8px;font-size:.86rem;text-align:center;background:#fcfaf6;font-weight:800;font-family:'Tajawal';outline:none;transition:.2s}.count-input-luxury:focus{border-color:var(--gold-dark);box-shadow:0 0 0 2px rgba(212,175,55,.15);background:#fff}
+.var-surplus{color:#059669}.var-shortage{color:#dc2626}
+.chk-luxury{position:relative;display:inline-flex;cursor:pointer}.chk-luxury input{opacity:0;position:absolute}.chk-box{width:20px;height:20px;border-radius:6px;border:1.5px solid #e8e2d0;background:#fff;display:inline-flex;align-items:center;justify-content:center;transition:.2s}.chk-luxury input:checked + .chk-box{background:var(--gold);border-color:var(--gold);box-shadow:0 2px 6px rgba(212,175,55,.25)}.chk-luxury input:checked + .chk-box::after{content:'✓';color:#fff;font-weight:800;font-size:.72rem}
+.doc-actions-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.doc-actions-right{display:flex;gap:10px}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}
+@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:768px){.c4{grid-template-columns:1fr}.lh-content{flex-direction:column;align-items:flex-start}.doc-actions-luxury{flex-direction:column;gap:10px}}
 </style>
 
 @code {
@@ -204,7 +112,6 @@ else
     private bool isReadOnly => isViewMode || header.CountStatus >= 4;
     private string pageTitle => isNewMode ? "جرد جديد" : isViewMode ? "عرض الجرد" : header.CountStatus == 3 ? "اعتماد الجرد" : "إدخال الجرد";
 
-    // تتبع التغييرات المحلية
     private Dictionary<int, decimal?> countedChanges = new();
     private HashSet<int> approvedIds = new();
 

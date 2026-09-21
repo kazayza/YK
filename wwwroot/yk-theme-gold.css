@@ -1,0 +1,147 @@
+/* ═══════════════════════════════════════════════════════════════
+   YK Coatings ERP — Gold & Black Premium Theme v2
+   Luxury Dark Sidebar + Gold Line Icons + Tajawal Font
+   ═══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap');
+
+:root {
+    /* Gold Palette */
+    --yk-gold:#D4AF37;
+    --yk-gold-light:#E8C86A;
+    --yk-gold-soft:#F5E6C8;
+    --yk-gold-dark:#9C7C2E;
+    --yk-gold-10:rgba(212,175,55,.10);
+    --yk-gold-15:rgba(212,175,55,.15);
+    --yk-gold-20:rgba(212,175,55,.20);
+    --yk-gold-glow:rgba(212,175,55,.25);
+
+    /* Black Luxury */
+    --yk-black:#070B14;
+    --yk-black2:#0A0F1E;
+    --yk-black3:#121A2E;
+    --yk-black4:#1A2540;
+
+    /* Primary - now Gold is primary */
+    --yk-primary: var(--yk-gold);
+    --yk-primary-dark: var(--yk-gold-dark);
+    --yk-primary-soft: var(--yk-gold-10);
+    --yk-primary-ring: rgba(212,175,55,.22);
+
+    --yk-bg:#f8f7f4;
+    --yk-surface:#ffffff;
+    --yk-text:#0A0F1E;
+    --yk-text-2:#475569;
+    --yk-text-3:#94a3b8;
+    --yk-border:#e8e2d0;
+    --yk-border-gold:rgba(212,175,55,.18);
+    --yk-radius:12px;
+    --yk-radius-lg:16px;
+    --yk-shadow:0 4px 16px rgba(0,0,0,.06);
+    --yk-shadow-lg:0 12px 32px rgba(0,0,0,.12);
+    --yk-transition:.25s cubic-bezier(.4,0,.2,1);
+}
+
+/* Base */
+body{
+    font-family:'Tajawal',sans-serif !important;
+    background:var(--yk-bg) !important;
+    color:var(--yk-text);
+    -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,h5,h6{font-family:'Tajawal',sans-serif;font-weight:800}
+::selection{background:var(--yk-gold);color:var(--yk-black2)}
+
+/* Buttons - Gold Primary */
+.btn-primary,.btn-primary:hover,.btn-primary:focus{
+    color:var(--yk-black2) !important;
+    background:linear-gradient(135deg,var(--yk-gold) 0%,var(--yk-gold-dark) 100%) !important;
+    border:1px solid var(--yk-gold) !important;
+    box-shadow:0 2px 10px rgba(212,175,55,.25) !important;
+    font-weight:800;
+}
+.btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 4px 16px rgba(212,175,55,.35) !important}
+.btn-accent{background:linear-gradient(135deg,var(--yk-black2),var(--yk-black3));color:var(--yk-gold);border:1px solid var(--yk-gold-border)}
+.btn-accent:hover{color:var(--yk-gold-light);border-color:var(--yk-gold)}
+
+/* Cards - Gold top border on hover */
+.card{
+    border:1px solid var(--yk-border);
+    border-radius:16px;
+    box-shadow:0 2px 12px rgba(0,0,0,.04);
+    background:var(--yk-surface);
+    transition:all var(--yk-transition);
+    overflow:hidden;
+    position:relative;
+}
+.card::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--yk-gold),var(--yk-gold-light));
+    opacity:0;transition:opacity var(--yk-transition);
+}
+.card:hover{box-shadow:0 8px 32px rgba(0,0,0,.08);border-color:var(--yk-gold-border);transform:translateY(-2px)}
+.card:hover::before{opacity:1}
+
+/* Tables */
+.table thead th{
+    background:#f8f6f0;
+    color:var(--yk-black2);
+    font-weight:800;
+    border-bottom:2px solid var(--yk-gold-border);
+}
+.table-hover tbody tr:hover{background:var(--yk-gold-10)}
+
+/* Forms */
+.form-control:focus,.form-select:focus{
+    border-color:var(--yk-gold) !important;
+    box-shadow:0 0 0 .2rem var(--yk-primary-ring) !important;
+}
+.form-check-input:checked{background-color:var(--yk-gold);border-color:var(--yk-gold)}
+
+/* Badges */
+.badge-soft-primary{background:var(--yk-gold-10);color:var(--yk-gold-dark);border:1px solid var(--yk-gold-border)}
+
+/* Scrollbar Gold */
+::-webkit-scrollbar-thumb{background:rgba(212,175,55,.25);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:rgba(212,175,55,.4)}
+
+/* Boot Screen - Gold Black */
+.app-boot{
+    background:linear-gradient(135deg,#070B14 0%,#0A0F1E 50%,#121A2E 100%) !important;
+}
+.app-boot::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--yk-gold),transparent);
+}
+.app-boot-logo{filter:drop-shadow(0 0 20px rgba(212,175,55,.3))}
+.app-boot-spinner{border-color:rgba(255,255,255,.1) !important;border-top-color:var(--yk-gold) !important}
+.app-boot-text{color:var(--yk-gold-soft) !important}
+
+/* ===== LUXURY ANIMATION SYSTEM - REUSABLE FOR ALL SCREENS ===== */
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes goldShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes pulseGold{0%,100%{box-shadow:0 0 0 3px rgba(212,175,55,.15)}50%{box-shadow:0 0 0 6px rgba(212,175,55,.08)}}
+@keyframes floatGold{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+.luxury-animate>*{animation:fadeUp .5s cubic-bezier(.4,0,.2,1) both}
+.luxury-animate>*:nth-child(1){animation-delay:.05s}
+.luxury-animate>*:nth-child(2){animation-delay:.1s}
+.luxury-animate>*:nth-child(3){animation-delay:.15s}
+.luxury-animate>*:nth-child(4){animation-delay:.2s}
+.luxury-animate>*:nth-child(5){animation-delay:.25s}
+.luxury-animate>*:nth-child(6){animation-delay:.3s}
+.luxury-animate>*:nth-child(7){animation-delay:.35s}
+.luxury-animate>*:nth-child(8){animation-delay:.4s}
+.luxury-fade{animation:fadeUp .5s ease both}
+.luxury-fade-in{animation:fadeIn .4s ease both}
+.luxury-hover{transition:all .3s cubic-bezier(.4,0,.2,1)}
+.luxury-hover:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.08)}
+.gold-glow{box-shadow:0 0 0 3px rgba(212,175,55,.08),0 4px 12px rgba(212,175,55,.15)}
+.gold-glow:hover{box-shadow:0 0 0 4px rgba(212,175,55,.15),0 6px 20px rgba(212,175,55,.25)}
+
+/* Print */
+@media print{
+    .app-sidebar,.app-topbar,.app-footer,.mobile-overlay,.no-print,.notif-wrap{display:none !important}
+}

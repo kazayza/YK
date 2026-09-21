@@ -1,0 +1,401 @@
+@page "/sales-invoices/new"
+@page "/sales-invoices/edit/{InvoiceId:int}"
+@page "/sales-invoices/view/{InvoiceId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesInvoiceService InvService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissions == null || !permissions.CanView)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
+else
+{
+    <div class="luxury-doc-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <button class="btn-luxury btn-back-luxury" @onclick="GoBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19 7-7-7-7"/></svg>رجوع</button>
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">@pageTitle</h2><div class="lh-meta">@if (!string.IsNullOrEmpty(header.InvoiceNumber)){<code class="doc-num-luxury">@header.InvoiceNumber</code><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetStatusColor(header.InvoiceStatus)">@SalesInvoiceService.GetStatusName(header.InvoiceStatus)</span><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetPaymentStatusColor(header.PaymentStatus)">@SalesInvoiceService.GetPaymentStatusName(header.PaymentStatus)</span><span class="tax-badge-luxury @(header.IsTaxable?"yes":"no")">@(header.IsTaxable ? $"مع ضريبة {header.TaxRate:#,##0}%" : "بدون ضريبة")</span>}</div></div>
+                </div>
+                <div class="lh-actions">
+                    <div class="workflow-mini"><span class="wm-dot">عرض</span><span class="wm-line"></span><span class="wm-dot">أمر</span><span class="wm-line"></span><span class="wm-dot">تسليم</span><span class="wm-line"></span><span class="wm-dot active">فاتورة</span><span class="wm-line"></span><span class="wm-dot">مرتجع</span></div>
+                    @if (permissions.CanPrint && InvoiceId > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="PrintDoc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
+                </div>
+            </div>
+        </div>
+
+        @if (isApprovalMode)
+        {
+            <div class="approval-bar-luxury"><div class="ml-gold-line green"></div><div class="appr-left"><div class="appr-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><div class="appr-title">فاتورة مبيعات بانتظار اعتمادك @(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")</div><div class="appr-sub">سيتم خصم المخزون + تحديث رصيد العميل + إنشاء القيد المحاسبي @(header.IsTaxable ? "مع ضريبة" : "معفاة")</div></div></div><div class="appr-actions"><button class="btn-luxury btn-approve-quick" @onclick="ExecuteApprove" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد</button><button class="btn-luxury btn-reject-luxury" @onclick="DoShowReject" disabled="@isSaving">رفض</button></div></div>
+        }
+
+        @if (isLoading){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else
+        {
+            @if (isNewMode && !isSourceLocked)
+            {
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">مصدر الفاتورة</h3></div>
+                    <div class="source-cards-luxury">
+                        <div class="source-card-luxury @(header.InvoiceSource == 1 ? "active" : "")" @onclick="SelectDeliverySource"><div class="source-card-icon-luxury" style="background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="source-card-title-luxury">من إذن تسليم</div><div class="source-card-desc-luxury">فاتورة بناءً على إذن تسليم معتمد</div><div class="source-check-luxury">@if(header.InvoiceSource==1){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                        <div class="source-card-luxury @(header.InvoiceSource == 2 ? "active" : "")" @onclick="SelectOrderSource"><div class="source-card-icon-luxury" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="source-card-title-luxury">من أمر بيع</div><div class="source-card-desc-luxury">فاتورة بناءً على أمر بيع معتمد</div><div class="source-check-luxury">@if(header.InvoiceSource==2){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                        <div class="source-card-luxury @(header.InvoiceSource == 3 ? "active" : "")" @onclick="SelectDirectSource"><div class="source-card-icon-luxury" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.18)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></div><div class="source-card-title-luxury">فاتورة مباشرة ⭐</div><div class="source-card-desc-luxury">بدون أمر/تسليم — مع/بدون ضريبة اختياري — الأهم</div><div class="source-check-luxury">@if(header.InvoiceSource==3){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                    </div>
+                </div>
+            }
+
+            @if (header.InvoiceSource > 0 || !isNewMode)
+            {
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">بيانات الفاتورة</h3>
+                    <label class="tax-toggle-luxury"><input type="checkbox" @bind="header.IsTaxable" disabled="@isReadOnly" /><span class="tax-slider"></span><span class="tax-label">@(header.IsTaxable ? $"مع ضريبة {header.TaxRate:#,##0}%" : "بدون ضريبة - معفاة")</span></label>
+                </div>
+                    <div class="form-grid-luxury c4">
+                        <div class="f-field-luxury"><label class="f-label-luxury">رقم الفاتورة</label><input type="text" class="f-input-luxury readonly" value="@(header.InvoiceNumber ?? "تلقائي")" disabled /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.InvoiceDate" disabled="@isReadOnly" /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury required">العميل</label><SearchableSelect Items="@customersSearchable" @bind-SelectedId="header.CustomerID" Placeholder="اختر العميل..." IsDisabled="@isReadOnly" OnSelected="OnCustomerSelected" /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@isReadOnly"><option value="">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">شروط الدفع</label><select class="f-input-luxury" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (paymentTerms != null){@foreach (var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">العملة</label><select class="f-input-luxury" @bind="header.CurrencyID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (currencies != null){@foreach (var c in currencies){<option value="@c.Id">@c.Name</option>}}</select></div>
+                        @if (header.IsTaxable)
+                        {
+                            <div class="f-field-luxury"><label class="f-label-luxury">نسبة الضريبة %</label><input type="number" class="f-input-luxury" @bind="header.TaxRate" step="0.01" disabled="@isReadOnly" /></div>
+                        }
+                        <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات..." /></div>
+                    </div>
+                    @if (header.InvoiceStatus == 1 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="rejection-box-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><strong>سبب الرفض السابق:</strong> @header.RejectionReason</div>}
+                </div>
+            }
+
+            @if ((header.InvoiceSource > 0 || !isNewMode) && (InvoiceId > 0 || isSourceLocked))
+            {
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">أصناف الفاتورة</h3><span class="sec-badge-luxury">@details.Count صنف</span><span class="total-mini-luxury">@details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00") ج.م</span>
+                    @if (!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury btn-sm-luxury" style="margin-right:auto;" @onclick="ShowAddLine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}
+                </div>
+                    @if (!details.Any() && !showLineForm){<div class="empty-lines-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><p>لا توجد أصناف — أضف صنف للفاتورة @(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")</p></div>}
+                    else
+                    {
+                        <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">الكمية</th><th class="tl">السعر</th><th class="tc">خصم%</th><th class="tc">ضريبة%</th><th class="tl">الإجمالي</th>@if (!isReadOnly && !isApprovalMode){<th class="tc">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach (var line in details){n++;<tr><td class="td-n">@n</td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="tc">@line.Quantity.ToString("#,##0.##")</td><td class="tl num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="tc">@line.DiscountPercent.ToString("#,##0.##")</td><td class="tc">@(header.IsTaxable ? line.TaxRate.ToString("#,##0.##") : "—")</td><td class="tl num-cell"><strong>@line.LineTotalWithTax.ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td class="tc"><div class="line-actions-luxury">@if (permissions.CanDelete){<button class="act-btn-luxury del" @onclick="() => DeleteLine(line.InvoiceDetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="8" class="tl"><strong>الإجمالي @(header.IsTaxable ? "شامل الضريبة" : "بدون ضريبة")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalWithTax).ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td></td>}</tr></tfoot></table></div></div>
+                    }
+
+                    @if (showLineForm)
+                    {
+                        <div class="line-form-luxury"><div class="ml-gold-line"></div><div class="line-form-head-luxury"><h4>إضافة صنف @(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")</h4><button class="btn-close-x-luxury" @onclick="CloseLineForm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+                            <div class="form-grid-luxury c3">
+                                <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@saleItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة</label><select class="f-input-luxury" @bind="editLine.UnitID"><option value="0">-- اختر --</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury">المخزن</label><select class="f-input-luxury" @bind="editLine.WarehouseID"><option value="">--</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="editLine.Quantity" step="0.01" /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury required">سعر الوحدة</label><input type="number" class="f-input-luxury" @bind="editLine.UnitPrice" step="0.01" /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury">خصم %</label><input type="number" class="f-input-luxury" @bind="editLine.DiscountPercent" step="0.01" /></div>
+                                @if (header.IsTaxable)
+                                {
+                                    <div class="f-field-luxury"><label class="f-label-luxury">ضريبة %</label><input type="number" class="f-input-luxury" @bind="editLine.TaxRate" step="0.01" /></div>
+                                }
+                            </div>
+                            <div class="line-calc-bar-luxury"><span>قبل الضريبة: <strong>@editLine.LineTotal.ToString("#,##0.00")</strong></span>@if(header.IsTaxable){<span>الضريبة: <strong>@editLine.TaxAmount.ToString("#,##0.00")</strong></span>}<span>الإجمالي: <strong>@editLine.LineTotalWithTax.ToString("#,##0.00")</strong></span><span class="tax-badge-luxury @(header.IsTaxable?"yes":"no")">@(header.IsTaxable ? "مع ضريبة" : "معفاة")</span></div>
+                            @if (!string.IsNullOrEmpty(lineMsg)){<div class="form-msg-luxury @(lineMsgOk?"ok":"err")">@lineMsg</div>}
+                            <div class="line-form-btns-luxury"><button class="btn-luxury btn-primary-luxury" @onclick="SaveLine" disabled="@isSavingLine">@if(isSavingLine){<div class="btn-spinner-sm"></div>}إضافة</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseLineForm">إلغاء</button></div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!isReadOnly && !isApprovalMode && InvoiceId > 0 && details.Any())
+            {
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><h3 class="sec-title-luxury">التكاليف الإضافية</h3></div>
+                    <div class="form-grid-luxury c3"><div class="f-field-luxury"><label class="f-label-luxury">خصم عام %</label><input type="number" class="f-input-luxury" @bind="header.DiscountPercent" step="0.01" /></div><div class="f-field-luxury"><label class="f-label-luxury">تكلفة الشحن</label><input type="number" class="f-input-luxury" @bind="header.ShippingCost" step="0.01" /></div><div class="f-field-luxury"><label class="f-label-luxury">تكاليف أخرى</label><input type="number" class="f-input-luxury" @bind="header.OtherCosts" step="0.01" /></div></div>
+                </div>
+            }
+
+            @if (InvoiceId > 0 && details.Any())
+            {
+                <div class="totals-bar-luxury"><div class="ml-gold-line"></div><div class="total-item-luxury"><span class="total-label-luxury">الإجمالي الفرعي</span><span class="total-value-luxury">@header.SubTotal.ToString("#,##0.00")</span></div>@if (header.DiscountAmount > 0){<div class="total-item-luxury"><span class="total-label-luxury">الخصم</span><span class="total-value-luxury t-discount-luxury">- @header.DiscountAmount.ToString("#,##0.00")</span></div>}<div class="total-item-luxury"><span class="total-label-luxury">@(header.IsTaxable ? $"الضريبة {header.TaxRate:#,##0}%" : "الضريبة")</span><span class="total-value-luxury">@(header.IsTaxable ? header.TaxAmount.ToString("#,##0.00") : "معفاة")</span></div><div class="total-item-luxury total-grand-luxury"><span class="total-label-luxury">الإجمالي @(header.IsTaxable ? "شامل" : "بدون ضريبة")</span><span class="total-value-luxury">@header.TotalAmount.ToString("#,##0.00") @(header.CurrencySymbol ?? "ج.م")</span></div>@if (header.PaidAmount > 0){<div class="total-item-luxury"><span class="total-label-luxury">المدفوع</span><span class="total-value-luxury">@header.PaidAmount.ToString("#,##0.00")</span></div>}@if (header.RemainingAmount > 0){<div class="total-item-luxury"><span class="total-label-luxury">المتبقي</span><span class="total-value-luxury" style="color:#dc2626">@header.RemainingAmount.ToString("#,##0.00")</span></div>}</div>
+            }
+
+            @if (!isViewMode && !isApprovalMode)
+            {
+                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly){<button class="btn-luxury btn-primary-luxury" @onclick="SaveInvoice" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ الفاتورة" : "حفظ التعديلات")</button>@if (InvoiceId > 0 && header.InvoiceStatus == 1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>إرسال للاعتماد — قيد أوتوماتيك @(header.IsTaxable ? "مع ضريبة" : "بدون")</button>}}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
+            }
+        }
+    </div>
+
+    @if (showRejectDialog)
+    {
+        <div class="modal-overlay-luxury" @onclick="() => showRejectDialog = false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>رفض الفاتورة</h4><p>أدخل سبب الرفض:</p><textarea class="f-input-luxury" rows="3" @bind="rejectReason" placeholder="سبب الرفض..."></textarea>@if (!string.IsNullOrEmpty(rejectMsg)){<div class="form-msg-luxury err">@rejectMsg</div>}<div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog = false">إلغاء</button></div></div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-doc-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1300px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.15rem;font-weight:900;color:#F5E6C8;margin:0}.lh-meta{display:flex;gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-primary-luxury:hover{transform:translateY(-1px)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-back-luxury{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#F5E6C8}.btn-back-luxury:hover{background:rgba(255,255,255,.12)}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-warning-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}.btn-approve-quick{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 4px 12px rgba(16,185,129,.25)}.btn-reject-luxury{background:#fff;border:1.5px solid #fecaca;color:#dc2626}.btn-luxury svg{width:14px;height:14px}.btn-sm-luxury{padding:7px 14px;font-size:.78rem}
+.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.doc-num-luxury{background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.25);color:var(--gold);padding:4px 10px;border-radius:8px;font-weight:800;font-size:.84rem}.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 18%,rgba(255,255,255,.08));color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,transparent)}.workflow-mini{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);padding:6px 12px;border-radius:999px}.wm-dot{font-size:.66rem;font-weight:700;color:#8B95A5}.wm-dot.active{color:var(--gold)}.wm-dot.done{color:#10b981}.wm-line{width:10px;height:1px;background:rgba(255,255,255,.15)}.wm-line.done{background:#10b981}
+.tax-badge-luxury{display:inline-block;padding:3px 10px;border-radius:6px;font-size:.68rem;font-weight:800}.tax-badge-luxury.yes{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.tax-badge-luxury.no{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+.tax-toggle-luxury{margin-right:auto;display:flex;align-items:center;gap:10px;background:#fcfaf6;border:1px solid #e8e2d0;padding:6px 14px;border-radius:999px;cursor:pointer;transition:.2s}.tax-toggle-luxury:hover{border-color:var(--gold)}.tax-toggle-luxury input{width:0;height:0;opacity:0;position:absolute}.tax-slider{width:36px;height:20px;background:#e5e7eb;border-radius:999px;position:relative;transition:.2s}.tax-slider::after{content:'';position:absolute;top:2px;right:2px;width:16px;height:16px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.2s}.tax-toggle-luxury input:checked + .tax-slider{background:var(--gold)}.tax-toggle-luxury input:checked + .tax-slider::after{transform:translateX(-16px)}.tax-label{font-size:.78rem;font-weight:700;color:#374151}
+.approval-bar-luxury{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:16px 20px;overflow:hidden;flex-wrap:wrap}.appr-left{display:flex;align-items:center;gap:12px}.appr-icon{width:44px;height:44px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.appr-icon svg{width:22px;height:22px}.appr-title{font-weight:800;color:#065f46;font-size:.9rem}.appr-sub{font-size:.76rem;color:#6b7280;margin-top:2px}.appr-actions{display:flex;gap:8px;flex-wrap:wrap}
+.doc-section-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:18px;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.04);overflow:hidden}.sec-head-luxury{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f1efe8;flex-wrap:wrap}.sec-icon-luxury{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}.sec-icon-luxury.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.sec-icon-luxury.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.sec-icon-luxury.purple{background:#f5f3ff;color:#7c3aed;border:1px solid #e9d5ff}.sec-icon-luxury.orange{background:#fff7ed;color:#ea580c;border:1px solid #fed7aa}.sec-icon-luxury svg{width:18px;height:18px}.sec-title-luxury{font-weight:800;color:#0A0F1E;margin:0;font-size:.96rem}.sec-badge-luxury{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.74rem;font-weight:700}.total-mini-luxury{margin-right:auto;background:#fcfaf6;border:1px solid #e8e2d0;padding:4px 10px;border-radius:8px;font-weight:800;font-size:.8rem;color:#0A0F1E}
+.source-cards-luxury{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.source-card-luxury{position:relative;padding:20px;border:2px solid #e8e2d0;border-radius:16px;cursor:pointer;transition:.2s;text-align:center;background:#fff}.source-card-luxury:hover{border-color:var(--gold);background:#fcfaf6;transform:translateY(-1px)}.source-card-luxury.active{border-color:var(--gold);background:linear-gradient(135deg,#fcfaf6,#fff);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.source-card-icon-luxury{width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}.source-card-icon-luxury svg{width:22px;height:22px}.source-card-title-luxury{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}.source-card-desc-luxury{font-size:.76rem;color:#8B95A5}.source-check-luxury{position:absolute;top:12px;left:12px;width:24px;height:24px;border-radius:50%;background:var(--gold);color:#fff;display:flex;align-items:center;justify-content:center}.source-check-luxury svg{width:14px;height:14px}
+.form-grid-luxury{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c2{grid-template-columns:repeat(2,1fr)}.f-field-luxury{display:flex;flex-direction:column;gap:5px}.f-label-luxury{font-size:.78rem;font-weight:700;color:#374151}.required::after{content:' *';color:#ef4444}.f-input-luxury{padding:9px 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;outline:none;transition:.2s;width:100%;font-family:'Tajawal'}.f-input-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.f-input-luxury.readonly,.f-input-luxury:disabled{background:#f8fafc;color:#9ca3af}
+.rejection-box-luxury{display:flex;align-items:center;gap:8px;margin-top:14px;padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;color:#dc2626;font-size:.84rem}.rejection-box-luxury svg{width:18px;height:18px;flex-shrink:0}
+.tbl-card-luxury{border:1px solid #e8e2d0;border-radius:14px;overflow:hidden}.tbl-luxury{width:100%;border-collapse:collapse;min-width:900px}.tbl-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.tbl-luxury th{padding:11px 12px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e2e2d0;white-space:nowrap}.tbl-luxury td{padding:10px 12px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6}.tbl-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#9ca3af;font-size:.78rem}.td-bold{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}.num-cell{font-family:monospace;font-weight:600}.code-tag-luxury{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.76rem;color:#2563eb;font-weight:600}.total-row-luxury{background:#fcfaf6 !important}.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px}
+.empty-lines-luxury{text-align:center;padding:36px 20px;color:#9ca3af}.empty-icon-luxury{width:52px;height:52px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:26px;height:26px}
+.line-actions-luxury{display:flex;gap:4px;justify-content:center}.act-btn-luxury{width:28px;height:28px;border-radius:8px;border:1.5px solid;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s}.act-btn-luxury.del{color:#ef4444;border-color:#fecaca}.act-btn-luxury.del:hover{background:#fef2f2}.act-btn-luxury svg{width:13px;height:13px}
+.line-form-luxury{position:relative;margin-top:16px;padding:20px;background:#fcfaf6;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.line-form-head-luxury{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.line-form-head-luxury h4{font-weight:800;color:#0A0F1E;margin:0}.btn-close-x-luxury{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x-luxury svg{width:12px;height:12px}
+.line-form-btns-luxury{display:flex;gap:8px;margin-top:14px}.line-calc-bar-luxury{display:flex;gap:20px;padding:10px 14px;background:#fff;border:1px solid #e8e2d0;border-radius:10px;margin-top:12px;font-size:.84rem;color:#475569;flex-wrap:wrap;align-items:center}.line-calc-bar-luxury strong{color:#0A0F1E;font-family:monospace}
+.form-msg-luxury{padding:10px 14px;border-radius:10px;font-size:.82rem;font-weight:600;margin-top:10px}.form-msg-luxury.ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.form-msg-luxury.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.doc-actions-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.doc-actions-right{display:flex;gap:10px}
+.totals-bar-luxury{position:relative;display:flex;justify-content:flex-end;gap:16px;flex-wrap:wrap;padding:18px 22px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.total-item-luxury{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:100px}.total-label-luxury{font-size:.72rem;color:#8B95A5;font-weight:600}.total-value-luxury{font-size:1rem;font-weight:800;color:#0A0F1E;font-family:monospace}.t-discount-luxury{color:#ef4444}.total-grand-luxury{padding:8px 16px;background:linear-gradient(135deg,var(--black),var(--black2));border-radius:12px;border:1px solid var(--border-gold)}.total-grand-luxury .total-label-luxury{color:#8B95A5}.total-grand-luxury .total-value-luxury{color:var(--gold);font-size:1.1rem}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:440px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);border:1px solid #e8e2d0;text-align:center;padding:28px 24px;animation:modalIn .3s ease}.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:center}.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin-bottom:12px}.delete-icon-luxury svg{width:32px;height:32px}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}.ml-gold-line.green{background:linear-gradient(90deg,transparent,#10b981,#059669,transparent)}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:768px){.c4,.c3{grid-template-columns:1fr}.f-field-luxury.c2{grid-column:span 1}.lh-content{flex-direction:column;align-items:flex-start}.source-cards-luxury{grid-template-columns:1fr}.doc-actions-luxury{flex-direction:column;gap:10px}.totals-bar-luxury{flex-direction:column;align-items:stretch}.total-item-luxury{flex-direction:row;justify-content:space-between}}
+</style>
+
+@code {
+    [Parameter] public int InvoiceId { get; set; }
+
+    private SalesInvoiceHeaderDto header = new() { InvoiceDate = DateTime.Today, ExchangeRate = 1, IsTaxable = true, TaxRate = 14, InvoiceSource = 3 };
+    private List<SalesInvoiceDetailDto> details = new();
+    private ModulePermissionDto? permissions;
+
+    private List<LookupDto>? paymentTerms, currencies, units, warehouses;
+    private List<SearchableItem>? customersSearchable, saleItems;
+
+    private bool isLoading = true, isSaving = false;
+    private string toast = ""; private bool toastOk = true;
+
+    private bool showLineForm = false;
+    private SalesInvoiceDetailEditDto editLine = new() { IsTaxable = true, TaxRate = 14 };
+    private bool isSavingLine = false;
+    private string lineMsg = ""; private bool lineMsgOk = true;
+
+    private bool showRejectDialog = false;
+    private string rejectReason = "", rejectMsg = "";
+
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => InvoiceId == 0;
+    private bool isApprovalMode => !isNewMode && !isViewMode && header.InvoiceStatus == 2 && (permissions?.CanApprove ?? false);
+    private bool isSourceLocked = false;
+    private bool isReadOnly
+    {
+        get
+        {
+            if (isViewMode) return true;
+            if (isNewMode) return false;
+            return header.InvoiceStatus != 1;
+        }
+    }
+    private string pageTitle => isNewMode ? "فاتورة مبيعات جديدة" : isViewMode ? "عرض فاتورة مبيعات" : isApprovalMode ? "اعتماد فاتورة مبيعات" : "تعديل فاتورة مبيعات";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_SINV");
+            if (permissions == null || !permissions.CanView) return;
+            await LoadLookups();
+            if (InvoiceId > 0) await LoadInvoiceData();
+            else
+            {
+                var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                var source = query["source"];
+                if (source == "delivery") header.InvoiceSource = 1;
+                else if (source == "order") header.InvoiceSource = 2;
+                else { header.InvoiceSource = 3; isSourceLocked = true; }
+            }
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private async Task LoadLookups()
+    {
+        paymentTerms = await LookupService.GetPaymentTermsAsync();
+        currencies = await LookupService.GetCurrenciesAsync();
+        units = await LookupService.GetUnitsAsync();
+        warehouses = await LookupService.GetWarehousesAsync();
+        customersSearchable = await LookupService.GetCustomersSearchableAsync();
+        saleItems = await LookupService.GetItemsForSaleSearchableAsync();
+    }
+
+    private async Task LoadInvoiceData()
+    {
+        var loaded = await InvService.GetInvoiceByIdAsync(InvoiceId);
+        if (loaded != null) { header = loaded; details = await InvService.GetInvoiceDetailsAsync(InvoiceId); isSourceLocked = true; }
+        else { toast = "الفاتورة غير موجودة"; toastOk = false; }
+    }
+
+    private void SelectDeliverySource() { header.InvoiceSource = 1; isSourceLocked = false; }
+    private void SelectOrderSource() { header.InvoiceSource = 2; isSourceLocked = false; }
+    private void SelectDirectSource() { header.InvoiceSource = 3; isSourceLocked = true; }
+
+    private async Task OnCustomerSelected(SearchableItem? item)
+    {
+        if (item == null) return;
+        try
+        {
+            var info = await LookupService.GetCustomerQuickInfoAsync(item.Id);
+            if (info != null)
+            {
+                if (info.PaymentTermID.HasValue) header.PaymentTermID = info.PaymentTermID;
+                if (info.CurrencyID.HasValue) header.CurrencyID = info.CurrencyID;
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task OnItemSelected(SearchableItem? item)
+    {
+        if (item == null) return;
+        editLine.ItemID = item.Id;
+        editLine.IsTaxable = header.IsTaxable;
+        editLine.TaxRate = header.TaxRate;
+        try
+        {
+            var info = await LookupService.GetItemQuickInfoAsync(item.Id);
+            if (info != null)
+            {
+                if (info.UnitID > 0) editLine.UnitID = info.UnitID;
+                if (info.SalesPrice > 0) editLine.UnitPrice = info.SalesPrice;
+                else if (info.EstimatedPrice > 0) editLine.UnitPrice = info.EstimatedPrice;
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task SaveInvoice()
+    {
+        if (header.CustomerID <= 0) { toast = "اختر العميل"; toastOk = false; StateHasChanged(); return; }
+        isSaving = true; StateHasChanged();
+        try
+        {
+            if (isNewMode)
+            {
+                header.InvoiceNumber = await InvService.GenerateInvoiceNumberAsync();
+                header.InvoiceStatus = 1;
+                var newId = await InvService.InsertInvoiceAsync(header, UserSession.UserID);
+                InvoiceId = newId; header.InvoiceID = newId;
+                toast = $"تم الإنشاء: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")} ✅";
+                toastOk = true; isSourceLocked = true;
+                details = await InvService.GetInvoiceDetailsAsync(newId);
+                header = await InvService.GetInvoiceByIdAsync(newId) ?? header;
+                Navigation.NavigateTo($"/sales-invoices/edit/{newId}", forceLoad: false);
+            }
+            else
+            {
+                await InvService.UpdateInvoiceAsync(header, UserSession.UserID);
+                header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
+                details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
+                toast = "تم الحفظ ✅"; toastOk = true;
+            }
+        }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private async Task SubmitForApproval()
+    {
+        if (!details.Any()) { toast = "أضف أصناف أولاً"; toastOk = false; StateHasChanged(); return; }
+        isSaving = true; StateHasChanged();
+        try { await InvService.SubmitForApprovalAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID); header.InvoiceStatus = 2; toast = "تم الإرسال للاعتماد — سيتم إنشاء القيد الأوتوماتيك عند الاعتماد ✅"; toastOk = true; }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private async Task ExecuteApprove()
+    {
+        try { var c = await JS.InvokeAsync<bool>("confirm", $"هل تريد اعتماد فاتورة المبيعات؟\n\n• {(header.IsTaxable ? $"مع ضريبة {header.TaxRate}%" : "بدون ضريبة - معفاة")}\n• سيتم خصم المخزون\n• تحديث رصيد العميل\n• إنشاء القيد المحاسبي الأوتوماتيك"); if (!c) return; } catch { return; }
+        isSaving = true; toast = ""; StateHasChanged();
+        try
+        {
+            await InvService.ApproveAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
+            toast = "تم اعتماد الفاتورة + خصم مخزون + قيد أوتوماتيك ✅"; toastOk = true; isSaving = false; StateHasChanged();
+            await Task.Delay(2000); Navigation.NavigateTo("/sales-invoices");
+        }
+        catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
+    }
+
+    private void DoShowReject() { rejectReason = ""; rejectMsg = ""; showRejectDialog = true; }
+    private async Task ConfirmReject()
+    {
+        if (string.IsNullOrWhiteSpace(rejectReason)) { rejectMsg = "أدخل سبب الرفض"; return; }
+        try
+        {
+            await InvService.RejectAsync(InvoiceId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header.InvoiceStatus = 1; header.RejectionReason = rejectReason; showRejectDialog = false;
+            toast = "تم رفض الفاتورة"; toastOk = false; StateHasChanged();
+            await Task.Delay(1500); Navigation.NavigateTo("/sales-invoices");
+        }
+        catch (Exception ex) { rejectMsg = "خطأ: " + ex.Message; }
+    }
+
+    private void ShowAddLine() { editLine = new() { InvoiceID = InvoiceId, IsTaxable = header.IsTaxable, TaxRate = header.TaxRate }; lineMsg = ""; showLineForm = true; }
+    private void CloseLineForm() { showLineForm = false; lineMsg = ""; }
+
+    private async Task SaveLine()
+    {
+        lineMsg = "";
+        if (editLine.ItemID == 0) { lineMsg = "اختر الصنف"; lineMsgOk = false; return; }
+        if (editLine.UnitID == 0) { lineMsg = "اختر الوحدة"; lineMsgOk = false; return; }
+        if (editLine.Quantity <= 0) { lineMsg = "أدخل الكمية"; lineMsgOk = false; return; }
+        if (isNewMode && InvoiceId == 0) { await SaveInvoice(); if (InvoiceId == 0) return; editLine.InvoiceID = InvoiceId; }
+        isSavingLine = true; StateHasChanged();
+        try
+        {
+            await InvService.InsertDetailAsync(editLine, UserSession.UserID);
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
+            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
+            showLineForm = false; toast = "تم الإضافة ✅"; toastOk = true;
+        }
+        catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
+        finally { isSavingLine = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteLine(int detailId)
+    {
+        try { await InvService.DeleteDetailAsync(detailId, UserSession.UserID); details = await InvService.GetInvoiceDetailsAsync(InvoiceId); header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header; toast = "تم الحذف ✅"; toastOk = true; }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        StateHasChanged();
+    }
+
+    private async Task PrintDoc()
+    {
+        try { var html = await InvService.GenerateReportHtmlAsync(InvoiceId, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", html); }
+        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/sales-invoices");
+}

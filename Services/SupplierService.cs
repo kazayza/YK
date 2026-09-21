@@ -359,6 +359,21 @@ table{{width:100%;border-collapse:collapse;margin-bottom:12px}}th{{background:#1
         }
 
         // ==========================================
+        // سجل التدقيق - من أضاف ومن عدّل
+        // ==========================================
+        public async Task<ItemAuditDto?> GetSupplierAuditAsync(int supplierId)
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, s.CreatedDate,
+                               ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, s.ModifiedDate
+                        FROM dbo.Suppliers s
+                        LEFT JOIN dbo.SystemUsers uc ON s.CreatedBy = uc.UserID
+                        LEFT JOIN dbo.SystemUsers um ON s.ModifiedBy = um.UserID
+                        WHERE s.SupplierID = @ID";
+            return await connection.QueryFirstOrDefaultAsync<ItemAuditDto>(sql, new { ID = supplierId });
+        }
+
+        // ==========================================
         // Helpers
         // ==========================================
         public static string GetTypeName(int t) => t switch { 1 => "مورد خامات", 2 => "مورد تعبئة", 3 => "مورد خدمات", 4 => "مورد عام", _ => "غير محدد" };

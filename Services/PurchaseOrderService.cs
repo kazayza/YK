@@ -1299,6 +1299,21 @@ tr:nth-child(even){{background:#f8fafc}}
         }
 
         // ==========================================
+        // سجل التدقيق - من أضاف ومن عدّل + اعتماد
+        // ==========================================
+        public async Task<ItemAuditDto?> GetOrderAuditAsync(int purchaseOrderId)
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, po.CreatedDate,
+                               ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, po.ModifiedDate
+                        FROM dbo.PurchaseOrders po
+                        LEFT JOIN dbo.SystemUsers uc ON po.CreatedBy = uc.UserID
+                        LEFT JOIN dbo.SystemUsers um ON po.ModifiedBy = um.UserID
+                        WHERE po.PurchaseOrderID = @ID";
+            return await connection.QueryFirstOrDefaultAsync<ItemAuditDto>(sql, new { ID = purchaseOrderId });
+        }
+
+        // ==========================================
         // Helpers: Status / Source
         // ==========================================
         public static string GetStatusName(int status)

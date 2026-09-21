@@ -714,5 +714,17 @@ namespace YKCoatings.Services
             }
             catch { return $"CUST-{DateTime.Now:yyMMddHHmmss}"; }
         }
+
+        public async Task<ItemAuditDto?> GetCustomerAuditAsync(int customerId)
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, c.CreatedDate,
+                               ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, c.ModifiedDate
+                        FROM dbo.Customers c
+                        LEFT JOIN dbo.SystemUsers uc ON c.CreatedBy = uc.UserID
+                        LEFT JOIN dbo.SystemUsers um ON c.ModifiedBy = um.UserID
+                        WHERE c.CustomerID = @ID";
+            return await connection.QueryFirstOrDefaultAsync<ItemAuditDto>(sql, new { ID = customerId });
+        }
     }
 }

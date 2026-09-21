@@ -1,6 +1,6 @@
 {
   "Version": 1,
-  "Hash": "VzD+s+lsSWHEa0U59Jy5+nuwUpY8Akhjwys54UEDTgA=",
+  "Hash": "lq1HyA9x0v8OfXgm0XUp5pAoYtddymYrUeq0tZVsg5U=",
   "Source": "YKCoatings",
   "BasePath": "_content/YKCoatings",
   "Mode": "Default",
@@ -112,12 +112,12 @@
       "OriginalItemSpec": "wwwroot\\bootstrap\\bootstrap.min.css.map"
     },
     {
-      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-icon.svg",
+      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-icon-gold.png",
       "SourceId": "YKCoatings",
       "SourceType": "Discovered",
       "ContentRoot": "D:\\YK Coatings\\YkWeb\\wwwroot\\",
       "BasePath": "_content/YKCoatings",
-      "RelativePath": "images/yk-icon.svg",
+      "RelativePath": "images/yk-icon-gold.png",
       "AssetKind": "All",
       "AssetMode": "All",
       "AssetRole": "Primary",
@@ -128,15 +128,15 @@
       "AssetTraitValue": "",
       "CopyToOutputDirectory": "Never",
       "CopyToPublishDirectory": "PreserveNewest",
-      "OriginalItemSpec": "wwwroot\\images\\yk-icon.svg"
+      "OriginalItemSpec": "wwwroot\\images\\yk-icon-gold.png"
     },
     {
-      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo.svg",
+      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo-gold.png",
       "SourceId": "YKCoatings",
       "SourceType": "Discovered",
       "ContentRoot": "D:\\YK Coatings\\YkWeb\\wwwroot\\",
       "BasePath": "_content/YKCoatings",
-      "RelativePath": "images/yk-logo.svg",
+      "RelativePath": "images/yk-logo-gold.png",
       "AssetKind": "All",
       "AssetMode": "All",
       "AssetRole": "Primary",
@@ -147,7 +147,26 @@
       "AssetTraitValue": "",
       "CopyToOutputDirectory": "Never",
       "CopyToPublishDirectory": "PreserveNewest",
-      "OriginalItemSpec": "wwwroot\\images\\yk-logo.svg"
+      "OriginalItemSpec": "wwwroot\\images\\yk-logo-gold.png"
+    },
+    {
+      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\images\\yk-logo-white.png",
+      "SourceId": "YKCoatings",
+      "SourceType": "Discovered",
+      "ContentRoot": "D:\\YK Coatings\\YkWeb\\wwwroot\\",
+      "BasePath": "_content/YKCoatings",
+      "RelativePath": "images/yk-logo-white.png",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "PreferTarget",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\images\\yk-logo-white.png"
     },
     {
       "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\js\\app.js",
@@ -205,6 +224,25 @@
       "CopyToOutputDirectory": "Never",
       "CopyToPublishDirectory": "PreserveNewest",
       "OriginalItemSpec": "wwwroot\\sounds\\notification.mp3"
+    },
+    {
+      "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\yk-theme-gold.css",
+      "SourceId": "YKCoatings",
+      "SourceType": "Discovered",
+      "ContentRoot": "D:\\YK Coatings\\YkWeb\\wwwroot\\",
+      "BasePath": "_content/YKCoatings",
+      "RelativePath": "yk-theme-gold.css",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "PreferTarget",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\yk-theme-gold.css"
     },
     {
       "Identity": "D:\\YK Coatings\\YkWeb\\wwwroot\\yk-theme.css",

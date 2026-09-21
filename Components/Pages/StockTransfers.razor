@@ -10,89 +10,103 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>تحويلات المخزون - واي كي كوتينج</PageTitle>
+<PageTitle>تحويلات المخزون - واي كي كوتينج Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
-{ <div class="no-access"><div class="na-icon">🔒</div><h4>يجب تسجيل الدخول</h4></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{ <div class="no-access"><div class="na-icon">⛔</div><h4>ليس لديك صلاحية</h4></div> }
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
 {
-    <div class="page-wrap" dir="rtl">
-        <div class="page-hdr">
-            <div><h2 class="page-title">تحويلات المخزون</h2><p class="page-sub">التحويل بين المخازن</p></div>
-            <div class="hdr-actions">
-                <span class="badge-count">@filtered.Count تحويل</span>
-                @if (permissions.CanAdd)
-                { <button class="btn-m btn-primary" @onclick='()=>Navigation.NavigateTo("/stock-transfers/new")'>➕ تحويل جديد</button> }
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">تحويلات المخزون</h2><p class="lh-subtitle">التحويل بين المخازن — نقل فاخر وسريع</p></div>
+                </div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count تحويل</span>
+                    @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick='()=>Navigation.NavigateTo("/stock-transfers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>تحويل جديد</button>}
+                </div>
             </div>
         </div>
 
-        <div class="filter-row">
-            <div class="search-wrap">
-                <input class="search-inp" type="text" placeholder="بحث..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
-            </div>
-            <select class="filter-sel" @bind="filterStatus" @bind:after="Filter">
-                <option value="0">كل الحالات</option>
-                <option value="1">مسودة</option><option value="2">معتمد</option>
-                <option value="3">تم التحويل</option><option value="4">ملغي</option>
-            </select>
-            <button class="btn-m btn-ghost" @onclick="LoadData">🔄</button>
+        <div class="filter-luxury">
+            <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم التحويل أو المخزن..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">معتمد</option><option value="3">تم التحويل</option><option value="4">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if(transfers==null){<div class="loading-st"><div class="loader"></div></div>}
-        else if(!filtered.Any()){<div class="empty-st"><h4>لا توجد تحويلات</h4></div>}
+        @if(transfers==null){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else if(!filtered.Any()){<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M12 22a1 1 0 0 1 0-20"/><path d="M8 3H3v5"/><path d="M16 21h5v-5"/></svg></div><h4>لا توجد تحويلات</h4></div>}
         else
         {
-            <div class="tbl-card"><table class="tbl">
-                <thead><tr><th>#</th><th>الرقم</th><th>التاريخ</th><th>من</th><th>إلى</th><th>السبب</th>
-                    <th class="tc">أصناف</th><th class="tl">القيمة</th><th class="tc">الحالة</th><th class="tc">إجراءات</th></tr></thead>
-                <tbody>
-                    @{int n=0;}
-                    @foreach(var t in filtered){n++;
-                    <tr class="@(t.TransferStatus==1?"tr-draft":"")">
-                        <td class="td-n">@n</td>
-                        <td><span class="doc-num" @onclick="()=>ViewTransfer(t.TransferID)" style="cursor:pointer">@t.TransferNumber</span></td>
-                        <td>@t.TransferDate.ToString("dd/MM/yyyy")</td>
-                        <td class="td-bold">@t.FromWarehouseName</td>
-                        <td class="td-bold">@t.ToWarehouseName</td>
-                        <td class="td-muted">@(t.TransferReason ?? "—")</td>
-                        <td class="tc"><span class="cnt-badge">@t.ItemCount</span></td>
-                        <td class="tl num-cell">@t.TotalValue.ToString("#,##0.00")</td>
-                        <td class="tc"><span class="status-badge" style="--sc:@InventoryService.GetTransferStatusColor(t.TransferStatus)">@InventoryService.GetTransferStatusName(t.TransferStatus)</span></td>
-                        <td class="tc"><div class="actions-wrap">
-                            @if(permissions.CanEdit && t.TransferStatus==1){<button class="act-btn" @onclick="()=>EditTransfer(t.TransferID)">✏️</button>}
-                            else{<button class="act-btn" @onclick="()=>ViewTransfer(t.TransferID)">👁️</button>}
-                            @if(permissions.CanApprove && t.TransferStatus==1){<button class="act-btn" @onclick="()=>EditTransfer(t.TransferID)">✅</button>}
-                            @if(permissions.CanDelete && t.TransferStatus==1){<button class="act-btn" @onclick="()=>ShowDelete(t)">🗑️</button>}
-                        </div></td>
-                    </tr>}
-                </tbody>
-            </table></div>
+            <div class="table-card-luxury">
+                <div class="table-responsive">
+                    <table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>الرقم</th><th>التاريخ</th><th>من مخزن</th><th>إلى مخزن</th><th>السبب</th><th class="th-center">أصناف</th><th>القيمة</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach(var t in filtered){n++;
+                            <tr class="@(t.TransferStatus==1?"row-draft":"")">
+                                <td class="td-num">@n</td>
+                                <td><span class="doc-num-luxury" @onclick="()=>ViewTransfer(t.TransferID)">@t.TransferNumber</span></td>
+                                <td class="td-muted">@t.TransferDate.ToString("dd/MM/yyyy")</td>
+                                <td class="td-name">@t.FromWarehouseName</td>
+                                <td class="td-name">@t.ToWarehouseName</td>
+                                <td class="td-muted">@(t.TransferReason ?? "—")</td>
+                                <td class="td-center"><span class="cnt-badge-luxury">@t.ItemCount</span></td>
+                                <td><span class="amount-luxury">@t.TotalValue.ToString("#,##0.00")</span></td>
+                                <td class="td-center"><span class="status-badge-luxury" style="--sc:@InventoryService.GetTransferStatusColor(t.TransferStatus)">@InventoryService.GetTransferStatusName(t.TransferStatus)</span></td>
+                                <td class="td-center"><div class="actions-wrap-luxury">
+                                    @if(permissions.CanEdit && t.TransferStatus==1){<button class="act-btn-luxury edit" @onclick="()=>EditTransfer(t.TransferID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                    else{<button class="act-btn-luxury view" @onclick="()=>ViewTransfer(t.TransferID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
+                                    @if(permissions.CanApprove && t.TransferStatus==1){<button class="act-btn-luxury approve" @onclick="()=>EditTransfer(t.TransferID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
+                                    @if(permissions.CanDelete && t.TransferStatus==1){<button class="act-btn-luxury delete" @onclick="()=>ShowDelete(t)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                                </div></td>
+                            </tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         }
     </div>
 
-    @if(showDeleteDialog){<div class="modal-ov" @onclick="()=>showDeleteDialog=false"><div class="modal-box" @onclick:stopPropagation="true">
-        <h4>تأكيد الحذف</h4><p>حذف التحويل: <strong>@deleteItem?.TransferNumber</strong>؟</p>
-        @if(!string.IsNullOrEmpty(deleteMsg)){<div class="form-msg err">@deleteMsg</div>}
-        <div class="modal-btns"><button class="btn-m btn-danger" @onclick="ConfirmDelete">حذف</button><button class="btn-m btn-ghost" @onclick="()=>showDeleteDialog=false">إلغاء</button></div>
-    </div></div>}
-    @if(!string.IsNullOrEmpty(toast)){<div class="toast-wrap"><div class="toast @(toastOk?"t-ok":"t-err")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+    @if(showDeleteDialog){<div class="modal-overlay-luxury" @onclick="()=>showDeleteDialog=false"><div class="modal-card-luxury small" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div><h4>تأكيد الحذف</h4><p>حذف التحويل: <strong class="delete-name">@deleteItem?.TransferNumber</strong>؟</p>@if(!string.IsNullOrEmpty(deleteMsg)){<div class="msg-luxury msg-error">@deleteMsg</div>}<div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">حذف</button><button class="btn-luxury btn-ghost-luxury" @onclick="()=>showDeleteDialog=false">إلغاء</button></div></div></div>}
+    @if(!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
 }
 
 <style>
-    .page-wrap{display:flex;flex-direction:column;gap:18px}.page-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px}.page-title{font-weight:800;color:#0f172a;margin:0;font-size:1.3rem}.page-sub{color:#64748b;font-size:.84rem}.hdr-actions{display:flex;align-items:center;gap:10px}.badge-count{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;padding:7px 14px;border-radius:999px;font-size:.8rem;font-weight:700}
-    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.search-wrap{flex:1;min-width:200px}.search-inp{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.88rem;background:white;outline:none}.filter-sel{padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:.85rem;background:white}
-    .tbl-card{background:white;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;overflow-x:auto}.tbl{width:100%;border-collapse:collapse;min-width:1000px}.tbl thead{background:#f8fafc}.tbl th{padding:12px;font-size:.78rem;font-weight:700;color:#64748b;text-align:right;border-bottom:2px solid #e2e8f0;white-space:nowrap}.tbl td{padding:10px 12px;font-size:.84rem;color:#334155;border-bottom:1px solid #f1f5f9}.tbl tbody tr:hover{background:#f8fafc}.tr-draft{opacity:.8}
-    .tc{text-align:center}.tl{text-align:left}.td-n{color:#94a3b8;text-align:center}.td-bold{font-weight:700;color:#0f172a}.td-muted{color:#64748b}.num-cell{font-family:monospace;font-weight:600}.doc-num{color:#2563eb;font-weight:700;text-decoration:underline}.cnt-badge{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.78rem;font-weight:700}
-    .status-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc)}
-    .actions-wrap{display:flex;gap:5px;justify-content:center}.act-btn{width:28px;height:28px;border-radius:7px;border:1px solid #e2e8f0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem}.act-btn:hover{background:#f8fafc}
-    .btn-m{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:12px;border:none;font-weight:700;font-size:.86rem;cursor:pointer}.btn-primary{background:linear-gradient(135deg,#1e40af,#2563eb);color:white}.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:white}.btn-ghost{background:transparent;color:#64748b;border:1.5px solid #e2e8f0}
-    .modal-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000}.modal-box{background:white;border-radius:20px;padding:28px;max-width:400px;width:90%;text-align:center}.modal-box h4{font-weight:800;margin:0 0 8px}.modal-box p{color:#475569;margin-bottom:16px}.modal-btns{display:flex;flex-direction:column;gap:8px;margin-top:16px}.form-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;margin-top:10px}.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-    .toast-wrap{position:fixed;bottom:22px;left:22px;z-index:1050}.toast{display:flex;align-items:center;gap:12px;padding:12px 18px;border-radius:14px;min-width:300px;font-weight:600;font-size:.86rem}.t-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.t-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-    .loading-st{text-align:center;padding:50px;color:#64748b}.loader{width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto}.empty-st{text-align:center;padding:50px;background:white;border-radius:18px;border:1px solid #e2e8f0}.no-access{text-align:center;padding:60px;background:white;border-radius:18px;border:1px solid #e2e8f0}.na-icon{font-size:3rem;margin-bottom:12px}
-    @@keyframes spin{to{transform:rotate(360deg)}}
-    @@media(max-width:768px){.page-hdr{flex-direction:column}.filter-row{flex-direction:column}.search-wrap{min-width:100%}}
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-luxury svg{width:14px;height:14px}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.select-wrap-luxury select{height:40px;padding:0 34px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury select:focus{border-color:var(--gold)}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:1000px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.table-luxury .row-draft{opacity:.8}.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:140px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-name{font-weight:800;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.86rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px;cursor:pointer;transition:.2s}.doc-num-luxury:hover{background:rgba(212,175,55,.15);border-color:var(--gold)}
+.cnt-badge-luxury{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.74rem;font-weight:700}.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn-luxury{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn-luxury.view{color:#2563eb;border-color:#bfdbfe}.act-btn-luxury.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn-luxury.approve{color:#059669;border-color:#a7f3d0}.act-btn-luxury.delete{color:#ef4444;border-color:#fee2e2}.act-btn-luxury svg{width:14px;height:14px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;text-align:center;padding:28px 24px}.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:center}.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin-bottom:12px}.delete-icon-luxury svg{width:32px;height:32px}.delete-name{display:block;font-size:1rem;font-weight:800;color:#0A0F1E;margin:8px 0}.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@@keyframes spin{to{transform:rotate(360deg)}}
+@@media(max-width:768px){.lh-content{flex-direction:column;align-items:flex-start}}
 </style>
 
 @code {
@@ -102,7 +116,6 @@ else
     private string searchText = ""; private int filterStatus = 0;
     private string toast = ""; private bool toastOk = true;
     private bool showDeleteDialog = false; private StockTransferListDto? deleteItem; private string deleteMsg = "";
-//    private bool isExporting;
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,6 +136,8 @@ else
              ArabicSearchHelper.Contains(t.FromWarehouseName, searchText) || ArabicSearchHelper.Contains(t.ToWarehouseName, searchText))
         ).ToList();
     }
+
+    private void ClearSearch() { searchText = ""; Filter(); }
 
     private void ViewTransfer(int id) => Navigation.NavigateTo($"/stock-transfers/view/{id}");
     private void EditTransfer(int id) => Navigation.NavigateTo($"/stock-transfers/edit/{id}");
