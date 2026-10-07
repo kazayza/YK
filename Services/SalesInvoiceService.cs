@@ -43,16 +43,16 @@ namespace YKCoatings.Services
             }
             catch
             {
-                // Fallback إذا الـ View غير موجود — جدول مباشر
+                // Fallback إذا الـ View غير موجود — جدول مباشر — ملتزم بالجداول الموجودة فقط (لا DeliveryNotes)
                 var sql2 = @"SELECT
                             si.InvoiceID, si.InvoiceNumber, si.InvoiceDate,
                             si.InvoiceStatus, ISNULL(si.InvoiceSource,3) as InvoiceSource,
-                            CASE si.InvoiceSource WHEN 1 THEN N'من إذن تسليم' WHEN 2 THEN N'من أمر بيع' ELSE N'فاتورة مباشرة' END as InvoiceSourceName,
+                            CASE WHEN ISNULL(si.InvoiceSource,3)=2 THEN N'من أمر بيع' ELSE N'فاتورة مباشرة' END as InvoiceSourceName,
                             si.PaymentStatus,
                             CASE si.PaymentStatus WHEN 1 THEN N'غير مدفوعة' WHEN 2 THEN N'مدفوعة جزئياً' WHEN 3 THEN N'مدفوعة بالكامل' ELSE N'غير محدد' END as PaymentStatusName,
                             si.CustomerID, c.CustomerCode, c.CustomerNameAr,
                             si.SalesOrderID, so.OrderNumber as LinkedSONumber,
-                            si.DeliveryID, dn.DeliveryNumber as LinkedDeliveryNumber,
+                            CAST(NULL AS INT) as DeliveryID, CAST(NULL AS NVARCHAR(50)) as LinkedDeliveryNumber,
                             ISNULL(si.IsTaxable,1) as IsTaxable, ISNULL(si.TaxRate,14) as TaxRate,
                             ISNULL(si.SubTotal,0) as SubTotal, ISNULL(si.DiscountAmount,0) as DiscountAmount, ISNULL(si.TaxAmount,0) as TaxAmount, ISNULL(si.TotalAmount,0) as TotalAmount, ISNULL(si.PaidAmount,0) as PaidAmount, ISNULL(si.TotalAmount,0)-ISNULL(si.PaidAmount,0) as RemainingAmount,
                             si.DueDate, 0 as IsOverdue, 0 as DaysOverdue,
@@ -62,7 +62,6 @@ namespace YKCoatings.Services
                         FROM dbo.SalesInvoices si
                         INNER JOIN dbo.Customers c ON si.CustomerID=c.CustomerID
                         LEFT JOIN dbo.SalesOrders so ON si.SalesOrderID=so.SalesOrderID
-                        LEFT JOIN dbo.DeliveryNotes dn ON si.DeliveryID=dn.DeliveryID
                         LEFT JOIN dbo.PaymentTerms pt ON si.PaymentTermID=pt.PaymentTermID
                         LEFT JOIN dbo.Currencies cur ON si.CurrencyID=cur.CurrencyID
                         ORDER BY si.InvoiceDate DESC, si.InvoiceID DESC";
@@ -83,7 +82,7 @@ namespace YKCoatings.Services
                             si.PaymentStatus,
                             si.CustomerID, c.CustomerNameAr, c.CustomerCode,
                             si.SalesOrderID, so.OrderNumber AS LinkedSONumber,
-                            si.DeliveryID, dn.DeliveryNumber AS LinkedDeliveryNumber,
+                            CAST(NULL AS INT) AS DeliveryID, CAST(NULL AS NVARCHAR(50)) AS LinkedDeliveryNumber,
                             ISNULL(si.IsTaxable,1) AS IsTaxable, ISNULL(si.TaxRate,14) AS TaxRate,
                             si.PaymentTermID, pt.TermNameAr AS PaymentTermName,
                             si.DueDate,
@@ -103,7 +102,6 @@ namespace YKCoatings.Services
                         FROM dbo.SalesInvoices si
                         INNER JOIN dbo.Customers c ON si.CustomerID = c.CustomerID
                         LEFT JOIN dbo.SalesOrders so ON si.SalesOrderID = so.SalesOrderID
-                        LEFT JOIN dbo.DeliveryNotes dn ON si.DeliveryID = dn.DeliveryID
                         LEFT JOIN dbo.PaymentTerms pt ON si.PaymentTermID = pt.PaymentTermID
                         LEFT JOIN dbo.Currencies cur ON si.CurrencyID = cur.CurrencyID
                         LEFT JOIN dbo.Warehouses w ON si.WarehouseID = w.WarehouseID
@@ -176,7 +174,7 @@ namespace YKCoatings.Services
                         VALUES
                         (
                             @InvoiceNumber, @InvoiceDate, @CustomerID,
-                            NULLIF(@SalesOrderID, 0), NULLIF(@DeliveryID, 0),
+                            NULLIF(@SalesOrderID, 0), NULL,
                             @IsTaxable, @TaxRate,
                             NULLIF(@PaymentTermID, 0), NULLIF(@CurrencyID, 0), @ExchangeRate, NULLIF(@WarehouseID,0),
                             @DiscountPercent, @ShippingCost, @OtherCosts,
@@ -191,7 +189,6 @@ namespace YKCoatings.Services
                 header.InvoiceDate,
                 header.CustomerID,
                 header.SalesOrderID,
-                header.DeliveryID,
                 header.IsTaxable,
                 TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0,
                 header.PaymentTermID,
@@ -201,7 +198,7 @@ namespace YKCoatings.Services
                 header.DiscountPercent,
                 header.ShippingCost,
                 header.OtherCosts,
-                InvoiceSource = header.InvoiceSource == 0 ? (header.DeliveryID.HasValue && header.DeliveryID > 0 ? 1 : header.SalesOrderID.HasValue && header.SalesOrderID > 0 ? 2 : 3) : header.InvoiceSource,
+                InvoiceSource = header.InvoiceSource == 0 ? (header.SalesOrderID.HasValue && header.SalesOrderID > 0 ? 2 : 3) : (header.InvoiceSource==1?3:header.InvoiceSource),
                 header.Notes,
                 UserID = userId
             });
@@ -380,71 +377,11 @@ namespace YKCoatings.Services
         }
 
         // ==========================================
-        // تحميل سطور من Delivery
+        // تحميل سطور من Delivery - معطل لأن جدول DeliveryNotes غير موجود (ملتزم بالجداول الموجودة فقط)
         // ==========================================
         public async Task<int> ImportLinesFromDeliveryAsync(int invoiceId, int deliveryId, List<DeliveryLineForInvoiceDto> lines, int userId)
         {
-            if (lines == null || !lines.Any(l => l.IsSelected)) return 0;
-            using var connection = CreateConnection();
-            await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
-            try
-            {
-                var header = await connection.QueryFirstOrDefaultAsync<(int InvoiceStatus, bool IsTaxable, decimal TaxRate)>(
-                    "SELECT InvoiceStatus, ISNULL(IsTaxable,1) as IsTaxable, ISNULL(TaxRate,14) as TaxRate FROM dbo.SalesInvoices WHERE InvoiceID=@ID",
-                    new { ID = invoiceId }, transaction);
-                if (header.InvoiceStatus != 1) throw new Exception("لا يمكن تحميل سطور على فاتورة ليست مسودة");
-
-                var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
-                    "SELECT ISNULL(MAX(LineNumber),0) FROM dbo.SalesInvoiceDetails WHERE InvoiceID=@ID",
-                    new { ID = invoiceId }, transaction);
-
-                var inserted = 0;
-                foreach (var line in lines.Where(l => l.IsSelected))
-                {
-                    maxLine++;
-                    var qty = line.DeliveredQty;
-                    var price = line.InvoiceUnitPrice > 0 ? line.InvoiceUnitPrice : line.UnitPrice;
-                    var taxRate = header.IsTaxable ? (line.InvoiceTaxRate > 0 ? line.InvoiceTaxRate : header.TaxRate) : 0;
-                    var lineTotal = qty * price;
-                    var taxAmt = header.IsTaxable ? lineTotal * taxRate / 100 : 0;
-
-                    await connection.ExecuteAsync(
-                        @"INSERT INTO dbo.SalesInvoiceDetails
-                          (InvoiceID, LineNumber, ItemID, UnitID, WarehouseID, Quantity, UnitPrice, DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax, BatchNumber, ExpiryDate, DeliveryDetailID, SalesOrderDetailID)
-                          VALUES
-                          (@InvoiceID, @LineNumber, @ItemID, @UnitID, @WarehouseID, @Quantity, @UnitPrice, 0, 0, @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax, @BatchNumber, @ExpiryDate, @DeliveryDetailID, @SalesOrderDetailID)",
-                        new
-                        {
-                            InvoiceID = invoiceId,
-                            LineNumber = maxLine,
-                            line.ItemID,
-                            line.UnitID,
-                            line.WarehouseID,
-                            Quantity = qty,
-                            UnitPrice = price,
-                            LineTotal = lineTotal,
-                            TaxRate = taxRate,
-                            TaxAmount = taxAmt,
-                            LineTotalWithTax = lineTotal + taxAmt,
-                            line.BatchNumber,
-                            line.ExpiryDate,
-                            line.DeliveryDetailID,
-                            line.SalesOrderDetailID
-                        }, transaction);
-                    inserted++;
-                }
-
-                try { await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID", new { InvoiceID = invoiceId }, transaction); } catch { }
-                transaction.Commit();
-
-                await _audit.WriteAuditLogAsync(userId, 1, "SalesInvoiceDetails", invoiceId.ToString(),
-                    moduleName: "SCR_SINV",
-                    description: $"تحميل {inserted} سطر من إذن تسليم إلى فاتورة مبيعات");
-
-                return inserted;
-            }
-            catch { transaction.Rollback(); throw; }
+            throw new Exception("جدول إذن التسليم غير موجود حالياً - ملتزم بالجداول الموجودة فقط. استخدم أمر بيع أو فاتورة مباشرة.");
         }
 
         // ==========================================
@@ -810,12 +747,12 @@ tr:nth-child(even){{background:#fcfaf6}}
 <div class='info-grid'>
     <div class='info-item'><div class='info-label'>تاريخ الفاتورة</div><div class='info-value'>{header.InvoiceDate:dd/MM/yyyy}</div></div>
     <div class='info-item'><div class='info-label'>العميل</div><div class='info-value'>{header.CustomerNameAr}</div></div>
-    <div class='info-item'><div class='info-label'>المصدر</div><div class='info-value'>{(header.InvoiceSource == 1 ? "من إذن تسليم" : header.InvoiceSource == 2 ? "من أمر بيع" : "فاتورة مباشرة")}</div></div>
+    <div class='info-item'><div class='info-label'>المصدر</div><div class='info-value'>{(header.InvoiceSource == 2 ? "من أمر بيع - اختياري" : "فاتورة مباشرة - الأساس")}</div></div>
     <div class='info-item'><div class='info-label'>الحالة</div><div class='info-value'>{GetStatusName(header.InvoiceStatus)}</div></div>
     <div class='info-item'><div class='info-label'>شروط الدفع</div><div class='info-value'>{header.PaymentTermName ?? "—"}</div></div>
     <div class='info-item'><div class='info-label'>تاريخ الاستحقاق</div><div class='info-value'>{header.DueDate?.ToString("dd/MM/yyyy") ?? "—"}</div></div>
-    <div class='info-item'><div class='info-label'>إذن التسليم</div><div class='info-value'>{header.LinkedDeliveryNumber ?? "—"}</div></div>
-    <div class='info-item'><div class='info-label'>أمر البيع</div><div class='info-value'>{header.LinkedSONumber ?? "—"}</div></div>
+    <div class='info-item'><div class='info-label'>المخزن</div><div class='info-value'>{header.WarehouseNameAr ?? "—"}</div></div>
+    <div class='info-item'><div class='info-label'>أمر البيع</div><div class='info-value'>{header.LinkedSONumber ?? "— (مباشرة)"}</div></div>
 </div>
 <table>
     <thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>السعر</th><th>خصم</th><th>ضريبة</th><th>الإجمالي</th></tr></thead>
@@ -872,13 +809,13 @@ tr:nth-child(even){{background:#fcfaf6}}
 
         public static string GetSourceName(int source) => source switch
         {
-            1 => "من إذن تسليم", 2 => "من أمر بيع",
-            3 => "فاتورة مباشرة", _ => "فاتورة مباشرة"
+            2 => "من أمر بيع", 3 => "فاتورة مباشرة",
+            _ => "فاتورة مباشرة"
         };
 
         public static string GetSourceColor(int source) => source switch
         {
-            1 => "#0891b2", 2 => "#1d4ed8", 3 => "#D4AF37", _ => "#D4AF37"
+            2 => "#1d4ed8", 3 => "#D4AF37", _ => "#D4AF37"
         };
     }
 }

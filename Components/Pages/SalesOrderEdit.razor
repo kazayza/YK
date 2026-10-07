@@ -1,0 +1,416 @@
+@page "/sales-orders/new"
+@page "/sales-orders/edit/{OrderId:int}"
+@page "/sales-orders/view/{OrderId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesOrderService SoService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissions == null || !permissions.CanView)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
+else
+{
+    <div class="luxury-edit-page" dir="rtl">
+
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <button class="btn-luxury btn-ghost-dark" @onclick="GoBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>رجوع</button>
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text">
+                        <h2 class="lh-title">@pageTitle</h2>
+                        <p class="lh-subtitle">@(string.IsNullOrEmpty(header.OrderNumber)?"إنشاء أمر بيع - اختياري والفاتورة هي الأساس":$"{header.OrderNumber} - {header.CustomerNameAr ?? "—"}")</p>
+                    </div>
+                </div>
+                <div class="lh-actions">
+                    @if (!string.IsNullOrEmpty(header.OrderNumber))
+                    {
+                        <span class="status-badge-luxury" style="--sc:@SalesOrderService.GetStatusColor(header.OrderStatus)">@SalesOrderService.GetStatusName(header.OrderStatus)</span>
+                        @if (header.OrderSource > 0){<span class="source-badge-luxury" style="--sc:@SalesOrderService.GetSourceColor(header.OrderSource)">@SalesOrderService.GetSourceName(header.OrderSource)</span>}
+                    }
+                    <span class="lh-badge"><span class="lh-dot"></span>@(isNewMode?"جديد":isViewMode?"عرض":isApprovalMode?"اعتماد":"تعديل")</span>
+                    @if (permissions.CanPrint && OrderId > 0){<button class="btn-luxury btn-ghost-dark" @onclick="PrintDoc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
+                </div>
+            </div>
+        </div>
+
+        @if (isApprovalMode)
+        {
+            <div class="approval-bar-luxury approve"><div class="ab-gold-line"></div><div class="ab-content"><div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><strong>بانتظار اعتمادك</strong><span>راجع البيانات والأصناف ثم اعتمد أو ارفض</span></div></div><div class="ab-actions"><button class="btn-luxury btn-success-luxury" @onclick="ExecuteApprove" disabled="@isSaving">اعتماد</button><button class="btn-luxury btn-danger-luxury" @onclick="DoShowReject" disabled="@isSaving">رفض</button></div></div>
+        }
+
+        @if (isLoading)
+        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else
+        {
+            @if (isNewMode && !isSourceLocked)
+            {
+                <div class="source-cards-luxury">
+                    <div class="source-card-luxury @(header.OrderSource==1?"active":"")" @onclick="SelectManualSource"><div class="ml-gold-line"></div><div class="sc-icon" style="background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div class="sc-title">أمر بيع يدوي</div><div class="sc-desc">إنشاء أمر بيع مباشر بدون عرض سعر</div></div>
+                    <div class="source-card-luxury @(header.OrderSource==2?"active":"")" @onclick="SelectQuotationSource"><div class="ml-gold-line" style="background:linear-gradient(90deg,transparent,#2563eb,transparent)"></div><div class="sc-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div><div class="sc-title">من عرض سعر</div><div class="sc-desc">تحويل عرض سعر معتمد لأمر بيع</div></div>
+                </div>
+            }
+
+            <div class="mudtabs-luxury">
+                <div class="mudtabs-header">
+                    <button class="mudtab-btn @(activeTab==0?"active":"")" @onclick="() => activeTab=0"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>البيانات الأساسية</button>
+                    <button class="mudtab-btn @(activeTab==1?"active":"")" @onclick="() => activeTab=1"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>العميل والمالية</button>
+                    <button class="mudtab-btn @(activeTab==2?"active":"")" @onclick="() => activeTab=2"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>الأصناف <span class="mt-count gold">@details.Count</span></button>
+                    <button class="mudtab-btn @(activeTab==3?"active":"")" @onclick="() => activeTab=3"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>التكاليف والإجماليات</button>
+                    <button class="mudtab-btn @(activeTab==4?"active":"")" @onclick="() => activeTab=4"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></span>الاعتماد والسجل</button>
+                    <button class="mudtab-btn @(activeTab==5?"active":"")" @onclick="() => activeTab=5"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>ملاحظات</button>
+                </div>
+
+                <div class="mudtabs-body">
+                    @if (activeTab == 0)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            @if (header.OrderSource == 2 && isNewMode && !isQuotationLoaded)
+                            {
+                                <div class="tab-header"><div class="tab-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><h3>اختيار عرض السعر المعتمد</h3><p>ابحث واختر عرض السعر لتحميل الأصناف</p></div></div>
+                                <div class="form-grid cols-2">
+                                    <div class="form-field"><label class="field-label required">عرض السعر</label><SearchableSelect Items="@approvedQuotations" @bind-SelectedId="selectedQuotationId" OnSelected="OnQuotationSelected" Placeholder="ابحث برقم عرض السعر..." /></div>
+                                    @if (quotationLines != null && quotationLines.Any()){<div class="form-field"><label class="field-label">المختار</label><div class="field-input disabled"><span>@quotationLines.Count(l=>l.IsSelected) من @quotationLines.Count صنف</span></div></div>}
+                                </div>
+                                @if (quotationLines != null && quotationLines.Any())
+                                {
+                                    <div class="table-card-luxury" style="margin-top:12px"><div class="table-responsive"><table class="table-luxury"><thead><tr><th class="th-center" style="width:40px"><input type="checkbox" checked="@quotationLines.All(l=>l.IsSelected)" @onchange="ToggleAllQuotationLines" /></th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th class="th-center">تم طلبه</th><th class="th-center">المتبقي</th><th>السعر</th></tr></thead><tbody>@foreach(var line in quotationLines){<tr class="@(!line.IsSelected?"row-dim":"")"><td class="td-center"><input type="checkbox" @bind="line.IsSelected" /></td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.QuotedQty.ToString("#,##0.##")</td><td class="td-center">@line.TotalOrderedQty.ToString("#,##0.##")</td><td class="td-center"><strong style="color:var(--gold-dark)">@line.RemainingToOrder.ToString("#,##0.##")</strong></td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td></tr>}</tbody></table></div></div>
+                                }
+                            }
+
+                            @if (header.OrderSource > 0 || !isNewMode)
+                            {
+                                <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><h3>بيانات أمر البيع</h3><p>التواريخ والمخزن والمصدر</p></div></div>
+                                <div class="form-grid cols-4">
+                                    <div class="form-field"><label class="field-label">رقم الأمر</label><div class="field-input disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg><span>@(header.OrderNumber ?? "تلقائي")</span></div></div>
+                                    <div class="form-field"><label class="field-label required">التاريخ</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><input type="date" class="field-input" @bind="header.OrderDate" disabled="@isReadOnly" /></div></div>
+                                    <div class="form-field"><label class="field-label">التسليم المتوقع</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><input type="date" class="field-input" @bind="header.ExpectedDeliveryDate" disabled="@isReadOnly" /></div></div>
+                                    <div class="form-field"><label class="field-label required">المخزن</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select class="field-select" @bind="header.WarehouseID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(warehouses!=null){@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                </div>
+                                @if (header.OrderStatus==4 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="msg-luxury msg-error"> <strong>سبب الرفض:</strong> @header.RejectionReason</div>}
+                            }
+                            else if (isNewMode && header.OrderSource==0)
+                            {<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>اختر مصدر أمر البيع أولاً</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">يدوي أو من عرض سعر معتمد</p></div>}
+                        </div>
+                    }
+
+                    @if (activeTab == 1)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><h3>بيانات العميل والمالية</h3><p>اختيار العميل والمندوب وشروط الدفع والعملة</p></div></div>
+                            <div class="form-grid cols-4">
+                                <div class="form-field" style="grid-column:span 2"><label class="field-label required">العميل</label><SearchableSelect Items="@customersSearchable" @bind-SelectedId="header.CustomerID" OnSelected="OnCustomerSelected" Placeholder="ابحث بالاسم أو الكود..." IsDisabled="@isReadOnly" /></div>
+                                <div class="form-field"><label class="field-label">المندوب</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="7" r="3"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><select class="field-select" @bind="header.SalesRepID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(salesReps!=null){@foreach(var r in salesReps){<option value="@r.Id">@r.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                <div class="form-field"><label class="field-label">قائمة الأسعار</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select class="field-select" @bind="header.PriceListID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(priceLists!=null){@foreach(var p in priceLists){<option value="@p.Id">@p.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                <div class="form-field"><label class="field-label">شروط الدفع</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><select class="field-select" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(paymentTerms!=null){@foreach(var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                <div class="form-field"><label class="field-label">العملة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><select class="field-select" @bind="header.CurrencyID" @bind:after="OnCurrencyChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(currencies!=null){@foreach(var c in currencies){<option value="@c.Id">@c.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                            </div>
+                            @if (customerInfo != null)
+                            {
+                                <div class="customer-info-luxury"><div class="ml-gold-line"></div><div class="si-grid"><div class="si-item"><span class="si-label">الهاتف</span><span class="si-value">@(customerInfo.Phone1 ?? "—")</span></div><div class="si-item"><span class="si-label">المدينة</span><span class="si-value">@(customerInfo.City ?? "—")</span></div><div class="si-item"><span class="si-label">الرصيد الحالي</span><span class="si-value @(customerInfo.CurrentBalance>0?"si-danger":"")">@customerInfo.CurrentBalance.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">الحد الائتماني</span><span class="si-value">@customerInfo.CreditLimit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">المتاح</span><span class="si-value @(customerInfo.AvailableCredit<0?"si-danger":"si-ok")">@customerInfo.AvailableCredit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">قائمة الأسعار</span><span class="si-value">@(customerInfo.PriceListName ?? "—")</span></div></div></div>
+                            }
+                        </div>
+                    }
+
+                    @if (activeTab == 2)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف أمر البيع</h3><p>@details.Count صنف - الإجمالي: @details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00")</p></div>@if(!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddLine" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
+                            @if (!details.Any() && !showLineForm){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أصناف</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">اضغط إضافة صنف للبدء</p></div>}
+                            else
+                            {
+                                <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th>السعر</th><th class="th-center">خصم %</th><th class="th-center">ضريبة %</th><th>الإجمالي</th>@if(!isNewMode){<th class="th-center">مسلم</th><th class="th-center">متبقي</th>}@if(!isReadOnly && !isApprovalMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach(var line in details){n++;<tr><td class="td-num">@n</td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.OrderedQty.ToString("#,##0.##")</td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="td-center">@line.DiscountPercent.ToString("#,##0.##")</td><td class="td-center">@line.TaxRate.ToString("#,##0.##")</td><td class="num-cell"><strong>@line.LineTotalWithTax.ToString("#,##0.00")</strong></td>@if(!isNewMode){<td class="td-center">@line.DeliveredQty.ToString("#,##0.##")</td><td class="td-center"><strong class="@(line.RemainingQty>0?"bal-danger":"")">@line.RemainingQty.ToString("#,##0.##")</strong></td>}@if(!isReadOnly && !isApprovalMode){<td class="td-center"><div class="actions-wrap-luxury">@if(permissions.CanEdit){<button class="act-btn edit" @onclick="() => ShowEditLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}@if(permissions.CanDelete){<button class="act-btn delete" @onclick="() => DeleteLine(line.SODetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="8" class="td-name">الإجمالي</td><td class="num-cell"><strong>@details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00")</strong></td>@if(!isNewMode){<td colspan="2"></td>}@if(!isReadOnly && !isApprovalMode){<td></td>}</tr></tfoot></table></div></div>
+                            }
+
+                            @if (showLineForm)
+                            {
+                                <div class="line-form-luxury"><div class="lf-gold-line"></div><div class="line-form-head"><h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>@(isEditLine?"تعديل صنف":"إضافة صنف")</h4><button class="btn-close-x" @onclick="CloseLineForm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+                                    <div class="form-grid cols-3">
+                                        <div class="form-field"><label class="field-label required">الصنف</label><SearchableSelect Items="@saleItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث بالاسم أو الكود..." IsDisabled="@isEditLine" /></div>
+                                        <div class="form-field"><label class="field-label required">الوحدة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select class="field-select" @bind="editLine.UnitID"><option value="0">-- اختر --</option>@if(units!=null){@foreach(var u in units){<option value="@u.Id">@u.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                        <div class="form-field"><label class="field-label required">الكمية</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg><input type="number" class="field-input" @bind="editLine.OrderedQty" step="0.01" /></div>@if(editLine.QuotationRemaining.HasValue){<span class="field-hint">المتبقي من عرض السعر: @editLine.QuotationRemaining.Value.ToString("#,##0.##")</span>}</div>
+                                        <div class="form-field"><label class="field-label required">سعر الوحدة</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="editLine.UnitPrice" step="0.01" /><span class="field-suffix">ج.م</span></div></div>
+                                        <div class="form-field"><label class="field-label">خصم %</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="editLine.DiscountPercent" step="0.01" /><span class="field-suffix">%</span></div></div>
+                                        <div class="form-field"><label class="field-label">ضريبة %</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="editLine.TaxRate" step="0.01" /><span class="field-suffix">%</span></div></div>
+                                    </div>
+                                    <div class="line-calc-bar-luxury"><span>قبل الضريبة: <strong>@editLine.LineTotal.ToString("#,##0.00")</strong></span><span>الضريبة: <strong>@editLine.TaxAmount.ToString("#,##0.00")</strong></span><span class="grand">الإجمالي: <strong>@editLine.LineTotalWithTax.ToString("#,##0.00")</strong></span></div>
+                                    @if(!string.IsNullOrEmpty(lineMsg)){<div class="msg-luxury @(lineMsgOk?"msg-success":"msg-error")" style="margin-top:10px">@lineMsg</div>}
+                                    <div class="line-form-btns"><button class="btn-luxury btn-primary-luxury" @onclick="SaveLine" disabled="@isSavingLine"><span>@(isEditLine?"تحديث":"إضافة")</span></button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseLineForm">إلغاء</button></div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (activeTab == 3)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><h3>التكاليف الإضافية والإجماليات</h3><p>الخصم العام والشحن والعملة</p></div></div>
+                            @if (!isReadOnly && !isApprovalMode && OrderId > 0 && details.Any())
+                            {
+                                <div class="form-grid cols-4">
+                                    <div class="form-field"><label class="field-label">خصم عام %</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="header.DiscountPercent" step="0.01" /><span class="field-suffix">%</span></div></div>
+                                    <div class="form-field"><label class="field-label">تكلفة الشحن</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="header.ShippingCost" step="0.01" /><span class="field-suffix">ج.م</span></div></div>
+                                    <div class="form-field"><label class="field-label">تكاليف أخرى</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="header.OtherCosts" step="0.01" /><span class="field-suffix">ج.م</span></div></div>
+                                    <div class="form-field"><label class="field-label">سعر الصرف</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><input type="number" class="field-input" @bind="header.ExchangeRate" step="0.000001" /></div></div>
+                                </div>
+                            }
+                            @if (OrderId > 0 && details.Any())
+                            {
+                                <div class="totals-bar-luxury"><div class="ml-gold-line"></div><div class="totals-grid"><div class="total-item"><span class="total-label">الإجمالي الفرعي</span><span class="total-value">@header.SubTotal.ToString("#,##0.00")</span></div>@if(header.DiscountAmount>0){<div class="total-item"><span class="total-label">الخصم</span><span class="total-value t-discount">- @header.DiscountAmount.ToString("#,##0.00")</span></div>}<div class="total-item"><span class="total-label">الضريبة</span><span class="total-value">@header.TaxAmount.ToString("#,##0.00")</span></div>@if(header.ShippingCost>0){<div class="total-item"><span class="total-label">الشحن</span><span class="total-value">@header.ShippingCost.ToString("#,##0.00")</span></div>}<div class="total-item total-grand-luxury"><span class="total-label">الإجمالي الكلي</span><span class="total-value">@header.TotalAmount.ToString("#,##0.00") @(header.CurrencySymbol ?? "ج.م")</span></div></div></div>
+                            }
+                            else{<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h4>لا توجد أصناف لحساب الإجمالي</h4></div>}
+                        </div>
+                    }
+
+                    @if (activeTab == 4)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            <div class="tab-header"><div class="tab-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><h3>الاعتماد والسجل</h3><p>حالة الاعتماد والتتبع</p></div></div>
+                            <div class="status-timeline-luxury">
+                                <div class="st-step @(header.OrderStatus>=1?"done":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>مسودة</strong><span>تم الإنشاء @header.OrderDate.ToString("dd/MM/yyyy")</span></div></div>
+                                <div class="st-step @(header.OrderStatus>=2?"done":"") @(header.OrderStatus==2?"current":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>انتظار اعتماد</strong><span>@(header.OrderStatus>=2?"تم الإرسال للاعتماد":"لم يرسل بعد")</span></div></div>
+                                <div class="st-step @(header.OrderStatus>=3?"done":"") @(header.OrderStatus==3?"current":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>معتمد</strong><span>@(header.OrderStatus>=3?"تم الاعتماد - جاهز للفوترة":"بانتظار الاعتماد")</span></div></div>
+                                <div class="st-step @(header.OrderStatus>=5?"done":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>قيد التجهيز</strong><span>@(header.OrderStatus>=5?"جاري تجهيز الطلب":"لم يبدأ")</span></div></div>
+                                <div class="st-step @(header.OrderStatus>=6?"done":"")"><div class="st-dot"></div><div class="st-content"><strong>فاتورة</strong><span>إنشاء فاتورة مباشرة - الأساس (بدون جدول تسليم)</span></div></div>
+                            </div>
+                            @if (header.OrderStatus==4){<div class="msg-luxury msg-error" style="margin-top:16px"> مرفوض - السبب: @header.RejectionReason</div>}
+                        </div>
+                    }
+
+                    @if (activeTab == 5)
+                    {
+                        <div class="tab-panel luxury-fade">
+                            <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div><h3>ملاحظات أمر البيع</h3><p>ملاحظات عامة وداخلية</p></div></div>
+                            <div class="form-grid cols-2">
+                                <div class="form-field"><label class="field-label">ملاحظات عامة (تظهر في الطباعة)</label><textarea class="field-textarea" rows="4" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات عامة تظهر للعميل..."></textarea></div>
+                                <div class="form-field"><label class="field-label">ملاحظات داخلية (لا تطبع)</label><textarea class="field-textarea" rows="4" @bind="header.InternalNotes" disabled="@isReadOnly" placeholder="ملاحظات داخلية للمتابعة..."></textarea></div>
+                            </div>
+                            <div class="timeline-luxury">
+                                <div class="tl-item"><div class="tl-dot gold"></div><div class="tl-content"><strong>رقم الأمر: @(header.OrderNumber ?? "تلقائي")</strong><span>تاريخ: @header.OrderDate.ToString("dd/MM/yyyy")</span></div></div>
+                                <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>العميل: @(header.CustomerNameAr ?? "—")</strong><span>المخزن: @(warehouses?.FirstOrDefault(w=>w.Id==header.WarehouseID)?.Name ?? "—")</span></div></div>
+                                <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>الإجمالي: @header.TotalAmount.ToString("#,##0.00") @(header.CurrencySymbol ?? "")</strong><span>@details.Count صنف - @details.Sum(d=>d.OrderedQty).ToString("#,##0.##") كمية إجمالية</span></div></div>
+                                @if (!string.IsNullOrEmpty(createdByName)){<div class="tl-item"><div class="tl-dot gold"></div><div class="tl-content"><strong>أنشئ بواسطة: @createdByName</strong><span>@createdDate</span></div></div>}
+                                @if (!string.IsNullOrEmpty(modifiedByName)){<div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>آخر تعديل: @modifiedByName</strong><span>@modifiedDate</span></div></div>}
+                                <div class="tl-item"><div class="tl-dot" style="background:var(--gold)"></div><div class="tl-content"><strong>المستخدم الحالي: @UserSession.FullName</strong><span>يعمل الآن على هذا السجل</span></div></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (OrderId > 0)
+            {
+                <div class="audit-bar-luxury">
+                    <div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>أنشئ بواسطة: <strong>@(string.IsNullOrEmpty(createdByName)?"غير محدد":createdByName)</strong></span><span class="audit-date">@createdDate</span></div>
+                    @if (!string.IsNullOrEmpty(modifiedByName)){<div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg><span>آخر تعديل: <strong>@modifiedByName</strong></span><span class="audit-date">@modifiedDate</span></div>}
+                    <div class="audit-item-luxury gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>المستخدم الحالي: <strong>@UserSession.FullName</strong></span></div>
+                </div>
+            }
+
+            @if (!isViewMode && !isApprovalMode)
+            {
+                <div class="actions-bar-luxury">
+                    <div class="actions-right-luxury">
+                        @if (!isReadOnly)
+                        {
+                            <button class="btn-luxury btn-primary-luxury" @onclick="SaveOrder" disabled="@isSaving">@if(isSaving){<div class="btn-spinner"></div><span>جاري الحفظ...</span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg><span>@(isNewMode?"حفظ أمر البيع":"حفظ التعديلات")</span>}</button>
+                            @if (OrderId>0 && header.OrderStatus==1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"> إرسال للاعتماد</button>}
+                            @if (OrderId>0 && header.OrderStatus==3){<button class="btn-luxury btn-success-luxury" @onclick="CreateInvoice" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg>إنشاء فاتورة</button>}
+                        }
+                    </div>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع للقائمة</button>
+                </div>
+            }
+        }
+    </div>
+
+    @if (showRejectDialog)
+    {
+        <div class="modal-overlay-luxury" @onclick="() => showRejectDialog=false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="modal-header-luxury"><h3>رفض أمر البيع</h3><button class="btn-close-x" @onclick="() => showRejectDialog=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div><div class="modal-body-luxury"><div class="form-field"><label class="field-label required">سبب الرفض</label><textarea class="field-textarea" rows="3" @bind="rejectReason" placeholder="أدخل سبب الرفض..."></textarea></div>@if(!string.IsNullOrEmpty(rejectMsg)){<div class="msg-luxury msg-error" style="margin-top:10px">@rejectMsg</div>}</div><div class="ml-footer"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog=false">إلغاء</button></div></div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'></button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-edit-page{display:flex;flex-direction:column;gap:16px;max-width:1300px;margin:0 auto;font-family:'Tajawal',sans-serif}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:100px;height:100px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:40px;height:40px;border-radius:10px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}
+.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 20%,white)}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-success-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-warning-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.approval-bar-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-radius:16px;flex-wrap:wrap;overflow:hidden}.approval-bar-luxury.approve{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #a7f3d0}.ab-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#10b981,transparent)}.ab-content{display:flex;align-items:center;gap:12px}.ab-icon{width:40px;height:40px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.ab-icon svg{width:20px;height:20px}.ab-content div{display:flex;flex-direction:column}.ab-content strong{font-size:.9rem;color:#0A0F1E}.ab-content span{font-size:.74rem;color:#6b7280}.ab-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.source-cards-luxury{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.source-card-luxury{position:relative;background:#fff;border:2px solid #e8e2d0;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:.2s;overflow:hidden}.source-card-luxury:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}.source-card-luxury.active{border-color:var(--gold);background:rgba(212,175,55,.04);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.sc-icon{width:52px;height:52px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}.sc-icon svg{width:24px;height:24px}.sc-title{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}.sc-desc{font-size:.76rem;color:#8B95A5}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);opacity:.8}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
+.mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header::-webkit-scrollbar{display:none}
+.mudtab-btn{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}.mudtab-btn:hover{background:rgba(212,175,55,.04);color:#0A0F1E}.mudtab-btn.active{color:var(--gold-dark);background:rgba(212,175,55,.06);border-bottom-color:var(--gold)}
+.mt-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}.mt-icon svg{width:16px;height:16px}.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}.mt-count.gold{background:rgba(212,175,55,.15);color:var(--gold-dark)}
+.mudtabs-body{padding:22px;background:#fff;min-height:400px}
+.tab-panel{display:flex;flex-direction:column;gap:18px}.tab-panel.luxury-fade{animation:fadeUp .4s both}@@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.tab-header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #f1efe8}.tab-icon{width:40px;height:40px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;display:flex;align-items:center;justify-content:center;color:#475569}.tab-icon.gold{background:rgba(212,175,55,.1);border-color:rgba(212,175,55,.15);color:var(--gold-dark)}.tab-icon.blue{background:#eff6ff;border-color:#dbeafe;color:#2563eb}.tab-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));border-color:var(--border-gold);color:var(--gold)}.tab-icon svg{width:18px;height:18px}.tab-header h3{font-size:.95rem;font-weight:800;color:#0A0F1E;margin:0}.tab-header p{font-size:.72rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
+.form-grid{display:grid;gap:14px;margin-bottom:4px}.cols-2{grid-template-columns:repeat(2,1fr)} .cols-3{grid-template-columns:repeat(3,1fr)} .cols-4{grid-template-columns:repeat(4,1fr)}
+.form-field{display:flex;flex-direction:column;gap:6px}.field-label{font-size:.78rem;font-weight:700;color:#374151}.field-label.required::after{content:' *';color:#ef4444}
+.input-wrap{position:relative;display:flex;align-items:center}.input-wrap svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-input{width:100%;height:42px;padding:0 36px 0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';transition:all .2s;outline:none}.field-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.field-input.disabled{background:#f9fafb;color:#9ca3af;border-style:dashed;display:flex;align-items:center;gap:8px;padding:0 12px}.field-input.disabled svg{position:static;width:14px;height:14px}
+.select-wrap{position:relative;display:flex;align-items:center}.select-wrap svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-select{width:100%;height:42px;padding:0 36px 0 28px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';appearance:none;cursor:pointer;outline:none;transition:all .2s}.field-select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.select-arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.field-hint{font-size:.7rem;color:var(--gold-dark);font-weight:600}
+.input-with-suffix{position:relative;display:flex;align-items:center}.input-with-suffix .field-input{padding-left:50px}.field-suffix{position:absolute;left:1px;top:1px;bottom:1px;width:44px;display:flex;align-items:center;justify-content:center;background:#f8f6f0;border-radius:0 9px 9px 0;font-size:.78rem;font-weight:700;color:#6b7280;border-right:1px solid #e8e2d0}
+.field-textarea{width:100%;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;background:#fff;font-family:'Tajawal';resize:vertical;outline:none;transition:all .2s}.field-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.th-center{text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-actions{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}.num-cell{font-family:monospace;font-weight:700}.bal-danger{color:#dc2626}
+.code-luxury{background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:8px;font-size:.78rem;color:var(--gold-dark);font-weight:700;font-family:monospace}
+.row-dim{opacity:.45}
+.customer-info-luxury{position:relative;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:14px;padding:16px;margin-top:12px;overflow:hidden}.si-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.si-item{display:flex;flex-direction:column;gap:2px}.si-label{font-size:.7rem;color:#8B95A5;font-weight:600}.si-value{font-size:.84rem;font-weight:700;color:#0A0F1E}.si-danger{color:#dc2626}.si-ok{color:#059669}
+.line-form-luxury{position:relative;margin-top:16px;padding:18px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.lf-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6}
+.line-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.line-form-head h4{display:flex;align-items:center;gap:6px;font-weight:800;color:#0A0F1E;margin:0;font-size:.9rem}.line-form-head h4 svg{width:16px;height:16px;color:var(--gold-dark)}.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}.line-form-btns{display:flex;gap:8px;margin-top:14px}
+.line-calc-bar-luxury{display:flex;gap:20px;flex-wrap:wrap;padding:12px 16px;background:#fff;border:1px solid #e8e2d0;border-radius:12px;margin-top:12px;font-size:.84rem;color:#6b7280}.line-calc-bar-luxury strong{color:#0A0F1E;font-family:monospace}.line-calc-bar-luxury .grand{background:rgba(212,175,55,.08);padding:4px 10px;border-radius:8px;border:1px solid rgba(212,175,55,.15)}
+.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}.act-btn svg{width:14px;height:14px}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
+.totals-bar-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:18px;overflow:hidden}.totals-grid{display:flex;justify-content:flex-end;gap:20px;flex-wrap:wrap}.total-item{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:100px}.total-label{font-size:.72rem;color:#8B95A5;font-weight:600}.total-value{font-size:1rem;font-weight:800;color:#0A0F1E;font-family:monospace}.t-discount{color:#ef4444}.total-grand-luxury{padding:10px 18px;background:linear-gradient(135deg,var(--black2),var(--black3));border-radius:12px;border:1px solid var(--border-gold)}.total-grand-luxury .total-label{color:#8B95A5}.total-grand-luxury .total-value{color:var(--gold);font-size:1.1rem}
+.total-row-luxury{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)!important;font-weight:800}.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px 14px}
+.status-timeline-luxury{display:flex;flex-direction:column;gap:0}.st-step{display:flex;gap:12px;position:relative;padding:12px 0}.st-dot{width:14px;height:14px;border-radius:50%;background:#e8e2d0;border:2px solid #fff;box-shadow:0 0 0 2px #e8e2d0;flex-shrink:0;margin-top:2px;z-index:1}.st-step.done .st-dot{background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);border-color:#fff}.st-step.current .st-dot{background:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);animation:pulse 2s infinite}.st-line{position:absolute;right:6px;top:26px;bottom:-12px;width:2px;background:#e8e2d0}.st-step.done .st-line{background:var(--gold)}.st-content{display:flex;flex-direction:column;gap:2px}.st-content strong{font-size:.86rem;color:#0A0F1E}.st-content span{font-size:.72rem;color:#8B95A5}
+.timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}.tl-item:last-child{border:none}.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}.tl-content{display:flex;flex-direction:column;gap:2px}.tl-content strong{font-size:.84rem;color:#0A0F1E}.tl-content span{font-size:.72rem;color:#8B95A5}
+.audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}.audit-item-luxury strong{color:#0A0F1E}.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
+.actions-bar-luxury{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0;box-shadow:0 2px 12px rgba(0,0,0,.04)}.actions-right-luxury{display:flex;gap:8px;align-items:center}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}.modal-body-luxury{padding:18px 22px}.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:40px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}.empty-luxury.small{padding:24px}.empty-icon-luxury{width:48px;height:48px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:24px;height:24px}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:992px){.cols-4{grid-template-columns:repeat(2,1fr)}.cols-3{grid-template-columns:repeat(2,1fr)}.source-cards-luxury{grid-template-columns:1fr}}@@media(max-width:600px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}.lh-content{flex-direction:column;align-items:flex-start}.actions-bar-luxury{flex-direction:column;gap:10px}}
+</style>
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+    private SalesOrderHeaderDto header = new() { OrderDate = DateTime.Today, ExchangeRate = 1 };
+    private List<SalesOrderDetailDto> details = new();
+    private ModulePermissionDto? permissions;
+    private SalesCustomerExtendedDto? customerInfo;
+    private YKCoatings.Services.CustomerQuickInfoDto? customerBaseInfo;
+    private List<LookupDto>? warehouses;
+    private List<LookupDto>? paymentTerms;
+    private List<LookupDto>? currencies;
+    private List<LookupDto>? priceLists;
+    private List<LookupDto>? salesReps;
+    private List<LookupDto>? units;
+    private List<SearchableItem>? customersSearchable;
+    private List<SearchableItem>? saleItems;
+    private List<SearchableItem>? approvedQuotations;
+    private List<QuotationLineForOrderDto>? quotationLines;
+    private int selectedQuotationId;
+    private bool isQuotationLoaded = false;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string toast = ""; private bool toastOk = true;
+    private bool isSourceLocked = false;
+    private bool showLineForm = false;
+    private bool isEditLine = false;
+    private SalesOrderDetailEditDto editLine = new();
+    private bool isSavingLine = false;
+    private string lineMsg = ""; private bool lineMsgOk = true;
+    private bool showRejectDialog = false;
+    private string rejectReason = ""; private string rejectMsg = "";
+    private string createdByName = ""; private string createdDate = ""; private string modifiedByName = ""; private string modifiedDate = "";
+    private int activeTab = 0;
+    private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
+    private bool isNewMode => OrderId == 0;
+    private bool isApprovalMode => !isNewMode && !isViewMode && header.OrderStatus == 2 && (permissions?.CanApprove ?? false);
+    private bool isReadOnly{get{if(isViewMode)return true;if(isNewMode)return false;if(isApprovalMode)return true;return header.OrderStatus!=1;}}
+    private string pageTitle{get{if(isNewMode)return "أمر بيع جديد";if(isViewMode)return "عرض أمر بيع";if(isApprovalMode)return "اعتماد أمر بيع";return "تعديل أمر بيع";}}
+
+    protected override async Task OnInitializedAsync()
+    {
+        try{
+            if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_SO");
+            if (permissions == null || !permissions.CanView) return;
+            await LoadLookups();
+            if (OrderId > 0){await LoadOrderData();}
+            else{
+                var uri=Navigation.ToAbsoluteUri(Navigation.Uri);
+                var query=System.Web.HttpUtility.ParseQueryString(uri.Query);
+                var source=query["source"];
+                if(source=="quotation"){header.OrderSource=2;approvedQuotations=await SoService.GetApprovedQuotationsSearchableAsync();}
+                else if(source=="manual"){header.OrderSource=1;isSourceLocked=true;}
+            }
+        }catch(Exception ex){await ShowToastAsync("خطأ في تحميل الصفحة: "+ex.Message,false);}
+        finally{isLoading=false;StateHasChanged();}
+    }
+    private async Task LoadLookups(){warehouses=await LookupService.GetWarehousesAsync();paymentTerms=await LookupService.GetPaymentTermsAsync();currencies=await LookupService.GetCurrenciesAsync();priceLists=await LookupService.GetPriceListsAsync();salesReps=await LookupService.GetSalesRepsAsync();units=await LookupService.GetUnitsAsync();customersSearchable=await LookupService.GetCustomersSearchableAsync();saleItems=await LookupService.GetItemsForSaleSearchableAsync();}
+    private async Task LoadOrderData(){var loaded=await SoService.GetOrderByIdAsync(OrderId);if(loaded!=null){header=loaded;details=await SoService.GetOrderDetailsAsync(OrderId);isSourceLocked=true;isQuotationLoaded=true;if(header.CustomerID>0){try{var full=await LookupService.GetCustomerQuickInfoAsync(header.CustomerID);if(full!=null)customerInfo=new SalesCustomerExtendedDto{CustomerID=full.CustomerID,CustomerNameAr=full.CustomerNameAr,CustomerCode=full.CustomerCode,CreditLimit=full.CreditLimit,CurrentBalance=full.CurrentBalance};}catch{}}await LoadAuditInfo();}else{await ShowToastAsync("أمر البيع غير موجود",false);}}
+    private async Task LoadAuditInfo(){try{if(OrderId<=0)return;var audit=await SoService.GetOrderAuditAsync(OrderId);if(audit!=null){createdByName=audit.CreatedByName??"غير محدد";createdDate=audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";modifiedByName=audit.ModifiedByName??"";modifiedDate=audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";}}catch{}}
+    private void SelectManualSource(){header.OrderSource=1;isSourceLocked=true;quotationLines=null;selectedQuotationId=0;isQuotationLoaded=false;header.QuotationID=null;}
+    private async Task SelectQuotationSource(){header.OrderSource=2;if(approvedQuotations==null)approvedQuotations=await SoService.GetApprovedQuotationsSearchableAsync();}
+    private async Task OnQuotationSelected(SearchableItem? item){if(item==null||item.Id==0){quotationLines=null;selectedQuotationId=0;return;}selectedQuotationId=item.Id;header.QuotationID=item.Id;try{quotationLines=await SoService.GetQuotationLinesForOrderAsync(item.Id);foreach(var line in quotationLines){line.IsSelected=true;}}catch(Exception ex){await ShowToastAsync("خطأ في تحميل سطور عرض السعر: "+ex.Message,false);}}
+    private void ToggleAllQuotationLines(ChangeEventArgs e){if(quotationLines==null)return;var val=(bool)(e.Value??false);foreach(var line in quotationLines)line.IsSelected=val;}
+    private async Task OnCustomerSelected(SearchableItem? item){if(item==null||item.Id==0){customerInfo=null;header.CustomerID=0;return;}header.CustomerID=item.Id;try{var full=await LookupService.GetCustomerQuickInfoAsync(item.Id);if(full!=null){customerBaseInfo=full; customerInfo=new SalesCustomerExtendedDto{CustomerID=full.CustomerID, CustomerNameAr=full.CustomerNameAr, CustomerCode=full.CustomerCode, CreditLimit=full.CreditLimit, CurrentBalance=full.CurrentBalance};if(full.PaymentTermID.HasValue)header.PaymentTermID=full.PaymentTermID;if(full.CurrencyID.HasValue){header.CurrencyID=full.CurrencyID;header.ExchangeRate=full.ExchangeRate;}} }catch(Exception ex){await ShowToastAsync("خطأ في تحميل بيانات العميل: "+ex.Message,false);}}
+    private async Task OnCurrencyChanged(){if(header.CurrencyID.HasValue&&header.CurrencyID.Value>0){header.ExchangeRate=await LookupService.GetExchangeRateAsync(header.CurrencyID.Value);StateHasChanged();}}
+    private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;editLine.UnitPrice=info.SalesPrice>0?info.SalesPrice:info.EstimatedPrice;}StateHasChanged();}
+    private async Task SaveOrder()
+    {
+        if(header.OrderDate==default){await ShowToastAsync("حدد تاريخ أمر البيع",false);activeTab=0;return;}
+        if(header.CustomerID<=0){await ShowToastAsync("اختر العميل",false);activeTab=1;return;}
+        isSaving=true;StateHasChanged();
+        try{
+            if(isNewMode){
+                header.OrderNumber=await SoService.GenerateOrderNumberAsync();header.OrderStatus=1;
+                var newId=await SoService.InsertOrderAsync(header, UserSession.UserID);
+                OrderId=newId;header.SalesOrderID=newId;
+                if(header.OrderSource==2&&quotationLines!=null){
+                    var selectedIds=quotationLines.Where(l=>l.IsSelected).Select(l=>l.QuotationDetailID).ToList();
+                    if(selectedIds.Any()){var imported=await SoService.ImportLinesFromQuotationAsync(newId,header.QuotationID??0,selectedIds,UserSession.UserID);await ShowToastAsync($"تم إنشاء الأمر وتحميل {imported} صنف ");}
+                    else{await ShowToastAsync($"تم إنشاء أمر البيع: {header.OrderNumber} ");}
+                }else{await ShowToastAsync($"تم إنشاء أمر البيع: {header.OrderNumber} ");}
+                isSourceLocked=true;isQuotationLoaded=true;details=await SoService.GetOrderDetailsAsync(newId);header=await SoService.GetOrderByIdAsync(newId)??header;Navigation.NavigateTo($"/sales-orders/edit/{newId}", forceLoad:false);
+            }else{await SoService.UpdateOrderAsync(header, UserSession.UserID);header=await SoService.GetOrderByIdAsync(OrderId)??header;details=await SoService.GetOrderDetailsAsync(OrderId);await ShowToastAsync("تم حفظ التعديلات ");}
+        }catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}
+        finally{isSaving=false;}
+    }
+    private async Task SubmitForApproval(){if(!details.Any()){await ShowToastAsync("أضف أصناف أولاً",false);activeTab=2;return;}isSaving=true;StateHasChanged();try{await SoService.SubmitForApprovalAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=2;await ShowToastAsync("تم الإرسال للاعتماد ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private async Task ExecuteApprove(){var confirmed=await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد أمر البيع؟");if(!confirmed)return;isSaving=true;StateHasChanged();try{await SoService.ApproveAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=3;await ShowToastAsync("تم الاعتماد ");await Task.Delay(1200);Navigation.NavigateTo("/sales-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private void DoShowReject(){rejectReason="";rejectMsg="";showRejectDialog=true;}
+    private async Task ConfirmReject(){if(string.IsNullOrWhiteSpace(rejectReason)){rejectMsg="أدخل سبب الرفض";return;}try{await SoService.RejectAsync(OrderId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=4;header.RejectionReason=rejectReason;showRejectDialog=false;await ShowToastAsync("تم رفض أمر البيع",false);await Task.Delay(1200);Navigation.NavigateTo("/sales-orders");}catch(Exception ex){rejectMsg="خطأ: "+ex.Message;}}
+    private void ShowAddLine(){isEditLine=false;editLine=new(){SalesOrderID=OrderId,TaxRate=14};lineMsg="";showLineForm=true;}
+    private void ShowEditLine(SalesOrderDetailDto line){isEditLine=true;editLine=new(){SODetailID=line.SODetailID,SalesOrderID=line.SalesOrderID,ItemID=line.ItemID,ItemCode=line.ItemCode,ItemNameAr=line.ItemNameAr,UnitID=line.UnitID,UnitName=line.UnitName,OrderedQty=line.OrderedQty,UnitPrice=line.UnitPrice,DiscountPercent=line.DiscountPercent,TaxRate=line.TaxRate,ExpectedDate=line.ExpectedDate,Notes=line.Notes,QuotationDetailID=line.QuotationDetailID,QuotationQty=line.QuotationQty,QuotationRemaining=line.QuotationRemaining};lineMsg="";showLineForm=true;}
+    private void CloseLineForm(){showLineForm=false;lineMsg="";}
+    private async Task SaveLine()
+    {
+        lineMsg="";if(editLine.ItemID==0){lineMsg="اختر الصنف";lineMsgOk=false;return;}if(editLine.UnitID==0){lineMsg="اختر الوحدة";lineMsgOk=false;return;}if(editLine.OrderedQty<=0){lineMsg="أدخل الكمية";lineMsgOk=false;return;}if(editLine.UnitPrice<0){lineMsg="السعر يجب أن يكون 0 أو أكبر";lineMsgOk=false;return;}
+        if(isNewMode&&OrderId==0){await SaveOrder();if(OrderId==0)return;editLine.SalesOrderID=OrderId;}
+        isSavingLine=true;StateHasChanged();
+        try{
+            if(isEditLine)await SoService.UpdateDetailAsync(editLine, UserSession.UserID);else await SoService.InsertDetailAsync(editLine, UserSession.UserID);
+            details=await SoService.GetOrderDetailsAsync(OrderId);header=await SoService.GetOrderByIdAsync(OrderId)??header;showLineForm=false;await ShowToastAsync(isEditLine?"تم التحديث ":"تم الإضافة ");
+        }catch(Exception ex){lineMsg="خطأ: "+ex.Message;lineMsgOk=false;}
+        finally{isSavingLine=false;}
+    }
+    private async Task DeleteLine(int detailId){try{await SoService.DeleteDetailAsync(detailId, UserSession.UserID);details=await SoService.GetOrderDetailsAsync(OrderId);header=await SoService.GetOrderByIdAsync(OrderId)??header;await ShowToastAsync("تم الحذف ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
+    private async Task PrintDoc(){try{var html=await SoService.GenerateReportHtmlAsync(OrderId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
+    private void CreateInvoice(){Navigation.NavigateTo($"/sales-invoices/new?source=order&orderId={OrderId}");}
+    private void GoBack()=>Navigation.NavigateTo("/sales-orders");
+    private async Task ShowToastAsync(string message, bool ok=true){toast=message;toastOk=ok;StateHasChanged();await Task.Delay(4000);toast="";StateHasChanged();}
+}

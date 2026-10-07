@@ -1,0 +1,341 @@
+@page "/expenses/new"
+@page "/expenses/edit/{Id:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject AccountingService AccountingService
+@inject TreasuryService TreasuryService
+@inject UserSessionService UserSession
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف") - Gold Edition Pro</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">@(Id==0?"مصروف جديد":"تعديل مصروف")</h2>
+                    <p class="lh-subtitle">Gold Edition Pro — مركز تكلفة اختياري + فترة محاسبية + قيد أوتوماتيك</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/expenses")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>رجوع</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+    else
+    {
+        <div class="form-card-luxury">
+            <div class="fc-gold-line"></div>
+            <div class="fc-header"><h3>بيانات المصروف — @expenseAccounts.Count حساب متاح</h3></div>
+            <div class="fc-body">
+                <div class="form-grid-luxury">
+                    <div class="fg"><label>رقم المصروف (تلقائي)</label><input type="text" @bind="dto.ExpenseNumber" readonly class="readonly" /></div>
+                    <div class="fg"><label>تاريخ المصروف *</label><input type="date" @bind="dto.ExpenseDate" @bind:after="OnDateChanged" /></div>
+                    <div class="fg"><label>السنة المالية</label>
+                        <select @bind="fiscalYearSelected" @bind:after="OnFiscalYearChanged">
+                            <option value="0">— تلقائي من التاريخ —</option>
+                            @foreach(var fy in fiscalYears){<option value="@fy.FiscalYearID">@fy.YearName (@fy.StartDate.ToString("yyyy") ) - @fy.StatusName</option>}
+                        </select>
+                        @if(!fiscalYears.Any()){<small style="color:#dc2626;font-weight:700">⚠️ لا توجد سنة مالية - سيتم إنشاؤها تلقائياً عند الحفظ</small>}
+                    </div>
+                    <div class="fg"><label>الفترة المحاسبية *</label>
+                        <select @bind="dto.PeriodID">
+                            <option value="0">— اختر الفترة —</option>
+                            @foreach(var p in filteredPeriods){<option value="@p.PeriodID">@p.PeriodName (@p.StartDate.ToString("MMM yyyy"))</option>}
+                        </select>
+                        <small style="color:@(filteredPeriods.Any()? "#8B95A5" : "#dc2626")">@(filteredPeriods.Any() ? $"{filteredPeriods.Count} فترة متاحة" : "⚠️ لا توجد فترات - تأكد من السنة المالية")</small>
+                    </div>
+
+                    <div class="fg full" style="grid-column:1/-1;height:1px;background:#e8e2d0;margin:8px 0"></div>
+
+                    <div class="fg"><label>حساب المصروف (مدين) * — @expenseAccounts.Count متاح من @allAccounts.Count</label>
+                        <select @bind="dto.AccountID">
+                            <option value="0">— اختر حساب —</option>
+                            @foreach(var acc in expenseAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr (@acc.AccountTypeName)</option>}
+                        </select>
+                        @if(!expenseAccounts.Any()){<small style="color:#dc2626">⚠️ لا توجد حسابات - @allAccounts.Count حساب كلي. راجع شجرة الحسابات</small>}
+                    </div>
+                    <div class="fg"><label>حساب الدائن (خزينة/بنك)</label>
+                        <select @bind="creditSelected">
+                            <option value="0">— تلقائي —</option>
+                            @foreach(var acc in creditAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}
+                        </select>
+                    </div>
+
+                    <div class="fg"><label>مركز التكلفة (اختياري)</label>
+                        <select @bind="costCenterSelected">
+                            <option value="0">— بدون —</option>
+                            @foreach(var cc in costCenters){<option value="@cc.CostCenterID">@cc.CostCenterCode - @cc.CostCenterNameAr</option>}
+                        </select>
+                    </div>
+                    <div class="fg"><label>المبلغ *</label><input type="number" step="0.01" @bind="dto.Amount" /></div>
+
+                    <div class="fg"><label>طريقة الدفع</label>
+                        <select @bind="dto.PaymentMethod">
+                            <option value="1">نقدي - خزينة</option>
+                            <option value="2">بنك</option>
+                            <option value="3">آجل - مستحق</option>
+                        </select>
+                    </div>
+                    <div class="fg"><label>الخزينة * (يخصم منها الرصيد)</label>
+                        <select @bind="cashBoxSelected" style="border-color:@(cashBoxSelected==0 && dto.PaymentMethod==1 ? "#ef4444" : "#e8e2d0")">
+                            <option value="0">— اختر الخزينة —</option>
+                            @foreach(var cb in cashBoxes){<option value="@cb.CashBoxID">@cb.CashBoxNameAr - رصيد: @cb.CurrentBalance.ToString("#,##0.00")</option>}
+                        </select>
+                        <small style="color:#059669">سيتم خصم المبلغ من رصيد الخزينة المختارة + تحديث شجرة الحسابات</small>
+                    </div>
+
+                    <div class="fg full"><label>البيان *</label><textarea @bind="dto.Description" rows="2" placeholder="مصاريف صيانة..."></textarea></div>
+                    <div class="fg"><label>مرجع</label><input type="text" @bind="dto.Reference" /></div>
+                    <div class="fg"><label>ملاحظات</label><input type="text" @bind="dto.Notes" /></div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(msg))
+                {<div class="msg-luxury @(isError?"msg-error":"msg-success")" style="margin-top:16px">@msg</div>}
+
+                <div class="journal-preview" style="margin-top:20px;background:#fcfaf6;border:1px solid #e8e2d0;border-radius:14px;padding:14px">
+                    <h4 style="margin:0 0 10px;font-size:.9rem;color:#0A0F1E">معاينة القيد التلقائي</h4>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.82rem">
+                        <div style="background:#fff;border:1px solid #e8e2d0;border-radius:10px;padding:10px">
+                            <div style="color:#8B95A5;font-size:.7rem">مدين</div>
+                            <div style="font-weight:800">@GetAccountName(dto.AccountID)</div>
+                            <div style="color:#dc2626;font-weight:800;margin-top:4px">@dto.Amount.ToString("#,##0.00")</div>
+                            @if(costCenterSelected!=0){<div style="margin-top:4px"><span class="coa-type type-3">@GetCostCenterName(costCenterSelected)</span></div>}
+                        </div>
+                        <div style="background:#fff;border:1px solid #e8e2d0;border-radius:10px;padding:10px">
+                            <div style="color:#8B95A5;font-size:.7rem">دائن</div>
+                            <div style="font-weight:800">@(creditSelected!=0?GetCreditAccountName(creditSelected):"تلقائي - خزينة")</div>
+                            <div style="color:#059669;font-weight:800;margin-top:4px">@dto.Amount.ToString("#,##0.00")</div>
+                            <div style="color:#8B95A5;font-size:.7rem;margin-top:4px">الفترة: @GetPeriodName(dto.PeriodID)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="fc-footer">
+                <button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">
+                    @if(isSaving){<div class="btn-spinner-sm"></div>}
+                    @(Id==0?"حفظ + قيد تلقائي":"تحديث")
+                </button>
+                <button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/expenses")'>إلغاء</button>
+                @if(Id!=0 && dto.JournalID!=null)
+                {
+                    <button class="btn-luxury" style="background:#eff6ff;border:1.5px solid #bfdbfe;color:#2563eb" @onclick="ViewJournal">عرض القيد @dto.JournalID</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1100px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid rgba(212,175,55,.18)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.form-card-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.06)}.fc-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.fc-header{padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.fc-header h3{margin:0;font-size:.92rem;font-weight:800;color:#0A0F1E}
+.fc-body{padding:20px}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6}.fg textarea{height:auto;padding:10px 12px}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff}.fg input.readonly{background:#f3f4f6;color:#6b7280}
+.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.type-3{background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}
+.fc-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end;flex-wrap:wrap}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private ExpenseDto dto = new();
+    private List<ChartOfAccountDto> allAccounts = new();
+    private List<ChartOfAccountDto> expenseAccounts = new();
+    private List<ChartOfAccountDto> creditAccounts = new();
+    private List<CostCenterListDto> costCenters = new();
+    private List<FiscalYearListDto> fiscalYears = new();
+    private List<AccountingPeriodListDto> allPeriods = new();
+    private List<AccountingPeriodListDto> filteredPeriods = new();
+    private List<CashBoxListDto> cashBoxes = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string msg = "";
+    private bool isError = true;
+
+    private int fiscalYearSelected = 0;
+    private int creditSelected = 0;
+    private int costCenterSelected = 0;
+    private int cashBoxSelected = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        try
+        {
+            allAccounts = await AccountingService.GetFlatAccountsAsync();
+            // مصروفات: نوع 6 أو 5 أو كود يبدأ بـ 5 أو 4x أو اسم يحتوي مصروف
+            expenseAccounts = allAccounts.Where(a => a.AccountType == 6 || a.AccountType == 5 || (a.AccountCode != null && (a.AccountCode.StartsWith("5") || a.AccountCode.StartsWith("4"))) || (a.AccountNameAr != null && (a.AccountNameAr.Contains("مصروف") || a.AccountNameAr.Contains("تكلفة")))).ToList();
+            if (!expenseAccounts.Any()) expenseAccounts = allAccounts.Where(a => a.IsDetailAccount).ToList();
+            if (!expenseAccounts.Any()) expenseAccounts = allAccounts.ToList(); // Fallback أخير: كل الحسابات
+
+            creditAccounts = allAccounts.Where(a => a.AccountType == 1 || a.AccountType == 2).ToList();
+            if (!creditAccounts.Any()) creditAccounts = allAccounts.Where(a => a.IsDetailAccount).ToList();
+            if (!creditAccounts.Any()) creditAccounts = allAccounts.ToList();
+
+            costCenters = await TreasuryService.GetCostCentersFlatAsync();
+            fiscalYears = await AccountingService.GetFiscalYearsAsync();
+            allPeriods = await AccountingService.GetAccountingPeriodsAsync();
+            cashBoxes = await TreasuryService.GetCashBoxesAsync();
+
+            // إنشاء سنة مالية تلقائياً لو مفيش
+            if (!fiscalYears.Any())
+            {
+                try
+                {
+                    var currentYear = DateTime.Now.Year;
+                    var newFY = new FiscalYearDto
+                    {
+                        YearCode = currentYear.ToString(),
+                        YearName = $"السنة المالية {currentYear}",
+                        StartDate = new DateTime(currentYear, 1, 1),
+                        EndDate = new DateTime(currentYear, 12, 31),
+                        YearStatus = 1,
+                        IsCurrent = true,
+                        Notes = "إنشاء تلقائي من شاشة المصروفات"
+                    };
+                    await AccountingService.InsertFiscalYearAsync(newFY, UserSession.UserID);
+                    fiscalYears = await AccountingService.GetFiscalYearsAsync();
+                    allPeriods = await AccountingService.GetAccountingPeriodsAsync();
+                }
+                catch (Exception ex)
+                {
+                    msg = $"تنبيه: لا توجد سنة مالية - {ex.Message}"; isError = true;
+                }
+            }
+
+            if (Id != 0)
+            {
+                var existing = await AccountingService.GetExpenseByIdAsync(Id);
+                if (existing != null)
+                {
+                    dto = existing;
+                    fiscalYearSelected = dto.FiscalYearID ?? 0;
+                    creditSelected = dto.CreditAccountID ?? 0;
+                    costCenterSelected = dto.CostCenterID ?? 0;
+                    cashBoxSelected = dto.CashBoxID ?? 0;
+                }
+            }
+            else
+            {
+                dto.ExpenseNumber = await AccountingService.GenerateExpenseNoAsync();
+                dto.ExpenseDate = DateTime.Today;
+                // اختر أول سنة مالية حالية تلقائياً
+                var currentFY = fiscalYears.FirstOrDefault(f => f.IsCurrent) ?? fiscalYears.FirstOrDefault();
+                if (currentFY != null) fiscalYearSelected = currentFY.FiscalYearID;
+                OnDateChanged();
+            }
+            FilterPeriods();
+            // لو لسه مفيش فترة بعد الفلترة، اختر أول فترة متاحة
+            if (dto.PeriodID == 0 && filteredPeriods.Any())
+                dto.PeriodID = filteredPeriods.First().PeriodID;
+            // اختيار خزينة افتراضية تلقائياً
+            if (cashBoxSelected==0 && cashBoxes.Any())
+            {
+                var def = cashBoxes.FirstOrDefault(c=>c.IsDefault) ?? cashBoxes.First();
+                cashBoxSelected = def.CashBoxID;
+            }
+        }
+        catch (Exception ex) { msg = $"خطأ تحميل: {ex.Message}"; isError = true; }
+        finally { isLoading = false; }
+    }
+
+    private void OnDateChanged()
+    {
+        var period = allPeriods.FirstOrDefault(p => dto.ExpenseDate >= p.StartDate && dto.ExpenseDate <= p.EndDate);
+        if (period != null)
+        {
+            dto.PeriodID = period.PeriodID;
+            dto.FiscalYearID = period.FiscalYearID;
+            fiscalYearSelected = period.FiscalYearID;
+        }
+        else
+        {
+            var fy = fiscalYears.FirstOrDefault(f => dto.ExpenseDate >= f.StartDate && dto.ExpenseDate <= f.EndDate);
+            if (fy != null)
+            {
+                dto.FiscalYearID = fy.FiscalYearID;
+                fiscalYearSelected = fy.FiscalYearID;
+            }
+        }
+        FilterPeriods();
+    }
+
+    private void OnFiscalYearChanged()
+    {
+        dto.FiscalYearID = fiscalYearSelected == 0 ? null : fiscalYearSelected;
+        FilterPeriods();
+        if (fiscalYearSelected != 0 && !filteredPeriods.Any(p => p.PeriodID == dto.PeriodID))
+            dto.PeriodID = 0;
+    }
+
+    private void FilterPeriods()
+    {
+        if (fiscalYearSelected != 0)
+            filteredPeriods = allPeriods.Where(p => p.FiscalYearID == fiscalYearSelected).OrderBy(p => p.PeriodNumber).ToList();
+        else
+            filteredPeriods = allPeriods.OrderByDescending(p => p.StartDate).Take(24).OrderBy(p => p.StartDate).ToList();
+    }
+
+    private async Task Save()
+    {
+        dto.FiscalYearID = fiscalYearSelected == 0 ? null : fiscalYearSelected;
+        dto.CreditAccountID = creditSelected == 0 ? null : creditSelected;
+        dto.CostCenterID = costCenterSelected == 0 ? null : costCenterSelected;
+        dto.CashBoxID = cashBoxSelected == 0 ? null : cashBoxSelected;
+
+        if (dto.PeriodID == 0) { msg = "يجب اختيار الفترة المحاسبية"; isError = true; return; }
+        if (dto.AccountID == 0) { msg = "يجب اختيار حساب المصروف"; isError = true; return; }
+        if (dto.Amount <= 0) { msg = "المبلغ يجب أن يكون أكبر من صفر"; isError = true; return; }
+        if (string.IsNullOrWhiteSpace(dto.Description)) { msg = "أدخل بيان المصروف"; isError = true; return; }
+        if (dto.PaymentMethod==1 && cashBoxSelected==0 && cashBoxes.Any()) { cashBoxSelected = cashBoxes.First(c=>c.IsDefault) != null ? cashBoxes.First(c=>c.IsDefault).CashBoxID : cashBoxes.First().CashBoxID; }
+        if (dto.PaymentMethod==1 && cashBoxSelected==0) { msg = "يجب اختيار الخزينة لخصم الرصيد"; isError = true; return; }
+
+        isSaving = true; msg = ""; StateHasChanged();
+        try
+        {
+            if (Id == 0)
+            {
+                var newId = await AccountingService.InsertExpenseAsync(dto, UserSession.UserID);
+                Navigation.NavigateTo("/expenses");
+            }
+            else
+            {
+                await AccountingService.UpdateExpenseAsync(dto, UserSession.UserID);
+                msg = "تم تحديث المصروف ✅"; isError = false;
+            }
+        }
+        catch (Exception ex) { msg = ex.Message; isError = true; }
+        finally { isSaving = false; }
+    }
+
+    private void ViewJournal()
+    {
+        if (dto.JournalID.HasValue)
+            Navigation.NavigateTo($"/journal-entries/{dto.JournalID.Value}");
+    }
+
+    private string GetAccountName(int id) => allAccounts.FirstOrDefault(a => a.AccountID == id)?.AccountNameAr ?? "— اختر حساب —";
+    private string GetCreditAccountName(int id) => allAccounts.FirstOrDefault(a => a.AccountID == id)?.AccountNameAr ?? "";
+    private string GetCostCenterName(int id) => costCenters.FirstOrDefault(c => c.CostCenterID == id)?.CostCenterNameAr ?? "";
+    private string GetPeriodName(int id) => allPeriods.FirstOrDefault(p => p.PeriodID == id)?.PeriodName ?? "—";
+}

@@ -6,1101 +6,247 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
-<!-- ===== التحقق من الصلاحية ===== -->
+<PageTitle>المستخدمين - Gold Edition Tabs</PageTitle>
+
 @if (!_authorized)
-{
-    <div></div>
-}
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
 else
 {
-    <!-- ===== شريط العنوان والأزرار ===== -->
-    <div class="page-header">
-        <div class="page-header-right">
-            <h2 class="page-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-                إدارة المستخدمين
-            </h2>
-            <span class="record-count">@_users.Count مستخدم</span>
-        </div>
-        <div class="page-header-left">
-            @if (PermissionService.CanExport("SCR_USERS"))
-            {
-                <button class="btn-action btn-export" @onclick="ExportData" title="تصدير">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    <span>تصدير</span>
-                </button>
-            }
-            @if (PermissionService.CanAdd("SCR_USERS"))
-            {
-                <button class="btn-action btn-add" @onclick="AddNew" title="إضافة مستخدم">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    <span>مستخدم جديد</span>
-                </button>
-            }
+<div class="luxury-page full-width" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">إدارة المستخدمين — نظام التابات</h2>
+                    <p class="lh-subtitle">Gold Edition Tabs — User → Role → Permissions workflow — نفس نظام الموردين والعملاء — استغلال كامل عرض الشاشة</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <span class="lh-badge"><span class="lh-dot"></span>@_users.Count مستخدم</span>
+                <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">نشط: @_users.Count(u=>u.IsActive)</span>
+                <span class="lh-badge" style="background:rgba(239,68,68,.08);color:#dc2626;border-color:rgba(239,68,68,.15)">محظور: @_users.Count(u=>u.IsLocked)</span>
+                @if (PermissionService.CanAdd("SCR_USERS")){
+                    <button class="btn-luxury btn-primary-luxury" @onclick="AddNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مستخدم جديد</button>
+                }
+            </div>
         </div>
     </div>
 
-    <!-- ===== الفلاتر ===== -->
-    <div class="filters-card">
-        <div class="filters-grid">
-
-            <!-- بحث عام -->
-            <div class="filter-group filter-search">
-                <label class="filter-label">بحث</label>
-                <div class="input-icon-wrap">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="input-icon">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="M21 21l-4.35-4.35"/>
-                    </svg>
-                    <input type="text"
-                           class="filter-input"
-                           placeholder="اسم المستخدم، الاسم، البريد، الهاتف..."
-                           @bind="_filter.SearchText"
-                           @bind:event="oninput"
-                           @onkeyup="OnSearchKeyUp" />
-                    @if (!string.IsNullOrWhiteSpace(_filter.SearchText))
-                    {
-                        <button class="input-clear" @onclick="ClearSearch" title="مسح">✕</button>
-                    }
-                </div>
-            </div>
-
-            <!-- فلتر الدور -->
-            <div class="filter-group">
-                <label class="filter-label">الدور</label>
-                <select class="filter-input" @bind="_filter.RoleID" @bind:after="ApplyFilters">
-                    <option value="">— الكل —</option>
-                    @foreach (var role in _rolesLookup)
-                    {
-                        <option value="@role.Id">@role.Name</option>
-                    }
-                </select>
-            </div>
-
-            <!-- فلتر الحالة -->
-            <div class="filter-group">
-                <label class="filter-label">الحالة</label>
-                <select class="filter-input" @bind="_filterActiveText" @bind:after="ApplyFilters">
-                    <option value="">— الكل —</option>
-                    <option value="true">نشط</option>
-                    <option value="false">غير نشط</option>
-                </select>
-            </div>
-
-            <!-- فلتر الحظر -->
-            <div class="filter-group">
-                <label class="filter-label">الحظر</label>
-                <select class="filter-input" @bind="_filterLockedText" @bind:after="ApplyFilters">
-                    <option value="">— الكل —</option>
-                    <option value="true">محظور</option>
-                    <option value="false">غير محظور</option>
-                </select>
-            </div>
-
-            <!-- زر إعادة تعيين -->
-            <div class="filter-group filter-actions">
-                <label class="filter-label">&nbsp;</label>
-                <button class="btn-filter-reset" @onclick="ResetFilters" title="إعادة تعيين الفلاتر">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                        <path d="M3 3v5h5"/>
-                    </svg>
-                    <span>إعادة تعيين</span>
-                </button>
-            </div>
-
-        </div>
+    <div class="stats-luxury">
+        <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="st-info"><span class="st-value">@_users.Count</span><span class="st-label">إجمالي المستخدمين</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div><div class="st-info"><span class="st-value">@_users.Count(u=>u.IsActive)</span><span class="st-label">نشط</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div class="st-info"><span class="st-value">@_users.Count(u=>u.IsLocked)</span><span class="st-label">محظور</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="st-info"><span class="st-value">@_users.Count(u=>u.MustChangePassword)</span><span class="st-label">يجب تغيير كلمة المرور</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="st-info"><span class="st-value">@_users.Count(u=>u.LastLoginDate!=null && u.LastLoginDate.Value.Date==DateTime.Today)</span><span class="st-label">دخول اليوم</span></div><div class="st-gold-line"></div></div>
     </div>
 
-        <!-- ===== رسالة النجاح/الخطأ ===== -->
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <div class="alert-msg @(_isError ? "alert-error" : "alert-success")">
-            <span>@_message</span>
-            <button class="alert-close" @onclick="@(() => _message = "")">✕</button>
+    <div class="filter-luxury">
+        <div class="search-luxury" style="flex:1;min-width:280px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="بحث باسم المستخدم، الاسم الكامل، البريد، الهاتف..." @bind="_filter.SearchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            @if(!string.IsNullOrWhiteSpace(_filter.SearchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
         </div>
-    }
+        <div class="select-wrap-luxury"><select @bind="_filter.RoleID" @bind:after="ApplyFilters"><option value="">كل الأدوار</option>@foreach(var role in _rolesLookup){<option value="@role.Id">@role.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+        <button class="btn-luxury btn-ghost-luxury" @onclick="ResetFilters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>إعادة تعيين</button>
+    </div>
 
-    <!-- ===== حالة التحميل ===== -->
-    @if (_loading)
-    {
-        <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <span>جاري تحميل البيانات...</span>
+    <div class="mudtabs-luxury">
+        <div class="mudtabs-header-luxury">
+            <button class="mudtab-btn-luxury @(activeTab=="all"?"active":"")" @onclick='()=>SetTab("all")'>
+                <span class="mt-icon" style="background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+                الكل <span class="mt-count">@_users.Count</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="active"?"active":"")" @onclick='()=>SetTab("active")'>
+                <span class="mt-icon" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></span>
+                نشط <span class="mt-count">@_users.Count(u=>u.IsActive)</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="locked"?"active":"")" @onclick='()=>SetTab("locked")'>
+                <span class="mt-icon" style="background:#fef2f2;color:#ef4444;border:1px solid #fecaca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                محظور <span class="mt-count">@_users.Count(u=>u.IsLocked)</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="mustchange"?"active":"")" @onclick='()=>SetTab("mustchange")'>
+                <span class="mt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                يجب تغيير <span class="mt-count gold">@_users.Count(u=>u.MustChangePassword)</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="inactive"?"active":"")" @onclick='()=>SetTab("inactive")'>
+                <span class="mt-icon" style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></span>
+                غير نشط <span class="mt-count">@_users.Count(u=>!u.IsActive)</span>
+            </button>
         </div>
-    }
-    else if (!_users.Any())
-    {
-        <div class="empty-state">
-            <div class="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <line x1="17" y1="11" x2="23" y2="11"/>
-                </svg>
-            </div>
-            <h3>لا يوجد مستخدمين</h3>
-            <p>لا توجد نتائج مطابقة للبحث الحالي</p>
-        </div>
-    }
-    else
-    {
-        <!-- ===== الجدول ===== -->
-        <div class="table-card">
-            <div class="table-responsive">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th class="th-narrow">#</th>
-                            <th>اسم المستخدم</th>
-                            <th>الاسم الكامل</th>
-                            <th>الدور</th>
-                            <th>الموظف المرتبط</th>
-                            <th class="th-center">الحالة</th>
-                            <th class="th-center">الحظر</th>
-                            <th>آخر دخول</th>
-                            <th class="th-center">العمليات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{ int rowNum = 0; }
-                        @foreach (var user in _users)
-                        {
-                            rowNum++;
-                            <tr class="@(!user.IsActive ? "row-inactive" : "") @(user.IsLocked ? "row-locked" : "")">
+        <div class="mudtabs-body-luxury">
+            @if (!string.IsNullOrEmpty(_message))
+            {<div class="msg-luxury @( _isError ? "msg-error" : "msg-success")" style="margin-bottom:12px">@_message <button @onclick='()=>_message=""' style="margin-right:auto;background:none;border:none;cursor:pointer">✕</button></div>}
 
-                                <!-- الرقم -->
-                                <td class="td-narrow">@rowNum</td>
-
-                                <!-- اسم المستخدم -->
-                                <td>
-                                    <div class="user-cell">
-                                        <div class="user-avatar" title="@user.FullName">
-                                            @GetInitials(user.FullName)
-                                        </div>
-                                        <div class="user-info">
-                                            <span class="user-username">@user.Username</span>
-                                            @if (!string.IsNullOrEmpty(user.Email))
-                                            {
-                                                <span class="user-email">@user.Email</span>
-                                            }
-                                        </div>
-                                    </div>
-                                </td>
-
-                                <!-- الاسم الكامل -->
-                                <td>
-                                    <span class="cell-main">@user.FullName</span>
-                                    @if (!string.IsNullOrEmpty(user.Phone))
-                                    {
-                                        <span class="cell-sub">@user.Phone</span>
-                                    }
-                                </td>
-
-                                <!-- الدور -->
-                                <td>
-                                    <span class="badge badge-role">@user.RoleNameAr</span>
-                                </td>
-
-                                <!-- الموظف المرتبط -->
-                                <td>
-                                    @if (!string.IsNullOrEmpty(user.EmployeeName))
-                                    {
-                                        <span class="cell-main">@user.EmployeeName</span>
-                                        <span class="cell-sub">@user.EmployeeCode</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="cell-empty">—</span>
-                                    }
-                                </td>
-
-                                <!-- الحالة -->
-                                <td class="td-center">
-                                    @if (user.IsActive)
-                                    {
-                                        <span class="badge badge-active">نشط</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge badge-inactive">غير نشط</span>
-                                    }
-                                </td>
-
-                                <!-- الحظر -->
-                                <td class="td-center">
-                                    @if (user.IsLocked)
-                                    {
-                                        <span class="badge badge-locked">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="badge-icon">
-                                                <rect x="3" y="11" width="18" height="11" rx="2"/>
-                                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                                            </svg>
-                                            محظور
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge badge-unlocked">مفتوح</span>
-                                    }
-                                    @if (user.MustChangePassword)
-                                    {
-                                        <span class="badge badge-warn" title="يجب تغيير كلمة المرور">⚠️</span>
-                                    }
-                                </td>
-
-                                <!-- آخر دخول -->
-                                <td>
-                                    @if (user.LastLoginDate.HasValue)
-                                    {
-                                        <span class="cell-main">@user.LastLoginDate.Value.ToString("dd/MM/yyyy")</span>
-                                        <span class="cell-sub">@user.LastLoginDate.Value.ToString("hh:mm tt")</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="cell-empty">لم يسجل دخول</span>
-                                    }
-                                </td>
-
-                                <!-- العمليات -->
-                                <td class="td-center">
-                                    <div class="action-btns">
-
-                                        @if (PermissionService.CanEdit("SCR_USERS"))
-                                        {
-                                            <button class="btn-icon btn-edit"
-                                                    @onclick="@(() => EditUser(user.UserID))"
-                                                    title="تعديل">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                                </svg>
-                                            </button>
-                                        }
-
-                                        @if (PermissionService.CanEdit("SCR_USERS"))
-                                        {
-                                            <button class="btn-icon @(user.IsActive ? "btn-deactivate" : "btn-activate")"
-                                                    @onclick="@(() => ToggleActive(user))"
-                                                    title="@(user.IsActive ? "تعطيل" : "تفعيل")">
-                                                @if (user.IsActive)
-                                                {
-                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                        <circle cx="12" cy="12" r="10"/>
-                                                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-                                                    </svg>
-                                                }
-                                                else
-                                                {
-                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                                        <polyline points="22 4 12 14.01 9 11.01"/>
-                                                    </svg>
-                                                }
-                                            </button>
-                                        }
-
-                                        @if (user.IsLocked && PermissionService.CanEdit("SCR_USERS"))
-                                        {
-                                            <button class="btn-icon btn-unlock"
-                                                    @onclick="@(() => UnlockUser(user))"
-                                                    title="فك الحظر">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <rect x="3" y="11" width="18" height="11" rx="2"/>
-                                                    <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-                                                </svg>
-                                            </button>
-                                        }
-
-                                        @if (PermissionService.CanEdit("SCR_USERS"))
-                                        {
-                                            <button class="btn-icon btn-reset-pwd"
-                                                    @onclick="@(() => ShowResetPassword(user))"
-                                                    title="إعادة تعيين كلمة المرور">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-                                                </svg>
-                                            </button>
-                                        }
-
-                                    </div>
-                                </td>
-
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    }
-
-    <!-- ===== Modal إعادة تعيين كلمة المرور ===== -->
-    @if (_showResetModal)
-    {
-        <div class="modal-overlay" @onclick="CloseResetModal">
-            <div class="modal-box" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h3 class="modal-title">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="modal-title-icon">
-                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-                        </svg>
-                        إعادة تعيين كلمة المرور
-                    </h3>
-                    <button class="modal-close" @onclick="CloseResetModal">✕</button>
-                </div>
-                <div class="modal-body">
-                    <p class="modal-info">إعادة تعيين كلمة المرور للمستخدم: <strong>@_resetUser?.FullName</strong></p>
-
-                    <div class="form-group">
-                        <label class="form-label">كلمة المرور الجديدة <span class="required">*</span></label>
-                        <input type="password" class="form-input" @bind="_passwordDto.NewPassword"
-                               placeholder="أدخل كلمة المرور الجديدة (6 أحرف على الأقل)" />
+            @if (_loading)
+            {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل المستخدمين...</p></div>}
+            else if (!filteredUsers.Any())
+            {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا يوجد مستخدمين</h4><p class="empty-sub">لا توجد نتائج مطابقة</p></div>}
+            else
+            {
+                <div class="table-card-luxury full">
+                    <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>المستخدمين — جدول فاخر واسع كامل العرض — @filteredUsers.Count مستخدم</h3></div>
+                    <div class="table-responsive">
+                        <table class="table-luxury detailed">
+                            <thead><tr><th class="th-num">#</th><th>المستخدم</th><th>الاسم الكامل</th><th>الدور</th><th>الموظف</th><th>الحالة</th><th>الحظر</th><th>آخر دخول</th><th>سجل</th><th class="th-actions">إجراءات</th></tr></thead>
+                            <tbody>
+                                @{int rowNum=0;}
+                                @foreach(var user in filteredUsers){rowNum++;
+                                    <tr class="@(!user.IsActive ? "row-inactive" : "") @(user.IsLocked ? "row-locked" : "")">
+                                        <td class="td-num">@rowNum</td>
+                                        <td><div class="acc-cell"><div class="user-avatar-luxury">@GetInitials(user.FullName)</div><div class="acc-info"><span class="acc-name">@user.Username</span><span class="acc-name-en">@user.Email</span></div></div></td>
+                                        <td><div class="acc-cell"><div class="acc-icon type-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="acc-info"><span class="acc-name">@user.FullName</span><span class="acc-name-en">@user.Phone</span></div></div></td>
+                                        <td><span class="coa-type type-1">@user.RoleNameAr</span></td>
+                                        <td class="td-muted">@if(!string.IsNullOrEmpty(user.EmployeeName)){<span>@user.EmployeeName</span>}else{<span>—</span>}</td>
+                                        <td>@if(user.IsActive){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>نشط</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>غير نشط</span>}</td>
+                                        <td class="td-center">@if(user.IsLocked){<span class="status-badge-luxury" style="--sc:#ef4444"><span class="status-dot" style="--sc:#ef4444"></span>محظور</span>}else{<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>مفتوح</span>} @if(user.MustChangePassword){<span class="coa-detail" style="background:#fff7ed;color:#ea580c;border-color:#fed7aa">⚠️</span>}</td>
+                                        <td class="td-muted">@if(user.LastLoginDate.HasValue){<span>@user.LastLoginDate.Value.ToString("dd/MM/yyyy")</span>}else{<span>لم يسجل</span>}</td>
+                                        <td class="td-center"><button class="btn-luxury btn-ghost-luxury" style="padding:6px 10px;font-size:.72rem" @onclick='()=>Navigation.NavigateTo($"/login-history?user={user.Username}")'>سجل</button></td>
+                                        <td class="td-center"><div class="actions-wrap-luxury">
+                                            @if(PermissionService.CanEdit("SCR_USERS")){<button class="act-btn edit" title="تعديل" @onclick="()=>EditUser(user.UserID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                            @if(PermissionService.CanEdit("SCR_USERS")){<button class="act-btn @(user.IsActive ? "add" : "edit")" title="@(user.IsActive ? "تعطيل" : "تفعيل")" @onclick="()=>ToggleActive(user)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">@if(user.IsActive){<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>}else{<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/>}</svg></button>}
+                                            @if(user.IsLocked && PermissionService.CanEdit("SCR_USERS")){<button class="act-btn" style="color:#2563eb;border-color:#bfdbfe" title="فك الحظر" @onclick="()=>UnlockUser(user)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg></button>}
+                                            @if(PermissionService.CanEdit("SCR_USERS")){<button class="act-btn" style="color:#ec4899;border-color:#f9a8d4" title="إعادة تعيين كلمة المرور" @onclick="()=>ShowResetPassword(user)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></button>}
+                                        </div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-
-                    <div class="form-group">
-                        <label class="form-label">تأكيد كلمة المرور <span class="required">*</span></label>
-                        <input type="password" class="form-input" @bind="_passwordDto.ConfirmPassword"
-                               placeholder="أعد إدخال كلمة المرور" />
-                    </div>
-
-                    <div class="form-group-check">
-                        <label class="check-label">
-                            <input type="checkbox" @bind="_passwordDto.MustChangeOnLogin" />
-                            <span>يجب تغيير كلمة المرور عند الدخول التالي</span>
-                        </label>
-                    </div>
-
-                    @if (!string.IsNullOrEmpty(_resetError))
-                    {
-                        <div class="alert-msg alert-error" style="margin-top:12px">
-                            <span>@_resetError</span>
-                        </div>
-                    }
                 </div>
-                <div class="modal-footer">
-                    <button class="btn-modal btn-cancel" @onclick="CloseResetModal">إلغاء</button>
-                    <button class="btn-modal btn-save" @onclick="ConfirmResetPassword" disabled="@_resetting">
-                        @if (_resetting)
-                        {
-                            <span>جاري الحفظ...</span>
-                        }
-                        else
-                        {
-                            <span>تأكيد</span>
-                        }
-                    </button>
-                </div>
-            </div>
+            }
         </div>
-    }
+    </div>
+</div>
 
-} <!-- نهاية else الخاص بـ _authorized -->
+@if (_showResetModal)
+{
+    <div class="modal-overlay-luxury" @onclick="CloseResetModal"><div class="modal-card-luxury" @onclick:stopPropagation="true">
+        <div class="ml-gold-line"></div>
+        <div class="ml-header"><h3>إعادة تعيين كلمة المرور — @_resetUser?.FullName</h3><button class="btn-close-x" @onclick="CloseResetModal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+        <div class="ml-body">
+            <div class="form-grid-luxury"><div class="fg full"><label>كلمة المرور الجديدة *</label><input type="password" @bind="_passwordDto.NewPassword" placeholder="6 أحرف على الأقل" /></div><div class="fg full"><label>تأكيد كلمة المرور *</label><input type="password" @bind="_passwordDto.ConfirmPassword" placeholder="أعد الإدخال" /></div><div class="fg full"><label class="switch-luxury"><input type="checkbox" @bind="_passwordDto.MustChangeOnLogin" /><span></span></label><span style="margin-right:8px;font-size:.82rem;font-weight:600">يجب تغيير كلمة المرور عند الدخول التالي</span></div></div>
+            @if(!string.IsNullOrEmpty(_resetError)){<div class="msg-luxury msg-error" style="margin-top:12px">@_resetError</div>}
+        </div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="ConfirmResetPassword" disabled="@_resetting">@(_resetting ? "جاري الحفظ..." : "تأكيد")</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseResetModal">إلغاء</button></div>
+    </div></div>
+}
+@if (!string.IsNullOrEmpty(_toast)){<div class="toast-luxury"><div class="toast-card-luxury @(_toastOk?"success":"error")"><span>@_toast</span><button @onclick='()=>_toast=""'>✕</button></div></div>}
+}
+
 <style>
-    /* ===== Page Header ===== */
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-    .page-header-right {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    .page-header-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .page-title {
-        font-size: 1.3rem;
-        font-weight: 800;
-        color: #0f172a;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin: 0;
-    }
-    .title-icon {
-        width: 28px;
-        height: 28px;
-        color: #2563eb;
-    }
-    .record-count {
-        background: #f1f5f9;
-        color: #64748b;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: .78rem;
-        font-weight: 700;
-    }
-
-    /* ===== Action Buttons ===== */
-    .btn-action {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 10px 18px;
-        border: none;
-        border-radius: 10px;
-        font-size: .82rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all .2s ease;
-    }
-    .btn-action svg { width: 16px; height: 16px; }
-    .btn-add {
-        background: linear-gradient(135deg, #2563eb, #2563eb);
-        color: white;
-        box-shadow: 0 4px 12px rgba(37,99,235,.3);
-    }
-    .btn-add:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,.4); }
-    .btn-export {
-        background: #f1f5f9;
-        color: #475569;
-        border: 1px solid #e2e8f0;
-    }
-    .btn-export:hover { background: #e2e8f0; }
-
-    /* ===== Filters ===== */
-    .filters-card {
-        background: white;
-        border-radius: 14px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(15,23,42,.06);
-        border: 1px solid #e2e8f0;
-    }
-    .filters-grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1fr 1fr auto;
-        gap: 14px;
-        align-items: end;
-    }
-    .filter-group { display: flex; flex-direction: column; gap: 6px; }
-    .filter-label { font-size: .86rem; font-weight: 700; color: #475569; }
-    .filter-input {
-        height: 42px;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 0 14px;
-        font-size: .88rem;
-        background: #f8fafc;
-        transition: all .2s;
-        width: 100%;
-    }
-    .filter-input:focus { border-color: #2563eb; background: white; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .input-icon-wrap { position: relative; }
-    .input-icon {
-        position: absolute;
-        right: 12px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 16px;
-        height: 16px;
-        color: #94a3b8;
-        pointer-events: none;
-    }
-    .input-icon-wrap .filter-input { padding-right: 38px; }
-    .input-clear {
-        position: absolute;
-        left: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: #e2e8f0;
-        border: none;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        font-size: .7rem;
-        color: #64748b;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .btn-filter-reset {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        height: 42px;
-        padding: 0 16px;
-        background: #fef2f2;
-        color: #dc2626;
-        border: 1px solid #fecaca;
-        border-radius: 10px;
-        font-size: .8rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all .2s;
-        white-space: nowrap;
-    }
-    .btn-filter-reset:hover { background: #fee2e2; }
-    .btn-filter-reset svg { width: 15px; height: 15px; }
-
-    /* ===== Alert Messages ===== */
-    .alert-msg {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 18px;
-        border-radius: 10px;
-        margin-bottom: 16px;
-        font-size: .85rem;
-        font-weight: 600;
-    }
-    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .alert-close {
-        background: none;
-        border: none;
-        font-size: .9rem;
-        cursor: pointer;
-        color: inherit;
-        opacity: .6;
-    }
-
-    /* ===== Loading ===== */
-    .loading-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 80px 20px;
-        color: #64748b;
-        gap: 16px;
-        font-size: .9rem;
-    }
-    .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid #e2e8f0;
-        border-top-color: #2563eb;
-        border-radius: 50%;
-        animation: spin .8s linear infinite;
-    }
-    @@keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ===== Empty State ===== */
-    .empty-state {
-        text-align: center;
-        padding: 80px 20px;
-        color: #94a3b8;
-    }
-    .empty-icon { margin-bottom: 16px; }
-    .empty-icon svg { width: 64px; height: 64px; opacity: .4; }
-    .empty-state h3 { font-size: 1.1rem; color: #475569; margin-bottom: 8px; }
-    .empty-state p { font-size: .85rem; }
-
-    /* ===== Table ===== */
-    .table-card {
-        background: white;
-        border-radius: 14px;
-        box-shadow: 0 2px 8px rgba(15,23,42,.06);
-        border: 1px solid #e2e8f0;
-        overflow: hidden;
-    }
-    .table-responsive { overflow-x: auto; }
-    .data-table { width: 100%; border-collapse: collapse; }
-    .data-table thead { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
-    .data-table th {
-        padding: 14px 16px;
-        font-size: .86rem;
-        font-weight: 800;
-        color: #475569;
-        text-align: right;
-        white-space: nowrap;
-    }
-    .data-table td {
-        padding: 12px 16px;
-        font-size: .88rem;
-        color: #334155;
-        border-bottom: 1px solid #f1f5f9;
-        vertical-align: middle;
-    }
-    .data-table tbody tr:hover { background: #f8fafc; }
-    .th-narrow, .td-narrow { width: 50px; text-align: center; }
-    .th-center, .td-center { text-align: center; }
-    .row-inactive { opacity: .6; }
-    .row-locked { background: #fef2f2 !important; }
-
-    /* ===== User Cell ===== */
-    .user-cell { display: flex; align-items: center; gap: 10px; }
-    .user-avatar {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #2563eb, #6366f1);
-        color: white;
-        font-weight: 800;
-        font-size: .75rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-    .user-info { display: flex; flex-direction: column; }
-    .user-username { font-weight: 700; color: #0f172a; font-size: .88rem; }
-    .user-email { font-size: .8rem; color: #94a3b8; margin-top: 2px; }
-
-    /* ===== Cell Helpers ===== */
-    .cell-main { display: block; font-weight: 600; }
-    .cell-sub { display: block; font-size: .78rem; color: #94a3b8; margin-top: 2px; }
-    .cell-empty { color: #cbd5e1; font-size: .8rem; }
-
-    /* ===== Badges ===== */
-    .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 5px 12px;
-        border-radius: 8px;
-        font-size: .8rem;
-        font-weight: 700;
-        white-space: nowrap;
-    }
-    .badge-icon { width: 12px; height: 12px; }
-    .badge-role { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-    .badge-active { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    .badge-inactive { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
-    .badge-locked { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-    .badge-unlocked { background: #f0fdf4; color: #22c55e; border: 1px solid #bbf7d0; }
-    .badge-warn { font-size: .9rem; padding: 2px 4px; }
-
-    /* ===== Action Buttons (Table) ===== */
-    .action-btns { display: flex; align-items: center; gap: 4px; justify-content: center; }
-    .btn-icon {
-        width: 34px;
-        height: 34px;
-        border: 1px solid #e2e8f0;
-        background: white;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all .2s;
-    }
-    .btn-icon svg { width: 15px; height: 15px; }
-    .btn-icon:hover { transform: translateY(-1px); }
-    .btn-edit { color: #2563eb; }
-    .btn-edit:hover { background: #eff6ff; border-color: #bfdbfe; }
-    .btn-activate { color: #22c55e; }
-    .btn-activate:hover { background: #f0fdf4; border-color: #bbf7d0; }
-    .btn-deactivate { color: #f59e0b; }
-    .btn-deactivate:hover { background: #fffbeb; border-color: #fde68a; }
-    .btn-unlock { color: #2563eb; }
-    .btn-unlock:hover { background: #f5f3ff; border-color: #bfdbfe; }
-    .btn-reset-pwd { color: #ec4899; }
-    .btn-reset-pwd:hover { background: #fdf2f8; border-color: #f9a8d4; }
-
-    /* ===== Modal ===== */
-    .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(15,23,42,.5);
-        backdrop-filter: blur(4px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 20px;
-    }
-    .modal-box {
-        background: white;
-        border-radius: 16px;
-        width: 100%;
-        max-width: 480px;
-        box-shadow: 0 20px 60px rgba(15,23,42,.2);
-        overflow: hidden;
-        animation: modalIn .2s ease;
-    }
-    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } }
-    .modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 18px 24px;
-        border-bottom: 1px solid #e2e8f0;
-        background: #f8fafc;
-    }
-    .modal-title {
-        font-size: .95rem;
-        font-weight: 800;
-        color: #0f172a;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0;
-    }
-    .modal-title-icon { width: 20px; height: 20px; color: #2563eb; }
-    .modal-close {
-        width: 32px;
-        height: 32px;
-        border: 1px solid #e2e8f0;
-        background: white;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: .9rem;
-        color: #64748b;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all .2s;
-    }
-    .modal-close:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-    .modal-body { padding: 24px; }
-    .modal-info { font-size: .85rem; color: #475569; margin-bottom: 20px; line-height: 1.6; }
-    .modal-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        padding: 16px 24px;
-        border-top: 1px solid #e2e8f0;
-        background: #f8fafc;
-    }
-
-    /* ===== Form Elements ===== */
-    .form-group { margin-bottom: 16px; }
-    .form-label {
-        display: block;
-        font-size: .8rem;
-        font-weight: 700;
-        color: #475569;
-        margin-bottom: 6px;
-    }
-    .required { color: #dc2626; }
-    .form-input {
-        width: 100%;
-        height: 42px;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 0 14px;
-        font-size: .85rem;
-        background: #f8fafc;
-        transition: all .2s;
-    }
-    .form-input:focus { border-color: #2563eb; background: white; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .form-group-check { margin-bottom: 16px; }
-    .check-label {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: .84rem;
-        color: #334155;
-        cursor: pointer;
-    }
-
-    /* ===== Modal Buttons ===== */
-    .btn-modal {
-        padding: 10px 24px;
-        border: none;
-        border-radius: 10px;
-        font-size: .84rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all .2s;
-    }
-    .btn-cancel { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-    .btn-cancel:hover { background: #e2e8f0; }
-    .btn-save { background: linear-gradient(135deg, #2563eb, #2563eb); color: white; }
-    .btn-save:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,.3); }
-    .btn-save:disabled { opacity: .6; cursor: not-allowed; transform: none; }
-
-    /* ===== Responsive ===== */
-    @@media (max-width: 1024px) {
-        .filters-grid { grid-template-columns: 1fr 1fr; }
-        .filter-search { grid-column: 1 / -1; }
-    }
-    @@media (max-width: 640px) {
-        .filters-grid { grid-template-columns: 1fr; }
-        .page-header { flex-direction: column; align-items: stretch; }
-        .page-header-left { justify-content: flex-end; }
-    }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;margin:0 auto}.luxury-page.full-width{max-width:100%;width:100%}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.15rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.7rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.red{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:280px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:42px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:26px;height:26px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:42px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:120px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5;z-index:2}
+.mudtabs-header-luxury{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header-luxury::-webkit-scrollbar{display:none}
+.mudtab-btn-luxury{position:relative;display:flex;align-items:center;gap:8px;padding:14px 20px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:800;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}
+.mudtab-btn-luxury:hover{background:rgba(212,175,55,.05);color:#0A0F1E}.mudtab-btn-luxury.active{color:var(--gold-dark);background:rgba(212,175,55,.08);border-bottom-color:var(--gold)}
+.mudtab-btn-luxury .mt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.mt-icon svg{width:14px;height:14px}
+.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800}.mt-count.gold{background:rgba(212,175,55,.15);color:var(--gold-dark)}
+.mudtabs-body-luxury{padding:18px;background:#fff;min-height:400px}
+.msg-luxury{padding:12px 16px;border-radius:12px;font-size:.84rem;font-weight:600;display:flex;align-items:center;gap:8px}.msg-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.msg-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury.full{width:100%}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:1100px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:160px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.acc-cell{display:flex;align-items:center;gap:10px}.acc-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid}.acc-icon.type-1{background:#eff6ff;color:#2563eb;border-color:#dbeafe}.acc-icon svg{width:16px;height:16px}.acc-info{display:flex;flex-direction:column}.acc-name{font-weight:800;color:#0A0F1E;font-size:.86rem}.acc-name-en{font-weight:600;color:#8B95A5;font-size:.72rem}
+.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.type-1{background:#eff6ff;color:#2563eb;border-color:#dbeafe}.coa-detail{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.add{color:#059669;border-color:#a7f3d0}.act-btn svg{width:13px;height:13px}
+.user-avatar-luxury{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#070B14,#0A0F1E);color:var(--gold);font-weight:900;font-size:.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(212,175,55,.2)}
+.row-inactive{opacity:.6}.row-locked{background:#fef2f2 !important}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.ml-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.ml-header h3{margin:0;font-size:.95rem;font-weight:800;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.ml-body{padding:20px}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 </style>
+
 @code {
-    // ===== الحالة =====
     private bool _authorized = false;
     private bool _loading = true;
     private string _message = "";
     private bool _isError = false;
-
-    // ===== البيانات =====
+    private string _toast = "";
+    private bool _toastOk = true;
+    private System.Timers.Timer? _searchTimer;
     private List<UserListDto> _users = new();
+    private List<UserListDto> filteredUsers => _users.Where(u=>
+        activeTab switch{
+            "active"=>u.IsActive,
+            "inactive"=>!u.IsActive,
+            "locked"=>u.IsLocked,
+            "mustchange"=>u.MustChangePassword,
+            _=>true
+        }).ToList();
     private List<LookupDto> _rolesLookup = new();
     private UserFilterDto _filter = new();
-
-    // ===== مساعدات الفلاتر =====
-    private string _filterActiveText = "";
-    private string _filterLockedText = "";
-    private System.Timers.Timer? _searchTimer;
-
-    // ===== Modal كلمة المرور =====
     private bool _showResetModal = false;
     private UserListDto? _resetUser;
     private UserPasswordDto _passwordDto = new();
     private string _resetError = "";
     private bool _resetting = false;
+    private string activeTab = "all";
 
-    // ══════════════════════════════════════
-    // التهيئة
-    // ══════════════════════════════════════
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // التحقق من تسجيل الدخول
-            if (!UserSession.IsLoggedIn)
-            {
-                var restored = await UserSession.TryRestoreSessionAsync();
-                if (!restored)
-                {
-                    Navigation.NavigateTo("/login");
-                    return;
-                }
-                if (!PermissionService.IsLoaded)
-                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-            }
-
-            // التحقق من صلاحية العرض
-            if (!PermissionService.CanView("SCR_USERS"))
-            {
-                Navigation.NavigateTo("/access-denied");
-                return;
-            }
-
-            _authorized = true;
-
-            // تحميل البيانات
-            await LoadLookups();
-            await LoadData();
-
-            StateHasChanged();
+            if (!UserSession.IsLoggedIn){var restored=await UserSession.TryRestoreSessionAsync(); if(!restored){Navigation.NavigateTo("/login"); return;} if(!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);}
+            if (!PermissionService.CanView("SCR_USERS")){Navigation.NavigateTo("/access-denied"); return;}
+            _authorized=true;
+            await LoadLookups(); await LoadData(); StateHasChanged();
         }
     }
 
-    // ══════════════════════════════════════
-    // تحميل البيانات
-    // ══════════════════════════════════════
-    private async Task LoadLookups()
-    {
-        try
-        {
-            _rolesLookup = await UserService.GetRolesLookupAsync();
-        }
-        catch { }
-    }
-
+    private async Task LoadLookups(){try{_rolesLookup=await UserService.GetRolesLookupAsync();}catch{}}
     private async Task LoadData()
     {
-        try
-        {
-            _loading = true;
-            StateHasChanged();
-
-            // تحويل الفلاتر النصية إلى bool
-            _filter.IsActive = string.IsNullOrEmpty(_filterActiveText) ? null : bool.Parse(_filterActiveText);
-            _filter.IsLocked = string.IsNullOrEmpty(_filterLockedText) ? null : bool.Parse(_filterLockedText);
-
-            _users = await UserService.GetAllAsync(_filter);
-        }
-        catch (Exception ex)
-        {
-            ShowError("خطأ في تحميل البيانات: " + ex.Message);
-        }
-        finally
-        {
-            _loading = false;
-        }
+        try{_loading=true; StateHasChanged(); _users=await UserService.GetAllAsync(_filter);}
+        catch(Exception ex){ShowError("خطأ: "+ex.Message);}
+        finally{_loading=false;}
     }
 
-    // ══════════════════════════════════════
-    // الفلاتر والبحث
-    // ══════════════════════════════════════
-    private async Task ApplyFilters()
-    {
-        await LoadData();
-    }
-
-    private void OnSearchKeyUp(KeyboardEventArgs e)
-    {
-        _searchTimer?.Stop();
-        _searchTimer?.Dispose();
-        _searchTimer = new System.Timers.Timer(400);
-        _searchTimer.Elapsed += async (s, args) =>
-        {
-            _searchTimer?.Stop();
-            await InvokeAsync(async () =>
-            {
-                await LoadData();
-                StateHasChanged();
-            });
-        };
-        _searchTimer.AutoReset = false;
-        _searchTimer.Start();
-    }
-
-    private async Task ClearSearch()
-    {
-        _filter.SearchText = "";
-        await LoadData();
-    }
-
-    private async Task ResetFilters()
-    {
-        _filter = new UserFilterDto();
-        _filterActiveText = "";
-        _filterLockedText = "";
-        await LoadData();
-    }
-
-    // ══════════════════════════════════════
-    // التنقل
-    // ══════════════════════════════════════
-    private void AddNew()
-    {
-        Navigation.NavigateTo("/users/new");
-    }
-
-    private void EditUser(int userId)
-    {
-        Navigation.NavigateTo($"/users/edit/{userId}");
-    }
-
-    // ══════════════════════════════════════
-    // تفعيل / تعطيل
-    // ══════════════════════════════════════
+    private void SetTab(string tab){activeTab=tab;}
+    private async Task ApplyFilters()=>await LoadData();
+    private void OnSearchKeyUp(KeyboardEventArgs e){_searchTimer?.Stop(); _searchTimer?.Dispose(); _searchTimer=new System.Timers.Timer(400); _searchTimer.Elapsed+=async (s,args)=>{_searchTimer?.Stop(); await InvokeAsync(async()=>{await LoadData(); StateHasChanged();});}; _searchTimer.AutoReset=false; _searchTimer.Start();}
+    private async Task ClearSearch(){_filter.SearchText=""; await LoadData();}
+    private async Task ResetFilters(){_filter=new UserFilterDto(); await LoadData();}
+    private void AddNew()=>Navigation.NavigateTo("/users/new");
+    private void EditUser(int userId)=>Navigation.NavigateTo($"/users/edit/{userId}");
     private async Task ToggleActive(UserListDto user)
     {
-        try
-        {
-            // حماية حساب الأدمن الافتراضي
-            if (await UserService.IsDefaultAdminAsync(user.UserID))
-            {
-                ShowError("لا يمكن تعطيل حساب مدير النظام الافتراضي");
-                return;
-            }
-
-            var newState = !user.IsActive;
-            var result = await UserService.ToggleActiveAsync(user.UserID, newState, UserSession.CurrentUserID);
-
-            if (result)
-            {
-                user.IsActive = newState;
-                ShowSuccess(newState ? $"تم تفعيل المستخدم: {user.FullName}" : $"تم تعطيل المستخدم: {user.FullName}");
-            }
-        }
-        catch (Exception ex)
-        {
-            ShowError("خطأ: " + ex.Message);
-        }
+        try{if(await UserService.IsDefaultAdminAsync(user.UserID)){ShowError("لا يمكن تعطيل مدير النظام الافتراضي"); return;} var newState=!user.IsActive; var result=await UserService.ToggleActiveAsync(user.UserID, newState, UserSession.CurrentUserID); if(result){user.IsActive=newState; ShowSuccess(newState ? $"تم تفعيل: {user.FullName}" : $"تم تعطيل: {user.FullName}");}}
+        catch(Exception ex){ShowError(ex.Message);}
     }
-
-    // ══════════════════════════════════════
-    // فك الحظر
-    // ══════════════════════════════════════
-    private async Task UnlockUser(UserListDto user)
-    {
-        try
-        {
-            var result = await UserService.UnlockAsync(user.UserID, UserSession.CurrentUserID);
-            if (result)
-            {
-                user.IsLocked = false;
-                user.FailedLoginAttempts = 0;
-                ShowSuccess($"تم فك حظر المستخدم: {user.FullName}");
-            }
-        }
-        catch (Exception ex)
-        {
-            ShowError("خطأ: " + ex.Message);
-        }
-    }
-
-    // ══════════════════════════════════════
-    // إعادة تعيين كلمة المرور
-    // ══════════════════════════════════════
-    private void ShowResetPassword(UserListDto user)
-    {
-        _resetUser = user;
-        _passwordDto = new UserPasswordDto { UserID = user.UserID, MustChangeOnLogin = true };
-        _resetError = "";
-        _showResetModal = true;
-    }
-
-    private void CloseResetModal()
-    {
-        _showResetModal = false;
-        _resetUser = null;
-        _resetError = "";
-    }
-
-    private async Task ConfirmResetPassword()
-    {
-        try
-        {
-            _resetting = true;
-            _resetError = "";
-            StateHasChanged();
-
-            await UserService.ResetPasswordAsync(_passwordDto, UserSession.CurrentUserID);
-
-            _showResetModal = false;
-            ShowSuccess($"تم إعادة تعيين كلمة المرور للمستخدم: {_resetUser?.FullName}");
-
-            // تحديث حالة MustChangePassword في القائمة
-            if (_resetUser != null)
-                _resetUser.MustChangePassword = _passwordDto.MustChangeOnLogin;
-        }
-        catch (Exception ex)
-        {
-            _resetError = ex.Message;
-        }
-        finally
-        {
-            _resetting = false;
-        }
-    }
-
-    // ══════════════════════════════════════
-    // التصدير
-    // ══════════════════════════════════════
-    private void ExportData()
-    {
-        // سيتم التنفيذ لاحقاً
-        ShowSuccess("جاري تجهيز التصدير...");
-    }
-
-    // ══════════════════════════════════════
-    // الرسائل
-    // ══════════════════════════════════════
-    private void ShowSuccess(string msg) { _message = msg; _isError = false; }
-    private void ShowError(string msg) { _message = msg; _isError = true; }
-
-    // ══════════════════════════════════════
-    // مساعدات
-    // ══════════════════════════════════════
-    private string GetInitials(string fullName)
-    {
-        if (string.IsNullOrWhiteSpace(fullName)) return "U";
-        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2
-            ? $"{parts[0][0]}{parts[1][0]}".ToUpper()
-            : parts[0][0].ToString().ToUpper();
-    }
+    private async Task UnlockUser(UserListDto user){try{var result=await UserService.UnlockAsync(user.UserID, UserSession.CurrentUserID); if(result){user.IsLocked=false; user.FailedLoginAttempts=0; ShowSuccess($"تم فك حظر: {user.FullName}");}}catch(Exception ex){ShowError(ex.Message);}}
+    private void ShowResetPassword(UserListDto user){_resetUser=user; _passwordDto=new UserPasswordDto{UserID=user.UserID, MustChangeOnLogin=true}; _resetError=""; _showResetModal=true;}
+    private void CloseResetModal(){_showResetModal=false; _resetUser=null; _resetError="";}
+    private async Task ConfirmResetPassword(){try{_resetting=true; _resetError=""; StateHasChanged(); await UserService.ResetPasswordAsync(_passwordDto, UserSession.CurrentUserID); _showResetModal=false; ShowSuccess($"تم إعادة تعيين كلمة المرور: {_resetUser?.FullName}"); if(_resetUser!=null) _resetUser.MustChangePassword=_passwordDto.MustChangeOnLogin;}catch(Exception ex){_resetError=ex.Message;}finally{_resetting=false;}}
+    private void ShowSuccess(string msg){_message=msg; _isError=false; _toast=msg; _toastOk=true;}
+    private void ShowError(string msg){_message=msg; _isError=true; _toast=msg; _toastOk=false;}
+    private string GetInitials(string fullName){if(string.IsNullOrWhiteSpace(fullName)) return "U"; var parts=fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries); return parts.Length>=2 ? $"{parts[0][0]}{parts[1][0]}".ToUpper() : parts[0][0].ToString().ToUpper();}
 }

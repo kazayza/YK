@@ -31,7 +31,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">@pageTitle</h2><div class="lh-meta">@if (!string.IsNullOrEmpty(header.InvoiceNumber)){<code class="doc-num-luxury">@header.InvoiceNumber</code><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetStatusColor(header.InvoiceStatus)">@SalesInvoiceService.GetStatusName(header.InvoiceStatus)</span><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetPaymentStatusColor(header.PaymentStatus)">@SalesInvoiceService.GetPaymentStatusName(header.PaymentStatus)</span><span class="tax-badge-luxury @(header.IsTaxable?"yes":"no")">@(header.IsTaxable ? $"مع ضريبة {header.TaxRate:#,##0}%" : "بدون ضريبة")</span>}</div></div>
                 </div>
                 <div class="lh-actions">
-                    <div class="workflow-mini"><span class="wm-dot">عرض</span><span class="wm-line"></span><span class="wm-dot">أمر</span><span class="wm-line"></span><span class="wm-dot">تسليم</span><span class="wm-line"></span><span class="wm-dot active">فاتورة</span><span class="wm-line"></span><span class="wm-dot">مرتجع</span></div>
+                    <div class="workflow-mini"><span class="wm-dot done">عرض</span><span class="wm-line done"></span><span class="wm-dot done">أمر</span><span class="wm-line done"></span><span class="wm-dot active">فاتورة</span><span class="wm-line"></span><span class="wm-dot">مرتجع</span><span class="wm-line"></span><span class="wm-dot">قبض</span></div>
                     @if (permissions.CanPrint && InvoiceId > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="PrintDoc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
                 </div>
             </div>
@@ -47,11 +47,10 @@ else
         {
             @if (isNewMode && !isSourceLocked)
             {
-                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">مصدر الفاتورة</h3></div>
-                    <div class="source-cards-luxury">
-                        <div class="source-card-luxury @(header.InvoiceSource == 1 ? "active" : "")" @onclick="SelectDeliverySource"><div class="source-card-icon-luxury" style="background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="source-card-title-luxury">من إذن تسليم</div><div class="source-card-desc-luxury">فاتورة بناءً على إذن تسليم معتمد</div><div class="source-check-luxury">@if(header.InvoiceSource==1){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
-                        <div class="source-card-luxury @(header.InvoiceSource == 2 ? "active" : "")" @onclick="SelectOrderSource"><div class="source-card-icon-luxury" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="source-card-title-luxury">من أمر بيع</div><div class="source-card-desc-luxury">فاتورة بناءً على أمر بيع معتمد</div><div class="source-check-luxury">@if(header.InvoiceSource==2){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
-                        <div class="source-card-luxury @(header.InvoiceSource == 3 ? "active" : "")" @onclick="SelectDirectSource"><div class="source-card-icon-luxury" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.18)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></div><div class="source-card-title-luxury">فاتورة مباشرة ⭐</div><div class="source-card-desc-luxury">بدون أمر/تسليم — مع/بدون ضريبة اختياري — الأهم</div><div class="source-check-luxury">@if(header.InvoiceSource==3){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">مصدر الفاتورة - الجداول الموجودة فقط</h3><span class="sec-badge-luxury">الفاتورة هي الأساس</span></div>
+                    <div class="source-cards-luxury" style="grid-template-columns:repeat(2,1fr)">
+                        <div class="source-card-luxury @(header.InvoiceSource == 2 ? "active" : "")" @onclick="SelectOrderSource"><div class="source-card-icon-luxury" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="source-card-title-luxury">من أمر بيع</div><div class="source-card-desc-luxury">اختياري - تحميل سطور من أمر بيع معتمد موجود 28 عمود</div><div class="source-check-luxury">@if(header.InvoiceSource==2){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                        <div class="source-card-luxury @(header.InvoiceSource == 3 ? "active" : "")" @onclick="SelectDirectSource"><div class="source-card-icon-luxury" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.18)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></div><div class="source-card-title-luxury">فاتورة مباشرة - الأساس</div><div class="source-card-desc-luxury">بدون أمر - مع/بدون ضريبة - نفس نظام المشتريات</div><div class="source-check-luxury">@if(header.InvoiceSource==3){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
                     </div>
                 </div>
             }
@@ -136,7 +135,7 @@ else
         <div class="modal-overlay-luxury" @onclick="() => showRejectDialog = false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>رفض الفاتورة</h4><p>أدخل سبب الرفض:</p><textarea class="f-input-luxury" rows="3" @bind="rejectReason" placeholder="سبب الرفض..."></textarea>@if (!string.IsNullOrEmpty(rejectMsg)){<div class="form-msg-luxury err">@rejectMsg</div>}<div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog = false">إلغاء</button></div></div></div>
     }
 
-    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div>}
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'></button></div></div>}
 }
 
 <style>
@@ -228,8 +227,7 @@ else
                 var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
                 var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                 var source = query["source"];
-                if (source == "delivery") header.InvoiceSource = 1;
-                else if (source == "order") header.InvoiceSource = 2;
+                if (source == "order") header.InvoiceSource = 2;
                 else { header.InvoiceSource = 3; isSourceLocked = true; }
             }
         }
@@ -254,7 +252,6 @@ else
         else { toast = "الفاتورة غير موجودة"; toastOk = false; }
     }
 
-    private void SelectDeliverySource() { header.InvoiceSource = 1; isSourceLocked = false; }
     private void SelectOrderSource() { header.InvoiceSource = 2; isSourceLocked = false; }
     private void SelectDirectSource() { header.InvoiceSource = 3; isSourceLocked = true; }
 
@@ -306,7 +303,7 @@ else
                 header.InvoiceStatus = 1;
                 var newId = await InvService.InsertInvoiceAsync(header, UserSession.UserID);
                 InvoiceId = newId; header.InvoiceID = newId;
-                toast = $"تم الإنشاء: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")} ✅";
+                toast = $"تم الإنشاء: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")} ";
                 toastOk = true; isSourceLocked = true;
                 details = await InvService.GetInvoiceDetailsAsync(newId);
                 header = await InvService.GetInvoiceByIdAsync(newId) ?? header;
@@ -317,7 +314,7 @@ else
                 await InvService.UpdateInvoiceAsync(header, UserSession.UserID);
                 header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
                 details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
-                toast = "تم الحفظ ✅"; toastOk = true;
+                toast = "تم الحفظ "; toastOk = true;
             }
         }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
@@ -328,7 +325,7 @@ else
     {
         if (!details.Any()) { toast = "أضف أصناف أولاً"; toastOk = false; StateHasChanged(); return; }
         isSaving = true; StateHasChanged();
-        try { await InvService.SubmitForApprovalAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID); header.InvoiceStatus = 2; toast = "تم الإرسال للاعتماد — سيتم إنشاء القيد الأوتوماتيك عند الاعتماد ✅"; toastOk = true; }
+        try { await InvService.SubmitForApprovalAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID); header.InvoiceStatus = 2; toast = "تم الإرسال للاعتماد — سيتم إنشاء القيد الأوتوماتيك عند الاعتماد "; toastOk = true; }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
         finally { isSaving = false; StateHasChanged(); }
     }
@@ -342,7 +339,7 @@ else
             await InvService.ApproveAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
             header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
             details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
-            toast = "تم اعتماد الفاتورة + خصم مخزون + قيد أوتوماتيك ✅"; toastOk = true; isSaving = false; StateHasChanged();
+            toast = "تم اعتماد الفاتورة + خصم مخزون + قيد أوتوماتيك "; toastOk = true; isSaving = false; StateHasChanged();
             await Task.Delay(2000); Navigation.NavigateTo("/sales-invoices");
         }
         catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
@@ -378,7 +375,7 @@ else
             await InvService.InsertDetailAsync(editLine, UserSession.UserID);
             details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
             header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-            showLineForm = false; toast = "تم الإضافة ✅"; toastOk = true;
+            showLineForm = false; toast = "تم الإضافة "; toastOk = true;
         }
         catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
         finally { isSavingLine = false; StateHasChanged(); }
@@ -386,7 +383,7 @@ else
 
     private async Task DeleteLine(int detailId)
     {
-        try { await InvService.DeleteDetailAsync(detailId, UserSession.UserID); details = await InvService.GetInvoiceDetailsAsync(InvoiceId); header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header; toast = "تم الحذف ✅"; toastOk = true; }
+        try { await InvService.DeleteDetailAsync(detailId, UserSession.UserID); details = await InvService.GetInvoiceDetailsAsync(InvoiceId); header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header; toast = "تم الحذف "; toastOk = true; }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
         StateHasChanged();
     }

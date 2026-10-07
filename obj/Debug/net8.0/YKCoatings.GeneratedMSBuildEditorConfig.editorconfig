@@ -34,6 +34,10 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBY2Nlc3NEZW5pZWQucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/AccountLedger.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBY2NvdW50TGVkZ2VyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/Attendance.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBdHRlbmRhbmNlLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
@@ -46,12 +50,28 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBdWRpdExvZy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/BankAccounts.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xCYW5rQWNjb3VudHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/BOMEdit.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xCT01FZGl0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/BOMList.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xCT01MaXN0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/CashBoxes.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDYXNoQm94ZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/CashBoxStatement.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDYXNoQm94U3RhdGVtZW50LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/CashTransfers.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDYXNoVHJhbnNmZXJzLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/Categories.razor]
@@ -62,12 +82,24 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDaGFuZ2VQYXNzd29yZC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/ChartOfAccounts.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDaGFydE9mQWNjb3VudHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/Cheques.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDaGVxdWVzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/ContractOrderEdit.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDb250cmFjdE9yZGVyRWRpdC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/ContractOrders.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDb250cmFjdE9yZGVycy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/CostCenters.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xDb3N0Q2VudGVycy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/Counter.razor]
@@ -126,6 +158,18 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xFcnJvci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/ExpenseEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xFeHBlbnNlRWRpdC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/Expenses.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xFeHBlbnNlcy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/FiscalYears.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xGaXNjYWxZZWFycy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/GoodsReceiptEdit.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xHb29kc1JlY2VpcHRFZGl0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
@@ -152,6 +196,18 @@ build_metadata.AdditionalFiles.CssScope =
 
 [D:/YK Coatings/YkWeb/Components/Pages/JobTitles.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xKb2JUaXRsZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/JournalEntries.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xKb3VybmFsRW50cmllcy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/JournalEntryEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xKb3VybmFsRW50cnlFZGl0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/JournalEntryView.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xKb3VybmFsRW50cnlWaWV3LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/LeaveBalances.razor]
@@ -204,6 +260,14 @@ build_metadata.AdditionalFiles.CssScope =
 
 [D:/YK Coatings/YkWeb/Components/Pages/PaymentTerms.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQYXltZW50VGVybXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/PaymentVoucherEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQYXltZW50Vm91Y2hlckVkaXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/PaymentVouchers.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQYXltZW50Vm91Y2hlcnMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/Payroll.razor]
@@ -290,6 +354,14 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQdXJjaGFzZVJldHVybnMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/YK Coatings/YkWeb/Components/Pages/ReceiptVoucherEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSZWNlaXB0Vm91Y2hlckVkaXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/ReceiptVouchers.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSZWNlaXB0Vm91Y2hlcnMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/YK Coatings/YkWeb/Components/Pages/RoleEdit.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSb2xlRWRpdC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
@@ -304,6 +376,14 @@ build_metadata.AdditionalFiles.CssScope =
 
 [D:/YK Coatings/YkWeb/Components/Pages/SalesInvoices.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTYWxlc0ludm9pY2VzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/SalesOrderEdit.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTYWxlc09yZGVyRWRpdC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/SalesOrders.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTYWxlc09yZGVycy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/SearchableSelect.razor]
@@ -340,6 +420,14 @@ build_metadata.AdditionalFiles.CssScope =
 
 [D:/YK Coatings/YkWeb/Components/Pages/Suppliers.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTdXBwbGllcnMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/TreasuryDashboard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUcmVhc3VyeURhc2hib2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/YK Coatings/YkWeb/Components/Pages/TrialBalance.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUcmlhbEJhbGFuY2UucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
 [D:/YK Coatings/YkWeb/Components/Pages/Units.razor]

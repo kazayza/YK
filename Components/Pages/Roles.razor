@@ -6,334 +6,198 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
+<PageTitle>الأدوار والصلاحيات</PageTitle>
+
 @if (!_authorized)
-{
-    <div></div>
-}
+{<div class="no-access-luxury" dir="rtl"><h4>جاري التحقق...</h4></div>}
 else
 {
-    <!-- ===== شريط العنوان ===== -->
-    <div class="page-header">
-        <div class="page-header-right">
-            <h2 class="page-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                إدارة الأدوار والصلاحيات
-            </h2>
-            <span class="record-count">@_roles.Count دور</span>
-        </div>
-        <div class="page-header-left">
-            @if (PermissionService.CanAdd("SCR_ROLES"))
-            {
-                <button class="btn-action btn-add" @onclick="AddNew">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    <span>دور جديد</span>
-                </button>
-            }
-        </div>
-    </div>
-
-    <!-- ===== البحث ===== -->
-    <div class="filters-card">
-        <div class="filter-search-single">
-            <div class="input-icon-wrap">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="input-icon">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input type="text" class="filter-input" placeholder="بحث بالكود أو الاسم..."
-                       @bind="_searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
-                @if (!string.IsNullOrWhiteSpace(_searchText))
-                {
-                    <button class="input-clear" @onclick="ClearSearch">✕</button>
+<div class="luxury-page full-width" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">الأدوار والصلاحيات</h2>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <span class="lh-badge"><span class="lh-dot"></span>@_roles.Count دور</span>
+                @if (PermissionService.CanAdd("SCR_ROLES")){
+                    <button class="btn-luxury btn-primary-luxury" @onclick="AddNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>دور جديد</button>
                 }
             </div>
         </div>
     </div>
 
-    <!-- ===== رسالة ===== -->
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <div class="alert-msg @(_isError ? "alert-error" : "alert-success")">
-            <span>@_message</span>
-            <button class="alert-close" @onclick="@(() => _message = "")">✕</button>
-        </div>
-    }
+    <div class="stats-luxury">
+        <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="st-info"><span class="st-value">@_roles.Count</span><span class="st-label">إجمالي</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@_roles.Sum(r=>r.UserCount)</span><span class="st-label">مستخدمين</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div><div class="st-info"><span class="st-value">@_roles.Sum(r=>r.PermissionCount)</span><span class="st-label">صلاحيات</span></div><div class="st-gold-line"></div></div>
+        <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div><div class="st-info"><span class="st-value">@_roles.Count(r=>r.IsSystemRole)</span><span class="st-label">نظامي</span></div><div class="st-gold-line"></div></div>
+    </div>
 
-    <!-- ===== التحميل ===== -->
-    @if (_loading)
-    {
-        <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <span>جاري تحميل البيانات...</span>
+    <div class="filter-luxury">
+        <div class="search-luxury" style="flex:1;min-width:280px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="بحث بالكود أو اسم الدور..." @bind="_searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            @if(!string.IsNullOrWhiteSpace(_searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
         </div>
-    }
-    else if (!_roles.Any())
-    {
-        <div class="empty-state">
-            <div class="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-            </div>
-            <h3>لا يوجد أدوار</h3>
-            <p>لا توجد نتائج مطابقة للبحث</p>
+        <div class="view-toggle-luxury">
+            <button class="vt-btn @(viewMode=="cards"?"active":"")" @onclick='()=>viewMode="cards"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
+            <button class="vt-btn @(viewMode=="table"?"active":"")" @onclick='()=>viewMode="table"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h18v18H3z"/><path d="M9 3v18"/><path d="M3 9h18"/></svg></button>
         </div>
-    }
-    else
-    {
-        <!-- ===== كروت الأدوار ===== -->
-        <div class="roles-grid">
-            @foreach (var role in _roles)
+        <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+    </div>
+
+    <div class="mudtabs-luxury">
+        <div class="mudtabs-header-luxury">
+            <button class="mudtab-btn-luxury @(activeTab=="all"?"active":"")" @onclick='()=>activeTab="all"'>
+                <span class="mt-icon" style="background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                الكل <span class="mt-count">@_roles.Count</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="system"?"active":"")" @onclick='()=>activeTab="system"'>
+                <span class="mt-icon" style="background:rgba(251,191,36,.15);color:#b45309;border:1px solid #fde68a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                نظامي <span class="mt-count gold">@_roles.Count(r=>r.IsSystemRole)</span>
+            </button>
+            <button class="mudtab-btn-luxury @(activeTab=="custom"?"active":"")" @onclick='()=>activeTab="custom"'>
+                <span class="mt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+                مخصص <span class="mt-count">@_roles.Count(r=>!r.IsSystemRole)</span>
+            </button>
+        </div>
+        <div class="mudtabs-body-luxury">
+            @if (!string.IsNullOrEmpty(_message))
+            {<div class="msg-luxury @( _isError ? "msg-error" : "msg-success")" style="margin-bottom:12px">@_message <button @onclick='()=>_message=""' style="margin-right:auto;background:none;border:none;cursor:pointer">✕</button></div>}
+
+            @if (_loading)
+            {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الأدوار...</p></div>}
+            else if (!filteredRoles.Any())
+            {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><h4>لا يوجد أدوار</h4></div>}
+            else
             {
-                <div class="role-card @(!role.IsActive ? "card-inactive" : "")">
-
-                    <!-- الهيدر -->
-                    <div class="role-card-header">
-                        <div class="role-card-icon @(role.IsSystemRole ? "system-icon" : "")">
-                            @if (role.IsSystemRole)
-                            {
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                                </svg>
-                            }
-                            else
-                            {
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                    <circle cx="9" cy="7" r="4"/>
-                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                                </svg>
-                            }
-                        </div>
-                        <div class="role-card-info">
-                            <h3 class="role-name">@role.RoleNameAr</h3>
-                            <span class="role-code">@role.RoleCode</span>
-                        </div>
-                        <div class="role-card-badges">
-                            @if (role.IsSystemRole)
-                            {
-                                <span class="badge badge-system">نظامي</span>
-                            }
-                            @if (role.IsActive)
-                            {
-                                <span class="badge badge-active">نشط</span>
-                            }
-                            else
-                            {
-                                <span class="badge badge-inactive">غير نشط</span>
-                            }
-                        </div>
-                    </div>
-
-                    <!-- الوصف -->
-                    @if (!string.IsNullOrEmpty(role.Description))
-                    {
-                        <p class="role-desc">@role.Description</p>
-                    }
-
-                    <!-- الإحصائيات -->
-                    <div class="role-stats">
-                        <div class="role-stat">
-                            <span class="stat-num">@role.UserCount</span>
-                            <span class="stat-label">مستخدم</span>
-                        </div>
-                        <div class="role-stat">
-                            <span class="stat-num">@role.PermissionCount</span>
-                            <span class="stat-label">صلاحية</span>
-                        </div>
-                    </div>
-
-                    <!-- الأزرار -->
-                    <div class="role-card-actions">
-                        @if (PermissionService.CanEdit("SCR_ROLES"))
+                @if(viewMode=="cards")
+                {
+                    <div class="roles-grid-luxury full">
+                        @foreach (var role in filteredRoles)
                         {
-                            <button class="btn-role btn-role-edit" @onclick="@(() => EditRole(role.RoleID))" title="تعديل وصلاحيات">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                                <span>تعديل</span>
-                            </button>
-                        }
-
-                        @if (PermissionService.CanEdit("SCR_ROLES") && !role.IsSystemRole)
-                        {
-                            <button class="btn-role @(role.IsActive ? "btn-role-deactivate" : "btn-role-activate")"
-                                    @onclick="@(() => ToggleActive(role))"
-                                    title="@(role.IsActive ? "تعطيل" : "تفعيل")">
-                                @if (role.IsActive)
-                                {
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <circle cx="12" cy="12" r="10"/>
-                                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-                                    </svg>
-                                }
-                                else
-                                {
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                        <polyline points="22 4 12 14.01 9 11.01"/>
-                                    </svg>
-                                }
-                            </button>
-                        }
-
-                        @if (PermissionService.CanDelete("SCR_ROLES") && !role.IsSystemRole && role.UserCount == 0)
-                        {
-                            <button class="btn-role btn-role-delete" @onclick="@(() => DeleteRole(role))" title="حذف">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="3 6 5 6 21 6"/>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                </svg>
-                            </button>
+                            <div class="role-card-luxury @(role.IsActive ? "" : "inactive")">
+                                <div class="rc-gold-line"></div>
+                                <div class="rc-header">
+                                    <div class="rc-icon @(role.IsSystemRole ? "system" : "")">
+                                        @if(role.IsSystemRole){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}
+                                        else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>}
+                                    </div>
+                                    <div class="rc-info"><h3 class="rc-name">@role.RoleNameAr</h3><span class="rc-code">@role.RoleCode</span></div>
+                                    <div class="rc-badges">
+                                        @if(role.IsSystemRole){<span class="status-badge-luxury" style="--sc:#b45309"><span class="status-dot" style="--sc:#b45309"></span>نظامي</span>}
+                                        @if(role.IsActive){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>نشط</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>موقوف</span>}
+                                    </div>
+                                </div>
+                                @if(!string.IsNullOrEmpty(role.Description)){<p class="rc-desc">@role.Description</p>}
+                                <div class="rc-stats">
+                                    <div class="rc-stat"><span class="rc-stat-num">@role.UserCount</span><span class="rc-stat-label">مستخدم</span></div>
+                                    <div class="rc-stat"><span class="rc-stat-num">@role.PermissionCount</span><span class="rc-stat-label">صلاحية</span></div>
+                                </div>
+                                <div class="rc-actions">
+                                    @if(PermissionService.CanEdit("SCR_ROLES")){<button class="btn-luxury btn-primary-luxury" style="flex:1" @onclick="()=>EditRole(role.RoleID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>تعديل الصلاحيات</button>}
+                                    @if(PermissionService.CanEdit("SCR_ROLES") && !role.IsSystemRole){<button class="act-btn edit" title="تعطيل" @onclick="()=>ToggleActive(role)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></button>}
+                                    @if(PermissionService.CanDelete("SCR_ROLES") && !role.IsSystemRole && role.UserCount==0){<button class="act-btn" style="color:#ef4444;border-color:#fee2e2" title="حذف" @onclick="()=>DeleteRole(role)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                                </div>
+                            </div>
                         }
                     </div>
-
-                </div>
+                }
+                else
+                {
+                    <div class="table-card-luxury full"><div class="table-responsive"><table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>الكود</th><th>اسم الدور</th><th>النوع</th><th class="th-center">مستخدمين</th><th class="th-center">صلاحيات</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach(var role in filteredRoles){n++;
+                                <tr>
+                                    <td class="td-num">@n</td>
+                                    <td><span class="code-luxury">@role.RoleCode</span></td>
+                                    <td class="td-name">@role.RoleNameAr</td>
+                                    <td>@if(role.IsSystemRole){<span class="type-badge-luxury" style="--tc:#b45309">نظامي محمي</span>}else{<span class="type-badge-luxury" style="--tc:#2563eb">مخصص</span>}</td>
+                                    <td class="td-center"><span class="cnt-badge-luxury">@role.UserCount</span></td>
+                                    <td class="td-center">@role.PermissionCount</td>
+                                    <td class="td-center">@if(role.IsActive){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>نشط</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>موقوف</span>}</td>
+                                    <td class="td-actions"><div class="actions-wrap-luxury">
+                                        @if(PermissionService.CanEdit("SCR_ROLES")){<button class="act-btn edit" @onclick="()=>EditRole(role.RoleID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                        @if(PermissionService.CanDelete("SCR_ROLES") && !role.IsSystemRole && role.UserCount==0){<button class="act-btn" style="color:#ef4444;border-color:#fee2e2" @onclick="()=>DeleteRole(role)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/></svg></button>}
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table></div></div>
+                }
             }
         </div>
-    }
+    </div>
+</div>
 
-    <!-- ===== Modal تأكيد الحذف ===== -->
-    @if (_showDeleteModal)
-    {
-        <div class="modal-overlay" @onclick="@(() => _showDeleteModal = false)">
-            <div class="modal-box" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h3 class="modal-title">⚠️ تأكيد الحذف</h3>
-                    <button class="modal-close" @onclick="@(() => _showDeleteModal = false)">✕</button>
-                </div>
-                <div class="modal-body">
-                    <p>هل أنت متأكد من حذف الدور: <strong>@_deleteRole?.RoleNameAr</strong>؟</p>
-                    <p class="modal-warn">هذا الإجراء لا يمكن التراجع عنه</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-modal btn-cancel" @onclick="@(() => _showDeleteModal = false)">إلغاء</button>
-                    <button class="btn-modal btn-delete" @onclick="ConfirmDelete" disabled="@_deleting">
-                        @(_deleting ? "جاري الحذف..." : "حذف")
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
+@if (_showDeleteModal)
+{
+    <div class="modal-overlay-luxury" @onclick="()=>_showDeleteModal=false"><div class="modal-card-luxury small" @onclick:stopPropagation="true">
+        <div class="ml-gold-line" style="background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)"></div>
+        <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
+        <h4>تأكيد حذف الدور</h4><p>هل تريد حذف الدور: <strong>@_deleteRole?.RoleNameAr</strong>؟</p>
+        <div class="ml-footer" style="justify-content:center;background:transparent;border:none"><button class="btn-luxury" style="background:#ef4444;color:#fff" @onclick="ConfirmDelete" disabled="@_deleting">@(_deleting ? "جاري الحذف..." : "حذف")</button><button class="btn-luxury btn-ghost-luxury" @onclick="()=>_showDeleteModal=false">إلغاء</button></div>
+    </div></div>
+}
+@if (!string.IsNullOrEmpty(_toast)){<div class="toast-luxury"><div class="toast-card-luxury @(_toastOk?"success":"error")"><span>@_toast</span><button @onclick='()=>_toast=""'>✕</button></div></div>}
 }
 
 <style>
-    /* ===== Page Header ===== */
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-    .page-header-right { display: flex; align-items: center; gap: 12px; }
-    .page-header-left { display: flex; align-items: center; gap: 8px; }
-    .page-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 10px; margin: 0; }
-    .title-icon { width: 28px; height: 28px; color: #2563eb; }
-    .record-count { background: #f1f5f9; color: #64748b; padding: 4px 12px; border-radius: 20px; font-size: .78rem; font-weight: 700; }
-
-    .btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 10px; font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .2s; }
-    .btn-action svg { width: 16px; height: 16px; }
-    .btn-add { background: linear-gradient(135deg, #2563eb, #2563eb); color: white; box-shadow: 0 4px 12px rgba(37,99,235,.3); }
-    .btn-add:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,.4); }
-
-    /* ===== Filter ===== */
-    .filters-card { background: white; border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(15,23,42,.06); border: 1px solid #e2e8f0; }
-    .filter-search-single { max-width: 400px; }
-    .input-icon-wrap { position: relative; }
-    .input-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #94a3b8; pointer-events: none; }
-    .filter-input { width: 100%; height: 42px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 38px 0 14px; font-size: .85rem; background: #f8fafc; transition: all .2s; }
-    .filter-input:focus { border-color: #2563eb; background: white; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .input-clear { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: #e2e8f0; border: none; width: 20px; height: 20px; border-radius: 50%; font-size: .7rem; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-
-    /* ===== Alerts ===== */
-    .alert-msg { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-radius: 10px; margin-bottom: 16px; font-size: .85rem; font-weight: 600; }
-    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .alert-close { background: none; border: none; font-size: .9rem; cursor: pointer; color: inherit; opacity: .6; }
-
-    /* ===== Loading ===== */
-    .loading-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: #64748b; gap: 16px; font-size: .9rem; }
-    .loading-spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
-    @@keyframes spin { to { transform: rotate(360deg); } }
-    .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
-    .empty-icon { margin-bottom: 16px; }
-    .empty-icon svg { width: 64px; height: 64px; opacity: .4; }
-    .empty-state h3 { font-size: 1.1rem; color: #475569; margin-bottom: 8px; }
-
-    /* ===== Roles Grid ===== */
-    .roles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
-
-    .role-card {
-        background: white; border-radius: 16px; border: 1px solid #e2e8f0;
-        box-shadow: 0 2px 8px rgba(15,23,42,.06); padding: 20px; transition: all .2s;
-    }
-    .role-card:hover { box-shadow: 0 4px 16px rgba(15,23,42,.1); transform: translateY(-2px); }
-    .card-inactive { opacity: .6; }
-
-    .role-card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
-    .role-card-icon {
-        width: 44px; height: 44px; border-radius: 12px;
-        background: #eff6ff; color: #2563eb;
-        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .role-card-icon svg { width: 22px; height: 22px; }
-    .role-card-icon.system-icon { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
-    .role-card-info { flex: 1; min-width: 0; }
-    .role-name { font-size: 1.05rem; font-weight: 800; color: #0f172a; margin: 0; }
-    .role-code { font-size: .8rem; color: #94a3b8; font-weight: 600; }
-    .role-card-badges { display: flex; gap: 4px; flex-shrink: 0; }
-
-    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: .78rem; font-weight: 700; }
-    .badge-system { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-    .badge-active { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    .badge-inactive { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
-
-    .role-desc { font-size: .88rem; color: #64748b; line-height: 1.6; margin-bottom: 12px; }
-
-    .role-stats { display: flex; gap: 16px; padding: 12px 0; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; margin-bottom: 14px; }
-    .role-stat { display: flex; flex-direction: column; align-items: center; flex: 1; }
-    .stat-num { font-size: 1.2rem; font-weight: 800; color: #0f172a; }
-    .stat-label { font-size: .8rem; color: #94a3b8; font-weight: 600; }
-
-    .role-card-actions { display: flex; gap: 6px; }
-    .btn-role {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 6px 12px; border: 1px solid #e2e8f0; background: white;
-        border-radius: 8px; font-size: .76rem; font-weight: 700;
-        cursor: pointer; transition: all .2s;
-    }
-    .btn-role svg { width: 14px; height: 14px; }
-    .btn-role-edit { color: #2563eb; }
-    .btn-role-edit:hover { background: #eff6ff; border-color: #bfdbfe; }
-    .btn-role-activate { color: #22c55e; }
-    .btn-role-activate:hover { background: #f0fdf4; border-color: #bbf7d0; }
-    .btn-role-deactivate { color: #f59e0b; }
-    .btn-role-deactivate:hover { background: #fffbeb; border-color: #fde68a; }
-    .btn-role-delete { color: #dc2626; }
-    .btn-role-delete:hover { background: #fef2f2; border-color: #fecaca; }
-
-    /* ===== Modal ===== */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-    .modal-box { background: white; border-radius: 16px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(15,23,42,.2); overflow: hidden; animation: modalIn .2s ease; }
-    @@keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
-    .modal-title { font-size: .95rem; font-weight: 800; color: #0f172a; margin: 0; }
-    .modal-close { width: 32px; height: 32px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-size: .9rem; color: #64748b; display: flex; align-items: center; justify-content: center; }
-    .modal-body { padding: 24px; font-size: .88rem; color: #334155; line-height: 1.8; }
-    .modal-warn { color: #dc2626; font-size: .82rem; margin-top: 8px; font-weight: 600; }
-    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
-    .btn-modal { padding: 10px 24px; border: none; border-radius: 10px; font-size: .84rem; font-weight: 700; cursor: pointer; transition: all .2s; }
-    .btn-cancel { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-    .btn-delete { background: #dc2626; color: white; }
-    .btn-delete:hover { background: #b91c1c; }
-    .btn-delete:disabled { opacity: .6; cursor: not-allowed; }
-
-    @@media (max-width: 640px) {
-        .roles-grid { grid-template-columns: 1fr; }
-        .page-header { flex-direction: column; align-items: stretch; }
-    }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;margin:0 auto}.luxury-page.full-width{max-width:100%;width:100%}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:280px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:42px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:26px;height:26px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.view-toggle-luxury{display:flex;background:#f8f6f0;border:1px solid #e8e2d0;border-radius:12px;padding:3px;gap:2px}.vt-btn{width:36px;height:32px;border-radius:8px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9ca3af;transition:.2s}.vt-btn.active{background:#fff;color:var(--gold-dark);box-shadow:0 2px 6px rgba(0,0,0,.06);border:1px solid rgba(212,175,55,.15)}.vt-btn svg{width:16px;height:16px}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5;z-index:2}
+.mudtabs-header-luxury{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header-luxury::-webkit-scrollbar{display:none}
+.mudtab-btn-luxury{position:relative;display:flex;align-items:center;gap:8px;padding:14px 20px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:800;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}
+.mudtab-btn-luxury:hover{background:rgba(212,175,55,.05);color:#0A0F1E}.mudtab-btn-luxury.active{color:var(--gold-dark);background:rgba(212,175,55,.08);border-bottom-color:var(--gold)}
+.mudtab-btn-luxury .mt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.mt-icon svg{width:14px;height:14px}
+.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800}.mt-count.gold{background:rgba(212,175,55,.15);color:var(--gold-dark)}
+.mudtabs-body-luxury{padding:18px;background:#fff;min-height:400px}
+.msg-luxury{padding:12px 16px;border-radius:12px;font-size:.84rem;font-weight:600;display:flex;align-items:center;gap:8px}.msg-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.msg-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.roles-grid-luxury{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}.roles-grid-luxury.full{grid-template-columns:repeat(auto-fill,minmax(380px,1fr))}
+.role-card-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:18px;padding:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);transition:.2s}.role-card-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08);border-color:rgba(212,175,55,.25)}.role-card-luxury.inactive{opacity:.6}
+.rc-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.rc-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}.rc-icon{width:44px;height:44px;border-radius:12px;background:#eff6ff;color:#2563eb;border:1px solid #dbeafe;display:flex;align-items:center;justify-content:center;flex-shrink:0}.rc-icon.system{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;border-color:#fde68a}.rc-icon svg{width:22px;height:22px}
+.rc-info{flex:1;min-width:0}.rc-name{font-size:1.05rem;font-weight:900;color:#0A0F1E;margin:0}.rc-code{font-size:.78rem;color:#8B95A5;font-weight:700;font-family:monospace;background:#f3f4f6;padding:2px 8px;border-radius:6px}
+.rc-badges{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.rc-desc{font-size:.82rem;color:#6b7280;line-height:1.6;margin-bottom:12px;background:#fcfaf6;border:1px solid #f1efe8;border-radius:10px;padding:10px}
+.rc-stats{display:flex;gap:12px;padding:12px 0;border-top:1px solid #f1efe8;border-bottom:1px solid #f1efe8;margin-bottom:14px}.rc-stat{display:flex;flex-direction:column;align-items:center;flex:1;background:#fcfaf6;border:1px solid #f1efe8;border-radius:10px;padding:10px}.rc-stat-num{font-size:1.1rem;font-weight:900;color:#0A0F1E}.rc-stat-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:2px}
+.rc-actions{display:flex;gap:6px}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc)}
+.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn svg{width:13px;height:13px}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury.full{width:100%}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-actions{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.code-luxury{background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:8px;font-size:.78rem;color:var(--gold-dark);font-weight:700;font-family:monospace}.cnt-badge-luxury{background:#f1f5f9;color:#475569;padding:3px 10px;border-radius:6px;font-size:.74rem;font-weight:700}.type-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700;background:color-mix(in srgb,var(--tc) 12%,white);color:var(--tc);border:1px solid color-mix(in srgb,var(--tc) 20%,white)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.modal-card-luxury.small{max-width:420px;text-align:center;padding:28px 24px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin:0 auto 12px}.delete-icon-luxury svg{width:32px;height:32px}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 </style>
 
 @code {
@@ -341,99 +205,41 @@ else
     private bool _loading = true;
     private string _message = "";
     private bool _isError = false;
+    private string _toast = "";
+    private bool _toastOk = true;
     private string _searchText = "";
     private System.Timers.Timer? _searchTimer;
-
     private List<RoleListDto> _roles = new();
-
-    // حذف
+    private List<RoleListDto> filteredRoles => _roles.Where(r=>
+        activeTab switch{
+            "system"=>r.IsSystemRole,
+            "custom"=>!r.IsSystemRole,
+            _=>true
+        }).ToList();
     private bool _showDeleteModal = false;
     private RoleListDto? _deleteRole;
     private bool _deleting = false;
+    private string activeTab = "all";
+    private string viewMode = "cards";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            if (!UserSession.IsLoggedIn)
-            {
-                var restored = await UserSession.TryRestoreSessionAsync();
-                if (!restored) { Navigation.NavigateTo("/login"); return; }
-                if (!PermissionService.IsLoaded)
-                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-            }
-
-            if (!PermissionService.CanView("SCR_ROLES"))
-            {
-                Navigation.NavigateTo("/access-denied");
-                return;
-            }
-
-            _authorized = true;
-            await LoadData();
-            StateHasChanged();
+            if (!UserSession.IsLoggedIn){var restored=await UserSession.TryRestoreSessionAsync(); if(!restored){Navigation.NavigateTo("/login"); return;} if(!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);}
+            if (!PermissionService.CanView("SCR_ROLES")){Navigation.NavigateTo("/access-denied"); return;}
+            _authorized=true; await LoadData(); StateHasChanged();
         }
     }
 
-    private async Task LoadData()
-    {
-        try
-        {
-            _loading = true;
-            StateHasChanged();
-            _roles = await RoleService.GetAllAsync(_searchText);
-        }
-        catch (Exception ex) { ShowError("خطأ: " + ex.Message); }
-        finally { _loading = false; }
-    }
-
-    private void OnSearchKeyUp(KeyboardEventArgs e)
-    {
-        _searchTimer?.Stop();
-        _searchTimer?.Dispose();
-        _searchTimer = new System.Timers.Timer(400);
-        _searchTimer.Elapsed += async (s, args) =>
-        {
-            _searchTimer?.Stop();
-            await InvokeAsync(async () => { await LoadData(); StateHasChanged(); });
-        };
-        _searchTimer.AutoReset = false;
-        _searchTimer.Start();
-    }
-
-    private async Task ClearSearch() { _searchText = ""; await LoadData(); }
-    private void AddNew() => Navigation.NavigateTo("/roles/new");
-    private void EditRole(int roleId) => Navigation.NavigateTo($"/roles/edit/{roleId}");
-
-    private async Task ToggleActive(RoleListDto role)
-    {
-        try
-        {
-            var newState = !role.IsActive;
-            await RoleService.ToggleActiveAsync(role.RoleID, newState);
-            role.IsActive = newState;
-            ShowSuccess(newState ? $"تم تفعيل الدور: {role.RoleNameAr}" : $"تم تعطيل الدور: {role.RoleNameAr}");
-        }
-        catch (Exception ex) { ShowError(ex.Message); }
-    }
-
-    private void DeleteRole(RoleListDto role) { _deleteRole = role; _showDeleteModal = true; }
-
-    private async Task ConfirmDelete()
-    {
-        try
-        {
-            _deleting = true;
-            StateHasChanged();
-            await RoleService.DeleteAsync(_deleteRole!.RoleID);
-            _showDeleteModal = false;
-            ShowSuccess($"تم حذف الدور: {_deleteRole.RoleNameAr}");
-            await LoadData();
-        }
-        catch (Exception ex) { ShowError(ex.Message); }
-        finally { _deleting = false; }
-    }
-
-    private void ShowSuccess(string msg) { _message = msg; _isError = false; }
-    private void ShowError(string msg) { _message = msg; _isError = true; }
+    private async Task LoadData(){try{_loading=true; StateHasChanged(); _roles=await RoleService.GetAllAsync(_searchText);}catch(Exception ex){ShowError("خطأ: "+ex.Message);}finally{_loading=false;}}
+    private void OnSearchKeyUp(KeyboardEventArgs e){_searchTimer?.Stop(); _searchTimer?.Dispose(); _searchTimer=new System.Timers.Timer(400); _searchTimer.Elapsed+=async (s,args)=>{_searchTimer?.Stop(); await InvokeAsync(async()=>{await LoadData(); StateHasChanged();});}; _searchTimer.AutoReset=false; _searchTimer.Start();}
+    private async Task ClearSearch(){_searchText=""; await LoadData();}
+    private void AddNew()=>Navigation.NavigateTo("/roles/new");
+    private void EditRole(int roleId)=>Navigation.NavigateTo($"/roles/edit/{roleId}");
+    private async Task ToggleActive(RoleListDto role){try{var newState=!role.IsActive; await RoleService.ToggleActiveAsync(role.RoleID, newState); role.IsActive=newState; ShowSuccess(newState ? $"تم تفعيل: {role.RoleNameAr}" : $"تم تعطيل: {role.RoleNameAr}");}catch(Exception ex){ShowError(ex.Message);}}
+    private void DeleteRole(RoleListDto role){_deleteRole=role; _showDeleteModal=true;}
+    private async Task ConfirmDelete(){try{_deleting=true; StateHasChanged(); await RoleService.DeleteAsync(_deleteRole!.RoleID); _showDeleteModal=false; ShowSuccess($"تم حذف: {_deleteRole.RoleNameAr}"); await LoadData();}catch(Exception ex){ShowError(ex.Message);}finally{_deleting=false;}}
+    private void ShowSuccess(string msg){_message=msg; _isError=false; _toast=msg; _toastOk=true;}
+    private void ShowError(string msg){_message=msg; _isError=true; _toast=msg; _toastOk=false;}
 }

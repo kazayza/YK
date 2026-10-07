@@ -53,6 +53,10 @@ builder.Services.AddScoped<ProductionOrderService>();
 builder.Services.AddScoped<MaterialIssueService>();
 builder.Services.AddScoped<ProductionBatchService>();
 builder.Services.AddScoped<ContractManufacturingService>();
+builder.Services.AddScoped<SalesInvoiceService>();
+builder.Services.AddScoped<SalesOrderService>();
+builder.Services.AddScoped<TreasuryService>();
+builder.Services.AddScoped<AccountingService>();
 
 builder.Services.AddHttpContextAccessor();
 

@@ -1,0 +1,126 @@
+@page "/account-ledger"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject AccountingService AccountingService
+@inject LookupService LookupService
+@inject UserSessionService UserSession
+
+<PageTitle>كشف حساب - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">كشف حساب</h2>
+                    <p class="lh-subtitle"> رصيد متحرك + تفاصيل قيود</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <div class="select-wrap-luxury" style="min-width:280px"><select @bind="selectedAccountId" @bind:after="LoadLedger" style="height:42px;border:1.5px solid rgba(212,175,55,.3);border-radius:12px;padding:0 12px;font-family:'Tajawal';background:#0A0F1E;color:#F5E6C8;min-width:280px"><option value="0">— اختر حساب —</option>@foreach(var acc in accounts){<option value="@acc.Id">@acc.Code - @acc.Name</option>}</select></div>
+                <span class="lh-badge"><span class="lh-dot"></span>@ledger.Count حركة</span>
+                @if(ledger.Any()){<span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669">رصيد: @ledger.LastOrDefault()?.RunningBalance.ToString("#,##0.00")</span>}
+            </div>
+        </div>
+    </div>
+
+    <div class="filter-luxury">
+        <div class="select-wrap-luxury"><input type="date" @bind="filterFrom" @bind:after="LoadLedger" style="height:42px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal';font-size:.82rem" /></div>
+        <div class="select-wrap-luxury"><input type="date" @bind="filterTo" @bind:after="LoadLedger" style="height:42px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal';font-size:.82rem" /></div>
+        <button class="btn-luxury btn-ghost-luxury" @onclick="LoadLedger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل كشف الحساب...</p></div>}
+    else if (selectedAccountId==0)
+    {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div><h4>اختر حساب لعرض كشف الحساب</h4><p class="empty-sub">اختر حساب من القائمة العلوية</p></div>}
+    else if (!ledger.Any())
+    {<div class="empty-luxury"><h4>لا توجد حركات لهذا الحساب</h4><p class="empty-sub">في الفترة المحددة</p></div>}
+    else
+    {
+        <div class="table-card-luxury">
+            <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>كشف حساب — @accounts.FirstOrDefault(a=>a.Id==selectedAccountId)?.Name — @ledger.Count حركة</h3></div>
+            <div class="table-responsive">
+                <table class="table-luxury detailed">
+                    <thead><tr><th class="th-num">#</th><th>التاريخ</th><th>رقم القيد</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد المتحرك</th></tr></thead>
+                    <tbody>
+                        @{int n=0; decimal totDebit=0, totCredit=0;}
+                        @foreach(var l in ledger.OrderBy(l=>l.JournalDate)){n++; totDebit+=l.DebitAmount; totCredit+=l.CreditAmount;
+                            <tr>
+                                <td class="td-num">@n</td>
+                                <td><span class="level-badge">@l.JournalDate.ToString("dd/MM/yyyy")</span></td>
+                                <td><span class="doc-num-luxury">@l.JournalNumber</span></td>
+                                <td class="td-muted">@(l.Description ?? "—")</td>
+                                <td>@if(l.DebitAmount>0){<span class="amount-luxury" style="color:#2563eb;background:#eff6ff;border-color:#dbeafe">@l.DebitAmount.ToString("#,##0.00")</span>}else{<span class="td-muted">—</span>}</td>
+                                <td>@if(l.CreditAmount>0){<span class="amount-luxury" style="color:#d97706;background:#fef3c7;border-color:#fde68a">@l.CreditAmount.ToString("#,##0.00")</span>}else{<span class="td-muted">—</span>}</td>
+                                <td><span class="amount-luxury @(l.RunningBalance>=0?"":"negative")">@l.RunningBalance.ToString("#,##0.00")</span></td>
+                            </tr>
+                        }
+                        <tr style="background:linear-gradient(135deg,#070B14,#0A0F1E);color:#F5E6C8;font-weight:900"><td></td><td></td><td></td><td style="color:#F5E6C8">الإجمالي</td><td><span class="amount-luxury" style="background:rgba(37,99,235,.15);color:#93c5fd;border-color:rgba(37,99,235,.3)">@totDebit.ToString("#,##0.00")</span></td><td><span class="amount-luxury" style="background:rgba(217,119,6,.15);color:#fcd34d;border-color:rgba(217,119,6,.3)">@totCredit.ToString("#,##0.00")</span></td><td><span class="amount-luxury" style="background:rgba(212,175,55,.2);color:var(--gold);border-color:var(--gold)">@((totDebit-totCredit).ToString("#,##0.00"))</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:42px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:110px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.level-badge{font-family:monospace;font-weight:700;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;padding:3px 8px;border-radius:999px;font-size:.72rem}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.negative{color:#dc2626;background:#fef2f2;border-color:#fecaca}
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<SearchableItem> accounts = new();
+    private List<AccountLedgerDto> ledger = new();
+    private bool isLoading = false;
+    private int selectedAccountId = 0;
+    private DateTime? filterFrom = null;
+    private DateTime? filterTo = null;
+    private string toast = "";
+    private bool toastOk = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        accounts = await LookupService.GetChartOfAccountsSearchableAsync();
+    }
+
+    private async Task LoadLedger()
+    {
+        if(selectedAccountId==0) return;
+        isLoading=true; StateHasChanged();
+        try{ ledger = await AccountingService.GetAccountLedgerAsync(selectedAccountId, filterFrom, filterTo); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+        finally{ isLoading=false; }
+    }
+}

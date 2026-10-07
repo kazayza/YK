@@ -1,0 +1,79 @@
+@page "/cash-box-statement"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject TreasuryService TreasuryService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>كشف حساب خزينة - Gold Edition (فعلي)</PageTitle>
+
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">كشف حساب خزينة — Gold Edition شامل المصروفات</h2><p class="lh-subtitle">سند قبض + سند صرف + مصروف + تحويل خزينة — الرصيد يبدأ من OpeningBalance</p></div></div>
+            <div class="lh-actions"><span class="lh-badge"><span class="lh-dot"></span>@(statements?.Count ?? 0) حركة</span></div>
+        </div>
+    </div>
+
+    <div class="filter-luxury">
+        <select @bind="cashBoxId" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal';min-width:200px"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name</option>}</select>
+        <input type="date" @bind="fromDate" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal'" />
+        <input type="date" @bind="toDate" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal'" />
+        <button class="btn-luxury btn-ghost-luxury" @onclick="Load">تحديث</button>
+    </div>
+
+    @if (statements == null){<div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لعرض الكشف من vw_CashBoxStatement</p></div>}
+    else
+    {
+        <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury">
+            <thead><tr><th>#</th><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>البيان</th><th>مقبوض</th><th>مدفوع</th><th>الرصيد</th></tr></thead>
+            <tbody>
+                @{int n=0;}
+                @foreach(var s in statements){n++;
+                    <tr><td class="td-num">@n</td><td class="td-muted">@s.TransactionDate.ToString("dd/MM/yyyy")</td><td><span class="source-badge-luxury" style="--sc:@(s.TransactionType=="Receipt"?"#10b981":s.TransactionType=="Payment"?"#ef4444":s.TransactionType=="Expense"?"#f59e0b":"#2563eb")">@s.TransactionTypeAr</span></td><td><span class="doc-num-luxury">@s.TransactionNo</span></td><td class="td-name">@(s.Description ?? s.EntityName ?? "—")</td><td><span class="amount-luxury paid">@(s.DebitAmount>0 ? s.DebitAmount.ToString("#,##0.00") : "-")</span></td><td><span class="amount-luxury remaining">@(s.CreditAmount>0 ? s.CreditAmount.ToString("#,##0.00") : "-")</span></td><td><span class="amount-luxury">@s.Balance.ToString("#,##0.00")</span></td></tr>
+                }
+            </tbody>
+        </table></div></div>
+    }
+</div>
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1200px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden}.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;background:#fcfaf6}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6}
+.td-num{text-align:center;color:#9ca3af}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#6b7280}.doc-num-luxury{color:var(--gold-dark);font-weight:800;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.amount-luxury{font-family:monospace;font-weight:800;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.paid{background:#ecfdf5;color:#059669;border-color:#a7f3d0}.amount-luxury.remaining{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+
+@code {
+    private int cashBoxId = 0;
+    private DateTime fromDate = DateTime.Today.AddMonths(-1);
+    private DateTime toDate = DateTime.Today;
+    private List<CashBoxStatementDto>? statements;
+    private List<SearchableItem> cashBoxes = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { cashBoxes = await LookupService.GetCashBoxesSearchableAsync(); } catch {}
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (int.TryParse(q["cashBoxId"], out var id)){ cashBoxId=id; await Load(); }
+    }
+
+    private async Task Load()
+    {
+        if (cashBoxId==0){ statements=null; return; }
+        statements = await TreasuryService.GetCashBoxStatementAsync(cashBoxId, fromDate, toDate);
+    }
+}

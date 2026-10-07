@@ -7,7 +7,7 @@
 @inject PayrollService PayrollService
 @inject NavigationManager Navigation
 
-<PageTitle>مسير المرتبات - واي كي كوتينج</PageTitle>
+<PageTitle>استمارة المرتبات - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -22,16 +22,16 @@ else
     <div class="items-page" dir="rtl">
         <div class="page-header">
             <div>
-                <h2 class="page-title">مسير المرتبات</h2>
-                <p class="page-subtitle">إدارة مسيرات المرتبات الشهرية وربطها بالفترات المحاسبية</p>
+                <h2 class="page-title">استمارة المرتبات</h2>
+                <p class="page-subtitle">إدارة كشوفات المرتبات الشهرية وربطها بالفترات المحاسبية</p>
             </div>
             <div class="header-actions">
-                <span class="result-badge">@pagedResult.TotalCount مسير</span>
+                <span class="result-badge">@pagedResult.TotalCount كشوف</span>
                 @if (permissions.CanAdd)
                 {
                     <button class="btn-modern btn-primary-modern" @onclick="ShowCreateDialog">
                         <span class="btn-icon">+</span>
-                        <span>إنشاء مسير</span>
+                        <span>إنشاء كشف مرتبات</span>
                     </button>
                 }
             </div>

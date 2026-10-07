@@ -1,0 +1,232 @@
+@page "/fiscal-years"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject AccountingService AccountingService
+@inject UserSessionService UserSession
+
+<PageTitle>السنوات المالية - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">السنوات المالية</h2>
+                    <p class="lh-subtitle"> إدارة السنوات والفترات </p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <span class="lh-badge"><span class="lh-dot"></span>@allList.Count سنة</span>
+                <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سنة مالية جديدة</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل السنوات المالية...</p></div>}
+    else
+    {
+        <div class="stats-luxury">
+            <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="st-info"><span class="st-value">@allList.Count</span><span class="st-label">إجمالي السنوات</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(f=>f.YearStatus==1)</span><span class="st-label">مفتوحة</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(f=>f.IsCurrent)</span><span class="st-label">حالية</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@allList.Sum(f=>f.PeriodsCount)</span><span class="st-label">إجمالي فترات</span></div><div class="st-gold-line"></div></div>
+        </div>
+
+        <div class="table-card-luxury">
+            <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/></svg>السنوات المالية</h3></div>
+            <div class="table-responsive">
+                <table class="table-luxury detailed">
+                    <thead><tr><th class="th-num">#</th><th>الكود</th><th>السنة المالية</th><th>الفترة (من - إلى)</th><th>الحالة</th><th>حالية؟</th><th>فترات / قيود</th><th>تاريخ الإنشاء</th><th class="th-actions">إجراءات</th></tr></thead>
+                    <tbody>
+                        @{int n=0;}
+                        @foreach(var fy in allList.OrderByDescending(f=>f.StartDate)){n++;
+                            <tr @key="fy.FiscalYearID">
+                                <td class="td-num">@n</td>
+                                <td><span class="doc-num-luxury">@fy.YearCode</span></td>
+                                <td><div class="acc-cell"><div class="acc-icon type-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/></svg></div><div class="acc-info"><span class="acc-name">@fy.YearName</span><span class="acc-name-en">@fy.StartDate.ToString("yyyy") - @fy.EndDate.ToString("yyyy")</span></div>@if(fy.IsCurrent){<span class="acc-dot detail"></span>}</div></td>
+                                <td><span class="level-badge">@fy.StartDate.ToString("dd/MM/yyyy") → @fy.EndDate.ToString("dd/MM/yyyy")</span></td>
+                                <td>@if(fy.YearStatus==1){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>مفتوحة</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>مغلقة</span>}</td>
+                                <td>@if(fy.IsCurrent){<span class="coa-detail detail">حالية</span>}else{<span class="coa-detail group">—</span>}</td>
+                                <td><span class="coa-type type-1">@fy.PeriodsCount فترة</span> <span class="coa-type type-4" style="margin-right:4px">@fy.JournalsCount قيد</span></td>
+                                <td class="td-muted">@fy.CreatedDate.ToString("dd/MM/yyyy")</td>
+                                <td class="td-center"><div class="actions-wrap-luxury">
+                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    <button class="act-btn add" title="الفترات" @onclick="()=>ViewPeriods(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></button>
+                                    @if(fy.YearStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="إغلاق السنة" @onclick="()=>CloseYear(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
+                                </div></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @if (selectedYearId.HasValue)
+        {
+            <div class="table-card-luxury" style="margin-top:16px">
+                <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>الفترات المحاسبية — سنة @allList.FirstOrDefault(f=>f.FiscalYearID==selectedYearId)?.YearName</h3><button class="btn-luxury btn-ghost-luxury" @onclick="()=>selectedYearId=null">إخفاء</button></div>
+                <div class="table-responsive">
+                    <table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>رقم الفترة</th><th>اسم الفترة</th><th>من</th><th>إلى</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int pn=0;}
+                            @foreach(var p in periods.OrderBy(p=>p.PeriodNumber)){pn++;
+                                <tr>
+                                    <td class="td-num">@pn</td>
+                                    <td><span class="doc-num-luxury">@p.PeriodNumber</span></td>
+                                    <td class="td-muted">@p.PeriodName</td>
+                                    <td class="td-muted">@p.StartDate.ToString("dd/MM/yyyy")</td>
+                                    <td class="td-muted">@p.EndDate.ToString("dd/MM/yyyy")</td>
+                                    <td>@if(p.PeriodStatus==1){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>مفتوحة</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>مغلقة</span>}</td>
+                                    <td class="td-center"><div class="actions-wrap-luxury">
+                                        @if(p.PeriodStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" @onclick="()=>ClosePeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
+                                        else{<button class="act-btn add" @onclick="()=>OpenPeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (showEdit)
+{
+    <div class="modal-overlay-luxury" @onclick="CloseEdit"><div class="modal-card-luxury" @onclick:stopPropagation="true">
+        <div class="ml-gold-line"></div>
+        <div class="ml-header"><h3>@(editDto.FiscalYearID==0?"سنة مالية جديدة":"تعديل سنة مالية") — FiscalYears 11 عمود (بدون IsActive)</h3><button class="btn-close-x" @onclick="CloseEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+        <div class="ml-body">
+            <div class="form-grid-luxury">
+                <div class="fg"><label>كود السنة</label><input type="text" @bind="editDto.YearCode" placeholder="FY-2026" /></div>
+                <div class="fg"><label>حالية؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsCurrent" /><span></span></label></div>
+                <div class="fg full"><label>اسم السنة *</label><input type="text" @bind="editDto.YearName" /></div>
+                <div class="fg"><label>من تاريخ *</label><input type="date" @bind="editDto.StartDate" /></div>
+                <div class="fg"><label>إلى تاريخ *</label><input type="date" @bind="editDto.EndDate" /></div>
+                <div class="fg full"><label>ملاحظات</label><textarea @bind="editDto.Notes" rows="2"></textarea></div>
+            </div>
+            @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
+        </div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ (سينشئ 12 فترة تلقائياً)</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
+    </div></div>
+}
+
+@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.purple{background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:1000px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:120px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.acc-cell{display:flex;align-items:center;gap:10px}.acc-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid;background:#eff6ff;color:#2563eb;border-color:#dbeafe}.acc-icon svg{width:16px;height:16px}
+.acc-info{display:flex;flex-direction:column}.acc-name{font-weight:800;color:#0A0F1E;font-size:.86rem}.acc-name-en{font-weight:600;color:#8B95A5;font-size:.72rem}.acc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}.acc-dot.detail{background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.15)}
+.level-badge{font-family:monospace;font-weight:700;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;padding:3px 8px;border-radius:999px;font-size:.72rem}
+.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.type-1{background:#eff6ff;color:#2563eb;border-color:#dbeafe}.type-4{background:#ecfdf5;color:#059669;border-color:#a7f3d0}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc) 15%,transparent)}
+.coa-detail{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.coa-detail.detail{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}.coa-detail.group{background:rgba(212,175,55,.1);color:#9C7C2E;border-color:rgba(212,175,55,.2)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.add{color:#059669;border-color:#a7f3d0}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn svg{width:13px;height:13px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow-y:auto}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;max-height:90vh;display:flex;flex-direction:column}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}
+.ml-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.ml-header h3{margin:0;font-size:.95rem;font-weight:800;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.ml-body{padding:20px;overflow-y:auto;flex:1}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg textarea{height:auto;padding:10px 12px;resize:vertical}.fg input:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<FiscalYearListDto> allList = new();
+    private List<AccountingPeriodListDto> periods = new();
+    private int? selectedYearId = null;
+    private bool isLoading = true;
+    private bool showEdit = false;
+    private FiscalYearDto editDto = new();
+    private bool isSaving = false;
+    private string editMsg = "";
+    private bool editOk = true;
+    private string toast = "";
+    private bool toastOk = true;
+
+    protected override async Task OnInitializedAsync(){ await LoadData(); }
+
+    private async Task LoadData()
+    {
+        isLoading=true; StateHasChanged();
+        try{ allList = await AccountingService.GetFiscalYearsAsync(); }
+        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
+        finally{ isLoading=false; }
+    }
+
+    private void ShowAdd(){ editDto=new FiscalYearDto{ YearCode=$"FY-{DateTime.Now.Year}", YearName=$"السنة المالية {DateTime.Now.Year}", StartDate=new DateTime(DateTime.Now.Year,1,1), EndDate=new DateTime(DateTime.Now.Year,12,31), YearStatus=1, IsCurrent=true }; editMsg=""; showEdit=true; }
+    private async Task ShowEdit(int id){ var dto=await AccountingService.GetFiscalYearByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+    private void CloseEdit(){ showEdit=false; }
+
+    private async Task Save()
+    {
+        if(string.IsNullOrWhiteSpace(editDto.YearName)){ editMsg="أدخل اسم السنة"; editOk=false; return; }
+        if(editDto.EndDate <= editDto.StartDate){ editMsg="تاريخ النهاية يجب أن يكون بعد البداية"; editOk=false; return; }
+        isSaving=true; StateHasChanged();
+        try
+        {
+            if(editDto.FiscalYearID==0){ await AccountingService.InsertFiscalYearAsync(editDto, UserSession.UserID); toast="تم إنشاء السنة المالية + 12 فترة تلقائياً ✅"; toastOk=true; }
+            else{ await AccountingService.UpdateFiscalYearAsync(editDto, UserSession.UserID); toast="تم تحديث السنة المالية ✅"; toastOk=true; }
+            showEdit=false; await LoadData();
+        }
+        catch(Exception ex){ editMsg=ex.Message; editOk=false; }
+        finally{ isSaving=false; }
+    }
+
+    private async Task ViewPeriods(int fyId)
+    {
+        selectedYearId=fyId;
+        periods = await AccountingService.GetAccountingPeriodsAsync(fyId);
+        StateHasChanged();
+    }
+
+    private async Task CloseYear(int id)
+    {
+        try{ await AccountingService.CloseFiscalYearAsync(id, UserSession.UserID); toast="تم إغلاق السنة المالية ✅"; toastOk=true; await LoadData(); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
+    private async Task ClosePeriod(int id)
+    {
+        try{ await AccountingService.ClosePeriodAsync(id, UserSession.UserID); toast="تم إغلاق الفترة ✅"; toastOk=true; if(selectedYearId.HasValue) periods = await AccountingService.GetAccountingPeriodsAsync(selectedYearId); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
+    private async Task OpenPeriod(int id)
+    {
+        try{ await AccountingService.OpenPeriodAsync(id, UserSession.UserID); toast="تم فتح الفترة ✅"; toastOk=true; if(selectedYearId.HasValue) periods = await AccountingService.GetAccountingPeriodsAsync(selectedYearId); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+}

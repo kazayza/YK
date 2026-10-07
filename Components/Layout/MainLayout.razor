@@ -45,7 +45,7 @@ else
             </button>
         </div>
 
-        <div class="sb-tagline">PREMIUM COATINGS • EST. 2026</div>
+        <div class="sb-tagline"></div>
         <div class="sb-search">
             <input placeholder="تصفية أقسام القائمة..." @bind="navSearch" @bind:event="oninput" aria-label="تصفية أقسام القائمة" />
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
@@ -114,7 +114,7 @@ else
                 <div class="tb-search-wrap hide-md @(showGlobalSearch ? "active" : "")">
                     <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
                     <input placeholder="بحث شامل في النظام… (أصناف / عملاء / موردين / مستندات)" value="@globalSearch" @oninput="OnGlobalSearchInput" @onfocus="OnGlobalSearchFocus" @onkeydown="OnGlobalSearchKey" />
-                    <span class="tb-kbd">⌘K</span>
+                    <span class="tb-kbd">ctrl+K</span>
                     @if (!string.IsNullOrWhiteSpace(globalSearch))
                     {
                         <button class="tb-search-clear" @onclick="ClearGlobalSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>

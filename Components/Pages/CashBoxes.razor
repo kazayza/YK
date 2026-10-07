@@ -1,0 +1,291 @@
+@page "/cash-boxes"
+@page "/banks"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject TreasuryService TreasuryService
+@inject AccountingService AccountingService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>الخزائن والبنوك - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية</h4></div>
+}
+else
+{
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right">
+                    <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                    <div class="lh-text"><h2 class="lh-title">الخزائن والبنوك</h2><p class="lh-subtitle">إدارة الخزائن الرئيسية والفرعية والبنوك — رصيد لحظي — قيد أوتوماتيك</p></div>
+                </div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count خزينة</span>
+                    @if (permissions.CanAdd)
+                    {
+                        <button class="btn-luxury btn-primary-luxury" @onclick="AddNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>خزينة جديدة</button>
+                    }
+                    <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/treasury-dashboard")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>لوحة التحكم</button>
+                </div>
+            </div>
+        </div>
+
+        @if (boxes != null)
+        {
+            <div class="stats-luxury">
+                <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/></svg></div><div class="st-info"><span class="st-value">@boxes.Count</span><span class="st-label">إجمالي الخزائن</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@boxes.Count(b => b.CashBoxType==1)</span><span class="st-label">رئيسية</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg></div><div class="st-info"><span class="st-value">@boxes.Count(b => b.CashBoxType==3)</span><span class="st-label">بنوك</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@boxes.Sum(b=>b.CurrentBalance).ToString("#,##0")</span><span class="st-label">إجمالي الأرصدة (فعلي)</span></div><div class="st-gold-line"></div></div>
+            </div>
+        }
+
+        <div class="filter-luxury">
+            <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث باسم الخزينة أو الكود..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if(!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
+            <div class="select-wrap-luxury"><select @bind="filterType" @bind:after="Filter"><option value="0">كل الأنواع</option><option value="1">رئيسية</option><option value="2">فرعية</option><option value="3">بنك</option><option value="4">نقطة بيع</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+        </div>
+
+        @if (boxes == null)
+        {
+            <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>
+        }
+        else if (!filtered.Any())
+        {
+            <div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/></svg></div><h4>لا توجد خزائن</h4><p class="empty-sub">ابدأ بإنشاء خزينة رئيسية</p></div>
+        }
+        else
+        {
+            <div class="table-card-luxury">
+                <div class="table-responsive">
+                    <table class="table-luxury">
+                        <thead><tr><th class="th-num">#</th><th>الكود</th><th>الخزينة</th><th>النوع</th><th>الحساب المحاسبي</th><th>الرصيد الافتتاحي</th><th>الرصيد الحالي</th><th>مقبوضات</th><th>مدفوعات</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach(var cb in filtered){n++;
+                                <tr>
+                                    <td class="td-num">@n</td>
+                                    <td><span class="doc-num-luxury">@cb.CashBoxCode</span></td>
+                                    <td class="td-name">@cb.CashBoxNameAr @if(cb.IsDefault){<span class="default-badge">افتراضية</span>}</td>
+                                    <td><span class="source-badge-luxury" style="--sc:@GetTypeColor(cb.CashBoxType)">@GetTypeName(cb.CashBoxType)</span></td>
+                                    <td class="td-muted">@(cb.AccountNameAr ?? "—") <small style="color:#9ca3af">(@(cb.AccountCode ?? ""))</small></td>
+                                    <td><span class="amount-luxury">@cb.OpeningBalance.ToString("#,##0.00")</span></td>
+                                    <td>
+                                        <span class="amount-luxury @(cb.CurrentBalance>=0?"paid":"remaining")" title="CurrentBalance: @cb.CurrentBalance / Calc: @cb.CurrentBalanceCalc">@cb.CurrentBalance.ToString("#,##0.00")</span>
+                                        @if(cb.CurrentBalance != cb.CurrentBalanceCalc){<br/><small style="color:#9ca3af;font-family:monospace">Calc: @cb.CurrentBalanceCalc.ToString("#,##0")</small>}
+                                    </td>
+                                    <td><span class="amount-luxury paid">@cb.TotalReceipts.ToString("#,##0.00")</span></td>
+                                    <td><span class="amount-luxury remaining">@cb.TotalPayments.ToString("#,##0.00")</span></td>
+                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@(cb.IsActive?"#10b981":"#6b7280")">@(cb.IsActive?"نشطة":"موقوفة")</span></td>
+                                    <td class="td-center"><div class="actions-wrap-luxury">
+                                        <button class="act-btn view" title="كشف حساب" @onclick="() => ViewStatement(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+                                        @if(permissions.CanEdit){<button class="act-btn edit" title="تعديل" @onclick="() => EditBox(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                        @if(permissions.CanDelete){<button class="act-btn delete" title="حذف" @onclick="() => ShowDelete(cb)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (showEdit)
+    {
+        <div class="modal-overlay-luxury" @onclick="CloseEdit"><div class="modal-card-luxury large" @onclick:stopPropagation="true">
+            <div class="ml-gold-line"></div>
+            <div class="ml-header"><h3>@(editDto.CashBoxID==0?"خزينة جديدة":"تعديل خزينة")</h3><button class="btn-close-x" @onclick="CloseEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+            <div class="ml-body">
+                <div class="form-grid-luxury">
+                    <div class="fg"><label>كود الخزينة</label><input type="text" @bind="editDto.CashBoxCode" placeholder="CB-001" /></div>
+                    <div class="fg"><label>النوع *</label><select @bind="editDto.CashBoxType"><option value="1">رئيسية</option><option value="2">فرعية</option><option value="3">بنك</option><option value="4">نقطة بيع</option></select></div>
+                    <div class="fg full"><label>اسم الخزينة عربي *</label><input type="text" @bind="editDto.CashBoxNameAr" placeholder="الخزينة الرئيسية" /></div>
+                    <div class="fg full"><label>اسم الخزينة انجليزي</label><input type="text" @bind="editDto.CashBoxNameEn" placeholder="Main Cash" /></div>
+                    <div class="fg"><label>الحساب المحاسبي</label><select @bind="editDto.AccountID"><option value="0">— اختر الحساب —</option>@foreach(var acc in coaList){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}</select></div>
+                    <div class="fg"><label>العملة</label><select @bind="editDto.CurrencyID"><option value="0">— افتراضي —</option>@foreach(var cur in currencies){<option value="@cur.Id">@cur.Name</option>}</select></div>
+                    <div class="fg"><label>الرصيد الافتتاحي</label><input type="number" @bind="editDto.OpeningBalance" step="0.01" /></div>
+                    <div class="fg"><label>الحد الأقصى</label><input type="number" @bind="editDto.MaxLimit" step="0.01" /></div>
+                    <div class="fg"><label>الحد الأدنى</label><input type="number" @bind="editDto.MinLimit" step="0.01" /></div>
+                    <div class="fg"><label>افتراضية؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsDefault" /><span></span></label></div>
+                    <div class="fg"><label>نشطة؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsActive" /><span></span></label></div>
+                    <div class="fg full"><label>ملاحظات</label><textarea @bind="editDto.Notes" rows="2" placeholder="ملاحظات..."></textarea></div>
+                </div>
+                @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
+            </div>
+            <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveEdit" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
+        </div></div>
+    }
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-overlay-luxury" @onclick="CloseDelete"><div class="modal-card-luxury small" @onclick:stopPropagation="true">
+            <div class="ml-gold-line danger"></div>
+            <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
+            <h4>تأكيد الحذف</h4><p>هل تريد حذف الخزينة: <strong class="delete-name">@deleteBox?.CashBoxNameAr</strong>؟</p>
+            @if(!string.IsNullOrEmpty(deleteMsg)){<div class="msg-luxury msg-error">@deleteMsg</div>}
+            <div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">حذف</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseDelete">إلغاء</button></div>
+        </div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:40px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:1100px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:140px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.86rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.default-badge{display:inline-block;background:rgba(212,175,55,.12);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2);padding:2px 8px;border-radius:6px;font-size:.68rem;font-weight:800;margin-right:6px}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.paid{background:#ecfdf5;color:#059669;border-color:#a7f3d0}.amount-luxury.remaining{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.view{color:#2563eb;border-color:#bfdbfe}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn svg{width:14px;height:14px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow-y:auto}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;max-height:90vh;display:flex;flex-direction:column}.modal-card-luxury.large{max-width:640px}.modal-card-luxury.small{max-width:420px;text-align:center;padding:28px 24px}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.ml-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.ml-header h3{margin:0;font-size:1rem;font-weight:800;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.ml-body{padding:20px;overflow-y:auto;flex:1}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg textarea{height:auto;padding:10px 12px;resize:vertical}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin:0 auto 12px}.delete-icon-luxury svg{width:32px;height:32px}.delete-name{display:block;font-size:1rem;font-weight:800;color:#0A0F1E;margin:8px 0}.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<CashBoxListDto>? boxes;
+    private List<CashBoxListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private int filterType = 0;
+    private string toast = "";
+    private bool toastOk = true;
+
+    private bool showEdit = false;
+    private CashBoxDto editDto = new();
+    private bool isSaving = false;
+    private string editMsg = "";
+    private bool editOk = true;
+    private List<ChartOfAccountDto> coaList = new();
+    private List<LookupDto> currencies = new();
+
+    private bool showDeleteDialog = false;
+    private CashBoxListDto? deleteBox;
+    private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_BANKS") ?? PermissionService.GetModule("SCR_CASHBOX") ?? new ModulePermissionDto{CanView=true, CanAdd=true, CanEdit=true, CanDelete=true};
+        if (permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        boxes = await TreasuryService.GetCashBoxesAsync();
+        try { coaList = await AccountingService.GetFlatAccountsAsync(); } catch { coaList = new(); }
+        try { currencies = await LookupService.GetCurrenciesAsync(); } catch { currencies = new(); }
+        Filter();
+    }
+
+    private void Filter()
+    {
+        if (boxes == null) return;
+        filtered = boxes.Where(b =>
+            (filterType==0 || b.CashBoxType==filterType) &&
+            (string.IsNullOrEmpty(searchText) || b.CashBoxNameAr.Contains(searchText, StringComparison.OrdinalIgnoreCase) || (b.CashBoxCode?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false))
+        ).ToList();
+    }
+
+    private void ClearSearch(){ searchText=""; Filter(); }
+    private string GetTypeName(int t) => t switch {1=>"رئيسية",2=>"فرعية",3=>"بنك",4=>"نقطة بيع",_=>"أخرى"};
+    private string GetTypeColor(int t) => t switch {1=>"#D4AF37",2=>"#2563eb",3=>"#059669",4=>"#7c3aed",_=>"#6b7280"};
+
+    private void AddNew()
+    {
+        editDto = new CashBoxDto{ CashBoxType=1, IsActive=true, OpeningBalance=0 };
+        editMsg=""; showEdit=true;
+    }
+
+    private async Task EditBox(int id)
+    {
+        var dto = await TreasuryService.GetCashBoxByIdAsync(id);
+        if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; }
+    }
+
+    private void CloseEdit(){ showEdit=false; }
+    private void ViewStatement(int id) => Navigation.NavigateTo($"/cash-box-statement?cashBoxId={id}");
+
+    private async Task SaveEdit()
+    {
+        if(string.IsNullOrWhiteSpace(editDto.CashBoxNameAr)){ editMsg="أدخل اسم الخزينة"; editOk=false; return; }
+        isSaving=true; editMsg=""; StateHasChanged();
+        try
+        {
+            if(editDto.CashBoxID==0)
+            {
+                await TreasuryService.InsertCashBoxAsync(editDto, UserSession.UserID);
+                toast="تم إنشاء الخزينة بنجاح ✅"; toastOk=true;
+            }
+            else
+            {
+                await TreasuryService.UpdateCashBoxAsync(editDto, UserSession.UserID);
+                toast="تم تحديث الخزينة بنجاح ✅"; toastOk=true;
+            }
+            showEdit=false;
+            await LoadData();
+        }
+        catch(Exception ex){ editMsg="خطأ: "+ex.Message; editOk=false; }
+        finally{ isSaving=false; }
+    }
+
+    private void ShowDelete(CashBoxListDto cb){ deleteBox=cb; deleteMsg=""; showDeleteDialog=true; }
+    private void CloseDelete(){ showDeleteDialog=false; }
+
+    private async Task ConfirmDelete()
+    {
+        if(deleteBox==null) return;
+        try
+        {
+            await TreasuryService.DeleteCashBoxAsync(deleteBox.CashBoxID, UserSession.UserID);
+            toast="تم حذف الخزينة ✅"; toastOk=true;
+            showDeleteDialog=false;
+            await LoadData();
+        }
+        catch(Exception ex){ deleteMsg=ex.Message; }
+    }
+}

@@ -52,10 +52,9 @@ else
         {
             <div class="add-dropdown-portal-luxury" dir="rtl">
                 <div class="ml-gold-line"></div>
-                <div class="portal-head"><span>اختر مصدر الفاتورة</span><button class="btn-close-x" @onclick="CloseAddMenu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
-                <div class="add-opt-luxury" @onclick="AddFromDelivery"><span class="add-opt-icon" style="background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></span><div><div class="add-opt-title">من إذن تسليم</div><div class="add-opt-desc">تحميل سطور من إذن تسليم معتمد</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
-                <div class="add-opt-luxury" @onclick="AddFromOrder"><span class="add-opt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div><div class="add-opt-title">من أمر بيع</div><div class="add-opt-desc">تحميل سطور من أمر بيع معتمد</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
-                <div class="add-opt-luxury" @onclick="AddDirect"><span class="add-opt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></span><div><div class="add-opt-title">فاتورة مباشرة ⭐</div><div class="add-opt-desc">فاتورة بدون أمر/تسليم — مع/بدون ضريبة اختياري</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                <div class="portal-head"><span>اختر مصدر الفاتورة - الجداول الموجودة</span><button class="btn-close-x" @onclick="CloseAddMenu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+                <div class="add-opt-luxury" @onclick="AddFromOrder"><span class="add-opt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div><div class="add-opt-title">من أمر بيع</div><div class="add-opt-desc">اختياري - من جدول SalesOrders 28 عمود الموجود</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                <div class="add-opt-luxury" @onclick="AddDirect"><span class="add-opt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></span><div><div class="add-opt-title">فاتورة مباشرة - الأساس</div><div class="add-opt-desc">الأساس - مع/بدون ضريبة - نفس نظام المشتريات</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
             </div>
             <div class="add-overlay-portal-luxury" @onclick="CloseAddMenu"></div>
         }
@@ -63,9 +62,9 @@ else
         <div class="workflow-luxury">
             <div class="wf-step done"><span class="wf-num">1</span><span>عرض سعر</span><div class="wf-line"></div></div>
             <div class="wf-step done"><span class="wf-num">2</span><span>أمر بيع</span><div class="wf-line"></div></div>
-            <div class="wf-step done"><span class="wf-num">3</span><span>تسليم</span><div class="wf-line"></div></div>
-            <div class="wf-step active"><span class="wf-num">4</span><span>فاتورة</span><div class="wf-line"></div></div>
-            <div class="wf-step"><span class="wf-num">5</span><span>مرتجع</span></div>
+            <div class="wf-step active"><span class="wf-num">3</span><span>فاتورة</span><div class="wf-line"></div></div>
+            <div class="wf-step"><span class="wf-num">4</span><span>مرتجع</span></div>
+            <div class="wf-step"><span class="wf-num">5</span><span>قبض</span></div>
         </div>
 
         @if (invoices != null)
@@ -142,7 +141,7 @@ else
         </div></div>
     }
 
-    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'>✕</button></div></div>}
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'></button></div></div>}
 }
 
 <style>
@@ -241,20 +240,13 @@ else
             (string.IsNullOrEmpty(searchText) ||
              ArabicSearchHelper.Contains(i.InvoiceNumber, searchText) ||
              ArabicSearchHelper.Contains(i.CustomerNameAr, searchText) ||
-             ArabicSearchHelper.Contains(i.LinkedSONumber, searchText) ||
-             ArabicSearchHelper.Contains(i.LinkedDeliveryNumber, searchText))
+             ArabicSearchHelper.Contains(i.LinkedSONumber, searchText))
         ).ToList();
     }
 
     private void ClearSearch() { searchText = ""; Filter(); }
     private void ToggleAddMenu() { showAddMenu = !showAddMenu; }
     private void CloseAddMenu() { showAddMenu = false; }
-
-    private void AddFromDelivery()
-    {
-        showAddMenu = false;
-        Navigation.NavigateTo("/sales-invoices/new?source=delivery");
-    }
 
     private void AddFromOrder()
     {
@@ -315,7 +307,7 @@ else
         try
         {
             var result = await InvoiceService.DeleteInvoiceAsync(deleteInvoice.InvoiceID, UserSession.UserID);
-            if (result.Success) { toast = result.Message + " ✅"; toastOk = true; showDeleteDialog = false; await LoadData(); }
+            if (result.Success) { toast = result.Message + " "; toastOk = true; showDeleteDialog = false; await LoadData(); }
             else { deleteMsg = result.Message; }
         }
         catch (Exception ex) { deleteMsg = "خطأ: " + ex.Message; }

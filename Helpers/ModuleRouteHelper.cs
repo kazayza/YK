@@ -46,12 +46,40 @@
                 "SCR_SRET" => "/sales-returns",
                 "SCR_RECV" => "/receipt-vouchers",
 
-                // الحسابات
+                // الخزينة - Gold Edition
+                "SCR_CASHBOX"    => "/cash-boxes",
+                "SCR_CASHBOXES"  => "/cash-boxes",
+                "SCR_BANKS"      => "/cash-boxes",
+                "SCR_BANKACC"    => "/bank-accounts",
+                "SCR_BANK_ACCOUNTS" => "/bank-accounts",
+                "SCR_CASHTRANS"  => "/cash-transfers",
+                "SCR_CASHSTAT"   => "/cash-box-statement",
+                "SCR_DAILYCLOSE" => "/daily-closing",
+                "SCR_TREASURY"   => "/treasury-dashboard",
+
+                // الحسابات - Gold Edition Pro
                 "SCR_COA"      => "/chart-of-accounts",
                 "SCR_JV"       => "/journal-entries",
+                "SCR_JV_NEW"   => "/journal-entries/new",
                 "SCR_PAYV"     => "/payment-vouchers",
-                "SCR_BANKS"    => "/banks",
+                "SCR_EXPENSES" => "/expenses",
+                "SCR_EXPENSE"  => "/expenses",
+                "SCR_OVERHEAD" => "/expenses",
+                "SCR_OVERHEAD_EXPENSES" => "/expenses",
                 "SCR_CHEQUES"  => "/cheques",
+                "SCR_CHEQUE"   => "/cheques",
+                "SCR_COST"     => "/cost-centers",
+                "SCR_COSTCENTERS" => "/cost-centers",
+                "SCR_COST_CENTERS" => "/cost-centers",
+                "SCR_FY"       => "/fiscal-years",
+                "SCR_FISCALYEARS" => "/fiscal-years",
+                "SCR_FISCAL_YEARS" => "/fiscal-years",
+                "SCR_TRIAL"    => "/trial-balance",
+                "SCR_TRIALBAL" => "/trial-balance",
+                "SCR_TB"       => "/trial-balance",
+                "SCR_LEDGER"   => "/account-ledger",
+                "SCR_ACCLEDGER"=> "/account-ledger",
+                "SCR_ACCOUNT_LEDGER" => "/account-ledger",
                 "SCR_COSTCARD" => "/cost-card",
 
                 // الموارد البشرية

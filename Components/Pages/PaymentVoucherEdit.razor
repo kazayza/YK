@@ -1,0 +1,200 @@
+@page "/payment-vouchers/new"
+@page "/payment-vouchers/edit/{Id:int}"
+@page "/payment-vouchers/view/{ViewId:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject TreasuryService TreasuryService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>سند صرف - Gold Edition (فعلي)</PageTitle>
+
+@if (!UserSession.IsLoggedIn){<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-content">
+                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">@(isView ? "عرض سند صرف" : (isEdit ? $"تعديل {dto.PaymentNumber}" : "سند صرف جديد"))</h2><p class="lh-subtitle">فعلي: PaymentID / PaymentNumber / EntityType / PaymentStatus / JournalID — Gold Edition</p></div></div>
+                <div class="lh-actions">
+                    <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/payment-vouchers")'>رجوع</button>
+                    @if (!isView && dto.PaymentStatus==1){<button class="btn-luxury btn-primary-luxury" @onclick="SaveVoucher" disabled="@isSaving">حفظ</button>}
+                    @if (isEdit && dto.PaymentStatus==1){<button class="btn-luxury" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff" @onclick="ApproveVoucher" disabled="@isApproving">اعتماد + قيد</button>}
+                </div>
+            </div>
+        </div>
+
+        @if (isLoading){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else
+        {
+            <div class="form-card-luxury">
+                <div class="fc-head"><h3>بيانات السند (الجدول الفعلي PaymentVouchers)</h3><span class="status-badge-luxury" style="--sc:@GetStatusColor(dto.PaymentStatus)">@dto.StatusName</span></div>
+                <div class="form-grid-luxury">
+                    <div class="fg"><label>رقم السند (PaymentNumber)</label><input type="text" @bind="dto.PaymentNumber" disabled /></div>
+                    <div class="fg"><label>التاريخ * (PaymentDate)</label><input type="date" @bind="dto.PaymentDate" disabled="@isView" /></div>
+                    <div class="fg"><label>الخزينة * (CashBoxID)</label><select @bind="dto.CashBoxID" disabled="@isView"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name (@cb.Code)</option>}</select></div>
+                    <div class="fg"><label>البنك (BankAccountID)</label><select @bind="dto.BankAccountID" disabled="@isView"><option value="0">— نقدي —</option>@foreach(var b in bankAccounts){<option value="@b.Id">@b.Name</option>}</select></div>
+
+                    <div class="fg"><label>نوع الجهة (EntityType: 1 مورد / 2 عميل / 3 أخرى)</label><select @bind="dto.EntityType" disabled="@isView" @bind:after="OnEntityTypeChanged"><option value="1">مورد</option><option value="2">عميل</option><option value="3">أخرى</option></select></div>
+                    <div class="fg"><label>رقم الجهة (EntityID)</label><select @bind="dto.EntityID" disabled="@isView"><option value="0">— اختر —</option>@if(dto.EntityType==1){@foreach(var s in suppliers){<option value="@s.Id">@s.Name (@s.Code)</option>}} else if(dto.EntityType==2){@foreach(var c in customers){<option value="@c.Id">@c.Name (@c.Code)</option>}} else {@foreach(var o in otherEntities){<option value="@o.Id">@o.Name</option>}}</select></div>
+
+                    <div class="fg full"><label>المدفوع له (PaidTo)</label><input type="text" @bind="dto.PaidTo" disabled="@isView" /></div>
+
+                    <div class="fg"><label>المبلغ * (Amount)</label><input type="number" @bind="dto.Amount" @bind:after="CalcLocal" step="0.01" disabled="@isView" /></div>
+                    <div class="fg"><label>العملة (CurrencyID)</label><select @bind="dto.CurrencyID" disabled="@isView" @bind:after="CalcLocal"><option value="0">— افتراضي —</option>@foreach(var cur in currencies){<option value="@cur.Id">@cur.Name</option>}</select></div>
+                    <div class="fg"><label>سعر الصرف (ExchangeRate)</label><input type="number" @bind="dto.ExchangeRate" @bind:after="CalcLocal" step="0.000001" disabled="@isView" /></div>
+                    <div class="fg"><label>المبلغ بالمحلي (AmountLocal)</label><input type="text" value="@dto.AmountLocal.ToString("#,##0.00")" disabled /></div>
+
+                    <div class="fg"><label>حساب المصروف (ExpenseAccountID)</label><select @bind="dto.ExpenseAccountID" disabled="@isView"><option value="0">— حسب المورد/الإعداد —</option>@foreach(var acc in expenseAccounts){<option value="@acc.Id">@acc.Name (@acc.Code)</option>}</select></div>
+                    <div class="fg"><label>مركز التكلفة (CostCenterID)</label><select @bind="dto.CostCenterID" disabled="@isView"><option value="0">— لا يوجد —</option>@foreach(var cc in costCenters){<option value="@cc.Id">@cc.Name</option>}</select></div>
+
+                    <div class="fg"><label>طريقة الدفع (PaymentMethod)</label><select @bind="dto.PaymentMethod" disabled="@isView"><option value="1">نقدي</option><option value="2">تحويل بنكي</option><option value="3">شيك</option><option value="4">فيزا</option></select></div>
+                    <div class="fg"><label>رقم الشيك (ChequeNumber)</label><input type="text" @bind="dto.ChequeNumber" disabled="@isView" /></div>
+                    <div class="fg"><label>تاريخ الشيك (ChequeDate)</label><input type="date" @bind="dto.ChequeDate" disabled="@isView" /></div>
+                    <div class="fg"><label>اسم البنك (ChequeBankName)</label><input type="text" @bind="dto.ChequeBankName" disabled="@isView" /></div>
+                    <div class="fg"><label>مرجع التحويل (TransferRef)</label><input type="text" @bind="dto.TransferRef" disabled="@isView" /></div>
+
+                    <div class="fg full"><label>البيان (Description)</label><textarea @bind="dto.Description" rows="2" disabled="@isView"></textarea></div>
+                    <div class="fg full"><label>ملاحظات (Notes)</label><textarea @bind="dto.Notes" rows="2" disabled="@isView"></textarea></div>
+                </div>
+                @if (!string.IsNullOrEmpty(msg)){<div class="msg-luxury @(msgOk?"msg-success":"msg-error")">@msg</div>}
+            </div>
+
+            @if (dto.JournalID.HasValue){<div class="form-card-luxury"><div class="fc-head"><h3>القيد المحاسبي</h3><span class="tax-badge-luxury yes">مرحل @dto.JournalID</span></div><p style="padding:16px;color:#6b7280">تم إنشاء قيد أوتوماتيك JournalID=@dto.JournalID عبر sp_PostPaymentVoucher (JournalNumber, JournalStatus, SourceDocType='PaymentVoucher')</p></div>}
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:900px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
+.form-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.form-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.fc-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.fc-head h3{margin:0;font-size:.92rem;font-weight:800;color:#0A0F1E}
+.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg textarea{height:auto;padding:10px 12px;resize:vertical}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}.fg input:disabled,.fg select:disabled,.fg textarea:disabled{background:#f3f4f6;color:#6b7280}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.tax-badge-luxury{display:inline-block;padding:3px 10px;border-radius:6px;font-size:.68rem;font-weight:800}.tax-badge-luxury.yes{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin:12px 20px}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public int? ViewId { get; set; }
+    private bool isEdit => Id.HasValue && Id.Value>0;
+    private bool isView => ViewId.HasValue && ViewId.Value>0;
+    private PaymentVoucherDto dto = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isApproving = false;
+    private string msg = "";
+    private bool msgOk = true;
+    private string toast = "";
+    private bool toastOk = true;
+
+    private List<SearchableItem> cashBoxes = new();
+    private List<SearchableItem> bankAccounts = new();
+    private List<SearchableItem> customers = new();
+    private List<SearchableItem> suppliers = new();
+    private List<SearchableItem> otherEntities = new();
+    private List<SearchableItem> expenseAccounts = new();
+    private List<LookupDto> costCenters = new();
+    private List<LookupDto> currencies = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        try { cashBoxes = await LookupService.GetCashBoxesSearchableAsync(); } catch {}
+        try { bankAccounts = await LookupService.GetBankAccountsSearchableAsync(); } catch {}
+        try { customers = await LookupService.GetCustomersSearchableAsync(); } catch {}
+        try { suppliers = await LookupService.GetSuppliersSearchableAsync(); } catch {}
+        try { expenseAccounts = await LookupService.GetExpenseAccountsSearchableAsync(); } catch {}
+        try { costCenters = await LookupService.GetCostCentersAsync(); } catch {}
+        try { currencies = await LookupService.GetCurrenciesAsync(); } catch {}
+        otherEntities = new List<SearchableItem>{ new(){Id=1, Name="جهة أخرى"} };
+
+        if (isView)
+        {
+            var data = await TreasuryService.GetPaymentByIdAsync(ViewId!.Value);
+            if (data != null) dto = data;
+        }
+        else if (isEdit)
+        {
+            var data = await TreasuryService.GetPaymentByIdAsync(Id!.Value);
+            if (data != null) dto = data;
+        }
+        else
+        {
+            dto.PaymentNumber = await TreasuryService.GeneratePaymentNoAsync();
+            dto.PaymentDate = DateTime.Today;
+            dto.EntityType = 1;
+            dto.PaymentMethod = 1;
+            dto.ExchangeRate = 1;
+            dto.PaymentStatus = 1;
+            if (cashBoxes.Any()) dto.CashBoxID = cashBoxes.First().Id;
+        }
+
+        isLoading = false;
+    }
+
+    private void OnEntityTypeChanged(){ dto.EntityID = null; dto.PaidTo = ""; }
+    private void CalcLocal(){ dto.AmountLocal = dto.Amount * (dto.ExchangeRate <=0 ? 1 : dto.ExchangeRate); }
+
+    private async Task SaveVoucher()
+    {
+        if (dto.CashBoxID==0){ msg="اختر الخزينة"; msgOk=false; return; }
+        if (dto.Amount<=0){ msg="أدخل المبلغ"; msgOk=false; return; }
+
+        isSaving=true; msg=""; StateHasChanged();
+        try
+        {
+            if (isEdit)
+            {
+                await TreasuryService.UpdatePaymentAsync(dto, UserSession.UserID);
+                toast="تم تحديث سند الصرف ✅"; toastOk=true;
+            }
+            else
+            {
+                var newId = await TreasuryService.InsertPaymentAsync(dto, UserSession.UserID);
+                toast="تم إنشاء سند الصرف ✅"; toastOk=true;
+                Navigation.NavigateTo($"/payment-vouchers/edit/{newId}");
+                return;
+            }
+        }
+        catch(Exception ex){ msg="خطأ: "+ex.Message; msgOk=false; }
+        finally{ isSaving=false; }
+    }
+
+    private async Task ApproveVoucher()
+    {
+        if (!isEdit) return;
+        isApproving=true; StateHasChanged();
+        try
+        {
+            await TreasuryService.ApprovePaymentAsync(dto.PaymentID, UserSession.UserID);
+            toast="تم الاعتماد وقيد أوتوماتيك عبر sp_PostPaymentVoucher ✅"; toastOk=true;
+            var data = await TreasuryService.GetPaymentByIdAsync(dto.PaymentID);
+            if (data!=null) dto=data;
+        }
+        catch(Exception ex){ msg="خطأ: "+ex.Message; msgOk=false; }
+        finally{ isApproving=false; }
+    }
+
+    private string GetStatusColor(int s) => s switch {1=>"#6b7280",2=>"#10b981",3=>"#ef4444",_=>"#6b7280"};
+}

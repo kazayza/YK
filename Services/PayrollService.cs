@@ -710,12 +710,12 @@ namespace YKCoatings.Services
             await Task.CompletedTask;
 
             using var workbook = new ClosedXML.Excel.XLWorkbook();
-            var ws = workbook.Worksheets.Add("مسير المرتبات");
+            var ws = workbook.Worksheets.Add("كشف المرتبات");
             ws.RightToLeft = true;
             ws.Style.Font.FontName = "Cairo";
             ws.Style.Font.FontSize = 11;
 
-            ws.Cell(1, 1).Value = $"مسير المرتبات — {payrollNumber}";
+            ws.Cell(1, 1).Value = $"كشف المرتبات — {payrollNumber}";
             ws.Range(1, 1, 1, 21).Merge().Style.Font.Bold = true;
 
             var headers = new[]

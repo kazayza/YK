@@ -7,696 +7,201 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
+<PageTitle>@(_isNew ? "إضافة دور" : "تعديل دور")</PageTitle>
+
 @if (!_authorized)
-{
-    <div></div>
-}
+{<div class="no-access-luxury" dir="rtl"><h4>جاري التحقق...</h4></div>}
 else
 {
-    <!-- ===== شريط العنوان ===== -->
-    <div class="page-header">
-        <div class="page-header-right">
-            <button class="btn-back" @onclick="GoBack" title="رجوع">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M19 12H5"/>
-                    <path d="M12 19l7-7-7-7"/>
-                </svg>
+<div class="luxury-page full-width" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <button class="btn-back-luxury" @onclick="GoBack" title="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l7-7-7-7"/></svg></button>
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">@(_isNew ? "إضافة دور جديد" : $"تعديل الدور — {_dto.RoleNameAr}")</h2>
+                </div>
+            </div>
+            <div class="lh-actions">
+                @if (!_isNew){<span class="lh-badge"><span class="lh-dot"></span>@_dto.RoleCode</span> @if(_dto.IsSystemRole){<span class="lh-badge" style="background:rgba(251,191,36,.12);color:#b45309;border-color:#fde68a">نظامي محمي</span>}}
+                <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">إلغاء</button>
+                <button class="btn-luxury btn-primary-luxury" @onclick="SaveAll" disabled="@_saving">
+                    @if(_saving){<div class="btn-spinner-sm"></div><span>جاري الحفظ...</span>}
+                    else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>حفظ الكل</span>}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {<div class="msg-luxury @(_isError ? "msg-error" : "msg-success")">@_message <button @onclick='()=>_message=""' style="margin-right:auto;background:none;border:none;cursor:pointer">✕</button></div>}
+
+    <div class="mudtabs-luxury">
+        <div class="mudtabs-header-luxury">
+            <button class="mudtab-btn-luxury @(_activeTab==1?"active":"")" @onclick="()=>_activeTab=1">
+                <span class="mt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                بيانات الدور
             </button>
-            <h2 class="page-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                @(_isNew ? "إضافة دور جديد" : "تعديل الدور")
-            </h2>
             @if (!_isNew)
             {
-                <span class="edit-badge">@_dto.RoleCode</span>
-                @if (_dto.IsSystemRole)
-                {
-                    <span class="edit-badge system-badge">🔒 نظامي</span>
-                }
+                <button class="mudtab-btn-luxury @(_activeTab==2?"active":"")" @onclick="()=>_activeTab=2">
+                    <span class="mt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.2)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg></span>
+                    مصفوفة الصلاحيات
+                    @if (_permissions.Any()){<span class="mt-count gold">@_permissions.Count(p=>p.CanView)</span>}
+                </button>
             }
         </div>
-        <div class="page-header-left">
-            <button class="btn-action btn-cancel-page" @onclick="GoBack">
-                <span>إلغاء</span>
-            </button>
-            <button class="btn-action btn-save-page" @onclick="SaveAll" disabled="@_saving">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                    <polyline points="17 21 17 13 7 13 7 21"/>
-                    <polyline points="7 3 7 8 15 8"/>
-                </svg>
-                <span>@(_saving ? "جاري الحفظ..." : "حفظ الكل")</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- ===== رسالة ===== -->
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <div class="alert-msg @(_isError ? "alert-error" : "alert-success")">
-            <span>@_message</span>
-            <button class="alert-close" @onclick="@(() => _message = "")">✕</button>
-        </div>
-    }
-
-    <!-- ===== التبويبات ===== -->
-    <div class="tabs-header">
-        <button class="tab-btn @(_activeTab == 1 ? "active" : "")" @onclick="@(() => _activeTab = 1)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            <span>بيانات الدور</span>
-        </button>
-        @if (!_isNew)
-        {
-            <button class="tab-btn @(_activeTab == 2 ? "active" : "")" @onclick="@(() => _activeTab = 2)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2"/>
-                    <path d="M9 12l2 2 4-4"/>
-                </svg>
-                <span>مصفوفة الصلاحيات</span>
-                @if (_permissions.Any())
-                {
-                    <span class="tab-count">@_permissions.Count(p => p.CanView)</span>
-                }
-            </button>
-        }
-    </div>
-
-    <!-- ===== محتوى التبويبات ===== -->
-    <div class="tab-content">
-
-        <!-- ────────── تبويب 1: بيانات الدور ────────── -->
-        @if (_activeTab == 1)
-        {
-            <div class="form-card">
-                <div class="form-card-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    </svg>
-                    بيانات الدور
-                </div>
-
-                <div class="form-grid">
-
-                    <!-- كود الدور -->
-                    <div class="form-group">
-                        <label class="form-label">كود الدور <span class="required">*</span></label>
-                        <input type="text" class="form-input" @bind="_dto.RoleCode"
-                               placeholder="مثال: SALE_MGR" 
-                               disabled="@(_dto.IsSystemRole && !_isNew)" />
-                    </div>
-
-                    <!-- اسم الدور بالعربية -->
-                    <div class="form-group">
-                        <label class="form-label">اسم الدور بالعربية <span class="required">*</span></label>
-                        <input type="text" class="form-input" @bind="_dto.RoleNameAr"
-                               placeholder="مثال: مدير المبيعات" />
-                    </div>
-
-                    <!-- اسم الدور بالإنجليزية -->
-                    <div class="form-group">
-                        <label class="form-label">اسم الدور بالإنجليزية</label>
-                        <input type="text" class="form-input" @bind="_dto.RoleNameEn"
-                               placeholder="مثال: Sales Manager" />
-                    </div>
-
-                    <!-- نشط -->
-                    <div class="form-group">
-                        <label class="form-label">الحالة</label>
-                        <div class="toggle-wrap">
-                            <label class="toggle-label">
-                                <input type="checkbox" @bind="_dto.IsActive"
-                                       disabled="@_dto.IsSystemRole" />
-                                <span class="toggle-switch"></span>
-                                <span class="toggle-text">@(_dto.IsActive ? "نشط" : "غير نشط")</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- الوصف -->
-                    <div class="form-group form-full">
-                        <label class="form-label">الوصف</label>
-                        <textarea class="form-input form-textarea" @bind="_dto.Description"
-                                  placeholder="وصف صلاحيات هذا الدور..." rows="3"></textarea>
-                    </div>
-
-                </div>
-            </div>
-
-            @if (_isNew)
+        <div class="mudtabs-body-luxury">
+            @if (_activeTab == 1)
             {
-                <div class="info-note">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M12 16v-4"/>
-                        <path d="M12 8h.01"/>
-                    </svg>
-                    <span>بعد حفظ الدور ستتمكن من تعديل صلاحياته في تبويب "مصفوفة الصلاحيات"</span>
+                <div class="form-grid-luxury cols-2">
+                    <div class="field-luxury"><label class="fl-label required">كود الدور</label><div class="input-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 15h6"/></svg><input type="text" @bind="_dto.RoleCode" placeholder="مثال: SALE_MGR" disabled="@(_dto.IsSystemRole && !_isNew)" /></div></div>
+                    <div class="field-luxury"><label class="fl-label required">اسم الدور بالعربية</label><div class="input-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" @bind="_dto.RoleNameAr" placeholder="مدير المبيعات" /></div></div>
+                    <div class="field-luxury"><label class="fl-label">اسم الدور بالإنجليزية</label><div class="input-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" @bind="_dto.RoleNameEn" placeholder="Sales Manager" /></div></div>
+                    <div class="field-luxury"><label class="fl-label">الحالة</label><div style="height:42px;display:flex;align-items:center"><label class="switch-luxury"><input type="checkbox" @bind="_dto.IsActive" disabled="@_dto.IsSystemRole" /><span></span></label><span style="margin-right:10px;font-weight:700;color:@(_dto.IsActive?"#059669":"#6b7280")">@(_dto.IsActive?"نشط":"غير نشط")</span></div></div>
+                    <div class="field-luxury full"><label class="fl-label">الوصف</label><textarea class="form-textarea-luxury" @bind="_dto.Description" placeholder="وصف صلاحيات هذا الدور..." rows="3"></textarea></div>
                 </div>
+                @if (_isNew){<div class="info-note-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>بعد حفظ الدور ستتمكن من تعديل صلاحياته في تبويب مصفوفة الصلاحيات</span></div>}
             }
-        }
-                <!-- ────────── تبويب 2: مصفوفة الصلاحيات ────────── -->
-        @if (_activeTab == 2 && !_isNew)
-        {
-            <div class="form-card perm-card">
-
-                <!-- شريط أدوات الصلاحيات -->
-                <div class="perm-toolbar">
-                    <div class="perm-toolbar-right">
-                        <div class="form-card-title" style="margin:0;padding:0;border:none">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                                <path d="M9 12l2 2 4-4"/>
-                            </svg>
-                            مصفوفة الصلاحيات
-                        </div>
-                    </div>
-                    <div class="perm-toolbar-left">
-                        <!-- نسخ من دور آخر -->
-                        <div class="copy-from-wrap">
-                            <select class="filter-input copy-select" @bind="_copyFromRoleId">
-                                <option value="0">— نسخ من دور —</option>
-                                @foreach (var r in _rolesForCopy)
-                                {
-                                    <option value="@r.Id">@r.Name</option>
-                                }
-                            </select>
-                            <button class="btn-copy" @onclick="CopyPermissions"
-                                    disabled="@(_copyFromRoleId == 0)" title="نسخ الصلاحيات">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
-                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                </svg>
-                                <span>نسخ</span>
-                            </button>
-                        </div>
-
-                        <!-- تحديد/إلغاء الكل -->
-                        <button class="btn-toolbar" @onclick="SelectAll" title="تحديد الكل">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                                <path d="M9 12l2 2 4-4"/>
-                            </svg>
-                            <span>تحديد الكل</span>
-                        </button>
-                        <button class="btn-toolbar btn-toolbar-danger" @onclick="DeselectAll" title="إلغاء الكل">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                                <line x1="9" y1="9" x2="15" y2="15"/>
-                                <line x1="15" y1="9" x2="9" y2="15"/>
-                            </svg>
-                            <span>إلغاء الكل</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- جدول الصلاحيات -->
-                <div class="perm-table-wrap">
-                    <table class="perm-table">
-                        <thead>
-                            <tr>
-                                <th class="perm-th-module">الشاشة</th>
-                                <th class="perm-th-check">عرض</th>
-                                <th class="perm-th-check">إضافة</th>
-                                <th class="perm-th-check">تعديل</th>
-                                <th class="perm-th-check">حذف</th>
-                                <th class="perm-th-check">طباعة</th>
-                                <th class="perm-th-check">تصدير</th>
-                                <th class="perm-th-check">اعتماد</th>
-                                <th class="perm-th-check">ترحيل</th>
-                                <th class="perm-th-check">إلغاء</th>
-                                <th class="perm-th-check">الكل</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var module in GetParentModules())
-                            {
-                                var children = GetChildModules(module.ModuleID);
-                                var isExpanded = _expandedModules.Contains(module.ModuleID);
-
-                                <!-- سطر الموديول الرئيسي -->
-                                <tr class="perm-row-parent">
-                                    <td class="perm-td-module">
-                                        <button class="perm-expand-btn" @onclick="@(() => ToggleExpand(module.ModuleID))">
-                                            @if (isExpanded)
-                                            {
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M6 9l6 6 6-6"/>
-                                                </svg>
-                                            }
-                                            else
-                                            {
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                    <path d="M15 18l-6-6 6-6"/>
-                                                </svg>
-                                            }
-                                        </button>
-                                        <span class="perm-module-icon">📁</span>
-                                        <span class="perm-module-name parent-name">@module.ModuleNameAr</span>
-                                    </td>
-                                    <!-- Select All لكل الموديول -->
-                                    <td colspan="9" class="perm-td-parent-actions">
-                                        <button class="btn-select-module" @onclick="@(() => SelectModule(module.ModuleID, true))">
-                                            تحديد الكل
-                                        </button>
-                                        <button class="btn-deselect-module" @onclick="@(() => SelectModule(module.ModuleID, false))">
-                                            إلغاء الكل
-                                        </button>
-                                    </td>
-                                    <td></td>
-                                </tr>
-
-                                <!-- الشاشات الفرعية -->
-                                @if (isExpanded)
-                                {
-                                    @foreach (var child in children)
-                                    {
-                                        <tr class="perm-row-child">
-                                            <td class="perm-td-module perm-td-child">
-                                                <span class="perm-child-indent"></span>
-                                                <span class="perm-module-icon">📄</span>
-                                                <span class="perm-module-name">@child.ModuleNameAr</span>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanView" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanAdd" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanEdit" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanDelete" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanPrint" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanExport" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanApprove" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanPost" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <label class="perm-check">
-                                                    <input type="checkbox" @bind="child.CanCancel" />
-                                                    <span class="perm-checkmark"></span>
-                                                </label>
-                                            </td>
-                                            <td class="perm-td-check">
-                                                <button class="btn-row-all" @onclick="@(() => SelectRow(child, true))" title="تحديد السطر">✓</button>
-                                                <button class="btn-row-none" @onclick="@(() => SelectRow(child, false))" title="إلغاء السطر">✕</button>
-                                            </td>
-                                        </tr>
+            @if (_activeTab == 2 && !_isNew)
+            {
+                <div class="perm-section-luxury">
+                    <div class="perm-toolbar"><div class="perm-toolbar-right"><strong>مصفوفة الصلاحيات</strong></div><div class="perm-toolbar-left">
+                        <div class="select-wrap-luxury"><select @bind="_copyFromRoleId" style="height:36px;min-width:180px"><option value="0">— نسخ من دور —</option>@foreach(var r in _rolesForCopy){<option value="@r.Id">@r.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+                        <button class="btn-luxury btn-ghost-luxury" style="height:36px" @onclick="CopyPermissions" disabled="@(_copyFromRoleId==0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>نسخ</button>
+                        <button class="btn-luxury btn-ghost-luxury" style="height:36px" @onclick="SelectAll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>تحديد الكل</button>
+                        <button class="btn-luxury btn-ghost-luxury" style="height:36px;border-color:#fecaca;color:#dc2626" @onclick="DeselectAll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>إلغاء الكل</button>
+                    </div></div>
+                    <div class="perm-table-wrap">
+                        <table class="perm-table">
+                            <thead><tr><th class="perm-th-module">الشاشة</th><th>عرض</th><th>إضافة</th><th>تعديل</th><th>حذف</th><th>طباعة</th><th>تصدير</th><th>اعتماد</th><th>ترحيل</th><th>إلغاء</th><th>الكل</th></tr></thead>
+                            <tbody>
+                                @foreach(var module in GetParentModules()){
+                                    var children = GetChildModules(module.ModuleID);
+                                    var isExpanded = _expandedModules.Contains(module.ModuleID);
+                                    <tr class="perm-row-parent">
+                                        <td class="perm-td-module">
+                                            <button class="perm-expand-btn" @onclick="()=>ToggleExpand(module.ModuleID)">@if(isExpanded){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>}</button>
+                                            <span class="perm-module-name parent-name">@module.ModuleNameAr</span>
+                                        </td>
+                                        <td colspan="9" class="perm-td-parent-actions"><button class="btn-select-module" @onclick="()=>SelectModule(module.ModuleID,true)">تحديد الكل</button><button class="btn-deselect-module" @onclick="()=>SelectModule(module.ModuleID,false)">إلغاء الكل</button></td><td></td>
+                                    </tr>
+                                    @if(isExpanded){
+                                        @foreach(var child in children){
+                                            <tr class="perm-row-child">
+                                                <td class="perm-td-module perm-td-child"><span class="perm-child-indent"></span><span class="perm-module-name">@child.ModuleNameAr</span></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanView" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanAdd" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanEdit" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanDelete" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanPrint" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanExport" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanApprove" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanPost" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><label class="perm-check"><input type="checkbox" @bind="child.CanCancel" /><span class="perm-checkmark"></span></label></td>
+                                                <td class="perm-td-check"><button class="btn-row-all" @onclick="()=>SelectRow(child,true)">✓</button><button class="btn-row-none" @onclick="()=>SelectRow(child,false)">✕</button></td>
+                                            </tr>
+                                        }
                                     }
                                 }
-                            }
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
+            }
+        </div>
+    </div>
+</div>
+}
 
-            </div>
-        }
-
-    </div> <!-- نهاية tab-content -->
-
-} <!-- نهاية else الخاص بـ _authorized -->
 <style>
-    /* ===== Page Header ===== */
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-    .page-header-right { display: flex; align-items: center; gap: 12px; }
-    .page-header-left { display: flex; align-items: center; gap: 8px; }
-    .page-title { font-size: 1.2rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 10px; margin: 0; }
-    .title-icon { width: 26px; height: 26px; color: #2563eb; }
-    .edit-badge { background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 8px; font-size: .78rem; font-weight: 700; border: 1px solid #bfdbfe; }
-    .system-badge { background: #fffbeb; color: #b45309; border-color: #fde68a; }
-    .btn-back { width: 40px; height: 40px; border: 1px solid #e2e8f0; background: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; }
-    .btn-back:hover { background: #f1f5f9; }
-    .btn-back svg { width: 18px; height: 18px; color: #475569; }
-    .btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border: none; border-radius: 10px; font-size: .84rem; font-weight: 700; cursor: pointer; transition: all .2s; }
-    .btn-action svg { width: 16px; height: 16px; }
-    .btn-save-page { background: linear-gradient(135deg, #2563eb, #2563eb); color: white; box-shadow: 0 4px 12px rgba(37,99,235,.3); }
-    .btn-save-page:hover { transform: translateY(-1px); }
-    .btn-save-page:disabled { opacity: .6; cursor: not-allowed; transform: none; }
-    .btn-cancel-page { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-
-    /* ===== Alerts ===== */
-    .alert-msg { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-radius: 10px; margin-bottom: 16px; font-size: .85rem; font-weight: 600; }
-    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .alert-close { background: none; border: none; cursor: pointer; color: inherit; opacity: .6; }
-
-    /* ===== Tabs ===== */
-    .tabs-header { display: flex; gap: 4px; background: white; border-radius: 14px 14px 0 0; padding: 6px 6px 0; border: 1px solid #e2e8f0; border-bottom: none; overflow-x: auto; }
-    .tab-btn { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border: none; background: transparent; color: #64748b; font-size: .84rem; font-weight: 700; border-radius: 10px 10px 0 0; cursor: pointer; transition: all .2s; white-space: nowrap; border-bottom: 3px solid transparent; }
-    .tab-btn:hover { background: #f8fafc; color: #334155; }
-    .tab-btn.active { background: #f8fafc; color: #2563eb; border-bottom-color: #2563eb; }
-    .tab-btn svg { width: 16px; height: 16px; }
-    .tab-count { background: #2563eb; color: white; padding: 1px 7px; border-radius: 10px; font-size: .68rem; font-weight: 800; }
-
-    /* ===== Form Card ===== */
-    .form-card { background: white; border-radius: 0 0 14px 14px; padding: 24px; border: 1px solid #e2e8f0; border-top: none; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
-    .perm-card { padding: 0; overflow: hidden; }
-    .form-card-title { display: flex; align-items: center; gap: 10px; font-size: .95rem; font-weight: 800; color: #0f172a; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
-    .form-card-title svg { width: 20px; height: 20px; color: #2563eb; }
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .form-full { grid-column: 1 / -1; }
-    .form-group { display: flex; flex-direction: column; gap: 6px; }
-    .form-label { font-size: .8rem; font-weight: 700; color: #475569; }
-    .required { color: #dc2626; }
-    .form-input { height: 42px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0 14px; font-size: .85rem; background: #f8fafc; transition: all .2s; width: 100%; }
-    .form-input:focus { border-color: #2563eb; background: white; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .form-input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
-    .form-textarea { height: auto; padding: 12px 14px; resize: vertical; min-height: 80px; }
-
-    /* ===== Toggle ===== */
-    .toggle-wrap { display: flex; align-items: center; height: 42px; }
-    .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: .84rem; color: #334155; }
-    .toggle-label input { display: none; }
-    .toggle-switch { width: 44px; height: 24px; background: #cbd5e1; border-radius: 12px; position: relative; transition: background .2s; flex-shrink: 0; }
-    .toggle-switch::after { content: ''; position: absolute; width: 18px; height: 18px; background: white; border-radius: 50%; top: 3px; right: 3px; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-    .toggle-label input:checked + .toggle-switch { background: #2563eb; }
-    .toggle-label input:checked + .toggle-switch::after { transform: translateX(-20px); }
-    .toggle-text { font-weight: 600; }
-
-    /* ===== Info Note ===== */
-    .info-note { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 14px 18px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; font-size: .84rem; color: #1d4ed8; font-weight: 600; }
-    .info-note svg { width: 18px; height: 18px; flex-shrink: 0; }
-
-    /* ===== Permissions Toolbar ===== */
-    .perm-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; flex-wrap: wrap; gap: 12px; }
-    .perm-toolbar-right { display: flex; align-items: center; gap: 10px; }
-    .perm-toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .copy-from-wrap { display: flex; gap: 6px; align-items: center; }
-    .copy-select { height: 36px; font-size: .8rem; min-width: 180px; padding: 0 10px; }
-    .btn-copy { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 14px; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 8px; font-size: .78rem; font-weight: 700; cursor: pointer; transition: all .2s; }
-    .btn-copy:hover { background: #dbeafe; }
-    .btn-copy:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-copy svg { width: 14px; height: 14px; }
-    .btn-toolbar { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px; background: white; color: #475569; border: 1px solid #e2e8f0; border-radius: 8px; font-size: .76rem; font-weight: 700; cursor: pointer; transition: all .2s; }
-    .btn-toolbar:hover { background: #f1f5f9; }
-    .btn-toolbar svg { width: 14px; height: 14px; }
-    .btn-toolbar-danger { color: #dc2626; border-color: #fecaca; }
-    .btn-toolbar-danger:hover { background: #fef2f2; }
-
-    /* ===== Permissions Table ===== */
-    .perm-table-wrap {
-    overflow-x: auto;
-    max-height: 70vh;
-    overflow-y: auto;
-}
-    .perm-table { width: 100%; border-collapse: collapse; min-width: 900px; }
-    .perm-table thead {
-    background: #f1f5f9;
-    border-bottom: 2px solid #e2e8f0;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(15,23,42,.08);
-}
-    .perm-table th {
-    padding: 14px 10px;
-    font-size: .82rem;
-    font-weight: 800;
-    color: #334155;
-    text-align: center;
-    white-space: nowrap;
-    background: #f1f5f9;
-}
-    .perm-th-module { text-align: right; padding-right: 16px; min-width: 220px; }
-    .perm-th-check { width: 60px; }
-
-    /* Parent Row */
-    .perm-row-parent { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-    .perm-row-parent td { padding: 10px 8px; }
-    .perm-td-module { display: flex; align-items: center; gap: 8px; text-align: right; padding-right: 16px !important; }
-    .perm-expand-btn { width: 28px; height: 28px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; border-radius: 6px; transition: all .15s; }
-    .perm-expand-btn:hover { background: #e2e8f0; }
-    .perm-expand-btn svg { width: 16px; height: 16px; }
-    .perm-module-icon { font-size: .9rem; }
-    .perm-module-name { font-size: .88rem; font-weight: 600; color: #334155; }
-    .parent-name { font-weight: 800; color: #0f172a; }
-    .perm-td-parent-actions { text-align: center; }
-    .btn-select-module, .btn-deselect-module { padding: 4px 10px; border: 1px solid #e2e8f0; background: white; border-radius: 6px; font-size: .7rem; font-weight: 700; cursor: pointer; margin: 0 2px; transition: all .15s; }
-    .btn-select-module { color: #22c55e; }
-    .btn-select-module:hover { background: #f0fdf4; border-color: #bbf7d0; }
-    .btn-deselect-module { color: #dc2626; }
-    .btn-deselect-module:hover { background: #fef2f2; border-color: #fecaca; }
-
-    /* Child Row */
-    .perm-row-child { border-bottom: 1px solid #f1f5f9; }
-    .perm-row-child:hover { background: #fafbfc; }
-    .perm-row-child td { padding: 10px 8px; }
-    .perm-td-child { padding-right: 24px !important; }
-    .perm-child-indent { width: 24px; display: inline-block; border-right: 2px solid #e2e8f0; height: 16px; margin-left: 8px; }
-
-    /* Checkboxes */
-    .perm-td-check { text-align: center; vertical-align: middle; }
-    .perm-check { display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    .perm-check input { display: none; }
-    .perm-checkmark {
-        width: 22px; height: 22px; border: 2px solid #cbd5e1; border-radius: 6px;
-        display: flex; align-items: center; justify-content: center;
-        transition: all .15s; background: white;
-    }
-    .perm-check input:checked + .perm-checkmark { background: #2563eb; border-color: #2563eb; }
-    .perm-check input:checked + .perm-checkmark::after { content: '✓'; color: white; font-size: .7rem; font-weight: 800; }
-    .perm-checkmark:hover { border-color: #2563eb; }
-
-    /* Row All/None Buttons */
-    .btn-row-all, .btn-row-none {
-        width: 22px; height: 22px; border: 1px solid #e2e8f0; border-radius: 4px;
-        font-size: .65rem; font-weight: 800; cursor: pointer; transition: all .15s;
-        display: inline-flex; align-items: center; justify-content: center; margin: 0 1px;
-    }
-    .btn-row-all { color: #22c55e; background: white; }
-    .btn-row-all:hover { background: #f0fdf4; }
-    .btn-row-none { color: #dc2626; background: white; }
-    .btn-row-none:hover { background: #fef2f2; }
-
-    /* ===== Responsive ===== */
-    @@media (max-width: 768px) {
-        .form-grid { grid-template-columns: 1fr; }
-        .perm-toolbar { flex-direction: column; align-items: stretch; }
-        .perm-toolbar-left { justify-content: flex-start; }
-        .page-header { flex-direction: column; align-items: stretch; }
-        .page-header-left { justify-content: flex-end; }
-    }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;margin:0 auto}.luxury-page.full-width{max-width:100%;width:100%}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.btn-back-luxury{width:40px;height:40px;border:1px solid rgba(212,175,55,.2);background:rgba(212,175,55,.08);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gold);transition:.2s}.btn-back-luxury:hover{background:rgba(212,175,55,.15)}.btn-back-luxury svg{width:18px;height:18px}
+.msg-luxury{padding:12px 16px;border-radius:12px;font-size:.84rem;font-weight:600;display:flex;align-items:center;gap:8px}.msg-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.msg-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5;z-index:2}
+.mudtabs-header-luxury{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header-luxury::-webkit-scrollbar{display:none}
+.mudtab-btn-luxury{position:relative;display:flex;align-items:center;gap:8px;padding:14px 20px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.84rem;font-weight:800;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}
+.mudtab-btn-luxury:hover{background:rgba(212,175,55,.05);color:#0A0F1E}.mudtab-btn-luxury.active{color:var(--gold-dark);background:rgba(212,175,55,.08);border-bottom-color:var(--gold)}
+.mudtab-btn-luxury .mt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.mt-icon svg{width:14px;height:14px}
+.mt-count{background:rgba(212,175,55,.15);color:var(--gold-dark);padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800}
+.mudtabs-body-luxury{padding:20px;background:#fff;min-height:400px}
+.form-grid-luxury{display:grid;gap:14px}.form-grid-luxury.cols-2{grid-template-columns:repeat(2,1fr)}.form-grid-luxury .full{grid-column:1/-1}
+.field-luxury{display:flex;flex-direction:column;gap:6px}.fl-label{font-size:.78rem;font-weight:700;color:#374151}.fl-label.required::after{content:' *';color:#ef4444}
+.input-wrap-luxury{position:relative;display:flex;align-items:center}.input-wrap-luxury svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.input-wrap-luxury input{width:100%;height:42px;padding:0 34px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff;transition:.2s}.input-wrap-luxury input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.input-wrap-luxury input:disabled{background:#f3f4f6;color:#94a3b8}
+.form-textarea-luxury{width:100%;min-height:80px;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-family:'Tajawal';font-size:.86rem;outline:none;background:#fff;resize:vertical}.form-textarea-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.info-note-luxury{display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:.84rem;color:#1d4ed8;font-weight:600}.info-note-luxury svg{width:18px;height:18px;flex-shrink:0}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.perm-section-luxury{display:flex;flex-direction:column;gap:12px}
+.perm-toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}
+.perm-table-wrap{overflow-x:auto;max-height:70vh;overflow-y:auto;border:1px solid #e8e2d0;border-radius:12px}.perm-table{width:100%;border-collapse:collapse;min-width:900px}.perm-table thead{background:#f1f5f9;position:sticky;top:0;z-index:10}.perm-table th{padding:14px 10px;font-size:.82rem;font-weight:800;color:#334155;text-align:center;white-space:nowrap;background:#f1f5f9;border-bottom:2px solid #e2e8f0}.perm-th-module{text-align:right;padding-right:16px;min-width:220px}
+.perm-row-parent{background:#f8fafc;border-bottom:1px solid #e2e8f0}.perm-row-parent td{padding:10px 8px}.perm-td-module{display:flex;align-items:center;gap:8px;text-align:right;padding-right:16px !important}.perm-expand-btn{width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;border-radius:6px}.perm-expand-btn:hover{background:#e2e8f0}.perm-expand-btn svg{width:16px;height:16px}.perm-module-name{font-size:.88rem;font-weight:600;color:#334155}.parent-name{font-weight:800;color:#0f172a}.perm-td-parent-actions{text-align:center}.btn-select-module,.btn-deselect-module{padding:4px 10px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;font-size:.7rem;font-weight:700;cursor:pointer;margin:0 2px}.btn-select-module{color:#22c55e}.btn-deselect-module{color:#dc2626}
+.perm-row-child{border-bottom:1px solid #f1f5f9}.perm-row-child:hover{background:#fafbfc}.perm-row-child td{padding:10px 8px}.perm-td-child{padding-right:24px !important}.perm-child-indent{width:24px;display:inline-block;border-right:2px solid #e2e8f0;height:16px;margin-left:8px}
+.perm-td-check{text-align:center;vertical-align:middle}.perm-check{display:flex;align-items:center;justify-content:center;cursor:pointer}.perm-check input{display:none}.perm-checkmark{width:22px;height:22px;border:2px solid #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:all .15s;background:#fff}.perm-check input:checked+.perm-checkmark{background:var(--gold);border-color:var(--gold)}.perm-check input:checked+.perm-checkmark::after{content:'✓';color:#fff;font-size:.7rem;font-weight:800}.btn-row-all,.btn-row-none{width:22px;height:22px;border:1px solid #e2e2d0;border-radius:4px;font-size:.65rem;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin:0 1px}.btn-row-all{color:#22c55e;background:#fff}.btn-row-none{color:#dc2626;background:#fff}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:36px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:8px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:180px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+@@media(max-width:900px){.form-grid-luxury.cols-2{grid-template-columns:1fr}}
 </style>
+
 @code {
     [Parameter] public int Id { get; set; }
-
     private bool _authorized = false;
     private bool _isNew => Id == 0;
     private bool _saving = false;
     private string _message = "";
     private bool _isError = false;
     private int _activeTab = 1;
-
     private RoleEditDto _dto = new();
     private List<RolePermissionEditDto> _permissions = new();
     private List<LookupDto> _rolesForCopy = new();
     private int _copyFromRoleId = 0;
     private HashSet<int> _expandedModules = new();
 
-    // ══════════════════════════════════════
-    // التهيئة
-    // ══════════════════════════════════════
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            if (!UserSession.IsLoggedIn)
-            {
-                var restored = await UserSession.TryRestoreSessionAsync();
-                if (!restored) { Navigation.NavigateTo("/login"); return; }
-                if (!PermissionService.IsLoaded)
-                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-            }
-
-            if (_isNew && !PermissionService.CanAdd("SCR_ROLES"))
-            { Navigation.NavigateTo("/access-denied"); return; }
-
-            if (!_isNew && !PermissionService.CanEdit("SCR_ROLES"))
-            { Navigation.NavigateTo("/access-denied"); return; }
-
+            if (!UserSession.IsLoggedIn){var restored=await UserSession.TryRestoreSessionAsync(); if(!restored){Navigation.NavigateTo("/login"); return;} if(!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);}
+            if (_isNew && !PermissionService.CanAdd("SCR_ROLES")){Navigation.NavigateTo("/access-denied"); return;}
+            if (!_isNew && !PermissionService.CanEdit("SCR_ROLES")){Navigation.NavigateTo("/access-denied"); return;}
             _authorized = true;
-
-            if (!_isNew)
-            {
-                await LoadRole();
-                await LoadPermissions();
-                _rolesForCopy = await RoleService.GetRolesForCopyAsync(Id);
-            }
-
+            if (!_isNew){await LoadRole(); await LoadPermissions(); _rolesForCopy = await RoleService.GetRolesForCopyAsync(Id);}
             StateHasChanged();
         }
     }
 
-    // ══════════════════════════════════════
-    // تحميل البيانات
-    // ══════════════════════════════════════
-    private async Task LoadRole()
-    {
-        try
-        {
-            var role = await RoleService.GetByIdAsync(Id);
-            if (role == null) { ShowError("الدور غير موجود"); return; }
-            _dto = role;
-        }
-        catch (Exception ex) { ShowError("خطأ: " + ex.Message); }
-    }
-
-    private async Task LoadPermissions()
-    {
-        try
-        {
-            _permissions = await RoleService.GetPermissionsAsync(Id);
-            // توسيع كل الموديولات افتراضياً
-            _expandedModules = new HashSet<int>(
-                _permissions.Where(p => p.ModuleType == 1).Select(p => p.ModuleID));
-        }
-        catch (Exception ex) { ShowError("خطأ في تحميل الصلاحيات: " + ex.Message); }
-    }
-
-    // ══════════════════════════════════════
-    // الحفظ الشامل
-    // ══════════════════════════════════════
+    private async Task LoadRole(){try{var role=await RoleService.GetByIdAsync(Id); if(role==null){ShowError("الدور غير موجود"); return;} _dto=role;}catch(Exception ex){ShowError("خطأ: "+ex.Message);}}
+    private async Task LoadPermissions(){try{_permissions=await RoleService.GetPermissionsAsync(Id); _expandedModules=new HashSet<int>(_permissions.Where(p=>p.ModuleType==1).Select(p=>p.ModuleID));}catch(Exception ex){ShowError("خطأ في تحميل الصلاحيات: "+ex.Message);}}
     private async Task SaveAll()
     {
-        try
-        {
-            _saving = true;
-            _message = "";
-            StateHasChanged();
-
-            // التحقق
-            if (string.IsNullOrWhiteSpace(_dto.RoleCode))
-            { ShowError("كود الدور مطلوب"); _activeTab = 1; return; }
-
-            if (string.IsNullOrWhiteSpace(_dto.RoleNameAr))
-            { ShowError("اسم الدور بالعربية مطلوب"); _activeTab = 1; return; }
-
-            if (_isNew)
-            {
-                var newId = await RoleService.CreateAsync(_dto);
-                ShowSuccess("تم إنشاء الدور بنجاح");
-                await Task.Delay(500);
-                Navigation.NavigateTo($"/roles/edit/{newId}");
-            }
-            else
-            {
-                // حفظ بيانات الدور
-                await RoleService.UpdateAsync(_dto);
-
-                // حفظ الصلاحيات
-                if (_permissions.Any())
-                    await RoleService.SavePermissionsAsync(Id, _permissions);
-
-                ShowSuccess("تم حفظ الدور والصلاحيات بنجاح");
-            }
-        }
-        catch (Exception ex) { ShowError(ex.Message); }
-        finally { _saving = false; }
+        try{_saving=true; _message=""; StateHasChanged();
+            if(string.IsNullOrWhiteSpace(_dto.RoleCode)){ShowError("كود الدور مطلوب"); _activeTab=1; return;}
+            if(string.IsNullOrWhiteSpace(_dto.RoleNameAr)){ShowError("اسم الدور بالعربية مطلوب"); _activeTab=1; return;}
+            if(_isNew){var newId=await RoleService.CreateAsync(_dto); ShowSuccess("تم إنشاء الدور بنجاح"); await Task.Delay(500); Navigation.NavigateTo($"/roles/edit/{newId}");}
+            else{await RoleService.UpdateAsync(_dto); if(_permissions.Any()) await RoleService.SavePermissionsAsync(Id, _permissions); ShowSuccess("تم حفظ الدور والصلاحيات بنجاح");}
+        }catch(Exception ex){ShowError(ex.Message);}finally{_saving=false;}
     }
 
-    // ══════════════════════════════════════
-    // عمليات الصلاحيات
-    // ══════════════════════════════════════
-    private IEnumerable<RolePermissionEditDto> GetParentModules() =>
-        _permissions.Where(p => p.ModuleType == 1).OrderBy(p => p.SortOrder);
-
-    private IEnumerable<RolePermissionEditDto> GetChildModules(int parentId) =>
-        _permissions.Where(p => p.ParentModuleID == parentId && p.ModuleType != 1).OrderBy(p => p.SortOrder);
-
-    private void ToggleExpand(int moduleId)
-    {
-        if (_expandedModules.Contains(moduleId))
-            _expandedModules.Remove(moduleId);
-        else
-            _expandedModules.Add(moduleId);
-    }
-
-    private void SelectRow(RolePermissionEditDto perm, bool value)
-    {
-        perm.CanView = value;
-        perm.CanAdd = value;
-        perm.CanEdit = value;
-        perm.CanDelete = value;
-        perm.CanPrint = value;
-        perm.CanExport = value;
-        perm.CanApprove = value;
-        perm.CanPost = value;
-        perm.CanCancel = value;
-    }
-
-    private void SelectModule(int parentId, bool value)
-    {
-        foreach (var child in GetChildModules(parentId))
-            SelectRow(child, value);
-    }
-
-    private void SelectAll()
-    {
-        foreach (var perm in _permissions.Where(p => p.ModuleType != 1))
-            SelectRow(perm, true);
-    }
-
-    private void DeselectAll()
-    {
-        foreach (var perm in _permissions.Where(p => p.ModuleType != 1))
-            SelectRow(perm, false);
-    }
-
-    private async Task CopyPermissions()
-    {
-        if (_copyFromRoleId == 0) return;
-
-        try
-        {
-            await RoleService.CopyPermissionsAsync(_copyFromRoleId, Id);
-            await LoadPermissions();
-            _copyFromRoleId = 0;
-            ShowSuccess("تم نسخ الصلاحيات بنجاح - اضغط حفظ لتثبيتها");
-        }
-        catch (Exception ex) { ShowError("خطأ في النسخ: " + ex.Message); }
-    }
-
-    // ══════════════════════════════════════
-    // التنقل والرسائل
-    // ══════════════════════════════════════
-    private void GoBack() => Navigation.NavigateTo("/roles");
-    private void ShowSuccess(string msg) { _message = msg; _isError = false; }
-    private void ShowError(string msg) { _message = msg; _isError = true; }
+    private IEnumerable<RolePermissionEditDto> GetParentModules()=>_permissions.Where(p=>p.ModuleType==1).OrderBy(p=>p.SortOrder);
+    private IEnumerable<RolePermissionEditDto> GetChildModules(int parentId)=>_permissions.Where(p=>p.ParentModuleID==parentId && p.ModuleType!=1).OrderBy(p=>p.SortOrder);
+    private void ToggleExpand(int moduleId){if(_expandedModules.Contains(moduleId)) _expandedModules.Remove(moduleId); else _expandedModules.Add(moduleId);}
+    private void SelectRow(RolePermissionEditDto perm, bool value){perm.CanView=value; perm.CanAdd=value; perm.CanEdit=value; perm.CanDelete=value; perm.CanPrint=value; perm.CanExport=value; perm.CanApprove=value; perm.CanPost=value; perm.CanCancel=value;}
+    private void SelectModule(int parentId, bool value){foreach(var child in GetChildModules(parentId)) SelectRow(child, value);}
+    private void SelectAll(){foreach(var perm in _permissions.Where(p=>p.ModuleType!=1)) SelectRow(perm, true);}
+    private void DeselectAll(){foreach(var perm in _permissions.Where(p=>p.ModuleType!=1)) SelectRow(perm, false);}
+    private async Task CopyPermissions(){if(_copyFromRoleId==0) return; try{await RoleService.CopyPermissionsAsync(_copyFromRoleId, Id); await LoadPermissions(); _copyFromRoleId=0; ShowSuccess("تم نسخ الصلاحيات بنجاح - اضغط حفظ لتثبيتها");}catch(Exception ex){ShowError("خطأ في النسخ: "+ex.Message);}}
+    private void GoBack()=>Navigation.NavigateTo("/roles");
+    private void ShowSuccess(string msg){_message=msg; _isError=false;}
+    private void ShowError(string msg){_message=msg; _isError=true;}
 }

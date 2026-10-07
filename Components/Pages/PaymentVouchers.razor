@@ -1,0 +1,189 @@
+@page "/payment-vouchers"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject TreasuryService TreasuryService
+@inject NavigationManager Navigation
+
+<PageTitle>سندات الصرف - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn){<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissions == null || !permissions.CanView){<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية</h4></div>}
+else
+{
+    <div class="luxury-page" dir="rtl">
+        <div class="luxury-header-hybrid">
+            <div class="lh-gold-line"></div>
+            <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="lh-content">
+                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">سندات الصرف</h2><p class="lh-subtitle">صرف لموردين وعملاء ومصروفات </p></div></div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count سند</span>
+                    @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/payment-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>}
+                </div>
+            </div>
+        </div>
+
+        @if (vouchers != null)
+        {
+            <div class="stats-luxury">
+                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="st-info"><span class="st-value">@vouchers.Count(v=>v.PaymentStatus==1)</span><span class="st-label">مسودة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@vouchers.Count(v=>v.PaymentStatus==2)</span><span class="st-label">معتمد</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@vouchers.Sum(v=>v.Amount).ToString("#,##0")</span><span class="st-label">إجمالي المصروف</span></div><div class="st-gold-line"></div></div>
+            </div>
+        }
+
+        <div class="filter-luxury">
+            <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم السند أو المورد..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if(!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
+            <div class="select-wrap-luxury"><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">معتمد</option><option value="3">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+        </div>
+
+        @if (vouchers == null){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else if (!filtered.Any()){<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h4>لا توجد سندات صرف</h4></div>}
+        else
+        {
+            <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury">
+                <thead><tr><th class="th-num">#</th><th>رقم السند</th><th>التاريخ</th><th>الخزينة</th><th>المدفوع له</th><th>المبلغ</th><th>طريقة الدفع</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                <tbody>
+                    @{int n=0;}
+                    @foreach(var pv in filtered){n++;
+                        <tr>
+                            <td class="td-num">@n</td>
+                            <td><span class="doc-num-luxury" @onclick="() => ViewVoucher(pv.PaymentID)">@pv.PaymentNumber</span></td>
+                            <td class="td-muted">@pv.PaymentDate.ToString("dd/MM/yyyy")</td>
+                            <td class="td-name">@pv.CashBoxNameAr</td>
+                            <td class="td-name">@(pv.EntityName ?? pv.PaidTo ?? "—")</td>
+                            <td><span class="amount-luxury remaining">@pv.Amount.ToString("#,##0.00")</span></td>
+                            <td class="td-muted">@pv.PaymentMethodName</td>
+                            <td class="td-center"><span class="status-badge-luxury" style="--sc:@GetStatusColor(pv.PaymentStatus)">@pv.StatusName</span></td>
+                            <td class="td-center"><div class="actions-wrap-luxury">
+                                @if(permissions.CanEdit && pv.PaymentStatus==1){<button class="act-btn edit" @onclick="() => EditVoucher(pv.PaymentID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                else{<button class="act-btn view" @onclick="() => ViewVoucher(pv.PaymentID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
+                                @if(permissions.CanApprove && pv.PaymentStatus==1){<button class="act-btn approve" @onclick="() => ApproveVoucher(pv.PaymentID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
+                                @if(permissions.CanDelete && pv.PaymentStatus==1){<button class="act-btn delete" @onclick="() => ShowDelete(pv)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                            </div></td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div></div>
+        }
+    </div>
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-overlay-luxury" @onclick="CloseDelete"><div class="modal-card-luxury small" @onclick:stopPropagation="true">
+            <div class="ml-gold-line danger"></div>
+            <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
+            <h4>تأكيد الحذف</h4><p>حذف السند: <strong class="delete-name">@deleteVoucher?.PaymentNumber</strong>؟</p>
+            @if(!string.IsNullOrEmpty(deleteMsg)){<div class="msg-luxury msg-error">@deleteMsg</div>}
+            <div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">حذف</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseDelete">إلغاء</button></div>
+        </div></div>
+    }
+
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-luxury svg{width:14px;height:14px}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.red{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:40px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:1100px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:160px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.86rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px;cursor:pointer}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.remaining{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.view{color:#2563eb;border-color:#bfdbfe}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.approve{color:#059669;border-color:#a7f3d0}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn svg{width:14px;height:14px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;text-align:center;padding:28px 24px}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:center}.ml-footer.center{justify-content:center;background:transparent;border:none;padding-top:16px}
+.delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin:0 auto 12px}.delete-icon-luxury svg{width:32px;height:32px}.delete-name{display:block;font-size:1rem;font-weight:800;color:#0A0F1E;margin:8px 0}.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<PaymentVoucherListDto>? vouchers;
+    private List<PaymentVoucherListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = "";
+    private int filterStatus = 0;
+    private string toast = "";
+    private bool toastOk = true;
+    private bool showDeleteDialog = false;
+    private PaymentVoucherListDto? deleteVoucher;
+    private string deleteMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_PAYV") ?? new ModulePermissionDto{CanView=true, CanAdd=true, CanEdit=true, CanDelete=true, CanApprove=true};
+        if (permissions.CanView) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        vouchers = await TreasuryService.GetPaymentVouchersAsync();
+        Filter();
+    }
+
+    private void Filter()
+    {
+        if (vouchers == null) return;
+        filtered = vouchers.Where(v =>
+            (filterStatus==0 || v.PaymentStatus==filterStatus) &&
+            (string.IsNullOrEmpty(searchText) || ArabicSearchHelper.Contains(v.PaymentNumber, searchText) || ArabicSearchHelper.Contains(v.EntityName, searchText) || ArabicSearchHelper.Contains(v.PaidTo, searchText) || ArabicSearchHelper.Contains(v.CashBoxNameAr, searchText))
+        ).ToList();
+    }
+
+    private void ClearSearch(){ searchText=""; Filter(); }
+    private string GetStatusColor(int s) => s switch {1=>"#6b7280",2=>"#10b981",3=>"#ef4444",_=>"#6b7280"};
+
+    private void ViewVoucher(int id) => Navigation.NavigateTo($"/payment-vouchers/view/{id}");
+    private void EditVoucher(int id) => Navigation.NavigateTo($"/payment-vouchers/edit/{id}");
+
+    private async Task ApproveVoucher(int id)
+    {
+        try
+        {
+            await TreasuryService.ApprovePaymentAsync(id, UserSession.UserID);
+            toast="تم اعتماد سند الصرف وقيد أوتوماتيك ✅"; toastOk=true;
+            await LoadData();
+        }
+        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
+    }
+
+    private void ShowDelete(PaymentVoucherListDto pv){ deleteVoucher=pv; deleteMsg=""; showDeleteDialog=true; }
+    private void CloseDelete(){ showDeleteDialog=false; }
+
+    private async Task ConfirmDelete()
+    {
+        if(deleteVoucher==null) return;
+        try
+        {
+            await TreasuryService.DeletePaymentAsync(deleteVoucher.PaymentID, UserSession.UserID);
+            toast="تم حذف السند ✅"; toastOk=true;
+            showDeleteDialog=false;
+            await LoadData();
+        }
+        catch(Exception ex){ deleteMsg=ex.Message; }
+    }
+}

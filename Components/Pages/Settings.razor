@@ -1,5 +1,4 @@
 ﻿@page "/settings"
-
 @using YKCoatings.Services
 @using YKCoatings.Models
 @inject UserSessionService UserSession
@@ -7,611 +6,253 @@
 @inject SettingService SettingService
 @inject NavigationManager Navigation
 
-<PageTitle>الإعدادات - واي كي كوتينج</PageTitle>
+<PageTitle>الإعدادات - Gold Edition Pro Tabs</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
-{
-    <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
-        <h4>يجب تسجيل الدخول أولاً</h4>
-    </div>
-}
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{
-    <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
-        <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
-        <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>
-            العودة للرئيسية
-        </button>
-    </div>
-}
+{<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/dashboard")' style="margin-top:12px">العودة للرئيسية</button></div>}
 else
 {
-    <div class="settings-page" dir="rtl">
-
-        <!-- العنوان -->
-        <div class="page-header">
-            <div>
-                <h2 class="page-title">إعدادات النظام</h2>
-                <p class="page-subtitle">إدارة إعدادات وتهيئة نظام واي كي كوتينج ERP</p>
+<div class="luxury-page full-width" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">إعدادات النظام — نظام التابات Gold Edition</h2>
+                    <p class="lh-subtitle">إدارة مركزية لكل إعدادات النظام — مجمعة حسب المجموعة مع تتبع تغييرات وحفظ جماعي — نفس نظام الموردين والعملاء</p>
+                </div>
             </div>
-            @if (hasChanges && permissions.CanEdit)
-            {
-                <button class="btn-modern btn-primary-modern" @onclick="SaveAllChanges" disabled="@isSaving">
-                    @if (isSaving)
-                    {
-                        <div class="btn-spinner-sm"></div>
-                        <span>جاري الحفظ...</span>
-                    }
-                    else
-                    {
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                            <polyline points="17 21 17 13 7 13 7 21"/>
-                            <polyline points="7 3 7 8 15 8"/>
-                        </svg>
-                        <span>حفظ التغييرات (@changedCount)</span>
-                    }
-                </button>
-            }
+            <div class="lh-actions">
+                <span class="lh-badge"><span class="lh-dot"></span>@settings.Count إعداد</span>
+                <span class="lh-badge" style="background:@(hasChanges ? "rgba(245,158,11,.15)" : "rgba(16,185,129,.12)");color:@(hasChanges ? "#b45309" : "#059669");border-color:@(hasChanges ? "rgba(245,158,11,.25)" : "rgba(16,185,129,.2)")">
+                    <span class="lh-dot" style="background:@(hasChanges ? "#f59e0b" : "#10b981")"></span>
+                    @(hasChanges ? $"{changedCount} تغيير غير محفوظ" : "محفوظ")
+                </span>
+                @if (hasChanges && permissions.CanEdit){
+                    <button class="btn-luxury btn-primary-luxury" @onclick="SaveAllChanges" disabled="@isSaving">
+                        @if(isSaving){<div class="btn-spinner-sm"></div><span>جاري الحفظ...</span>}
+                        else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>حفظ (@changedCount)</span>}
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الإعدادات...</p></div>}
+    else
+    {
+        <div class="stats-luxury">
+            <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><div class="st-info"><span class="st-value">@settings.Count</span><span class="st-label">إجمالي الإعدادات</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.07 16.07l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.07 7.93l2.83-2.83"/></svg></div><div class="st-info"><span class="st-value">@settingGroups.Count</span><span class="st-label">مجموعات</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div><div class="st-info"><span class="st-value">@changedCount</span><span class="st-label">تغييرات معلقة</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="st-info"><span class="st-value">@settings.Count(s=>IsNumberField(s))</span><span class="st-label">رقمية</span></div><div class="st-gold-line"></div></div>
         </div>
 
-        @if (isLoading)
-        {
-            <div class="loading-state">
-                <div class="loader"></div>
-                <p>جاري تحميل الإعدادات...</p>
+        <div class="filter-luxury">
+            <div class="search-luxury" style="flex:1;min-width:300px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" placeholder="بحث في الإعدادات بالاسم أو الوصف أو المفتاح..." @bind="searchText" @bind:event="oninput" />
+                @if(!string.IsNullOrWhiteSpace(searchText)){<button class="clear-search-luxury" @onclick='()=>searchText=""'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
             </div>
-        }
-        else
-        {
-            @foreach (var group in settingGroups)
-            {
-                var groupSettings = settings.Where(s => s.SettingGroup == group).ToList();
-                var groupColor = SettingService.GetGroupColor(group);
+            <div style="display:flex;gap:8px">
+                <button class="btn-luxury btn-ghost-luxury" @onclick="()=>activeTab=settingGroups.FirstOrDefault() ?? string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>كل المجموعات</button>
+            </div>
+        </div>
 
-                <div class="settings-group">
-                    <div class="group-header" style="border-right-color: @groupColor;">
-                        <span class="group-icon">@SettingService.GetGroupIcon(group)</span>
-                        <div>
-                            <div class="group-name">@SettingService.GetGroupNameAr(group)</div>
-                            <div class="group-count">@groupSettings.Count إعداد</div>
+        <div class="mudtabs-luxury">
+            <div class="mudtabs-header-luxury">
+                @foreach(var g in filteredGroups)
+                {
+                    var cnt = settings.Count(s=>s.SettingGroup==g);
+                    var changedInGroup = settings.Count(s=>s.SettingGroup==g && IsChanged(s));
+                    var color = SettingService.GetGroupColor(g);
+                    var icon = SettingService.GetGroupIcon(g);
+                    <button class="mudtab-btn-luxury @(activeTab==g?"active":"")" @onclick="()=>activeTab=g" style="--gc:@color">
+                        <span class="mt-icon" style="background:color-mix(in srgb,var(--gc) 14%,white);color:var(--gc);border:1px solid color-mix(in srgb,var(--gc) 22%,white)">@icon</span>
+                        <span>@SettingService.GetGroupNameAr(g)</span>
+                        <span class="mt-count">@cnt</span>
+                        @if(changedInGroup>0){<span class="mt-count changed">@changedInGroup معدل</span>}
+                    </button>
+                }
+                <div class="mudtab-indicator-luxury" style="--tabs:@filteredGroups.Count;--active:@Math.Max(0, filteredGroups.IndexOf(activeTab))"></div>
+            </div>
+
+            <div class="mudtabs-body-luxury">
+                @{
+                    var displayGroups = string.IsNullOrEmpty(activeTab) ? filteredGroups : new List<string>{activeTab};
+                }
+                @foreach(var group in displayGroups)
+                {
+                    var groupSettings = settings.Where(s=>s.SettingGroup==group && (string.IsNullOrWhiteSpace(searchText) || s.SettingKey.Contains(searchText, StringComparison.OrdinalIgnoreCase) || (s.SettingDescription?.Contains(searchText, StringComparison.OrdinalIgnoreCase)??false))).ToList();
+                    var groupColor = SettingService.GetGroupColor(group);
+                    if(!groupSettings.Any()){ continue; }
+                    <div class="settings-group-luxury" style="margin-bottom:18px">
+                        <div class="sg-header" style="--gc:@groupColor">
+                            <div class="sg-icon" style="background:color-mix(in srgb,var(--gc) 12%,white);color:var(--gc);border-color:color-mix(in srgb,var(--gc) 25%,white)">@SettingService.GetGroupIcon(group)</div>
+                            <div class="sg-info"><span class="sg-name">@SettingService.GetGroupNameAr(group)</span><span class="sg-count">@groupSettings.Count إعداد • @group</span></div>
+                            <div style="margin-right:auto;display:flex;gap:6px">
+                                <span class="sg-badge">@groupSettings.Count(s=>IsChanged(s)) معدل</span>
+                            </div>
+                            <div class="sg-line" style="background:var(--gc)"></div>
                         </div>
-                    </div>
-
-                    <div class="settings-list">
-                        @foreach (var setting in groupSettings)
-                        {
-                            <div class="setting-row @(IsChanged(setting) ? "setting-changed" : "")">
-                                <div class="setting-info">
-                                    <div class="setting-desc">
-                                        @(setting.SettingDescription ?? setting.SettingKey)
+                        <div class="sg-body grid-2">
+                            @foreach(var setting in groupSettings)
+                            {
+                                <div class="setting-row-luxury @(IsChanged(setting) ? "changed" : "")">
+                                    <div class="sr-info">
+                                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                                            <span class="sr-desc">@(setting.SettingDescription ?? setting.SettingKey)</span>
+                                            @if(IsChanged(setting)){<span class="sr-changed-badge">معدل • غير محفوظ</span>}
+                                        </div>
+                                        <div style="display:flex;gap:6px;margin-top:4px">
+                                            <span class="sr-key">@setting.SettingKey</span>
+                                            <span class="sr-type">@(setting.DataType ?? "Text")</span>
+                                        </div>
                                     </div>
-                                    <code class="setting-key">@setting.SettingKey</code>
-                                </div>
-                                <div class="setting-input-wrap">
-                                    @if (permissions.CanEdit)
-                                    {
-                                        @if (setting.SettingKey == "CostingMethod")
+                                    <div class="sr-input">
+                                        @if (permissions.CanEdit)
                                         {
-                                            <select class="setting-input setting-select"
-                                                    value="@GetEditValue(setting)"
-                                                    @onchange="(e) => OnSelectChanged(setting, e)">
-                                                <option value="WeightedAverage">المتوسط المرجح</option>
-                                                <option value="FIFO">الوارد أولاً صادر أولاً</option>
-                                                <option value="LIFO">الوارد أخيراً صادر أولاً</option>
-                                                <option value="StandardCost">التكلفة المعيارية</option>
-                                            </select>
-                                        }
-                                        else if (setting.SettingKey == "AllowNegativeStock")
-                                        {
-                                            <label class="toggle-switch">
-                                                <input type="checkbox"
-                                                       checked="@IsToggleChecked(setting)"
-                                                       @onchange="(e) => OnToggleChanged(setting, e)" />
-                                                <span class="toggle-slider"></span>
-                                                <span class="toggle-text">
-                                                    @(IsToggleChecked(setting) ? "مسموح" : "غير مسموح")
-                                                </span>
-                                            </label>
-                                        }
-                                        else if (IsNumberField(setting))
-                                        {
-                                            <input type="number" class="setting-input"
-                                                   value="@GetEditValue(setting)"
-                                                   @onchange="(e) => OnSelectChanged(setting, e)" />
+                                            @if (setting.SettingKey == "CostingMethod")
+                                            {
+                                                <div class="select-wrap-luxury-input" style="width:100%">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                                                    <select class="luxury-select" value="@GetEditValue(setting)" @onchange="(e)=>OnSelectChanged(setting,e)">
+                                                        <option value="WeightedAverage">المتوسط المرجح</option>
+                                                        <option value="FIFO">الوارد أولاً صادر أولاً</option>
+                                                        <option value="LIFO">الوارد أخيراً صادر أولاً</option>
+                                                        <option value="StandardCost">التكلفة المعيارية</option>
+                                                    </select>
+                                                    <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                                </div>
+                                            }
+                                            else if (setting.SettingKey == "AllowNegativeStock")
+                                            {
+                                                <label class="switch-luxury"><input type="checkbox" checked="@IsToggleChecked(setting)" @onchange="(e)=>OnToggleChanged(setting,e)" /><span></span></label>
+                                                <span style="font-size:.82rem;font-weight:800;color:@(IsToggleChecked(setting)?"#059669":"#6b7280")">@(IsToggleChecked(setting)?"مسموح ✅":"غير مسموح ❌")</span>
+                                            }
+                                            else if (IsNumberField(setting))
+                                            {
+                                                <div class="input-wrap-luxury" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><input type="number" class="luxury-input" value="@GetEditValue(setting)" @onchange="(e)=>OnSelectChanged(setting,e)" /></div>
+                                            }
+                                            else
+                                            {
+                                                <div class="input-wrap-luxury" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><input type="text" class="luxury-input" value="@GetEditValue(setting)" @onchange="(e)=>OnSelectChanged(setting,e)" /></div>
+                                            }
                                         }
                                         else
                                         {
-                                            <input type="text" class="setting-input"
-                                                   value="@GetEditValue(setting)"
-                                                   @onchange="(e) => OnSelectChanged(setting, e)" />
+                                            <span class="sr-readonly">@(setting.SettingValue ?? "—")</span>
                                         }
-                                    }
-                                    else
-                                    {
-                                        <span class="setting-value-readonly">
-                                            @(setting.SettingValue ?? "—")
-                                        </span>
-                                    }
+                                    </div>
                                 </div>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
-                </div>
-            }
-        }
-    </div>
-
-    <!-- Toast -->
-    @if (!string.IsNullOrEmpty(resultMessage))
-    {
-        <div class="toast-container">
-            <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
-                <span class="toast-text">@resultMessage</span>
-                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+                }
             </div>
         </div>
     }
+</div>
+
+@if (!string.IsNullOrEmpty(resultMessage))
+{<div class="toast-luxury"><div class="toast-card-luxury @(resultSuccess ? "success" : "error")"><span>@resultMessage</span><button @onclick='()=>resultMessage=""'>✕</button></div></div>}
 }
 
 <style>
-    .settings-page {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        max-width: 900px;
-    }
-
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 16px;
-    }
-
-    .page-title {
-        font-weight: 800;
-        color: #1f2937;
-        margin: 0;
-    }
-
-    .page-subtitle {
-        color: #6b7280;
-        font-size: .88rem;
-        margin: 4px 0 0;
-    }
-
-    /* === مجموعات الإعدادات === */
-    .settings-group {
-        background: white;
-        border-radius: 20px;
-        border: 1px solid #eef2f7;
-        box-shadow: 0 4px 16px rgba(15,23,42,.04);
-        overflow: hidden;
-    }
-
-    .group-header {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        padding: 18px 24px;
-        background: #f8f9fc;
-        border-bottom: 1px solid #eef2f7;
-        border-right: 4px solid #1d4ed8;
-    }
-
-    .group-icon {
-        font-size: 1.5rem;
-    }
-
-    .group-name {
-        font-weight: 800;
-        color: #1f2937;
-        font-size: .95rem;
-    }
-
-    .group-count {
-        font-size: .78rem;
-        color: #9ca3af;
-        margin-top: 2px;
-    }
-
-    /* === صف الإعداد === */
-    .settings-list {
-        padding: 8px 0;
-    }
-
-    .setting-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px 24px;
-        border-bottom: 1px solid #f9fafb;
-        transition: .2s;
-        gap: 16px;
-    }
-
-    .setting-row:last-child {
-        border-bottom: none;
-    }
-
-    .setting-row:hover {
-        background: #faf9ff;
-    }
-
-    .setting-changed {
-        background: #fffbeb !important;
-        border-right: 3px solid #f59e0b;
-    }
-
-    .setting-info {
-        flex: 1;
-        min-width: 200px;
-    }
-
-    .setting-desc {
-        font-weight: 700;
-        color: #1f2937;
-        font-size: .88rem;
-        margin-bottom: 2px;
-    }
-
-    .setting-key {
-        background: #f3f4f6;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: .72rem;
-        color: #1d4ed8;
-        font-weight: 600;
-    }
-
-    /* === حقول الإدخال === */
-    .setting-input-wrap {
-        min-width: 280px;
-        max-width: 350px;
-    }
-
-    .setting-input {
-        width: 100%;
-        padding: 10px 14px;
-        border: 1.5px solid #e5e7eb;
-        border-radius: 12px;
-        font-size: .88rem;
-        background: white;
-        outline: none;
-        transition: .2s;
-    }
-
-    .setting-input:focus {
-        border-color: #2563eb;
-        box-shadow: 0 0 0 3px rgba(37,99,235,.1);
-    }
-
-    .setting-select {
-        cursor: pointer;
-    }
-
-    .setting-value-readonly {
-        font-size: .88rem;
-        color: #6b7280;
-        font-weight: 600;
-    }
-
-    /* === Toggle === */
-    .toggle-switch {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        cursor: pointer;
-    }
-
-    .toggle-switch input {
-        display: none;
-    }
-
-    .toggle-slider {
-        width: 44px;
-        height: 24px;
-        background: #d1d5db;
-        border-radius: 999px;
-        position: relative;
-        transition: .3s;
-        flex-shrink: 0;
-    }
-
-    .toggle-slider::after {
-        content: '';
-        position: absolute;
-        width: 18px;
-        height: 18px;
-        background: white;
-        border-radius: 50%;
-        top: 3px;
-        right: 3px;
-        transition: .3s;
-        box-shadow: 0 2px 4px rgba(0,0,0,.15);
-    }
-
-    .toggle-switch input:checked + .toggle-slider {
-        background: #1d4ed8;
-    }
-
-    .toggle-switch input:checked + .toggle-slider::after {
-        right: 23px;
-    }
-
-    .toggle-text {
-        font-size: .85rem;
-        font-weight: 600;
-        color: #374151;
-    }
-
-    /* === الأزرار === */
-    .btn-modern {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 20px;
-        border-radius: 14px;
-        border: none;
-        font-weight: 700;
-        font-size: .88rem;
-        cursor: pointer;
-        transition: .2s;
-    }
-
-    .btn-modern:disabled {
-        opacity: .6;
-        cursor: not-allowed;
-    }
-
-    .btn-primary-modern {
-        background: linear-gradient(135deg, #1d4ed8, #2563eb);
-        color: white;
-        box-shadow: 0 4px 16px rgba(37,99,235,.25);
-    }
-
-    .btn-primary-modern:hover:not(:disabled) {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 24px rgba(37,99,235,.35);
-    }
-
-    .btn-secondary-modern {
-        background: #f3f4f6;
-        color: #374151;
-    }
-
-    .btn-spinner-sm {
-        width: 14px;
-        height: 14px;
-        border: 2px solid rgba(255,255,255,.3);
-        border-top-color: white;
-        border-radius: 50%;
-        animation: spin .6s linear infinite;
-    }
-
-    /* === Toast === */
-    .toast-container {
-        position: fixed;
-        bottom: 24px;
-        left: 24px;
-        z-index: 1050;
-        animation: toastIn .4s ease;
-    }
-
-    .toast-card {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 20px;
-        border-radius: 16px;
-        box-shadow: 0 12px 32px rgba(0,0,0,.12);
-        min-width: 320px;
-    }
-
-    .toast-success {
-        background: #ecfdf5;
-        border: 1px solid #a7f3d0;
-        color: #065f46;
-    }
-
-    .toast-error {
-        background: #fef2f2;
-        border: 1px solid #fecaca;
-        color: #991b1b;
-    }
-
-    .toast-text {
-        flex: 1;
-        font-weight: 600;
-        font-size: .88rem;
-    }
-
-    .toast-close {
-        background: transparent;
-        border: none;
-        font-size: 1rem;
-        cursor: pointer;
-        color: inherit;
-        opacity: .6;
-    }
-
-    @@keyframes toastIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* === States === */
-    .loading-state {
-        text-align: center;
-        padding: 60px 20px;
-        color: #6b7280;
-    }
-
-    .loader {
-        width: 40px;
-        height: 40px;
-        border: 3px solid #e5e7eb;
-        border-top-color: #1d4ed8;
-        border-radius: 50%;
-        animation: spin .7s linear infinite;
-        margin: 0 auto 16px;
-    }
-
-    @@keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    .no-access-card {
-        text-align: center;
-        padding: 80px 20px;
-        background: white;
-        border-radius: 24px;
-        border: 1px solid #eef2f7;
-    }
-
-    .no-access-icon {
-        font-size: 3.5rem;
-        margin-bottom: 16px;
-    }
-
-    /* === Responsive === */
-    @@media (max-width: 768px) {
-        .page-header {
-            flex-direction: column;
-        }
-
-        .setting-row {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .setting-input-wrap {
-            min-width: 100%;
-            max-width: 100%;
-        }
-    }
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;margin:0 auto}.luxury-page.full-width{max-width:100%;width:100%}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}.lh-title{font-size:1.15rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:42px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:24px;height:24px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5;z-index:2}
+.mudtabs-header-luxury{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none;white-space:nowrap}.mudtabs-header-luxury::-webkit-scrollbar{display:none}
+.mudtab-btn-luxury{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:800;color:#8B95A5;cursor:pointer;transition:all .25s;flex-shrink:0}
+.mudtab-btn-luxury:hover{background:rgba(212,175,55,.05);color:#0A0F1E}.mudtab-btn-luxury.active{color:var(--gold-dark);background:rgba(212,175,55,.08);border-bottom-color:var(--gold)}
+.mudtab-btn-luxury .mt-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:800}.mt-count.changed{background:#fef3c7;color:#b45309;border:1px solid #fde68a}
+.mudtab-indicator-luxury{position:absolute;bottom:0;height:2px;background:var(--gold);transition:all .3s;opacity:0}
+.mudtabs-body-luxury{padding:18px;background:#fff;min-height:400px}
+.settings-group-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03)}
+.sg-header{position:relative;display:flex;align-items:center;gap:12px;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#fff);border-bottom:1px solid #f1efe8}
+.sg-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:1px solid;flex-shrink:0}
+.sg-info{display:flex;flex-direction:column}.sg-name{font-weight:900;color:#0A0F1E;font-size:.92rem}.sg-count{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:2px}.sg-line{position:absolute;right:0;top:0;bottom:0;width:4px}.sg-badge{background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:999px;font-size:.68rem;font-weight:800;border:1px solid #fde68a}
+.sg-body{display:flex;flex-direction:column}.sg-body.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.setting-row-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #f9fafb;border-left:1px solid #f9fafb;transition:.2s;gap:12px;min-height:72px}.setting-row-luxury:hover{background:#faf9ff}.setting-row-luxury.changed{background:#fffbeb !important;border-right:3px solid #f59e0b}
+.sr-info{flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px}.sr-desc{font-weight:800;color:#0A0F1E;font-size:.86rem}.sr-key{font-family:monospace;font-size:.68rem;color:#2563eb;background:#f3f4f6;padding:2px 8px;border-radius:6px;font-weight:700;width:fit-content}.sr-type{font-size:.62rem;background:#f8f6f0;color:#8B95A5;padding:2px 8px;border-radius:6px;font-weight:700;border:1px solid #e8e2d0}.sr-changed-badge{font-size:.62rem;background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:2px 8px;border-radius:999px;font-weight:800}
+.sr-input{min-width:260px;max-width:360px;display:flex;align-items:center;gap:8px;flex:1}
+.input-wrap-luxury{position:relative;display:flex;align-items:center;flex:1}.input-wrap-luxury svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.input-wrap-luxury input{width:100%;height:42px;padding:0 34px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff;transition:.2s}.input-wrap-luxury input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.select-wrap-luxury-input{position:relative;display:flex;align-items:center;flex:1}.select-wrap-luxury-input svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.select-wrap-luxury-input select{width:100%;height:42px;padding:0 32px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none}.select-wrap-luxury-input select:focus{border-color:var(--gold)}.select-wrap-luxury-input .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.luxury-input{width:100%;height:42px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff}
+.sr-readonly{font-size:.84rem;color:#6b7280;font-weight:700}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:1100px){.sg-body.grid-2{grid-template-columns:1fr}}
 </style>
 
 @code {
     private List<SettingDto> settings = new();
     private List<string> settingGroups = new();
+    private List<string> filteredGroups => settingGroups.Where(g=>string.IsNullOrWhiteSpace(searchText) || SettingService.GetGroupNameAr(g).Contains(searchText, StringComparison.OrdinalIgnoreCase) || settings.Any(s=>s.SettingGroup==g && (s.SettingKey.Contains(searchText, StringComparison.OrdinalIgnoreCase) || (s.SettingDescription?.Contains(searchText, StringComparison.OrdinalIgnoreCase)??false)))).ToList();
     private Dictionary<int, string?> editedValues = new();
     private ModulePermissionDto? permissions;
     private bool isLoading = true;
     private bool isSaving = false;
     private string resultMessage = "";
     private bool resultSuccess = true;
-
     private bool hasChanges => editedValues.Any();
     private int changedCount => editedValues.Count;
+    private string searchText = "";
+    private string activeTab = "";
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn)
-        {
-            Navigation.NavigateTo("/login");
-            return;
-        }
-
-        if (!PermissionService.IsLoaded)
-            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-
+        if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login"); return;}
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
         permissions = PermissionService.GetModule("SCR_SETTINGS");
-
-        if (permissions != null && permissions.CanView)
-            await LoadData();
+        if (permissions != null && permissions.CanView) await LoadData();
     }
 
     private async Task LoadData()
     {
-        settings = await SettingService.GetAllSettingsAsync();
-        settingGroups = settings
-            .Select(s => s.SettingGroup ?? "General")
-            .Distinct()
-            .ToList();
+        settings=await SettingService.GetAllSettingsAsync();
+        settingGroups=settings.Select(s=>s.SettingGroup ?? "General").Distinct().OrderBy(g=>g).ToList();
+        activeTab = settingGroups.FirstOrDefault() ?? "";
         editedValues.Clear();
-        isLoading = false;
+        isLoading=false;
     }
-
-    private string? GetEditValue(SettingDto setting)
-    {
-        return editedValues.ContainsKey(setting.SettingID)
-            ? editedValues[setting.SettingID]
-            : setting.SettingValue;
-    }
-
-    private bool IsChanged(SettingDto setting)
-    {
-        return editedValues.ContainsKey(setting.SettingID);
-    }
-
-    private bool IsToggleChecked(SettingDto setting)
-    {
-        var val = GetEditValue(setting);
-        return val == "1" || val == "true" || val == "True";
-    }
-
-    private bool IsNumberField(SettingDto setting)
-    {
-        return setting.DataType == "Number" ||
-               setting.SettingKey.Contains("Rate") ||
-               setting.SettingKey.Contains("Percent") ||
-               setting.SettingKey.Contains("Length") ||
-               setting.SettingKey.Contains("Timeout") ||
-               setting.SettingKey.Contains("Days");
-    }
-
-    private void OnValueChanged(SettingDto setting, string? newValue)
-    {
-        if (newValue == setting.SettingValue)
-            editedValues.Remove(setting.SettingID);
-        else
-            editedValues[setting.SettingID] = newValue;
-    }
-
-    private void OnSelectChanged(SettingDto setting, ChangeEventArgs e)
-    {
-        OnValueChanged(setting, e.Value?.ToString());
-    }
-
-    private void OnToggleChanged(SettingDto setting, ChangeEventArgs e)
-    {
-        bool isChecked = (bool)(e.Value ?? false);
-        OnValueChanged(setting, isChecked ? "1" : "0");
-    }
-
+    private string? GetEditValue(SettingDto setting)=>editedValues.ContainsKey(setting.SettingID) ? editedValues[setting.SettingID] : setting.SettingValue;
+    private bool IsChanged(SettingDto setting)=>editedValues.ContainsKey(setting.SettingID);
+    private bool IsToggleChecked(SettingDto setting){var val=GetEditValue(setting); return val=="1" || val=="true" || val=="True";}
+    private bool IsNumberField(SettingDto setting)=>setting.DataType=="Number" || setting.SettingKey.Contains("Rate") || setting.SettingKey.Contains("Percent") || setting.SettingKey.Contains("Length") || setting.SettingKey.Contains("Timeout") || setting.SettingKey.Contains("Days");
+    private void OnValueChanged(SettingDto setting, string? newValue){if(newValue==setting.SettingValue) editedValues.Remove(setting.SettingID); else editedValues[setting.SettingID]=newValue;}
+    private void OnSelectChanged(SettingDto setting, ChangeEventArgs e){OnValueChanged(setting, e.Value?.ToString());}
+    private void OnToggleChanged(SettingDto setting, ChangeEventArgs e){bool isChecked=(bool)(e.Value ?? false); OnValueChanged(setting, isChecked ? "1" : "0");}
     private async Task SaveAllChanges()
     {
-        if (!editedValues.Any()) return;
-
-        isSaving = true;
-        StateHasChanged();
-
-        try
-        {
-            int count = 0;
-            foreach (var kvp in editedValues)
-            {
-                await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID);
-                count++;
-            }
-
-            resultMessage = $"تم حفظ {count} إعداد بنجاح ✅";
-            resultSuccess = true;
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            resultMessage = "خطأ: " + ex.Message;
-            resultSuccess = false;
-        }
-        finally
-        {
-            isSaving = false;
-        }
+        if(!editedValues.Any()) return;
+        isSaving=true; StateHasChanged();
+        try{int count=0; foreach(var kvp in editedValues){await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID); count++;} resultMessage=$"تم حفظ {count} إعداد بنجاح ✅"; resultSuccess=true; await LoadData();}
+        catch(Exception ex){resultMessage="خطأ: "+ex.Message; resultSuccess=false;}
+        finally{isSaving=false;}
     }
 }

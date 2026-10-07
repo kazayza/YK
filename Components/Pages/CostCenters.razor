@@ -1,0 +1,304 @@
+@page "/cost-centers"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject TreasuryService TreasuryService
+@inject LookupService LookupService
+@inject UserSessionService UserSession
+
+<PageTitle>مراكز التكلفة - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">مراكز التكلفة</h2>
+                    <p class="lh-subtitle"> شجرة هرمية + جدول تفصيلي</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <div class="view-toggle-luxury">
+                    <button class="vt-btn @(viewMode==0?"active":"")" @onclick="()=>viewMode=0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>شجري</button>
+                    <button class="vt-btn @(viewMode==1?"active":"")" @onclick="()=>viewMode=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>تفصيلي</button>
+                </div>
+                <span class="lh-badge"><span class="lh-dot"></span>@totalCount مركز</span>
+                <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddRoot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مركز رئيسي</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل مراكز التكلفة...</p></div>}
+    else
+    {
+        <div class="filter-luxury">
+            <div class="search-luxury">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" placeholder="بحث بالكود أو الاسم..." @bind="searchText" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                @if(!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
+            </div>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="ToggleAll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>@(isAllExpanded?"طي":"توسيع")</button>
+        </div>
+
+        @if (viewMode==0)
+        {
+            <div class="coa-split">
+                <div class="tree-panel">
+                    <div class="panel-head"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M19 3h2a2 2 0 0 1 2 2v2"/></svg>الهيكل الشجري — @filteredCount مركز</h3></div>
+                    <div class="tree-body">
+                        @if (!filteredRoots.Any()){<div class="empty-mini">لا توجد نتائج</div>}
+                        else{ @foreach(var root in filteredRoots){ @RenderTreeNode(root, 0) } }
+                    </div>
+                </div>
+                <div class="details-panel">
+                    @if (selected==null)
+                    {
+                        <div class="empty-details"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>اختر مركز من الشجرة</h4><p class="empty-sub">اضغط على أي مركز لعرض تفاصيله</p></div>
+                    }
+                    else
+                    {
+                        <div class="detail-card">
+                            <div class="dc-gold-line"></div>
+                            <div class="dc-header">
+                                <div class="dc-icon type-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+                                <div class="dc-info">
+                                    <span class="dc-code">@selected.CostCenterCode</span>
+                                    <h3 class="dc-name">@selected.CostCenterNameAr</h3>
+                                    @if(!string.IsNullOrEmpty(selected.CostCenterNameEn)){<span class="dc-name-en">@selected.CostCenterNameEn</span>}
+                                    <div class="dc-badges"><span class="coa-level">L@(selected.CenterLevel)</span><span class="coa-detail @(selected.Children.Any()?"group":"detail")">@(selected.Children.Any()?"مجموعة":"تفصيلي")</span></div>
+                                </div>
+                                <div class="dc-actions">
+                                    <button class="act-btn add" title="إضافة فرعي" @onclick="()=>ShowAddChild(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                </div>
+                            </div>
+                            @if (selected.Children.Any())
+                            {
+                                <div class="dc-children"><h4>المراكز الفرعية (@selected.Children.Count)</h4>
+                                    <div class="children-list">
+                                        @foreach(var child in selected.Children){<div class="child-item" @onclick="()=>Select(child.CostCenterID)"><span class="child-code">@child.CostCenterCode</span><span class="child-name">@child.CostCenterNameAr</span><span class="child-dot @(child.Children.Any()?"group":"detail")"></span></div>}
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="table-card-luxury">
+                <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>العرض التفصيلي — @filteredFlat.Count مركز</h3></div>
+                <div class="table-responsive">
+                    <table class="table-luxury detailed">
+                        <thead><tr><th class="th-num">#</th><th>الكود</th><th>المركز</th><th>الأب</th><th>المستوى</th><th>القسم</th><th>التصنيف</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{int n=0;}
+                            @foreach(var cc in filteredFlat.OrderBy(c=>c.CostCenterCode)){n++;
+                                <tr @key="cc.CostCenterID">
+                                    <td class="td-num">@n</td>
+                                    <td><span class="doc-num-luxury">@cc.CostCenterCode</span></td>
+                                    <td><div class="acc-cell"><div class="acc-icon type-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="acc-info"><span class="acc-name">@cc.CostCenterNameAr</span>@if(!string.IsNullOrEmpty(cc.CostCenterNameEn)){<span class="acc-name-en">@cc.CostCenterNameEn</span>}</div><span class="acc-dot @(cc.Children.Any()?"group":"detail")"></span></div></td>
+                                    <td class="td-muted">@(cc.ParentNameAr ?? "—")</td>
+                                    <td><span class="level-badge">L@(cc.CenterLevel)</span></td>
+                                    <td class="td-muted">@(cc.DepartmentNameAr ?? "—")</td>
+                                    <td>@if(cc.Children.Any()){<span class="coa-detail group">مجموعة (@cc.ChildrenCount)</span>}else{<span class="coa-detail detail">تفصيلي</span>}</td>
+                                    <td><span class="status-badge-luxury" style="--sc:@(cc.IsActive?"#10b981":"#6b7280")"><span class="status-dot" style="--sc:@(cc.IsActive?"#10b981":"#6b7280")"></span>@(cc.IsActive?"نشط":"موقوف")</span></td>
+                                    <td class="td-center"><div class="actions-wrap-luxury"><button class="act-btn add" @onclick="()=>ShowAddChild(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button><button class="act-btn edit" @onclick="()=>ShowEdit(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button></div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (showEdit)
+{
+    <div class="modal-overlay-luxury" @onclick="CloseEdit"><div class="modal-card-luxury" @onclick:stopPropagation="true">
+        <div class="ml-gold-line"></div>
+        <div class="ml-header"><h3>@(editDto.CostCenterID==0?"مركز جديد":"تعديل مركز") — CostCenters 9 أعمدة</h3><button class="btn-close-x" @onclick="CloseEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+        <div class="ml-body">
+            <div class="form-grid-luxury">
+                <div class="fg"><label>الكود</label><input type="text" @bind="editDto.CostCenterCode" /></div>
+                <div class="fg"><label>الأب</label><select @bind="editDto.ParentCostCenterID"><option value="0">— رئيسي —</option>@foreach(var cc in flatList){<option value="@cc.CostCenterID">@cc.CostCenterCode - @cc.CostCenterNameAr</option>}</select></div>
+                <div class="fg full"><label>الاسم عربي *</label><input type="text" @bind="editDto.CostCenterNameAr" /></div>
+                <div class="fg full"><label>الاسم انجليزي</label><input type="text" @bind="editDto.CostCenterNameEn" /></div>
+                <div class="fg"><label>القسم</label><select @bind="editDto.DepartmentID"><option value="0">— اختر —</option>@foreach(var d in departments){<option value="@d.Id">@d.Name</option>}</select></div>
+                <div class="fg"><label>نشط؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsActive" /><span></span></label></div>
+            </div>
+            @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
+        </div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
+    </div></div>
+}
+
+@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.view-toggle-luxury{display:flex;background:#0A0F1E;border:1px solid rgba(212,175,55,.15);border-radius:12px;padding:3px;gap:3px}.vt-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:none;background:transparent;color:#8B95A5;font-weight:700;font-size:.8rem;cursor:pointer;transition:.2s;font-family:'Tajawal'}.vt-btn.active{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 8px rgba(212,175,55,.25)}.vt-btn svg{width:14px;height:14px}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:280px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:42px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:26px;height:26px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.coa-split{display:grid;grid-template-columns:420px 1fr;gap:16px}@@media(max-width:1100px){.coa-split{grid-template-columns:1fr}}
+.tree-panel,.details-panel{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.tree-panel::before,.details-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.panel-head{padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;display:flex;justify-content:space-between;align-items:center}.panel-head h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.panel-head h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.tree-body{max-height:700px;overflow-y:auto;padding:8px}.tree-node{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;cursor:pointer;transition:.15s;margin-bottom:2px}.tree-node:hover{background:rgba(212,175,55,.06)}.tree-node.selected{background:linear-gradient(90deg,rgba(212,175,55,.12),rgba(212,175,55,.04));border:1px solid rgba(212,175,55,.2)}
+.tree-expand{width:22px;height:22px;border-radius:6px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}.tree-expand svg{width:10px;height:10px;transition:.2s}.tree-expand.expanded svg{transform:rotate(90deg)}
+.tree-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid;background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}.tree-icon svg{width:14px;height:14px}
+.tree-code{font-family:monospace;font-weight:700;background:#f8f6f0;border:1px solid #e8e2d0;padding:2px 6px;border-radius:6px;font-size:.74rem;color:#6b7280}.tree-name{font-weight:700;color:#0A0F1E;font-size:.84rem;flex:1}.tree-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}.tree-dot.group{background:#D4AF37;box-shadow:0 0 0 2px rgba(212,175,55,.15)}.tree-dot.detail{background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.15)}
+.empty-mini{text-align:center;padding:30px;color:#9ca3af;font-size:.84rem}
+.empty-details{text-align:center;padding:80px 20px}.empty-details h4{margin:12px 0 6px;font-weight:800;color:#0A0F1E}.empty-details .empty-sub{color:#9ca3af;font-size:.82rem}
+.detail-card{position:relative;padding:0}.dc-gold-line{height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.dc-header{display:flex;gap:14px;padding:20px;border-bottom:1px solid #f1efe8}.dc-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid;background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}.dc-icon svg{width:28px;height:28px}
+.dc-info{flex:1}.dc-code{font-family:monospace;font-weight:800;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px;color:var(--gold-dark);font-size:.8rem}.dc-name{font-size:1.2rem;font-weight:900;color:#0A0F1E;margin:8px 0 2px}.dc-name-en{font-size:.84rem;color:#8B95A5;font-weight:600}.dc-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.dc-actions{display:flex;gap:6px;flex-shrink:0}
+.dc-children{padding:16px 20px}.dc-children h4{font-size:.88rem;font-weight:800;color:#0A0F1E;margin:0 0 12px}.children-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}.child-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #f1efe8;border-radius:10px;cursor:pointer;transition:.15s}.child-item:hover{border-color:rgba(212,175,55,.3);background:rgba(212,175,55,.03)}.child-code{font-family:monospace;font-weight:700;background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:6px;font-size:.76rem;color:#6b7280}.child-name{flex:1;font-weight:700;color:#0A0F1E;font-size:.84rem}.child-dot{width:6px;height:6px;border-radius:50%}.child-dot.group{background:#D4AF37}.child-dot.detail{background:#10b981}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:1000px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.acc-cell{display:flex;align-items:center;gap:10px}.acc-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid;background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}.acc-icon svg{width:16px;height:16px}
+.acc-info{display:flex;flex-direction:column}.acc-name{font-weight:800;color:#0A0F1E;font-size:.86rem}.acc-name-en{font-weight:600;color:#8B95A5;font-size:.72rem}.acc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}.acc-dot.group{background:#D4AF37;box-shadow:0 0 0 2px rgba(212,175,55,.15)}.acc-dot.detail{background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.15)}
+.level-badge{font-family:monospace;font-weight:700;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;padding:3px 8px;border-radius:999px;font-size:.72rem}
+.coa-detail{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.coa-detail.group{background:rgba(212,175,55,.1);color:#9C7C2E;border-color:rgba(212,175,55,.2)}.coa-detail.detail{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc) 15%,transparent)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.add{color:#059669;border-color:#a7f3d0}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn svg{width:13px;height:13px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow-y:auto}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;max-height:90vh;display:flex;flex-direction:column}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}
+.ml-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.ml-header h3{margin:0;font-size:.95rem;font-weight:800;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.ml-body{padding:20px;overflow-y:auto;flex:1}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg input:focus,.fg select:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}.empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:28px;height:28px}.empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<CostCenterListDto> roots = new();
+    private List<CostCenterListDto> flatList = new();
+    private List<CostCenterListDto> filteredRoots = new();
+    private List<CostCenterListDto> filteredFlat = new();
+    private int totalCount = 0;
+    private int filteredCount = 0;
+    private bool isLoading = true;
+    private bool showEdit = false;
+    private CostCenterDto editDto = new();
+    private bool isSaving = false;
+    private string editMsg = "";
+    private bool editOk = true;
+    private string toast = "";
+    private bool toastOk = true;
+    private string searchText = "";
+    private int viewMode = 0;
+    private HashSet<int> expandedIds = new();
+    private bool isAllExpanded = true;
+    private CostCenterListDto? selected = null;
+    private List<LookupDto> departments = new();
+
+    protected override async Task OnInitializedAsync(){ await LoadData(); }
+
+    private async Task LoadData()
+    {
+        isLoading=true; StateHasChanged();
+        try
+        {
+            roots = await TreasuryService.GetCostCentersTreeAsync();
+            flatList = await TreasuryService.GetCostCentersFlatAsync();
+            totalCount = CountAll(roots);
+            expandedIds = new HashSet<int>(flatList.Where(c=>c.CenterLevel<=2).Select(c=>c.CostCenterID));
+            if (flatList.Any()) selected = FindNode(roots, flatList.First().CostCenterID);
+            departments = await LookupService.GetDepartmentsAsync();
+            ApplyFilter();
+        }
+        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
+        finally{ isLoading=false; }
+    }
+
+    private void ApplyFilter()
+    {
+        bool Matches(CostCenterListDto c){ if(string.IsNullOrWhiteSpace(searchText)) return true; return (c.CostCenterCode?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) || (c.CostCenterNameAr?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false); }
+        bool HasMatch(CostCenterListDto n){ if(Matches(n)) return true; foreach(var ch in n.Children) if(HasMatch(ch)) return true; return false; }
+        List<CostCenterListDto> FilterNodes(List<CostCenterListDto> nodes){
+            var res=new List<CostCenterListDto>();
+            foreach(var node in nodes){
+                if(!HasMatch(node)) continue;
+                var clone=new CostCenterListDto{ CostCenterID=node.CostCenterID, CostCenterCode=node.CostCenterCode, CostCenterNameAr=node.CostCenterNameAr, CostCenterNameEn=node.CostCenterNameEn, ParentCostCenterID=node.ParentCostCenterID, CenterLevel=node.CenterLevel, DepartmentID=node.DepartmentID, DepartmentNameAr=node.DepartmentNameAr, IsActive=node.IsActive, ChildrenCount=node.ChildrenCount };
+                clone.Children=FilterNodes(node.Children);
+                res.Add(clone);
+            }
+            return res;
+        }
+        filteredRoots=FilterNodes(roots);
+        filteredFlat=flatList.Where(Matches).ToList();
+        filteredCount=CountAll(filteredRoots);
+        if(!string.IsNullOrWhiteSpace(searchText)){ var all=new HashSet<int>(); void Collect(List<CostCenterListDto> ns){ foreach(var n in ns){ all.Add(n.CostCenterID); Collect(n.Children);} } Collect(filteredRoots); expandedIds=all; isAllExpanded=true; }
+    }
+
+    private int CountAll(List<CostCenterListDto> nodes){ int c=0; foreach(var n in nodes){ c++; c+=CountAll(n.Children);} return c; }
+    private void ClearSearch(){ searchText=""; ApplyFilter(); }
+    private void ToggleExpand(int id){ if(expandedIds.Contains(id)) expandedIds.Remove(id); else expandedIds.Add(id); }
+    private void ToggleAll(){ if(isAllExpanded){ expandedIds.Clear(); isAllExpanded=false; } else { expandedIds=new HashSet<int>(flatList.Select(c=>c.CostCenterID)); isAllExpanded=true; } }
+    private void Select(int id){ selected=FindNode(roots, id); }
+    private CostCenterListDto? FindNode(List<CostCenterListDto> nodes, int id){ foreach(var n in nodes){ if(n.CostCenterID==id) return n; var f=FindNode(n.Children,id); if(f!=null) return f; } return null; }
+
+    private RenderFragment RenderTreeNode(CostCenterListDto cc, int level) => __builder =>
+    {
+        bool isExpanded = expandedIds.Contains(cc.CostCenterID);
+        bool hasChildren = cc.Children.Any();
+        bool isSelected = selected?.CostCenterID==cc.CostCenterID;
+        <div>
+            <div class="tree-node @(isSelected?"selected":"")" style="margin-right:@(level*16)px" @onclick="()=>Select(cc.CostCenterID)" @key="cc.CostCenterID">
+                @if(hasChildren){<button class="tree-expand @(isExpanded?"expanded":"")" @onclick:stopPropagation="true" @onclick="()=>ToggleExpand(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>}else{<div style="width:22px;flex-shrink:0"></div>}
+                <div class="tree-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+                <span class="tree-code">@cc.CostCenterCode</span>
+                <span class="tree-name">@cc.CostCenterNameAr</span>
+                @if(!hasChildren){<span class="tree-dot detail"></span>}else{<span class="tree-dot group"></span>}
+            </div>
+            @if(hasChildren && isExpanded){ @foreach(var child in cc.Children){ @RenderTreeNode(child, level+1) } }
+        </div>;
+    };
+
+    private void ShowAddRoot(){ editDto=new CostCenterDto{ IsActive=true, CenterLevel=1 }; editMsg=""; showEdit=true; }
+    private void ShowAddChild(int parentId){ var p=flatList.FirstOrDefault(c=>c.CostCenterID==parentId); editDto=new CostCenterDto{ IsActive=true, ParentCostCenterID=parentId, CenterLevel=(p?.CenterLevel??0)+1 }; editMsg=""; showEdit=true; }
+    private async Task ShowEdit(int id){ var dto=await TreasuryService.GetCostCenterByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+    private void CloseEdit(){ showEdit=false; }
+
+    private async Task Save()
+    {
+        if(string.IsNullOrWhiteSpace(editDto.CostCenterNameAr)){ editMsg="أدخل الاسم"; editOk=false; return; }
+        isSaving=true; StateHasChanged();
+        try
+        {
+            if(editDto.CostCenterID==0){ await TreasuryService.InsertCostCenterAsync(editDto, UserSession.UserID); toast="تم إنشاء المركز ✅"; toastOk=true; }
+            else{ await TreasuryService.UpdateCostCenterAsync(editDto, UserSession.UserID); toast="تم تحديث المركز ✅"; toastOk=true; }
+            showEdit=false; await LoadData();
+        }
+        catch(Exception ex){ editMsg=ex.Message; editOk=false; }
+        finally{ isSaving=false; }
+    }
+}

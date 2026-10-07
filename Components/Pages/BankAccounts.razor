@@ -1,0 +1,268 @@
+@page "/bank-accounts"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject TreasuryService TreasuryService
+@inject AccountingService AccountingService
+@inject LookupService LookupService
+@inject UserSessionService UserSession
+
+<PageTitle>الحسابات البنكية - Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">الحسابات البنكية</h2>
+                    <p class="lh-subtitle">إدارة الحسابات البنكية والبنوك — BankAccounts</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <span class="lh-badge"><span class="lh-dot"></span>@filteredList.Count حساب</span>
+                <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">إجمالي: @filteredList.Sum(b=>b.CurrentBalance).ToString("#,##0.00")</span>
+                <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>حساب بنكي جديد</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الحسابات البنكية...</p></div>}
+    else
+    {
+        <div class="stats-luxury">
+            <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg></div><div class="st-info"><span class="st-value">@allList.Count</span><span class="st-label">إجمالي الحسابات</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(b=>b.IsActive)</span><span class="st-label">نشطة</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@allList.Sum(b=>b.CurrentBalance).ToString("#,##0")</span><span class="st-label">إجمالي الأرصدة</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="st-info"><span class="st-value">@allList.Sum(b=>b.TotalReceipts).ToString("#,##0")</span><span class="st-label">إجمالي مقبوضات</span></div><div class="st-gold-line"></div></div>
+        </div>
+
+        <div class="filter-luxury">
+            <div class="search-luxury">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" placeholder="بحث سريع بالكود، البنك، رقم الحساب..." @bind="searchText" @bind:event="oninput" @onkeyup="ApplyFilter" />
+                @if(!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}
+            </div>
+            <div class="select-wrap-luxury"><select @bind="filterType" @bind:after="ApplyFilter"><option value="0">كل الأنواع</option><option value="1">جاري</option><option value="2">توفير</option><option value="3">اعتماد</option><option value="4">أخرى</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><select @bind="filterActive" @bind:after="ApplyFilter"><option value="0">الكل</option><option value="1">نشطة</option><option value="2">موقوفة</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+        </div>
+
+        <div class="table-card-luxury">
+            <div class="card-head-luxury">
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg>الحسابات البنكية — @filteredList.Count حساب</h3>
+                <div style="display:flex;gap:8px;align-items:center"><span class="legend-dot" style="--c:#D4AF37"></span><span style="font-size:.7rem;color:#6b7280;font-weight:700">جاري</span><span class="legend-dot" style="--c:#10b981"></span><span style="font-size:.7rem;color:#6b7280;font-weight:700">توفير</span></div>
+            </div>
+            <div class="table-responsive">
+                <table class="table-luxury detailed">
+                    <thead>
+                        <tr>
+                            <th class="th-num">#</th>
+                            <th>الكود</th>
+                            <th>البنك / الفرع</th>
+                            <th>رقم الحساب / IBAN</th>
+                            <th>النوع</th>
+                            <th>العملة</th>
+                            <th>الحساب المحاسبي</th>
+                            <th>الرصيد الحالي</th>
+                            <th>مقبوضات / مدفوعات</th>
+                            <th>جهة الاتصال</th>
+                            <th>الحالة</th>
+                            <th class="th-actions">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{int n=0;}
+                        @foreach(var acc in filteredList.OrderBy(a=>a.BankName)){n++;
+                            <tr @key="acc.BankAccountID">
+                                <td class="td-num">@n</td>
+                                <td><span class="doc-num-luxury">@acc.BankAccountCode</span></td>
+                                <td>
+                                    <div class="acc-cell">
+                                        <div class="acc-icon type-@(acc.AccountType ?? 1)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg>
+                                        </div>
+                                        <div class="acc-info">
+                                            <span class="acc-name">@acc.BankName</span>
+                                            <span class="acc-name-en">@acc.BranchName</span>
+                                        </div>
+                                        <span class="acc-dot @(acc.IsActive?"detail":"group")"></span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display:flex;flex-direction:column;gap:2px">
+                                        <span class="doc-num-luxury" style="font-size:.78rem">@acc.AccountNumber</span>
+                                        @if(!string.IsNullOrEmpty(acc.IBAN)){<span style="font-family:monospace;font-size:.7rem;color:#8B95A5">@acc.IBAN</span>}
+                                    </div>
+                                </td>
+                                <td><span class="coa-type type-@(acc.AccountType ?? 1)">@acc.AccountTypeName</span></td>
+                                <td><span class="level-badge">@(acc.CurrencyCode ?? "EGP")</span></td>
+                                <td class="td-muted">@(acc.AccountNameAr ?? acc.AccountCode ?? "—")</td>
+                                <td><span class="amount-luxury @(acc.CurrentBalance>=0?"":"negative")">@acc.CurrentBalance.ToString("#,##0.00")</span></td>
+                                <td>
+                                    <div style="display:flex;flex-direction:column;gap:2px;font-size:.75rem">
+                                        <span style="color:#059669">↑ @acc.TotalReceipts.ToString("#,##0")</span>
+                                        <span style="color:#dc2626">↓ @acc.TotalPayments.ToString("#,##0")</span>
+                                    </div>
+                                </td>
+                                <td class="td-muted">@(acc.ContactPerson ?? "—")<br/><span style="font-size:.7rem">@acc.Phone</span></td>
+                                <td><span class="status-badge-luxury" style="--sc:@(acc.IsActive?"#10b981":"#6b7280")"><span class="status-dot" style="--sc:@(acc.IsActive?"#10b981":"#6b7280")"></span>@(acc.IsActive?"نشط":"موقوف")</span></td>
+                                <td class="td-center"><div class="actions-wrap-luxury">
+                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(acc.BankAccountID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    <button class="act-btn add" title="كشف حساب" @onclick="()=>ViewStatement(acc.BankAccountID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+                                </div></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@if (showEdit)
+{
+    <div class="modal-overlay-luxury" @onclick="CloseEdit"><div class="modal-card-luxury large" @onclick:stopPropagation="true">
+        <div class="ml-gold-line"></div>
+        <div class="ml-header"><h3>@(editDto.BankAccountID==0?"حساب بنكي جديد":"تعديل حساب بنكي") — BankAccounts الفعلي 15 عمود</h3><button class="btn-close-x" @onclick="CloseEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+        <div class="ml-body">
+            <div class="form-grid-luxury">
+                <div class="fg"><label>كود الحساب</label><input type="text" @bind="editDto.BankAccountCode" placeholder="تلقائي" /></div>
+                <div class="fg"><label>نوع الحساب</label><select @bind="editDto.AccountType"><option value="1">جاري</option><option value="2">توفير</option><option value="3">اعتماد</option><option value="4">أخرى</option></select></div>
+                <div class="fg full"><label>اسم البنك *</label><input type="text" @bind="editDto.BankName" /></div>
+                <div class="fg"><label>الفرع</label><input type="text" @bind="editDto.BranchName" /></div>
+                <div class="fg"><label>رقم الحساب *</label><input type="text" @bind="editDto.AccountNumber" /></div>
+                <div class="fg full"><label>IBAN</label><input type="text" @bind="editDto.IBAN" placeholder="EG..." /></div>
+                <div class="fg"><label>Swift Code</label><input type="text" @bind="editDto.SwiftCode" /></div>
+                <div class="fg"><label>العملة</label><select @bind="editDto.CurrencyID"><option value="0">— اختر —</option>@foreach(var cur in currencies){<option value="@cur.Id">@cur.Name</option>}</select></div>
+                <div class="fg"><label>الحساب المحاسبي</label><select @bind="editDto.AccountID"><option value="0">— اختر —</option>@foreach(var acc in accounts){<option value="@acc.Id">@acc.Code - @acc.Name</option>}</select></div>
+                <div class="fg"><label>الرصيد الحالي</label><input type="number" @bind="editDto.CurrentBalance" step="0.01" /></div>
+                <div class="fg"><label>جهة الاتصال</label><input type="text" @bind="editDto.ContactPerson" /></div>
+                <div class="fg"><label>الهاتف</label><input type="text" @bind="editDto.Phone" /></div>
+                <div class="fg"><label>نشط؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsActive" /><span></span></label></div>
+            </div>
+            @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
+        </div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
+    </div></div>
+}
+
+@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.purple{background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1.15rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+.search-luxury{flex:1;min-width:280px;position:relative;display:flex;align-items:center}.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-luxury input{width:100%;height:42px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.search-luxury input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.clear-search-luxury{position:absolute;left:8px;width:26px;height:26px;border-radius:50%;border:none;background:#f3f4f6;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.clear-search-luxury svg{width:10px;height:10px}
+.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury select{height:42px;padding:0 28px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}.select-wrap-luxury .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}.legend-dot{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 15%,transparent);display:inline-block}
+.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:1200px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-muted{color:#6b7280;font-size:.82rem}
+.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.acc-cell{display:flex;align-items:center;gap:10px}.acc-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid}.acc-icon.type-1{background:#eff6ff;color:#2563eb;border-color:#dbeafe}.acc-icon.type-2{background:#ecfdf5;color:#059669;border-color:#a7f3d0}.acc-icon.type-3{background:#fef3c7;color:#d97706;border-color:#fde68a}.acc-icon.type-4{background:#f3f4f6;color:#6b7280;border-color:#e5e7eb}.acc-icon svg{width:16px;height:16px}
+.acc-info{display:flex;flex-direction:column}.acc-name{font-weight:800;color:#0A0F1E;font-size:.86rem}.acc-name-en{font-weight:600;color:#8B95A5;font-size:.72rem}.acc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}.acc-dot.group{background:#D4AF37;box-shadow:0 0 0 2px rgba(212,175,55,.15)}.acc-dot.detail{background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.15)}
+.level-badge{font-family:monospace;font-weight:700;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;padding:3px 8px;border-radius:999px;font-size:.72rem}
+.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.type-1{background:#eff6ff;color:#2563eb;border-color:#dbeafe}.type-2{background:#ecfdf5;color:#059669;border-color:#a7f3d0}.type-3{background:#fef3c7;color:#d97706;border-color:#fde68a}.type-4{background:#f3f4f6;color:#6b7280;border-color:#e5e7eb}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.negative{color:#dc2626;background:#fef2f2;border-color:#fecaca}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc) 15%,transparent)}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.add{color:#059669;border-color:#a7f3d0}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn svg{width:13px;height:13px}
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;overflow-y:auto}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;max-height:90vh;display:flex;flex-direction:column}.modal-card-luxury.large{max-width:640px}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}
+.ml-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.ml-header h3{margin:0;font-size:.95rem;font-weight:800;color:#0A0F1E}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}
+.ml-body{padding:20px;overflow-y:auto;flex:1}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg textarea{height:auto;padding:10px 12px;resize:vertical}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.switch-luxury{position:relative;display:inline-block;width:44px;height:24px}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
+.ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+
+@code {
+    private List<BankAccountListDto> allList = new();
+    private List<BankAccountListDto> filteredList = new();
+    private bool isLoading = true;
+    private bool showEdit = false;
+    private BankAccountDto editDto = new();
+    private bool isSaving = false;
+    private string editMsg = "";
+    private bool editOk = true;
+    private string toast = "";
+    private bool toastOk = true;
+    private string searchText = "";
+    private int filterType = 0;
+    private int filterActive = 0;
+    private List<LookupDto> currencies = new();
+    private List<SearchableItem> accounts = new();
+
+    protected override async Task OnInitializedAsync(){ await LoadData(); }
+
+    private async Task LoadData()
+    {
+        isLoading=true; StateHasChanged();
+        try
+        {
+            allList = await TreasuryService.GetBankAccountsAsync();
+            currencies = await LookupService.GetCurrenciesAsync();
+            accounts = await LookupService.GetChartOfAccountsSearchableAsync();
+            ApplyFilter();
+        }
+        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
+        finally{ isLoading=false; }
+    }
+
+    private void ApplyFilter()
+    {
+        filteredList = allList.Where(b =>
+            (filterType==0 || b.AccountType==filterType) &&
+            (filterActive==0 || (filterActive==1 && b.IsActive) || (filterActive==2 && !b.IsActive)) &&
+            (string.IsNullOrWhiteSpace(searchText) ||
+             (b.BankAccountCode?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+             (b.BankName?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+             (b.AccountNumber?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+             (b.IBAN?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false))
+        ).ToList();
+    }
+
+    private void ClearSearch(){ searchText=""; ApplyFilter(); }
+    private void ShowAdd(){ editDto=new BankAccountDto{ IsActive=true, AccountType=1 }; editMsg=""; showEdit=true; }
+    private async Task ShowEdit(int id){ var dto=await TreasuryService.GetBankAccountByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+    private void CloseEdit(){ showEdit=false; }
+    private void ViewStatement(int id){ toast="كشف حساب بنكي قريباً"; toastOk=true; }
+
+    private async Task Save()
+    {
+        if(string.IsNullOrWhiteSpace(editDto.BankName)){ editMsg="أدخل اسم البنك"; editOk=false; return; }
+        if(string.IsNullOrWhiteSpace(editDto.AccountNumber)){ editMsg="أدخل رقم الحساب"; editOk=false; return; }
+        isSaving=true; StateHasChanged();
+        try
+        {
+            if(editDto.BankAccountID==0){ await TreasuryService.InsertBankAccountAsync(editDto, UserSession.UserID); toast="تم إنشاء الحساب البنكي ✅"; toastOk=true; }
+            else{ await TreasuryService.UpdateBankAccountAsync(editDto, UserSession.UserID); toast="تم تحديث الحساب البنكي ✅"; toastOk=true; }
+            showEdit=false; await LoadData();
+        }
+        catch(Exception ex){ editMsg=ex.Message; editOk=false; }
+        finally{ isSaving=false; }
+    }
+}

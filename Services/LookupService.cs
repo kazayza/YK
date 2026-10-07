@@ -118,7 +118,7 @@ namespace YKCoatings.Services
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID AS Id, ItemNameAr + ' (' + ItemCode + ')' AS Name
                         FROM dbo.Items 
-                        WHERE IsActive = 1 AND ItemType IN (1, 2, 5)
+                        WHERE IsActive = 1
                         ORDER BY ItemNameAr";
             var result = await connection.QueryAsync<LookupDto>(sql);
             return result.ToList();
@@ -127,8 +127,9 @@ namespace YKCoatings.Services
         {
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID AS Id, 
-                               ItemNameAr AS Name, 
-                               ItemCode AS Code
+                               ItemNameAr + N' (' + ItemCode + N')' AS Name, 
+                               ItemCode AS Code,
+                               CASE ItemType WHEN 1 THEN N'خام' WHEN 2 THEN N'تعبئة' WHEN 3 THEN N'نصف مصنع' WHEN 4 THEN N'منتج تام' ELSE N'أخرى' END AS Extra
                         FROM dbo.Items 
                         WHERE IsActive = 1
                         ORDER BY ItemNameAr";
@@ -139,12 +140,15 @@ namespace YKCoatings.Services
         public async Task<List<SearchableItem>> GetItemsForPurchaseSearchableAsync()
         {
             using var connection = CreateConnection();
+            // تم التوسيع ليشمل كل الأصناف النشطة مع إظهار النوع والسعر - لأن المستخدم قد لا يجد أصنافه بسبب فلتر ItemType
             var sql = @"SELECT ItemID AS Id, 
-                               ItemNameAr AS Name, 
-                               ItemCode AS Code
+                               ItemNameAr + N' (' + ItemCode + N')' + 
+                               CASE ItemType WHEN 1 THEN N' - خام' WHEN 2 THEN N' - تعبئة' WHEN 3 THEN N' - نصف مصنع' WHEN 4 THEN N' - تام' ELSE N'' END AS Name, 
+                               ItemCode AS Code,
+                               CASE WHEN IsActive=1 THEN N'نشط' ELSE N'غير نشط' END AS Extra
                         FROM dbo.Items 
-                        WHERE IsActive = 1 AND ItemType IN (1, 2, 5)
-                        ORDER BY ItemNameAr";
+                        WHERE IsActive = 1
+                        ORDER BY ItemType, ItemNameAr";
             var result = await connection.QueryAsync<SearchableItem>(sql);
             return result.ToList();
         }
@@ -192,10 +196,127 @@ namespace YKCoatings.Services
                                 WHEN ISNULL(i.LastPurchasePrice, 0) > 0 THEN i.LastPurchasePrice
                                 WHEN ISNULL(i.StandardCost, 0) > 0 THEN i.StandardCost
                                 ELSE ISNULL(i.AverageCost, 0)
-                            END AS EstimatedPrice
+                            END AS EstimatedPrice,
+                            ISNULL(i.DefaultSellingPrice,0) AS SalesPrice
                         FROM dbo.Items i
                         WHERE i.ItemID = @ID";
             return await connection.QueryFirstOrDefaultAsync<ItemQuickInfoDto>(sql, new { ID = itemId });
+        }
+
+        public async Task<List<SearchableItem>> GetItemsForSaleSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            // إصلاح جذري: كان يستثني المنتج التام (نوع 4) - الآن يشمل كل الأصناف النشطة مع سعر البيع
+            var sql = @"SELECT ItemID AS Id, 
+                               ItemNameAr + N' (' + ItemCode + N')' + 
+                               CASE WHEN ISNULL(DefaultSellingPrice,0)>0 THEN N' - ' + CAST(CAST(DefaultSellingPrice AS DECIMAL(18,2)) AS NVARCHAR) + N' ج.م' ELSE N'' END +
+                               CASE ItemType WHEN 1 THEN N' - خام' WHEN 2 THEN N' - تعبئة' WHEN 3 THEN N' - نصف مصنع' WHEN 4 THEN N' - تام' ELSE N'' END AS Name, 
+                               ItemCode AS Code,
+                               CAST(ISNULL(DefaultSellingPrice,0) AS NVARCHAR) AS Extra
+                        FROM dbo.Items 
+                        WHERE IsActive = 1
+                        ORDER BY 
+                            CASE ItemType WHEN 4 THEN 0 WHEN 3 THEN 1 ELSE 2 END,
+                            ItemNameAr";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        public async Task<CustomerQuickInfoDto?> GetCustomerQuickInfoAsync(int customerId)
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT c.CustomerID, c.CustomerNameAr, c.CustomerCode,
+                               c.PaymentTermID, c.CurrencyID,
+                               ISNULL(cur.ExchangeRate,1) AS ExchangeRate,
+                               c.CreditLimit, c.CurrentBalance
+                        FROM dbo.Customers c
+                        LEFT JOIN dbo.Currencies cur ON c.CurrencyID=cur.CurrencyID
+                        WHERE c.CustomerID=@ID";
+            return await connection.QueryFirstOrDefaultAsync<CustomerQuickInfoDto>(sql, new { ID = customerId });
+        }
+
+        public async Task<List<LookupDto>> GetCashBoxesLookupAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT CashBoxID AS Id, CashBoxNameAr AS Name, CashBoxCode AS Code FROM dbo.CashBoxes WHERE IsActive=1 ORDER BY CashBoxNameAr";
+            var result = await connection.QueryAsync<LookupDto>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<SearchableItem>> GetCashBoxesSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT CashBoxID AS Id, CashBoxNameAr AS Name, CashBoxCode AS Code FROM dbo.CashBoxes WHERE IsActive=1 ORDER BY CashBoxNameAr";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<LookupDto>> GetChartOfAccountsLookupAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT AccountID AS Id, AccountNameAr + ' (' + AccountCode + ')' AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND IsGroup=0 ORDER BY AccountCode";
+            var result = await connection.QueryAsync<LookupDto>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<SearchableItem>> GetChartOfAccountsSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 ORDER BY AccountCode";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        // Alias for backward compatibility - fixes CS1061 errors
+        public async Task<List<SearchableItem>> GetAccountsSearchableAsync()
+        {
+            return await GetChartOfAccountsSearchableAsync();
+        }
+
+        public async Task<List<SearchableItem>> GetRevenueAccountsSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND AccountType=4 ORDER BY AccountCode";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<SearchableItem>> GetExpenseAccountsSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND AccountType=5 ORDER BY AccountCode";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<SearchableItem>> GetBankAccountsSearchableAsync()
+        {
+            using var connection = CreateConnection();
+            try
+            {
+                var sql = @"SELECT BankAccountID AS Id, BankName + ISNULL(' - ' + AccountNumber,'') AS Name, BankAccountCode AS Code FROM dbo.BankAccounts WHERE IsActive=1 ORDER BY BankName";
+                var result = await connection.QueryAsync<SearchableItem>(sql);
+                return result.ToList();
+            }
+            catch
+            {
+                return new List<SearchableItem>();
+            }
+        }
+
+        public async Task<List<LookupDto>> GetCostCentersAsync()
+        {
+            using var connection = CreateConnection();
+            try
+            {
+                var sql = @"SELECT CostCenterID AS Id, CostCenterNameAr AS Name, CostCenterCode AS Code FROM dbo.CostCenters WHERE IsActive=1 ORDER BY CostCenterNameAr";
+                var result = await connection.QueryAsync<LookupDto>(sql);
+                return result.ToList();
+            }
+            catch
+            {
+                return new List<LookupDto>();
+            }
         }
         // ==========================================
         // الموردين (LookupDto)
