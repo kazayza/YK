@@ -24,6 +24,7 @@ namespace YKCoatings.Services
 ## 3. نموذج الصفحات (Razor Pages)
 - `@page "/route"` + `<PageTitle>... - واي كي كوتينج</PageTitle>`.
 - أنماط الصفحة داخل `<style>` في الملف نفسه (مع `@@` للهروب في Razor) — **مع نظام `yk-theme.css` الموحد يُفضَّل** استخدام كلاساته بدل تكرار CSS.
+- **نمط الصفحات الجديدة (Gold):** حاوية `luxury-page` + ترويسة `luxury-header-hybrid` (`lh-*`) + أزرار `btn-luxury` + حالات `no-access-luxury`/`loading-luxury` + `<PageTitle>… - واي كي كوتينج Gold Edition</PageTitle>` — ملاحظة: فئة `.luxury-page` معرّفة داخل `<style>` في **44 صفحة** (توحيدُها في `yk-theme-gold.css` معلّق).
 - دورة نموذجية: `OnInitializedAsync` ← تحميل + صلاحيات ← `isLoading` skeleton ← عرض.
 - حقن نموذجي: `UserSessionService`, `PermissionService`, `NavigationManager`, `IJSRuntime`, خدمة المجال.
 
@@ -31,7 +32,7 @@ namespace YKCoatings.Services
 - `PermissionService` يحمّل صلاحيات المستخدم مرة واحدة (`IsLoaded`) من `dbo.vw_UserEffectivePermissions`.
 - كل شاشة تتحقق: `PermissionService.Can("MODULE_CODE", "CanAdd")` (أو ما يشبهها) قبل إظهار أزرار الإضافة/التعديل/الحذف/الاعتماد.
 - القوائم الجانبية (`NavMenu`) تُبنى ديناميكياً من `SystemModules` المسموحة فقط.
-- رموز الموديولات موحّدة (`SCR_*`) ومساراتها في `Helpers/ModuleRouteHelper.cs`.
+- رموز الموديولات موحّدة (`SCR_*`) ومساراتها في `Helpers/ModuleRouteHelper.cs` — **يقبل أكواداً بديلة متعددة لكل شاشة** (مثل `SCR_TB`/`SCR_TRIALBAL` و`SCR_LEDGER`/`SCR_ACCLEDGER`)، وعند إضافة شاشة سجّل كل الأكواد المحتملة لتطابق جدول `SystemModules`.
 
 ## 5. الجلسة والأمان
 - `UserSessionService` (Scoped) + `ProtectedSessionStorage` بمفاتيح `s_*` (`s_uid`, `s_login`, …).
@@ -53,8 +54,11 @@ namespace YKCoatings.Services
 - `ArabicSearchHelper` — بحث عربي متسامح (توشكي/همزات).
 - `NavMenuIcons` — أيقونات SVG inline حسب `ModuleCode`.
 - `SearchableSelect` — قائمة منسدلة قابلة للبحث (مكوّن مشترك).
+- `GoldIcons` — أيقونات SVG (stroke 1.5px) بفئات `Manufacturing/Status/Action/UI` + `GetByCode()` — **مبدأ المشروع: SVG فقط بدون إيموجي**.
+- `LucideIcons` — مجموعة أيقونات Lucide إضافية.
 
 ## 10. الهوية البصرية
-- **المتغيرات:** `--yk-primary` أزرق `#2563eb` · `--yk-accent` برتقالي `#f97316` (في `wwwroot/yk-theme.css`).
-- **الشعارات:** `/images/yk-logo.svg` (شريط + دخول) و`/images/yk-icon.svg` (مصغّر/favicon).
+- **الثيم الأساسي الآن — Gold & Black Premium** (`wwwroot/yk-theme-gold.css`، يُحمّل بعد `yk-theme.css` فيغلب عليه): `--yk-primary` ذهبي `#D4AF37` · أسود فاخر `--yk-black…` · خط **Tajawal** · شعارات PNG ذهبية.
+- **الأزرق احتياطي** (`wwwroot/yk-theme.css`): `#2563eb` أساسي + `#f97316` برتقالي — بقي كما هو للمكوّنات غير المحوّلة.
+- **الشعارات:** المستخدمة حالياً `images/yk-icon-gold.png` (favicon وترويسات الصفحات) + `yk-logo-gold.png`/`yk-logo-white.png` — و`yk-logo.svg`/`yk-icon.svg` لم تُحذف.
 - **الاسم المعروض:** واي كي كوتينج · YK Coatings — كودياً `YKCoatings`.

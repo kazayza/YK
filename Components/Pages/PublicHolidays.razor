@@ -55,7 +55,7 @@ else
         <!-- Stats Cards -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-icon stat-icon-total">🎉</div>
+                <div class="stat-icon stat-icon-total"></div>
                 <div class="stat-content">
                     <div class="stat-value">@holidays.Count</div>
                     <div class="stat-label">إجمالي العطلات</div>
@@ -182,7 +182,7 @@ else
                             <span class="day-number">@day.Date.Day</span>
                             @if (isHoliday)
                             {
-                                <span class="holiday-indicator" title="@GetHolidayName(day.Date)">🎉</span>
+                                <span class="holiday-indicator" title="@GetHolidayName(day.Date)"></span>
                             }
                         </div>
                     }
@@ -199,7 +199,7 @@ else
             else if (!filteredHolidays.Any())
             {
                 <div class="empty-state">
-                    <div class="empty-icon">🎉</div>
+                    <div class="empty-icon"></div>
                     <h4>لا توجد عطلات</h4>
                     <p>لا توجد عطلات مطابقة لمعايير البحث الحالية</p>
                 </div>

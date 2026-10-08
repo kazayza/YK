@@ -1,6 +1,43 @@
 # 🔄 السياق النشط (Active Context) — YKCoatings
 
-> آخر تحديث: 2026-09-19 (الجلسة 4 — إعادة تصميم التخطيط + البحث الشامل + تنقية الداشبورد)
+> آخر تحديث: 2026-10-07 (الجلسة 7 — إعادة تصميم شاشة قوائم الأسعار بالنمط الموحد + طريقة عرض ثانية · ثم الجلسة 6 سابقًا)
+
+## ✅ إنجازات الجلسة 7 — شاشة قوائم الأسعار بالتصميم الموحد (2026-10-07 — غير مُرسلة بعد)
+1. **إعادة كتابة `Components/Pages/PriceLists.razor` بالكامل** (510 → ~790 سطر) بنمط **Gold Luxury** الموحد: `luxury-page` + ترويسة `luxury-header-hybrid` (شعار ذهبي + خط ذهبي) + إحصائيات `stats-luxury` (4 كروت) + بحث `filter-luxury` مع فلترة بالنوع + حالات `loading/empty/no-access/toast-luxury` + 3 مودالات `modal-overlay-luxury` + مبدّل `view-toggle-luxury` في الترويسة.
+2. **طريقة عرض جديدة في نفس الشاشة:** `viewMode` = **0 بطاقات** (الطريقة الحالية بعد التطوير — كروت `plc-card` مع بادج افتراضي وشريط ذهبي عند Hover/التحديد) أو **1 جدول** (جديد — `table-luxury` بأعمدة: كود/اسم/نوع/عملة/خصم/أصناف/حالة/إجراءات مع أيقونات عرض-تعديل-حذف). لوحة أسعار الأصناف تظهر أسفل **كلا العرضين**.
+3. **صفر إيموجي نهائياً:** كل الأيقونات SVG inline (في الترويسة/الإحصائيات/البطاقات/الجدول/الحوارات/التوست/رسائل النجاح) — حتى رموز `✅` في رسائل `resultMessage` أُبدلت بنص عربي + أيقونة SVG (فحص برمجي: 0 إيموجي).
+4. **منطق محفوظ + تحسينات:** كل صلاحيات `SCR_PRICELISTS` (عرض/إضافة/تعديل/حذف) و `LookupService`/`PriceListService` كما هي · إضافة `filterType` + `viewMode` · `SelectPriceList` صار toggle (ضغط مرة ثانية يغلق) + زر `CloseDetails` · حذف `console.log` debug و `useFixedItemSelect` · مبدّل `IsActive`/`IsDefault` في نموذج القائمة (كان `IsDefault` مفقوداً).
+5. **أخطاء إصلاحية أثناء البناء:** الخاصية الحقيقية `ItemNameAr`/`ItemCode` (كانت `ItemName`) · `ArabicSearchHelper` يوفّر `Contains` فقط (لا `Filter`) → بحث عبر `Where(...Contains...)`.
+6. **البناء:** نجح — **0 Error · 0 Warning** (المخرجات المؤقتة؛ تحذيرات المشروع القديمة موجودة أصلاً في صفحات أخرى). ملاحظة: تطبيق يعمل حالياً (PID 18204) يقفل `bin` → **يجب إعادة تشغيل التطبيق لرؤية الشاشة الجديدة**.
+7. **الملفات المتبقية من المهمة:** إرسال التغييرات (git) لم يُطلب بعد — الشاشة + بنك الذاكره غير مُرسلة.
+
+
+## 📍 أين نحن الآن (2026-10-07)
+- **Git:** `master` = `origin/master` @ **`d3565a5`** («Fix : Home» — 07/10 الساعة 21:50) — شجرة عمل نظيفة، لا تغييرات غير مُرسلة.
+- **الحجم:** 105 صفحة في `Components/Pages` (+ مكوّن `Components/SupplierEdit.razor`) · 51 ملف خدمة · 26 ملف DTO.
+- **الوحدات المنفذة:** أساسية · مشتريات · مخازن · تصنيع · موارد بشرية · **مبيعات (فواتير + أوامر)** · **خزينة (Gold Edition)** · **حسابات (Gold Edition Pro)**.
+- **المتبقي:** عروض أسعار · مرتجعات بيع · إقفال يومي · بطاقة تكلفة · QC · إضافة وحدات المبيعات/الخزينة/الحسابات للبحث الشامل · اختبار حي للشاشات الجديدة · توثيق سكيما قاعدة البيانات لوحدات جديدة.
+
+
+## ✅ إنجازات الجلسة 6 — المبيعات + الخزينة + الحسابات (commit `d3565a5` «Fix : Home» — 2026-10-07)
+1. **اكتمال وحدة المبيعات:** `SalesOrders.razor` + `SalesOrderEdit.razor` (`/sales-orders` + new/edit/view) + `SalesOrderService.cs` (810 سطر) + `Models/SalesOrderDtos.cs` (241) · وتطوير `SalesInvoiceService.cs` (+91). مبدأ الصفحة: «الفاتورة هي الأساس — أوامر البيع اختيارية».
+2. **وحدة الخزينة — Gold Edition:** `TreasuryService.cs` (1358 سطر) + `Models/TreasuryDtos.cs` (633 سطر) + 9 شاشات: خزائن وبنوك `/cash-boxes`+`/banks` · كشف خزينة `/cash-box-statement` · تحويلات نقدية `/cash-transfers` · حسابات بنكية `/bank-accounts` · سندات قبض `/receipt-vouchers` (+new/edit/view) · سندات صرف `/payment-vouchers` (+new/edit/view) · مصروفات `/expenses` (+new/edit) · شيكات `/cheques` · لوحة الخزينة `/treasury-dashboard` — مع «رصيد لحظي + قيد أوتوماتيك».
+3. **وحدة الحسابات — Gold Edition Pro:** `AccountingService.cs` (1132 سطر) + شاشات: شجرة حسابات `/chart-of-accounts` (عرضان: شجري/تفصيلي) · قيود يومية `/journal-entries` (+new/edit/view) · ميزان مراجعة `/trial-balance` · دفتر أستاذ `/account-ledger` · سنوات مالية `/fiscal-years` · مراكز تكلفة `/cost-centers`.
+4. **`Program.cs`:** تسجيل 4 خدمات Scoped جديدة: `SalesInvoiceService` · `SalesOrderService` · `TreasuryService` · `AccountingService`.
+5. **`Helpers/GoldIcons.cs`** (88 سطر): مكتبة أيقونات SVG stroke 1.5px بفئات `Manufacturing/Status/Action/UI` — مبدأ «بدون إيموجي إطلاقاً» + `GetByCode()` يحوّل لـ `NavMenuIcons`.
+6. **NavMenu.razor:** أيقونة `nm-sub-icon` ملوّنة (`--ic` من `GetModuleColor`) لكل عنصر ابن داخل المجموعة · +~25 كود في خريطة الألوان (حسابات/خزينة سماوي مزرق `#06b6d4`) · استبدال إيموجي 🔍 في نتيجة البحث بـ SVG.
+7. **`ModuleRouteHelper.cs`:** مسارات الخزينة/الحسابات مع أكواد بديلة لكل شاشة (`SCR_TB`/`SCR_TRIALBAL` · `SCR_LEDGER`/`SCR_ACCLEDGER`/`SCR_ACCOUNT_LEDGER` · `SCR_DAILYCLOSE => /daily-closing` …).
+8. **إعادة تصميم شاشات الإدارة** (تقليص كبير للأسطر + نمط Luxury): `Users` · `UserEdit` · `Roles` · `RoleEdit` · `Settings` · `AuditLog` · `LoginHistory` + لمسات في `Payroll`/`PayrollDetails`.
+9. **التحقق:** بناء ناجح وقت الالتزام (DLL ‏8.5MB محدّث في المستودع) · `master` = `origin/master` · شجرة نظيفة.
+
+## ✅ إنجازات الجلسة 5 — ثيم Gold + بداية المبيعات (commit `3b12f93` «Fix : Some Fixes» — 2026-09-21)
+1. **ثيم Gold & Black Premium:** ملف جديد `wwwroot/yk-theme-gold.css` (147 سطر) — الذهب `#D4AF37` صار `--yk-primary` بدل الأزرق + أسود فاخر (`--yk-black…`) + خط **Tajawal** (استيراد Google Fonts). يُحمّل في `App.razor` بعد `yk-theme.css` فيغلب عليه.
+2. **شعارات PNG جديدة:** `yk-logo-gold.png` · `yk-icon-gold.png` · `yk-logo-white.png` — favicon في `App.razor` = `images/yk-icon-gold.png` + تحميل **ApexCharts** (CDN).
+3. **بداية نظام المبيعات:** `SalesInvoices.razor` + `SalesInvoiceEdit.razor` (`/sales-invoices` + new/edit/view) + `SalesInvoiceService.cs` (884 سطر) + `Models/SalesInvoiceDtos.cs` (272 سطر).
+4. **`wwwroot/js/app.js` (+89 سطر):** `dashboardCharts` (ApexCharts ذهبية: شهرية/أرصدة/تنبيه/sparklines) + `getClientInfo` + `navigateTo`.
+5. **مكتبات أيقونات:** `Helpers/LucideIcons.cs` (86 سطر) + إعادة كتابة `NavMenuIcons.cs` (506 سطر).
+6. **تنظيف شامل:** حذف كل ملفات العمل المؤقتة من الجذر (`_bl*` · `_chk` · `_s1/_s2` · `_run*` …) ومخرجات `obj/Release` القديمة باسم البناء السابق.
+7. **إعادة هيكلة ~35 صفحة** إلى النمط الجديد (منها `Items` · `Customers` · `CustomerForm` · `PurchaseOrders(+Edit)` · `Dashboard` · `MainLayout` · `NavMenu`) + تطويرات في `DashboardService` (+137) و`DbService` (+36) وخدمات العملاء/الموردين/أوامر الشراء.
 
 ## ✅ إنجازات الجلسة 4
 1. **البحث الشامل أصبح بحث بيانات حقيقي** (كان يبحث في أسماء الشاشات فقط) — في `MainLayout.razor` + `DashboardService.GlobalSearchAsync`:
@@ -23,7 +60,7 @@
 8. **البناء:** نجح — 0 Error (تحذير CS0414 قديم في MainLayout غير مرتبط).
 
 ## ⚠️ ملاحظات الجلسة 4
-- **لا توجد خدمات مبيعات/حسابات في الكود بعد** (`SCR_QUOT/SCR_SO/SCR_SINV/SCR_SRET/SCR_RECV` مسارات محجوزة فقط) → لم تُضف للبحث الشامل لتجنّب تخمين أسماء جداول. تُضاف عند بناء الوحدة.
+- ~~**لا توجد خدمات مبيعات/حسابات في الكود بعد**~~ **عُدّل في الجلستين 5–6:** صار هناك فواتير وأوامر بيع + خزينة + حسابات فعلياً → **المطلوب:** إضافتها للبحث الشامل في `MainLayout`/`DashboardService.GlobalSearchAsync` بعد التأكد من أسماء جداولها. ما زال مسارات بلا صفحات: `SCR_QUOT` (عروض أسعار) · `SCR_SRET` (مرتجعات بيع) · `SCR_DAILYCLOSE` (إقفال يومي) · `SCR_COSTCARD` (بطاقة تكلفة) · `SCR_QC`.
 - البحث الشامل يظهر نتائج البيانات فقط عند تطابق الاسم/الكود (لا يظهر مجموعة فارغة).
 - `ScrollToPending` وباقي تحسينات الجلسة 3 سليمة ولم تُتأثر.
 
@@ -67,6 +104,10 @@
 > إذا فشل البناء بصمت → **احذف `obj/`** ثم أعد `dotnet restore` والبناء. مخلفات الاستعادة القديمة أخطر عدو لهذا المستودع.
 
 ## الخطوة التالية المقترحة
+- **اختبار حي** للشاشات الجديدة (خزينة/حسابات/أوامر بيع) على `http://localhost:5021` والتحقق من الصلاحيات (`SCR_COA/SCR_JV/SCR_TREASURY/SCR_SO/SCR_SINV`…).
+- **إضافة المبيعات/الخزينة/الحسابات للبحث الشامل** (الأنواع الجديدة في `GlobalSearchAsync` مع `PermissionService`).
+- **توثيق سكيما** جداول الوحدات الجديدة في `database/` (لا Migrations — خطر فقدان التعريف).
+- **توحيد فئات `luxury-*`**: `.luxury-page` معرّفة داخل `<style>` في **44 صفحة** — نقلها إلى `yk-theme-gold.css`.
 - المراجعة الأمنية: نقل كلمة مرور قاعدة البيانات من `appsettings.json` إلى user-secrets + تدويرها.
 - ترحيل الهاش من SHA-256 إلى PBKDF2 هجين.
 - Pagination SQL للقوائم الكبيرة (Items, StockMovements, AuditLog, LoginHistory).

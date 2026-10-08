@@ -185,3 +185,42 @@ D:\YK Coatings\YkWeb\bin\Debug\net8.0\_vout\Debug\net8.0\publish\YKCoatings.runt
 D:\YK Coatings\YkWeb\bin\Debug\net8.0\_vout\Debug\net8.0\YKCoatings.deps.json
 D:\YK Coatings\YkWeb\bin\Debug\net8.0\_vout\Debug\net8.0\YKCoatings.runtimeconfig.json
 D:\YK Coatings\YkWeb\bin\Debug\net8.0\_vout\Debug\net8.0\YKCoatings.staticwebassets.runtime.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\web.config
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\web.config
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\web.config
+C:\Users\Admin\AppData\Local\Temp\ykout\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\publish\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\publish\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\bin\Debug\net8.0\YKCoatings.staticwebassets.runtime.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\appsettings.Development.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\appsettings.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\appsettings.Production.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\publish\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\_vout\Debug\net8.0\YKCoatings.staticwebassets.runtime.json
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.staticwebassets.runtime.json
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.exe
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.deps.json
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.runtimeconfig.json
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.dll
+C:\Users\Admin\AppData\Local\Temp\ykout\YKCoatings.pdb
