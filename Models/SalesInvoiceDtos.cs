@@ -41,6 +41,7 @@ namespace YKCoatings.Models
         public string? CurrencyCode { get; set; }
         public int ItemCount { get; set; }
         public string? RejectionReason { get; set; }
+        public int? CreatedBy { get; set; }
         public DateTime CreatedDate { get; set; }
     }
 
@@ -247,6 +248,7 @@ namespace YKCoatings.Models
     {
         public int SalesOrderDetailID { get; set; }
         public int SalesOrderID { get; set; }
+        public int LineNumber { get; set; }
         public string? SONumber { get; set; }
 
         public int ItemID { get; set; }
@@ -261,10 +263,12 @@ namespace YKCoatings.Models
         public decimal DeliveredQty { get; set; }
         public decimal RemainingQty { get; set; }
         public decimal UnitPrice { get; set; }
+        public decimal DiscountPercent { get; set; }
 
         public string? BatchNumber { get; set; }
 
-        public bool IsSelected { get; set; } = true;
+        // اختيار صريح من المستخدم؛ لا تُفترض كمية فوترة أو كمية افتراضية من الأمر.
+        public bool IsSelected { get; set; }
         public decimal InvoiceQty { get; set; }
         public decimal InvoiceUnitPrice { get; set; }
         public decimal InvoiceTaxRate { get; set; } = 14;

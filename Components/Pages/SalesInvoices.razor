@@ -53,7 +53,7 @@ else
             <div class="add-dropdown-portal-luxury" dir="rtl">
                 <div class="ml-gold-line"></div>
                 <div class="portal-head"><span>اختر مصدر الفاتورة - الجداول الموجودة</span><button class="btn-close-x" @onclick="CloseAddMenu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
-                <div class="add-opt-luxury" @onclick="AddFromOrder"><span class="add-opt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div><div class="add-opt-title">من أمر بيع</div><div class="add-opt-desc">اختياري - من جدول SalesOrders 28 عمود الموجود</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                <div class="add-opt-luxury" @onclick="AddFromOrder"><span class="add-opt-icon" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span><div><div class="add-opt-title">من أمر بيع</div><div class="add-opt-desc">اختر أمراً معتمداً؛ ربط الرأس فقط دون استيراد السطور</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
                 <div class="add-opt-luxury" @onclick="AddDirect"><span class="add-opt-icon" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></span><div><div class="add-opt-title">فاتورة مباشرة - الأساس</div><div class="add-opt-desc">الأساس - مع/بدون ضريبة - نفس نظام المشتريات</div></div><svg class="opt-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
             </div>
             <div class="add-overlay-portal-luxury" @onclick="CloseAddMenu"></div>
@@ -81,7 +81,7 @@ else
 
         <div class="filter-luxury">
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم الفاتورة أو العميل..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
-            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">انتظار اعتماد</option><option value="3">معتمد</option><option value="4">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">انتظار اعتماد</option><option value="3">معتمد</option><option value="4">مدفوعة بالكامل</option><option value="5">متأخرة</option><option value="6">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><select @bind="filterPay" @bind:after="Filter"><option value="0">كل المدفوعات</option><option value="1">غير مدفوع</option><option value="2">مدفوع جزئياً</option><option value="3">مدفوع بالكامل</option><option value="4">متأخر</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterTax" @bind:after="Filter"><option value="0">كل الضرائب</option><option value="1">مع ضريبة</option><option value="2">بدون ضريبة</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
@@ -100,7 +100,7 @@ else
                         <tbody>
                             @{int n=0;}
                             @foreach (var inv in filtered){n++;
-                                <tr class="@(inv.InvoiceStatus==1?"row-draft":"") @(inv.PaymentStatus==4?"row-overdue":"")">
+                                <tr class="@(inv.InvoiceStatus==1?"row-draft":"") @(inv.IsOverdue?"row-overdue":"")">
                                     <td class="td-num">@n</td>
                                     <td><span class="doc-num-luxury" @onclick="() => ViewInvoice(inv.InvoiceID)">@inv.InvoiceNumber</span></td>
                                     <td class="td-muted">@inv.InvoiceDate.ToString("dd/MM/yyyy")</td>
@@ -113,9 +113,9 @@ else
                                     <td><span class="amount-luxury paid">@inv.PaidAmount.ToString("#,##0.00")</span></td>
                                     <td><span class="amount-luxury remaining">@inv.RemainingAmount.ToString("#,##0.00")</span></td>
                                     <td class="td-center"><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetPaymentStatusColor(inv.PaymentStatus)">@SalesInvoiceService.GetPaymentStatusName(inv.PaymentStatus)</span></td>
-                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetStatusColor(inv.InvoiceStatus)">@SalesInvoiceService.GetStatusName(inv.InvoiceStatus)</span></td>
+                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@SalesInvoiceService.GetStatusColor(inv.IsOverdue ? 5 : inv.InvoiceStatus)">@SalesInvoiceService.GetStatusName(inv.IsOverdue ? 5 : inv.InvoiceStatus)</span></td>
                                     <td class="td-center"><div class="actions-wrap-luxury">
-                                        @if (permissions.CanEdit && inv.InvoiceStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditInvoice(inv.InvoiceID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                        @if ((permissions.CanEdit || (permissions.CanAdd && inv.CreatedBy == UserSession.UserID)) && inv.InvoiceStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditInvoice(inv.InvoiceID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         else{<button class="act-btn view" title="عرض" @onclick="() => ViewInvoice(inv.InvoiceID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
                                         @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintInvoice(inv.InvoiceID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
                                         @if (permissions.CanApprove && inv.InvoiceStatus == 2){<button class="act-btn approve" title="اعتماد" @onclick="() => EditInvoice(inv.InvoiceID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
@@ -226,7 +226,7 @@ else
 
     private async Task LoadData()
     {
-        invoices = await InvoiceService.GetInvoicesListAsync();
+        invoices = await InvoiceService.GetInvoicesListAsync(UserSession.UserID);
         Filter();
     }
 
@@ -234,8 +234,8 @@ else
     {
         if (invoices == null) return;
         filtered = invoices.Where(i =>
-            (filterStatus == 0 || i.InvoiceStatus == filterStatus) &&
-            (filterPay == 0 || i.PaymentStatus == filterPay) &&
+            (filterStatus == 0 || (filterStatus == 5 ? i.IsOverdue : i.InvoiceStatus == filterStatus)) &&
+            (filterPay == 0 || (filterPay == 4 ? i.IsOverdue : i.PaymentStatus == filterPay)) &&
             (filterTax == 0 || (filterTax == 1 && i.IsTaxable) || (filterTax == 2 && !i.IsTaxable)) &&
             (string.IsNullOrEmpty(searchText) ||
              ArabicSearchHelper.Contains(i.InvoiceNumber, searchText) ||

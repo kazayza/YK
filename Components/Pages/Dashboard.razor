@@ -35,27 +35,27 @@ else
         @if (_loadError)
         {
             <div class="dash-error-bar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                 <span>تعذر تحميل بعض بيانات لوحة التحكم</span>
                 <button class="err-retry" @onclick="RefreshData" disabled="@_refreshing">إعادة المحاولة</button>
             </div>
         }
 
-        <!-- ===== HERO - LUXURY DARK GOLD + LOGO ===== -->
+        <!-- ===== HERO ===== -->
         <section class="dash-hero">
             <div class="hero-gold-line"></div>
             <div class="hero-bg-glow"></div>
-            <div class="hero-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="hero-bg-logo"><img src="/images/yk-icon-gold.png" alt="" aria-hidden="true" /></div>
             <div class="hero-content">
                 <div class="hero-greeting">
-                    <div class="hero-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK Coatings" class="hero-logo" /></div>
-                    <div class="hero-avatar">@GetInitials()</div>
+                    <div class="hero-logo-wrap"><img src="/images/yk-icon-gold.png" alt="" aria-hidden="true" class="hero-logo" /></div>
+                    <div class="hero-avatar" aria-hidden="true">@GetInitials()</div>
                     <div class="hero-text">
                         <h1 class="hero-title">@GetGreeting()، <span class="hero-name">@UserSession.FullName</span></h1>
                         <div class="hero-meta">
-                            <span class="hero-role-badge"><span class="role-dot"></span>@UserSession.RoleName</span>
+                            <span class="hero-role-badge"><span class="role-dot" aria-hidden="true"></span>@UserSession.RoleName</span>
                             <span class="hero-date">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
                                 @DateTime.Now.ToString("dddd dd MMMM yyyy", new System.Globalization.CultureInfo("ar-EG"))
                             </span>
                         </div>
@@ -64,37 +64,37 @@ else
                 <div class="hero-actions">
                     @if (pending != null && pending.TotalPending > 0 && CanViewPurchases)
                     {
-                        <button type="button" class="hero-pending" @onclick='@(() => ScrollToPending())' title="انتقل إلى طلبات الاعتماد">
-                            <span class="pending-pulse"></span>
+                        <button type="button" class="hero-pending" @onclick="ScrollToPending" title="انتقل إلى طلبات الاعتماد" aria-label="يوجد @pending.TotalPending طلب بانتظار اعتمادك">
+                            <span class="pending-pulse" aria-hidden="true"></span>
                             <span class="pending-number">@pending.TotalPending</span>
                             <div class="pending-info"><span class="pending-label">طلب بانتظار اعتمادك</span><span class="pending-hint">اضغط للعرض</span></div>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
                     }
                     <div class="hero-refresh">
-                        <button type="button" class="auto-refresh-toggle @(autoRefresh ? "on" : "")" @onclick="ToggleAutoRefresh" title="@(autoRefresh ? "إيقاف التحديث التلقائي (كل 5 دقائق)" : "تشغيل التحديث التلقائي كل 5 دقائق")">
-                            <span class="ar-dot"></span>تلقائي
+                        <button type="button" class="auto-refresh-toggle @(autoRefresh ? "on" : "")" @onclick="ToggleAutoRefresh" aria-pressed="@(autoRefresh ? "true" : "false")">
+                            <span class="ar-dot" aria-hidden="true"></span>تلقائي
                         </button>
-                        <span class="refresh-time" title="آخر تحديث للبيانات">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                        <span class="refresh-time" aria-live="polite">
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                             @_lastRefresh.ToString("hh:mm tt")
                         </span>
-                        <button class="refresh-btn" @onclick="RefreshData" disabled="@_refreshing" title="تحديث">
-                            @if (_refreshing){<div class="refresh-spinner"></div>}
-                            else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg>}
+                        <button class="refresh-btn" @onclick="RefreshData" disabled="@_refreshing" aria-label="تحديث البيانات">
+                            @if (_refreshing){<div class="refresh-spinner" aria-hidden="true"></div>}
+                            else{<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg>}
                         </button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ===== STATS COUNTERS - LUXURY DARK GOLD PROFESSIONAL + PERMISSION BASED ===== -->
+        <!-- ===== STATS ===== -->
         @if (stats != null)
         {
             <div class="stats-section">
                 <div class="stats-header">
                     <div class="stats-title-wrap">
-                        <div class="stats-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
+                        <div class="stats-title-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
                         <div><h2 class="stats-main-title">نظرة عامة</h2><p class="stats-sub">إحصائيات حسب صلاحياتك</p></div>
                     </div>
                     <span class="stats-user-badge">@UserSession.RoleName</span>
@@ -102,156 +102,168 @@ else
                 <div class="stats-grid">
                     @if (CanViewItems)
                     {
-                        <div class="stat-card luxury" style="--ac:#D4AF37;--ac-soft:rgba(212,175,55,.22);--ac-edge:rgba(212,175,55,.30)" @onclick='@(() => GoTo("SCR_ITEMS"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div><span class="stat-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+                        <div class="stat-card luxury" style="--ac:#D4AF37;--ac-soft:rgba(212,175,55,.22);--ac-edge:rgba(212,175,55,.30)" role="button" tabindex="0" @onclick='() => GoTo("SCR_ITEMS")' @onkeydown='e => HandleKeyDown(e, "SCR_ITEMS")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div><span class="stat-more"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
                             <div class="stat-val">@stats.TotalItems.ToString("#,##0")</div>
                             <div class="stat-lbl">إجمالي الأصناف</div>
-                            <div id="sparkItems" class="stat-spark"></div>
-                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewItems, deltas.PrevItems) ? "up" : "down")"><span class="trend-arrow">@(DashboardDeltasDto.IsUp(deltas.NewItems, deltas.PrevItems) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewItems, deltas.PrevItems) هذا الشهر</span><span class="stat-action">عرض الأصناف</span></div>
-                            <div class="stat-glow"></div>
+                            <div id="sparkItems" class="stat-spark" aria-hidden="true"></div>
+                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewItems, deltas.PrevItems) ? "up" : "down")"><span class="trend-arrow" aria-hidden="true">@(DashboardDeltasDto.IsUp(deltas.NewItems, deltas.PrevItems) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewItems, deltas.PrevItems) هذا الشهر</span><span class="stat-action">عرض الأصناف</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                     @if (CanViewSuppliers)
                     {
-                        <div class="stat-card luxury" style="--ac:#0ea5e9;--ac-soft:rgba(14,165,233,.24);--ac-edge:rgba(14,165,233,.32)" @onclick='@(() => GoTo("SCR_SUPPLIERS"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 6v3h-7V8Z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div><span class="stat-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+                        <div class="stat-card luxury" style="--ac:#0ea5e9;--ac-soft:rgba(14,165,233,.24);--ac-edge:rgba(14,165,233,.32)" role="button" tabindex="0" @onclick='() => GoTo("SCR_SUPPLIERS")' @onkeydown='e => HandleKeyDown(e, "SCR_SUPPLIERS")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 6v3h-7V8Z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div><span class="stat-more"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
                             <div class="stat-val">@stats.TotalSuppliers.ToString("#,##0")</div>
                             <div class="stat-lbl">الموردين</div>
-                            <div id="sparkSuppliers" class="stat-spark"></div>
-                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewSuppliers, deltas.PrevSuppliers) ? "up" : "down")"><span class="trend-arrow">@(DashboardDeltasDto.IsUp(deltas.NewSuppliers, deltas.PrevSuppliers) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewSuppliers, deltas.PrevSuppliers) هذا الشهر</span><span class="stat-action">عرض الموردين</span></div>
-                            <div class="stat-glow"></div>
+                            <div id="sparkSuppliers" class="stat-spark" aria-hidden="true"></div>
+                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewSuppliers, deltas.PrevSuppliers) ? "up" : "down")"><span class="trend-arrow" aria-hidden="true">@(DashboardDeltasDto.IsUp(deltas.NewSuppliers, deltas.PrevSuppliers) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewSuppliers, deltas.PrevSuppliers) هذا الشهر</span><span class="stat-action">عرض الموردين</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                     @if (CanViewCustomers)
                     {
-                        <div class="stat-card luxury" style="--ac:#10b981;--ac-soft:rgba(16,185,129,.24);--ac-edge:rgba(16,185,129,.32)" @onclick='@(() => GoTo("SCR_CUSTOMERS"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><span class="stat-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+                        <div class="stat-card luxury" style="--ac:#10b981;--ac-soft:rgba(16,185,129,.24);--ac-edge:rgba(16,185,129,.32)" role="button" tabindex="0" @onclick='() => GoTo("SCR_CUSTOMERS")' @onkeydown='e => HandleKeyDown(e, "SCR_CUSTOMERS")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><span class="stat-more"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
                             <div class="stat-val">@stats.TotalCustomers.ToString("#,##0")</div>
                             <div class="stat-lbl">العملاء</div>
-                            <div id="sparkCustomers" class="stat-spark"></div>
-                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewCustomers, deltas.PrevCustomers) ? "up" : "down")"><span class="trend-arrow">@(DashboardDeltasDto.IsUp(deltas.NewCustomers, deltas.PrevCustomers) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewCustomers, deltas.PrevCustomers) هذا الشهر</span><span class="stat-action">عرض العملاء</span></div>
-                            <div class="stat-glow"></div>
+                            <div id="sparkCustomers" class="stat-spark" aria-hidden="true"></div>
+                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewCustomers, deltas.PrevCustomers) ? "up" : "down")"><span class="trend-arrow" aria-hidden="true">@(DashboardDeltasDto.IsUp(deltas.NewCustomers, deltas.PrevCustomers) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewCustomers, deltas.PrevCustomers) هذا الشهر</span><span class="stat-action">عرض العملاء</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                     @if (CanViewEmployees)
                     {
-                        <div class="stat-card luxury" style="--ac:#8b5cf6;--ac-soft:rgba(139,92,246,.24);--ac-edge:rgba(139,92,246,.32)" @onclick='@(() => GoTo("SCR_EMP"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11a3 3 0 0 0-3-3"/></svg></div><span class="stat-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+                        <div class="stat-card luxury" style="--ac:#8b5cf6;--ac-soft:rgba(139,92,246,.24);--ac-edge:rgba(139,92,246,.32)" role="button" tabindex="0" @onclick='() => GoTo("SCR_EMP")' @onkeydown='e => HandleKeyDown(e, "SCR_EMP")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11a3 3 0 0 0-3-3"/></svg></div><span class="stat-more"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
                             <div class="stat-val">@stats.TotalEmployees.ToString("#,##0")</div>
                             <div class="stat-lbl">الموظفين</div>
-                            <div id="sparkEmployees" class="stat-spark"></div>
-                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewEmployees, deltas.PrevEmployees) ? "up" : "down")"><span class="trend-arrow">@(DashboardDeltasDto.IsUp(deltas.NewEmployees, deltas.PrevEmployees) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewEmployees, deltas.PrevEmployees) هذا الشهر</span><span class="stat-action">عرض الموظفين</span></div>
-                            <div class="stat-glow"></div>
+                            <div id="sparkEmployees" class="stat-spark" aria-hidden="true"></div>
+                            <div class="stat-footer"><span class="stat-trend @(DashboardDeltasDto.IsUp(deltas.NewEmployees, deltas.PrevEmployees) ? "up" : "down")"><span class="trend-arrow" aria-hidden="true">@(DashboardDeltasDto.IsUp(deltas.NewEmployees, deltas.PrevEmployees) ? "▲" : "▼")</span>@DashboardDeltasDto.Percent(deltas.NewEmployees, deltas.PrevEmployees) هذا الشهر</span><span class="stat-action">عرض الموظفين</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                     @if (CanViewWarehouses)
                     {
-                        <div class="stat-card luxury" style="--ac:#f97316;--ac-soft:rgba(249,115,22,.24);--ac-edge:rgba(249,115,22,.32)" @onclick='@(() => GoTo("SCR_WAREHOUSES"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z"/><path d="M9 20V12h6v8"/></svg></div><span class="stat-more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
+                        <div class="stat-card luxury" style="--ac:#f97316;--ac-soft:rgba(249,115,22,.24);--ac-edge:rgba(249,115,22,.32)" role="button" tabindex="0" @onclick='() => GoTo("SCR_WAREHOUSES")' @onkeydown='e => HandleKeyDown(e, "SCR_WAREHOUSES")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z"/><path d="M9 20V12h6v8"/></svg></div><span class="stat-more"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>
                             <div class="stat-val">@stats.TotalWarehouses.ToString("#,##0")</div>
                             <div class="stat-lbl">المخازن</div>
-                            <div class="stat-footer"><span class="stat-trend"><span class="trend-dot"></span>مخزن نشط</span><span class="stat-action">عرض المخازن</span></div>
-                            <div class="stat-glow"></div>
+                            <div class="stat-footer"><span class="stat-trend"><span class="trend-dot" aria-hidden="true"></span>مخزن نشط</span><span class="stat-action">عرض المخازن</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                     @if (CanViewAudit)
                     {
-                        <div class="stat-card luxury" style="--ac:#06b6d4;--ac-soft:rgba(6,182,212,.24);--ac-edge:rgba(6,182,212,.32)" @onclick='@(() => GoTo("SCR_AUDIT"))'>
-                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><span class="stat-more live"><span class="live-dot"></span></span></div>
+                        <div class="stat-card luxury" style="--ac:#06b6d4;--ac-soft:rgba(6,182,212,.24);--ac-edge:rgba(6,182,212,.32)" role="button" tabindex="0" @onclick='() => GoTo("SCR_AUDIT")' @onkeydown='e => HandleKeyDown(e, "SCR_AUDIT")'>
+                            <div class="stat-card-top"><div class="stat-icon-wrap luxury"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><span class="stat-more live"><span class="live-dot" aria-hidden="true"></span></span></div>
                             <div class="stat-val">@stats.TodayAuditActions.ToString("#,##0")</div>
                             <div class="stat-lbl">عمليات اليوم</div>
-                            <div class="stat-footer"><span class="stat-trend"><span class="trend-dot live"></span>مباشر الآن</span><span class="stat-action">سجل العمليات</span></div>
-                            <div class="stat-glow"></div>
+                            <div class="stat-footer"><span class="stat-trend"><span class="trend-dot live" aria-hidden="true"></span>مباشر الآن</span><span class="stat-action">سجل العمليات</span></div>
+                            <div class="stat-glow" aria-hidden="true"></div>
                         </div>
                     }
                 </div>
                 @if (!HasAnyStatsPermission)
                 {
-                    <div class="no-perm-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>لا توجد إحصائيات متاحة حسب صلاحياتك الحالية - تواصل مع مدير النظام</span></div>
+                    <div class="no-perm-card"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>لا توجد إحصائيات متاحة حسب صلاحياتك الحالية</span></div>
                 }
             </div>
         }
 
-        <!-- ===== BALANCES LUXURY - SMALLER LIGHTER ===== -->
+        <!-- ===== BALANCES ===== -->
         @if (stats != null && CanViewFinance)
         {
             <div class="balances-row">
                 <div class="bal-card sup luxury-hover">
-                    <div class="bal-top"><span class="bal-label">رصيد الموردين</span><span class="bal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 6v3h-7V8Z"/></svg></span></div>
+                    <div class="bal-top"><span class="bal-label">رصيد الموردين</span><span class="bal-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 6v3h-7V8Z"/></svg></span></div>
                     <div class="bal-amount">@stats.SuppliersBalance.ToString("#,##0") <span>ج.م</span></div>
                     <div class="bal-bar"><span style="width:65%"></span></div>
                 </div>
                 <div class="bal-card cus luxury-hover">
-                    <div class="bal-top"><span class="bal-label">رصيد العملاء</span><span class="bal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span></div>
+                    <div class="bal-top"><span class="bal-label">رصيد العملاء</span><span class="bal-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span></div>
                     <div class="bal-amount">@stats.CustomersBalance.ToString("#,##0") <span>ج.م</span></div>
                     <div class="bal-bar"><span style="width:78%"></span></div>
                 </div>
                 <div class="bal-card stock luxury-hover">
-                    <div class="bal-top"><span class="bal-label">قيمة المخزون</span><span class="bal-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/></svg></span></div>
+                    <div class="bal-top"><span class="bal-label">قيمة المخزون</span><span class="bal-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/></svg></span></div>
                     <div class="bal-amount">@(invAlerts != null ? invAlerts.TotalStockValue.ToString("#,##0") : "0") <span>ج.م</span></div>
                     <div class="bal-bar"><span style="width:92%"></span></div>
                 </div>
             </div>
         }
 
-        <!-- ===== ADDITIONAL INSIGHTS ===== -->
+        <!-- ===== INSIGHTS ===== -->
         @if (CanViewStock && itemAlerts != null && itemAlerts.Any())
         {
             <div class="insights-row">
                 <div class="insight-card critical">
-                    <div class="insight-header"><div class="insight-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div><h3>أصناف حرجة</h3><p>@itemAlerts.Count أصناف تحتاج طلب شراء فوري</p></div><button class="insight-btn" @onclick='@(() => Navigation.NavigateTo("/purchase-requests"))'>إنشاء طلب</button></div>
-                    <div class="insight-list">@foreach(var it in itemAlerts.Take(4)){<div class="insight-item"><span class="ii-code">@it.ItemCode</span><span class="ii-name">@it.ItemNameAr</span><span class="ii-qty @(it.CurrentQty<=0?"danger":"warn")">@it.CurrentQty.ToString("#,##0")</span></div>}</div>
+                    <div class="insight-header">
+                        <div class="insight-icon red"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+                        <div><h3>أصناف حرجة</h3><p>@itemAlerts.Count أصناف تحتاج طلب شراء فوري</p></div>
+                        <button class="insight-btn" @onclick='() => Navigation.NavigateTo("/purchase-requests")'>إنشاء طلب</button>
+                    </div>
+                    <div class="insight-list">
+                        @foreach(var it in itemAlerts.Take(4))
+                        {
+                            <div class="insight-item">
+                                <span class="ii-code">@it.ItemCode</span>
+                                <span class="ii-name">@it.ItemNameAr</span>
+                                <span class="ii-qty @(it.CurrentQty<=0?"danger":"warn")">@it.CurrentQty.ToString("#,##0")</span>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         }
 
-        <!-- ===== PENDING APPROVALS LUXURY ===== -->
+        <!-- ===== PENDING ===== -->
         @if (pending != null && pending.TotalPending > 0 && CanViewPurchases)
         {
-            <section class="dash-section pending-section" id="pending">
+            <section class="dash-section pending-section" id="pending" @ref="pendingSectionRef">
                 <div class="section-header">
                     <div class="section-header-left">
-                        <div class="section-icon-wrap gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+                        <div class="section-icon-wrap gold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
                         <div><h2 class="section-title">بانتظار الاعتماد</h2><p class="section-sub">تحتاج مراجعتك الآن</p></div>
                     </div>
                     <span class="section-badge urgent">@pending.TotalPending طلب</span>
                 </div>
                 <div class="pending-grid">
-                    @if (pending.PendingPR > 0){<div class="pend-card" @onclick='@(() => GoTo("SCR_PR"))'><div class="pend-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"/><path d="M14 2v6h6"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingPR</div><div class="pend-label">طلب شراء</div></div><svg class="pend-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
-                    @if (pending.PendingPO > 0){<div class="pend-card" @onclick='@(() => GoTo("SCR_PO"))'><div class="pend-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingPO</div><div class="pend-label">أمر شراء</div></div><svg class="pend-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
-                    @if (pending.PendingGRN > 0){<div class="pend-card" @onclick='@(() => GoTo("SCR_GRN"))'><div class="pend-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingGRN</div><div class="pend-label">إذن استلام</div></div><svg class="pend-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
-                    @if (pending.PendingInvoice > 0){<div class="pend-card" @onclick='@(() => GoTo("SCR_PINV"))'><div class="pend-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingInvoice</div><div class="pend-label">فاتورة</div></div><svg class="pend-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
-                    @if (pending.PendingReturn > 0){<div class="pend-card" @onclick='@(() => GoTo("SCR_PRET"))'><div class="pend-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingReturn</div><div class="pend-label">مرتجع</div></div><svg class="pend-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
+                    @if (pending.PendingPR > 0){<div class="pend-card" role="button" tabindex="0" @onclick='() => GoTo("SCR_PR")' @onkeydown='e => HandleKeyDown(e, "SCR_PR")'><div class="pend-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"/><path d="M14 2v6h6"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingPR</div><div class="pend-label">طلب شراء</div></div><svg class="pend-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
+                    @if (pending.PendingPO > 0){<div class="pend-card" role="button" tabindex="0" @onclick='() => GoTo("SCR_PO")' @onkeydown='e => HandleKeyDown(e, "SCR_PO")'><div class="pend-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingPO</div><div class="pend-label">أمر شراء</div></div><svg class="pend-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
+                    @if (pending.PendingGRN > 0){<div class="pend-card" role="button" tabindex="0" @onclick='() => GoTo("SCR_GRN")' @onkeydown='e => HandleKeyDown(e, "SCR_GRN")'><div class="pend-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingGRN</div><div class="pend-label">إذن استلام</div></div><svg class="pend-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
+                    @if (pending.PendingInvoice > 0){<div class="pend-card" role="button" tabindex="0" @onclick='() => GoTo("SCR_PINV")' @onkeydown='e => HandleKeyDown(e, "SCR_PINV")'><div class="pend-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingInvoice</div><div class="pend-label">فاتورة</div></div><svg class="pend-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
+                    @if (pending.PendingReturn > 0){<div class="pend-card" role="button" tabindex="0" @onclick='() => GoTo("SCR_PRET")' @onkeydown='e => HandleKeyDown(e, "SCR_PRET")'><div class="pend-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg></div><div class="pend-info"><div class="pend-count">@pending.PendingReturn</div><div class="pend-label">مرتجع</div></div><svg class="pend-arrow" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></div>}
                 </div>
             </section>
         }
 
-        <!-- ===== CHARTS ROW - APEXCHARTS ===== -->
+        <!-- ===== CHARTS ===== -->
         <div class="charts-row">
             @if (CanViewPurchases)
             {
                 <section class="dash-card chart-card">
                     <div class="card-header">
                         <div class="section-header-left">
-                            <div class="section-icon-wrap gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
+                            <div class="section-icon-wrap gold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
                             <div><h3 class="card-title">المشتريات — آخر @chartMonths شهر</h3><p class="card-sub">تحليل المشتريات الشهرية</p></div>
                         </div>
                         <div class="chart-period-switch" role="group" aria-label="اختيار الفترة">
-                            <button type="button" class="period-btn @(chartMonths == 6 ? "active" : "")" @onclick='@(() => ChangeChartPeriod(6))'>6 شهور</button>
-                            <button type="button" class="period-btn @(chartMonths == 12 ? "active" : "")" @onclick='@(() => ChangeChartPeriod(12))'>12 شهر</button>
+                            <button type="button" class="period-btn @(chartMonths == 6 ? "active" : "")" @onclick='() => ChangeChartPeriod(6)'>6 شهور</button>
+                            <button type="button" class="period-btn @(chartMonths == 12 ? "active" : "")" @onclick='() => ChangeChartPeriod(12)'>12 شهر</button>
                         </div>
                     </div>
                     @if (chartData != null && chartData.Any())
                     {
-                        <div id="chartMonthly"></div>
+                        <div id="chartMonthly" role="img" aria-label="رسم بياني للمشتريات"></div>
                     }
                     else
                     {
                         <div class="chart-empty">
-                            <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
+                            <div class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
                             <span class="empty-title">لا توجد فواتير شراء بعد</span>
-                            <span>سجّل أول فاتورة شراء لعرض التحليل الشهري هنا</span>
-                            <button type="button" class="err-retry" style="background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E" @onclick='@(() => GoTo("SCR_PINV"))'>الذهاب إلى فواتير الشراء</button>
+                            <button type="button" class="err-retry" style="background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E" @onclick='() => GoTo("SCR_PINV")'>الذهاب إلى فواتير الشراء</button>
                         </div>
                     }
                 </section>
@@ -261,28 +273,28 @@ else
                 <section class="dash-card chart-card small">
                     <div class="card-header">
                         <div class="section-header-left">
-                            <div class="section-icon-wrap dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20Z"/></svg></div>
+                            <div class="section-icon-wrap dark"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20Z"/></svg></div>
                             <div><h3 class="card-title">توزيع الأرصدة</h3><p class="card-sub">الموردين / العملاء / المخزون</p></div>
                         </div>
                     </div>
-                    <div id="chartBalances"></div>
+                    <div id="chartBalances" role="img" aria-label="رسم بياني للأرصدة"></div>
                 </section>
             }
         </div>
 
-        <!-- ===== INVENTORY ALERTS ===== -->
+        <!-- ===== INVENTORY ALERTS CHART ===== -->
         <div class="charts-row single">
             @if (invAlerts != null && invAlerts.TotalAlerts > 0 && CanViewStock)
             {
                 <section class="dash-card chart-card small">
                     <div class="card-header">
                         <div class="section-header-left">
-                            <div class="section-icon-wrap red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+                            <div class="section-icon-wrap red"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
                             <div><h3 class="card-title">تنبيهات المخزون</h3><p class="card-sub">@invAlerts.TotalAlerts تنبيه يحتاج مراجعة</p></div>
                         </div>
                         <span class="section-badge danger">@invAlerts.TotalAlerts</span>
                     </div>
-                    <div id="chartAlerts"></div>
+                    <div id="chartAlerts" role="img" aria-label="رسم بياني لتنبيهات المخزون"></div>
                     <div class="alerts-mini-grid">
                         @if (invAlerts.OutOfStock > 0){<div class="alert-mini danger"><span>@invAlerts.OutOfStock</span><label>نفد</label></div>}
                         @if (invAlerts.BelowMinimum > 0){<div class="alert-mini warn"><span>@invAlerts.BelowMinimum</span><label>تحت الحد</label></div>}
@@ -297,10 +309,10 @@ else
                 <section class="dash-card">
                     <div class="card-header">
                         <div class="section-header-left">
-                            <div class="section-icon-wrap dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div>
+                            <div class="section-icon-wrap dark"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div>
                             <div><h3 class="card-title">المالية — فواتير غير مدفوعة</h3><p class="card-sub">المتابعة المالية</p></div>
                         </div>
-                        <button class="section-link" @onclick='@(() => GoTo("SCR_PINV"))'>عرض الكل <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+                        <button class="section-link" @onclick='() => GoTo("SCR_PINV")'>عرض الكل <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
                     </div>
                     <div class="fin-grid">
                         <div class="fin-item"><div class="fin-label">فواتير غير مدفوعة</div><div class="fin-count">@overdue.UnpaidInvoices</div><div class="fin-amount">@overdue.TotalUnpaidAmount.ToString("#,##0.00") <span>ج.م</span></div></div>
@@ -310,16 +322,16 @@ else
             }
         </div>
 
-        <!-- ===== ITEM ALERTS TABLE ===== -->
+        <!-- ===== TABLE ===== -->
         @if (itemAlerts != null && itemAlerts.Any() && CanViewStock)
         {
             <section class="dash-section">
                 <div class="section-header">
                     <div class="section-header-left">
-                        <div class="section-icon-wrap red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg></div>
+                        <div class="section-icon-wrap red"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg></div>
                         <div><h2 class="section-title">أصناف تحتاج مراجعة</h2><p class="section-sub">أهم 5 أصناف</p></div>
                     </div>
-                    <button class="section-link" @onclick='@(() => Navigation.NavigateTo("/stock-balances"))'>عرض الكل <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <button class="section-link" @onclick='() => Navigation.NavigateTo("/stock-balances")'>عرض الكل <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
                 </div>
                 <div class="tbl-wrap">
                     <table class="dash-tbl">
@@ -344,16 +356,16 @@ else
 
         <CurrentProductionWidget />
 
-        <!-- ===== RECENT ACTIVITIES LUXURY ===== -->
+        <!-- ===== ACTIVITIES ===== -->
         @if (recentActivities != null && recentActivities.Any())
         {
             <section class="dash-card">
                 <div class="card-header">
                     <div class="section-header-left">
-                        <div class="section-icon-wrap dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+                        <div class="section-icon-wrap dark"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
                         <div><h3 class="card-title">آخر العمليات</h3><p class="card-sub">التحديثات الأخيرة</p></div>
                     </div>
-                    <div class="live-badge"><span class="live-dot"></span>مباشر</div>
+                    <div class="live-badge"><span class="live-dot" aria-hidden="true"></span>مباشر</div>
                 </div>
                 <div class="activity-list">
                     @{ int ai = 0; }
@@ -361,8 +373,15 @@ else
                     {
                         ai++;
                         <div class="act-item @(ai==1?"first":"")">
-                            <div class="act-dot-wrap"><div class="act-dot"></div>@if (ai < recentActivities.Count){<div class="act-line"></div>}</div>
-                            <div class="act-body"><div class="act-desc">@act.Description</div><div class="act-meta"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>@act.Username</span><span>·</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>@act.AuditDate.ToString("hh:mm tt")</span></div></div>
+                            <div class="act-dot-wrap"><div class="act-dot" aria-hidden="true"></div>@if (ai < recentActivities.Count){<div class="act-line" aria-hidden="true"></div>}</div>
+                            <div class="act-body">
+                                <div class="act-desc">@act.Description</div>
+                                <div class="act-meta">
+                                    <span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>@act.Username</span>
+                                    <span aria-hidden="true">·</span>
+                                    <span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>@act.AuditDate.ToString("hh:mm tt")</span>
+                                </div>
+                            </div>
                         </div>
                     }
                 </div>
@@ -380,16 +399,14 @@ else
 @@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 @@keyframes spin{to{transform:rotate(360deg)}}
 .dash-alert{background:#fffbeb;color:#92400e;border:1px solid #fde68a;border-radius:var(--card-radius);padding:20px;font-weight:700;text-align:center}
-
-/* HERO LUXURY + LOGO */
-.dash-hero{background:linear-gradient(135deg,var(--black) 0%,var(--black2) 45%,var(--black3) 100%);border-radius:22px;padding:24px 28px;color:#fff;position:relative;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35),inset 0 1px 0 rgba(212,175,55,.1);border:1px solid var(--border-gold)}
+.dash-hero{background:linear-gradient(135deg,var(--black) 0%,var(--black2) 45%,var(--black3) 100%);border-radius:22px;padding:24px 28px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.25),inset 0 1px 0 rgba(212,175,55,.1);border:1px solid var(--border-gold)}
 .hero-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.9}
-.hero-bg-logo{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);opacity:.11;pointer-events:none;z-index:1}
-.hero-bg-logo img{width:270px;height:270px;object-fit:contain;filter:drop-shadow(0 0 34px rgba(212,175,55,.45))}
-.hero-bg-glow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:420px;height:420px;background:radial-gradient(circle,rgba(212,175,55,.16) 0%,transparent 68%);pointer-events:none;z-index:1}
+.hero-bg-logo{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);opacity:.06;pointer-events:none;z-index:1}
+.hero-bg-logo img{width:270px;height:270px;object-fit:contain;filter:drop-shadow(0 0 20px rgba(212,175,55,.3))}
+.hero-bg-glow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:420px;height:420px;background:radial-gradient(circle,rgba(212,175,55,.1) 0%,transparent 68%);pointer-events:none;z-index:1}
 .hero-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
 .hero-greeting{display:flex;align-items:center;gap:12px}
-.hero-logo-wrap{width:48px;height:48px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 12px rgba(212,175,55,.15)}
+.hero-logo-wrap{width:48px;height:48px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .hero-logo{width:32px;height:32px;object-fit:contain;filter:drop-shadow(0 0 8px rgba(212,175,55,.4))}
 .hero-avatar{width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1rem;color:var(--black2);box-shadow:0 4px 16px rgba(212,175,55,.35);border:1px solid rgba(212,175,55,.2);flex-shrink:0}
 .hero-title{font-size:1.25rem;font-weight:800;margin:0;line-height:1.3;color:#F5E6C8}
@@ -397,97 +414,76 @@ else
 .hero-meta{display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap}
 .hero-role-badge{display:flex;align-items:center;gap:6px;background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.18);padding:4px 12px;border-radius:999px;font-size:.76rem;font-weight:700}
 .role-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite;box-shadow:0 0 0 3px rgba(34,197,94,.15)}
-.hero-date{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#8B95A5;font-weight:600}
+.hero-date{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#9CA3AF;font-weight:600}
 .hero-date svg{width:14px;height:14px}
 .hero-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.hero-pending{display:flex;align-items:center;gap:12px;background:rgba(212,175,55,.08);border:1.5px solid rgba(212,175,55,.2);padding:12px 18px;border-radius:14px;cursor:pointer;transition:all .25s}
+.hero-pending{display:flex;align-items:center;gap:12px;background:rgba(212,175,55,.08);border:1.5px solid rgba(212,175,55,.2);padding:12px 18px;border-radius:14px;cursor:pointer;transition:all .25s;font-family:'Tajawal'}
 .hero-pending:hover{background:rgba(212,175,55,.14);transform:translateY(-2px);box-shadow:0 8px 20px rgba(212,175,55,.12)}
 .pending-pulse{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.18);animation:pulseRing 2s infinite}
 @@keyframes pulseRing{0%,100%{box-shadow:0 0 0 4px rgba(212,175,55,.18)}50%{box-shadow:0 0 0 8px rgba(212,175,55,.08)}}
 .pending-number{font-size:1.6rem;font-weight:900;color:var(--gold);line-height:1}
 .pending-info{display:flex;flex-direction:column;gap:2px}
 .pending-label{font-size:.84rem;font-weight:700;color:#F5E6C8}
-.pending-hint{font-size:.7rem;color:#8B95A5}
+.pending-hint{font-size:.7rem;color:#9CA3AF}
 .hero-pending svg{width:18px;height:18px;color:var(--gold)}
-.hero-refresh{display:flex;align-items:center;gap:8px;background:rgba(8,13,26,.28);border:1px solid rgba(212,175,55,.16);padding:6px 10px;border-radius:14px;position:relative;z-index:3;backdrop-filter:blur(9px) saturate(1.1);-webkit-backdrop-filter:blur(9px) saturate(1.1);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
-.refresh-time{display:flex;align-items:center;gap:5px;font-size:.68rem;color:#7C8798;font-weight:600;white-space:nowrap}
+.hero-refresh{display:flex;align-items:center;gap:8px;background:rgba(8,13,26,.28);border:1px solid rgba(212,175,55,.16);padding:6px 10px;border-radius:14px;backdrop-filter:blur(9px)}
+.refresh-time{display:flex;align-items:center;gap:5px;font-size:.68rem;color:#9CA3AF;font-weight:600;white-space:nowrap}
 .refresh-time svg{width:14px;height:14px}
 .refresh-btn{width:32px;height:32px;border-radius:8px;border:1px solid rgba(212,175,55,.15);background:rgba(255,255,255,.06);color:var(--gold);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .25s}
 .refresh-btn:hover:not(:disabled){background:rgba(212,175,55,.12);border-color:rgba(212,175,55,.3);transform:rotate(180deg)}
 .refresh-btn svg{width:16px;height:16px}
 .refresh-spinner{width:16px;height:16px;border:2px solid rgba(212,175,55,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite}
-
-/* ===== ANIMATION SYSTEM - REUSABLE FOR ALL SCREENS ===== */
-.dash-animate>*{animation:fadeUp .5s cubic-bezier(.4,0,.2,1) both}
-.dash-animate>*:nth-child(1){animation-delay:.05s} .dash-animate>*:nth-child(2){animation-delay:.1s} .dash-animate>*:nth-child(3){animation-delay:.15s}
-.dash-animate>*:nth-child(4){animation-delay:.2s} .dash-animate>*:nth-child(5){animation-delay:.25s} .dash-animate>*:nth-child(6){animation-delay:.3s}
-.dash-animate>*:nth-child(7){animation-delay:.35s} .dash-animate>*:nth-child(8){animation-delay:.4s}
-@@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
-.luxury-fade{animation:fadeUp .5s ease both}
-.luxury-hover{transition:all .3s cubic-bezier(.4,0,.2,1)}
-.luxury-hover:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.08)}
-
-/* STATS SECTION — DARK LUXURY (Gold on Black) */
 .stats-section{background:linear-gradient(140deg,#0B1020 0%,#121A2E 55%,#0A0F1E 100%);border:1px solid rgba(212,175,55,.22);border-radius:20px;padding:18px;box-shadow:0 10px 34px rgba(4,7,16,.35);position:relative;overflow:hidden}
 .stats-section::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.85}
-.stats-section::after{content:'';position:absolute;inset:0;background:radial-gradient(600px 200px at 85% 0%,rgba(212,175,55,.09),transparent 70%);pointer-events:none}
 .stats-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;position:relative;z-index:1}
 .stats-title-wrap{display:flex;align-items:center;gap:10px}
 .stats-title-icon{width:36px;height:36px;border-radius:10px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.28);display:flex;align-items:center;justify-content:center;color:var(--gold)}
 .stats-title-icon svg{width:16px;height:16px}
 .stats-main-title{font-size:.95rem;font-weight:900;color:#F5E6C8;margin:0}
-.stats-sub{font-size:.7rem;color:#8B95A5;font-weight:600;margin:1px 0 0}
+.stats-sub{font-size:.7rem;color:#9CA3AF;font-weight:600;margin:1px 0 0}
 .stats-user-badge{padding:4px 10px;background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.28);border-radius:999px;font-size:.68rem;font-weight:700;color:#E8D9A8}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;position:relative;z-index:1}
-.stat-card.luxury{background:linear-gradient(140deg,var(--ac-soft,rgba(255,255,255,.07)) 0%,transparent 62%),radial-gradient(150px 110px at 100% 0%,var(--ac-soft,transparent) 0%,transparent 72%),linear-gradient(140deg,#141D33 0%,#0A1020 100%);border:1px solid var(--ac-edge,rgba(212,175,55,.16));border-radius:14px;padding:12px 14px 10px;text-align:right;position:relative;overflow:hidden;transition:all .3s cubic-bezier(.4,0,.2,1);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.04)}
+.stat-card.luxury{background:linear-gradient(140deg,var(--ac-soft,rgba(255,255,255,.07)) 0%,transparent 62%),linear-gradient(140deg,#141D33 0%,#0A1020 100%);border:1px solid var(--ac-edge,rgba(212,175,55,.16));border-radius:14px;padding:12px 14px 10px;text-align:right;position:relative;overflow:hidden;transition:all .3s;cursor:pointer}
 .stat-card.luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--ac),transparent);opacity:.9}
-.stat-card.luxury:hover{transform:translateY(-4px) scale(1.01);box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px var(--ac-edge,rgba(212,175,55,.35));border-color:var(--ac)}
+.stat-card.luxury:hover,.stat-card.luxury:focus{transform:translateY(-4px) scale(1.01);box-shadow:0 14px 34px rgba(0,0,0,.45);border-color:var(--ac);outline:none}
 .stat-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .stat-icon-wrap.luxury{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,55,.2);display:flex;align-items:center;justify-content:center;color:var(--ac);transition:all .3s}
-.stat-card.luxury:hover .stat-icon-wrap.luxury{background:rgba(212,175,55,.18);transform:scale(1.08) rotate(2deg)}
+.stat-card.luxury:hover .stat-icon-wrap.luxury{background:rgba(212,175,55,.18);transform:scale(1.08)}
 .stat-icon-wrap.luxury svg{width:16px;height:16px}
-.stat-more{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.05);border:1px solid rgba(212,175,55,.16);display:flex;align-items:center;justify-content:center;color:#8B95A5;transition:all .3s}
+.stat-more{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.05);border:1px solid rgba(212,175,55,.16);display:flex;align-items:center;justify-content:center;color:#9CA3AF;transition:all .3s}
 .stat-more svg{width:10px;height:10px}
-.stat-card.luxury:hover .stat-more{background:var(--ac);color:#0A0F1E;border-color:var(--ac);transform:translateX(-3px)}
+.stat-card.luxury:hover .stat-more{background:var(--ac);color:#0A0F1E;transform:translateX(-3px)}
 .stat-more.live{border:none;background:transparent}
-.stat-card.luxury .stat-val{font-size:1.35rem;font-weight:900;color:#FFFFFF;line-height:1;letter-spacing:-.3px;text-shadow:0 2px 10px rgba(0,0,0,.4)}
+.stat-card.luxury .stat-val{font-size:1.35rem;font-weight:900;color:#FFFFFF;line-height:1}
 .stat-card.luxury .stat-lbl{font-size:.72rem;color:#A7B0C0;font-weight:700;margin-top:3px}
 .stat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}
 .stat-trend{display:flex;align-items:center;gap:3px;font-size:.64rem;color:#A7B0C0;font-weight:600}
 .stat-trend.up{color:#4ade80}.stat-trend.down{color:#f87171}
-.stat-trend .trend-dot{background:var(--ac)}
 .trend-dot{width:5px;height:5px;border-radius:50%;background:var(--ac)}.trend-dot.live{background:#22c55e;animation:pulse 2s infinite}
 .stat-action{font-size:.62rem;color:var(--gold);font-weight:700;opacity:0;transform:translateX(6px);transition:all .3s}
 .stat-card.luxury:hover .stat-action{opacity:1;transform:translateX(0)}
 .stat-glow{position:absolute;bottom:-20px;right:-20px;width:60px;height:60px;background:radial-gradient(circle,var(--ac) 0%,transparent 70%);opacity:.1;transition:opacity .3s;pointer-events:none}
 .stat-card.luxury:hover .stat-glow{opacity:.24}
-.no-perm-card{display:flex;align-items:center;gap:10px;padding:14px;background:#fcfaf6;border:1px dashed #e8e2d0;border-radius:12px;color:#8B95A5;font-size:.78rem;font-weight:600;justify-content:center}
-.no-perm-card svg{width:18px;height:18px;flex-shrink:0}
-
-/* BALANCES - SMALLER LIGHTER HOVER */
+.no-perm-card{display:flex;align-items:center;gap:10px;padding:14px;background:#fcfaf6;border:1px dashed #e8e2d0;border-radius:12px;color:#9CA3AF;font-size:.78rem;font-weight:600;justify-content:center}
 .balances-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.bal-card{background:linear-gradient(135deg,var(--black2) 0%,var(--black3) 100%);border-radius:14px;padding:14px 16px;color:#fff;position:relative;overflow:hidden;border:1px solid var(--border-gold);transition:all .3s;box-shadow:0 4px 16px rgba(0,0,0,.15)}
-.bal-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.4}
+.bal-card{background:linear-gradient(135deg,var(--black2) 0%,var(--black3) 100%);border-radius:14px;padding:14px 16px;color:#fff;position:relative;overflow:hidden;border:1px solid var(--border-gold);transition:all .3s}
 .bal-card.sup{--bar:#0ea5e9} .bal-card.cus{--bar:#10b981} .bal-card.stock{--bar:var(--gold)}
 .bal-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.bal-label{font-size:.76rem;color:#8B95A5;font-weight:600}
+.bal-label{font-size:.76rem;color:#9CA3AF;font-weight:600}
 .bal-icon{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold)}
 .bal-icon svg{width:14px;height:14px}
 .bal-amount{font-size:1.25rem;font-weight:900;color:#F5E6C8}.bal-amount span{font-size:.7rem;color:var(--gold);font-weight:700;margin-right:3px}
 .bal-bar{height:2px;background:rgba(255,255,255,.08);border-radius:99px;margin-top:10px;overflow:hidden}
 .bal-bar span{display:block;height:100%;background:var(--bar);border-radius:99px;transition:width 1s}
-
-/* INSIGHTS ROW - NEW */
 .insights-row{display:grid;grid-template-columns:1fr;gap:12px}
-.insight-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);position:relative;overflow:hidden}
-.insight-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:.6}
-.insight-card.critical::before{background:linear-gradient(90deg,transparent,#ef4444,transparent)}
+.insight-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:16px;position:relative;overflow:hidden}
+.insight-card.critical::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ef4444,transparent);opacity:.6}
 .insight-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .insight-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .insight-icon.red{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
 .insight-icon svg{width:18px;height:18px}
 .insight-header h3{font-size:.9rem;font-weight:800;color:#0A0F1E;margin:0}
-.insight-header p{font-size:.7rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
+.insight-header p{font-size:.7rem;color:#9CA3AF;font-weight:600;margin:2px 0 0}
 .insight-btn{margin-right:auto;padding:6px 12px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));border:none;border-radius:8px;font-family:'Tajawal';font-size:.72rem;font-weight:800;color:var(--black2);cursor:pointer}
 .insight-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px}
 .insight-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fcfaf6;border:1px solid #f1efe8;border-radius:8px}
@@ -496,9 +492,7 @@ else
 .ii-qty{font-size:.78rem;font-weight:900;padding:2px 8px;border-radius:6px}
 .ii-qty.danger{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
 .ii-qty.warn{background:#fffbeb;color:#d97706;border:1px solid #fde68a}
-
-/* SECTIONS */
-.dash-section{background:#fff;border:1px solid #e8e2d0;border-radius:var(--card-radius);padding:22px;box-shadow:0 2px 16px rgba(15,23,42,.05)}
+.dash-section{background:#fff;border:1px solid #e8e2d0;border-radius:var(--card-radius);padding:22px}
 .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px;flex-wrap:wrap}
 .section-header-left{display:flex;align-items:center;gap:12px}
 .section-icon-wrap{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -507,39 +501,33 @@ else
 .section-icon-wrap.red{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
 .section-icon-wrap svg{width:20px;height:20px}
 .section-title{font-size:.98rem;font-weight:800;color:#0A0F1E;margin:0}
-.section-sub{font-size:.76rem;color:#8B95A5;margin:3px 0 0;font-weight:600}
+.section-sub{font-size:.76rem;color:#9CA3AF;margin:3px 0 0;font-weight:600}
 .section-badge{padding:5px 14px;border-radius:999px;font-size:.76rem;font-weight:800}
 .section-badge.urgent{background:rgba(212,175,55,.12);color:var(--gold-dark);border:1px solid rgba(212,175,55,.2)}
 .section-badge.danger{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
 .section-link{display:flex;align-items:center;gap:6px;background:none;border:1px solid #e8e2d0;padding:6px 12px;border-radius:10px;font-family:'Tajawal';font-size:.78rem;font-weight:700;color:var(--gold-dark);cursor:pointer}
 .section-link:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}
 .section-link svg{width:14px;height:14px}
-
-/* PENDING LUXURY */
 .pending-section{border-right:3px solid var(--gold)}
 .pending-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
 .pend-card{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fcfaf6;border:1.5px solid #e8e2d0;border-radius:14px;cursor:pointer;transition:all .25s}
-.pend-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.06);border-color:var(--gold);background:#fff}
+.pend-card:hover,.pend-card:focus{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.06);border-color:var(--gold);background:#fff;outline:none}
 .pend-icon{width:40px;height:40px;border-radius:10px;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;color:var(--gold-dark);flex-shrink:0}
 .pend-icon svg{width:18px;height:18px}
 .pend-info{flex:1}
 .pend-count{font-size:1.3rem;font-weight:900;color:#0A0F1E;line-height:1}
-.pend-label{font-size:.74rem;color:#8B95A5;font-weight:600;margin-top:2px}
+.pend-label{font-size:.74rem;color:#9CA3AF;font-weight:600;margin-top:2px}
 .pend-arrow{width:16px;height:16px;color:#cbd5e1;flex-shrink:0;transition:all .2s}
 .pend-card:hover .pend-arrow{color:var(--gold);transform:translateX(-4px)}
-
-/* CHARTS */
 .charts-row{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
 .charts-row.single{grid-template-columns:1fr}
-.dash-card{background:#fff;border:1px solid #e8e2d0;border-radius:var(--card-radius);padding:22px;box-shadow:0 2px 16px rgba(15,23,42,.05)}
+.dash-card{background:#fff;border:1px solid #e8e2d0;border-radius:var(--card-radius);padding:22px}
 .card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f1efe8;flex-wrap:wrap}
 .card-title{font-weight:800;font-size:.95rem;color:#0A0F1E;margin:0}
-.card-sub{font-size:.74rem;color:#8B95A5;margin:3px 0 0;font-weight:600}
+.card-sub{font-size:.74rem;color:#9CA3AF;margin:3px 0 0;font-weight:600}
 .live-dot{width:7px;height:7px;border-radius:50%;background:#16a34a;animation:pulse 2s infinite}
 .chart-card{overflow:hidden}
 #chartMonthly,#chartBalances,#chartAlerts{width:100%;min-height:200px}
-
-/* ALERTS MINI */
 .alerts-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
 .alert-mini{text-align:center;padding:10px 6px;border-radius:10px;border:1px solid}
 .alert-mini.danger{background:#fef2f2;border-color:#fecaca;color:#dc2626}
@@ -547,39 +535,33 @@ else
 .alert-mini.orange{background:#fff7ed;border-color:#fed7aa;color:#ea580c}
 .alert-mini span{font-size:1.2rem;font-weight:900;display:block}
 .alert-mini label{font-size:.68rem;font-weight:700;margin-top:2px;display:block}
-
-/* FINANCE */
 .fin-grid{display:flex;gap:12px;flex-wrap:wrap}
 .fin-item{flex:1;min-width:130px;padding:14px;background:#fcfaf6;border:1px solid #e8e2d0;border-radius:12px;text-align:center}
 .fin-item.danger{background:#fef2f2;border-color:#fecaca}
-.fin-label{font-size:.74rem;color:#8B95A5;font-weight:700;margin-bottom:6px}
+.fin-label{font-size:.74rem;color:#9CA3AF;font-weight:700;margin-bottom:6px}
 .fin-count{font-size:1.4rem;font-weight:900;color:#0A0F1E;line-height:1}
 .fin-amount{font-size:.84rem;font-weight:700;color:#475569;margin-top:4px}
 .fin-amount span{font-size:.7rem;color:#94a3b8;margin-right:3px}
-
-/* TABLE */
 .tbl-wrap{overflow-x:auto;border:1px solid #e8e2d0;border-radius:12px}
 .dash-tbl{width:100%;border-collapse:collapse;min-width:600px}
 .dash-tbl thead{background:#fcfaf6}
-.dash-tbl th{padding:10px 12px;font-size:.76rem;font-weight:700;color:#8B95A5;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
+.dash-tbl th{padding:10px 12px;font-size:.76rem;font-weight:700;color:#9CA3AF;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
 .dash-tbl td{padding:10px 12px;font-size:.82rem;color:#334155;border-bottom:1px solid #f1efe8}
 .dash-tbl tbody tr:last-child td{border-bottom:none}
 .dash-tbl tbody tr:hover{background:#fcfaf6}
 .row-danger{background:#fef2f2 !important}
 .code-pill{background:#f1efe8;padding:2px 8px;border-radius:6px;font-size:.76rem;color:var(--gold-dark);font-weight:700}
 .td-bold{font-weight:700;color:#0A0F1E}
-.td-muted{color:#8B95A5}
+.td-muted{color:#9CA3AF}
 .td-num{font-weight:700}
 .tc{text-align:center}
 .text-danger{color:#dc2626 !important}
 .alert-pill{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.72rem;font-weight:700;background:color-mix(in srgb,var(--ac) 10%,white);color:var(--ac);border:1px solid color-mix(in srgb,var(--ac) 20%,white)}
-
-/* ACTIVITY LUXURY */
 .live-badge{display:flex;align-items:center;gap:6px;padding:6px 14px;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:999px;font-size:.76rem;font-weight:700}
 .activity-list{display:flex;flex-direction:column;padding-right:4px}
 .act-item{display:flex;gap:14px;padding:10px 0}
 .act-dot-wrap{display:flex;flex-direction:column;align-items:center;flex-shrink:0;padding-top:4px}
-.act-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;flex-shrink:0;transition:all .2s}
+.act-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;flex-shrink:0}
 .act-item.first .act-dot{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15);width:12px;height:12px}
 .act-line{width:2px;flex:1;background:#f1efe8;margin-top:4px;min-height:20px}
 .act-body{flex:1;padding-bottom:8px}
@@ -587,60 +569,40 @@ else
 .act-meta{display:flex;gap:8px;margin-top:4px;font-size:.72rem;color:#94a3b8;font-weight:600;flex-wrap:wrap;align-items:center}
 .act-meta svg{width:12px;height:12px}
 @@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.7}}
-
 @@media(max-width:1200px){.stats-grid{grid-template-columns:repeat(3,1fr)}.balances-row{grid-template-columns:repeat(2,1fr)}.charts-row{grid-template-columns:1fr}}
 @@media(max-width:768px){.dash{gap:14px}.dash-hero{padding:20px}.hero-content{flex-direction:column;align-items:flex-start}.hero-actions{width:100%}.hero-pending{width:100%}.hero-refresh{width:100%;justify-content:space-between}.hero-bg-logo{display:none}.stats-grid{grid-template-columns:repeat(2,1fr)}.balances-row{grid-template-columns:1fr}.pending-grid{grid-template-columns:repeat(2,1fr)}.chart-period-switch{width:100%}.charts-row{grid-template-columns:1fr}}
 @@media(max-width:480px){.dash-hero{padding:16px}.hero-title{font-size:1rem}.stats-grid{grid-template-columns:repeat(2,1fr)}.pending-grid{grid-template-columns:1fr}.balances-row{grid-template-columns:1fr}}
-
-/* SKELETON LOADING */
 .dash-skeleton{display:flex;flex-direction:column;gap:14px}
 .sk-row{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
 .sk-row .sk-chart{grid-column:span 3}
-.sk-hero{height:120px;border-radius:20px}
-.sk-card{height:150px;border-radius:14px}
-.sk-chart{height:280px;border-radius:16px}
+.sk-hero{height:120px;border-radius:20px;background:#f1efe8}
+.sk-card{height:150px;border-radius:14px;background:#f1efe8}
+.sk-chart{height:280px;border-radius:16px;background:#f1efe8}
 .sk-shimmer{background:linear-gradient(90deg,#f1efe8 25%,#faf9f5 50%,#f1efe8 75%);background-size:200% 100%;animation:skShimmer 1.3s infinite}
 @@keyframes skShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-
-/* ERROR BAR */
 .dash-error-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;color:#dc2626;font-size:.84rem;font-weight:700}
 .dash-error-bar svg{width:18px;height:18px;flex-shrink:0}
 .err-retry{margin-inline-start:auto;padding:6px 14px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-family:'Tajawal';font-weight:700;font-size:.78rem;cursor:pointer;transition:all .2s}
 .err-retry:hover{background:#b91c1c}
 .err-retry:disabled{opacity:.6;cursor:not-allowed}
-
-/* HERO PENDING BUTTON */
-button.hero-pending{font-family:'Tajawal';border:1px solid rgba(212,175,55,.25);cursor:pointer;transition:all .25s}
-button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(212,175,55,.18);border-color:var(--gold)}
-
-/* PERIOD SWITCH */
-.chart-period-switch{display:flex;gap:4px;background:#f8f7f4;border:1px solid #e8e2d0;border-radius:10px;padding:3px}
-.period-btn{padding:5px 12px;border:none;background:transparent;border-radius:8px;font-family:'Tajawal';font-size:.74rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .2s}
-.period-btn:hover{color:var(--gold-dark)}
-.period-btn.active{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E;box-shadow:0 2px 8px rgba(212,175,55,.3)}
-
-/* STAT SPARKLINE */
-.stat-spark{height:34px;margin:4px 0 2px;opacity:.85}
-.stat-spark .apexcharts-svg{overflow:visible}
-
-/* TREND DELTAS */
-.stat-trend.up{color:#16a34a}
-.stat-trend.down{color:#dc2626}
-.trend-arrow{font-size:.58rem}
-
-/* AUTO REFRESH TOGGLE */
-.auto-refresh-toggle{display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(212,175,55,.15);border-radius:10px;font-family:'Tajawal';font-size:.72rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s}
+.auto-refresh-toggle{display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,.05);border:1px solid rgba(212,175,55,.15);border-radius:10px;font-family:'Tajawal';font-size:.72rem;font-weight:700;color:#9CA3AF;cursor:pointer;transition:all .25s}
 .auto-refresh-toggle:hover{border-color:var(--gold);color:var(--gold)}
 .auto-refresh-toggle .ar-dot{width:6px;height:6px;border-radius:50%;background:#64748b;transition:all .25s}
 .auto-refresh-toggle.on{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.4);color:#22c55e}
 .auto-refresh-toggle.on .ar-dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2);animation:pulse 2s infinite}
-
-/* EMPTY STATE */
-.chart-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:48px 20px;color:#8B95A5;font-size:.82rem;font-weight:600;text-align:center}
-.chart-empty .empty-icon{width:56px;height:56px;border-radius:16px;background:rgba(212,175,55,.08);border:1px dashed rgba(212,175,55,.25);display:flex;align-items:center;justify-content:center;color:var(--gold)}
+.chart-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:48px 20px;color:#9CA3AF;font-size:.82rem;font-weight:600;text-align:center}
+.chart-empty .empty-icon{width:56px;height:56px;border-radius:16px;background:rgba(212,175,55,.08);border:1px dashed rgba(212,175,55,.25);display:flex;align-items:center;justify-content:center;color:var(--gold);margin-bottom:10px}
 .chart-empty .empty-icon svg{width:24px;height:24px}
 .chart-empty .empty-title{font-size:.9rem;font-weight:800;color:#0A0F1E}
-
+.chart-period-switch{display:flex;gap:4px;background:#f8f7f4;border:1px solid #e8e2d0;border-radius:10px;padding:3px}
+.period-btn{padding:5px 12px;border:none;background:transparent;border-radius:8px;font-family:'Tajawal';font-size:.74rem;font-weight:700;color:#9CA3AF;cursor:pointer;transition:all .2s}
+.period-btn:hover{color:var(--gold-dark)}
+.period-btn.active{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E;box-shadow:0 2px 8px rgba(212,175,55,.3)}
+.stat-spark{height:34px;margin:4px 0 2px;opacity:.85}
+.stat-trend.up{color:#16a34a}
+.stat-trend.down{color:#dc2626}
+.trend-arrow{font-size:.58rem}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 </style>
 
 @code {
@@ -653,43 +615,21 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
     private List<DashboardItemAlertDto>? itemAlerts;
     private List<MonthlyChartDto>? chartData;
     private DashboardDeltasDto deltas = new();
+    
     private bool _loaded = false;
     private bool _animateIn = false;
     private bool _refreshing = false;
     private bool _loadError = false;
     private int chartMonths = 6;
     private bool autoRefresh = false;
-    private System.Timers.Timer? _autoRefreshTimer;
     private DateTime _lastRefresh = DateTime.Now;
 
-    private void ToggleAutoRefresh()
-    {
-        autoRefresh = !autoRefresh;
-        if (autoRefresh)
-        {
-            _autoRefreshTimer = new System.Timers.Timer(300000); // 5 دقائق
-            _autoRefreshTimer.Elapsed += async (s, e) => await InvokeAsync(async () => { if (!_refreshing) await RefreshData(); });
-            _autoRefreshTimer.Start();
-        }
-        else
-        {
-            _autoRefreshTimer?.Stop();
-            _autoRefreshTimer?.Dispose();
-            _autoRefreshTimer = null;
-        }
-        StateHasChanged();
-    }
-
-    private bool CanViewPurchases => PermissionService.CanView("SCR_PR") || PermissionService.CanView("SCR_PO") || PermissionService.CanView("SCR_PINV");
-    private bool CanViewStock => PermissionService.CanView("SCR_STOCK") || PermissionService.CanView("SCR_WAREHOUSES");
-    private bool CanViewFinance => PermissionService.CanView("SCR_COA") || PermissionService.CanView("SCR_JV") || PermissionService.CanView("SCR_PINV");
-    private bool CanViewItems => PermissionService.CanView("SCR_ITEMS");
-    private bool CanViewSuppliers => PermissionService.CanView("SCR_SUPPLIERS");
-    private bool CanViewCustomers => PermissionService.CanView("SCR_CUSTOMERS");
-    private bool CanViewEmployees => PermissionService.CanView("SCR_EMP") || PermissionService.CanView("SCR_DEPARTMENTS");
-    private bool CanViewWarehouses => PermissionService.CanView("SCR_WAREHOUSES");
-    private bool CanViewAudit => PermissionService.CanView("SCR_AUDIT") || PermissionService.CanView("SCR_LOGINLOG") || true; // دائماً للجميع
-    private bool HasAnyStatsPermission => CanViewItems || CanViewSuppliers || CanViewCustomers || CanViewEmployees || CanViewWarehouses || CanViewAudit;
+    // ✅ Timer & Cancellation (إصلاح مشكلة تسرب الذاكرة)
+    private CancellationTokenSource? _cts;
+    private Task? _autoRefreshTask;
+    
+    // ✅ Element References (لإزالة eval)
+    private ElementReference pendingSectionRef;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -699,40 +639,98 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
             if (!UserSession.IsLoggedIn)
             {
                 var restored = await UserSession.TryRestoreSessionAsync();
-                if (!restored){Navigation.NavigateTo("/login");return;}
+                if (!restored) { Navigation.NavigateTo("/login"); return; }
             }
-            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            
+            if (!PermissionService.IsLoaded) 
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                
             await LoadAllData();
             _animateIn = true;
             StateHasChanged();
+            
             await Task.Delay(400);
             await RenderCharts();
             await RenderSparks();
         }
     }
 
+    // ✅ معالجة أخطاء ذكية: إذا فشل API واحد، لن يتوقف الباقي
     private async Task LoadAllData()
     {
+        _loadError = false;
         try
         {
             var t1 = DashboardService.GetStatsAsync();
             var t2 = DashboardService.GetRecentActivitiesAsync(8);
-            var t3 = CanViewPurchases ? DashboardService.GetPendingApprovalsAsync() : Task.FromResult<DashboardPendingDto?>(null)!;
-            var t4 = CanViewStock ? DashboardService.GetInventoryAlertsAsync() : Task.FromResult<DashboardInventoryAlertsDto?>(null)!;
-            var t5 = CanViewFinance ? DashboardService.GetOverdueInfoAsync() : Task.FromResult<DashboardOverdueDto?>(null)!;
-            var t6 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseStatsAsync() : Task.FromResult<DashboardPurchaseStatsDto?>(null)!;
-            var t7 = CanViewStock ? DashboardService.GetTopItemAlertsAsync(5) : Task.FromResult<List<DashboardItemAlertDto>?>(null)!;
-            var t8 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseChartAsync(chartMonths) : Task.FromResult<List<MonthlyChartDto>?>(null)!;
+            var t3 = CanViewPurchases ? DashboardService.GetPendingApprovalsAsync() : Task.FromResult<DashboardPendingDto?>(null);
+            var t4 = CanViewStock ? DashboardService.GetInventoryAlertsAsync() : Task.FromResult<DashboardInventoryAlertsDto?>(null);
+            var t5 = CanViewFinance ? DashboardService.GetOverdueInfoAsync() : Task.FromResult<DashboardOverdueDto?>(null);
+            var t6 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseStatsAsync() : Task.FromResult<DashboardPurchaseStatsDto?>(null);
+            var t7 = CanViewStock ? DashboardService.GetTopItemAlertsAsync(5) : Task.FromResult<List<DashboardItemAlertDto>?>(null);
+            var t8 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseChartAsync(chartMonths) : Task.FromResult<List<MonthlyChartDto>?>(null);
             var t9 = DashboardService.GetStatsDeltasAsync();
+
             await Task.WhenAll(t1, t2, t3, t4, t5, t6, t7, t8, t9);
-            stats = t1.Result; recentActivities = t2.Result; pending = t3.Result; invAlerts = t4.Result; overdue = t5.Result; purchaseStats = t6.Result; itemAlerts = t7.Result; chartData = t8.Result; deltas = t9.Result;
+
+            stats = t1.IsFaulted ? null : t1.Result;
+            recentActivities = t2.IsFaulted ? null : t2.Result;
+            pending = t3.IsFaulted ? null : t3.Result;
+            invAlerts = t4.IsFaulted ? null : t4.Result;
+            overdue = t5.IsFaulted ? null : t5.Result;
+            purchaseStats = t6.IsFaulted ? null : t6.Result;
+            itemAlerts = t7.IsFaulted ? null : t7.Result;
+            chartData = t8.IsFaulted ? null : t8.Result;
+            deltas = t9.IsFaulted ? new DashboardDeltasDto() : t9.Result;
+
+            if (t1.IsFaulted || t2.IsFaulted) _loadError = true;
             _lastRefresh = DateTime.Now;
-            _loadError = false;
         }
-        catch
+        catch (Exception)
         {
             _loadError = true;
         }
+    }
+
+    private async Task RefreshData()
+    {
+        if (_refreshing) return;
+        _refreshing = true; StateHasChanged();
+        await LoadAllData();
+        _refreshing = false; StateHasChanged();
+        await Task.Delay(200);
+        await RenderCharts();
+        await RenderSparks();
+    }
+
+    private async Task ToggleAutoRefresh()
+    {
+        autoRefresh = !autoRefresh;
+        if (autoRefresh)
+        {
+            _cts = new CancellationTokenSource();
+            _autoRefreshTask = RunAutoRefreshAsync(_cts.Token);
+        }
+        else
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task RunAutoRefreshAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!_refreshing) await RefreshData();
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task ChangeChartPeriod(int months)
@@ -779,14 +777,6 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
         catch { }
     }
 
-    private static string GetGreeting()
-    {
-        var h = DateTime.Now.Hour;
-        if (h >= 5 && h < 12) return "صباح الخير";
-        if (h >= 12 && h < 17) return "نهار سعيد";
-        return "مساء الخير";
-    }
-
     private async Task RenderCharts()
     {
         try
@@ -805,46 +795,75 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
             {
                 await JS.InvokeVoidAsync("dashboardCharts.renderAlerts", invAlerts.OutOfStock, invAlerts.BelowMinimum, invAlerts.NearExpiry, invAlerts.Expired);
             }
-        }catch{}
+        } catch { }
     }
 
-    private async Task RefreshData()
-    {
-        if (_refreshing) return;
-        _refreshing = true; StateHasChanged();
-        await LoadAllData();
-        _refreshing = false; StateHasChanged();
-        await Task.Delay(200);
-        await RenderCharts();
-        await RenderSparks();
-    }
-
+    // ✅ التمرير الآمن بدون eval
     private async Task ScrollToPending()
     {
-        try { await JS.InvokeVoidAsync("eval", "document.getElementById('pending')?.scrollIntoView({behavior:'smooth',block:'start'})"); }
+        try { await JS.InvokeVoidAsync("scrollToElement", pendingSectionRef); }
         catch { }
     }
 
-    private static readonly Dictionary<int, string> ArabicMonths = new(){{1,"يناير"},{2,"فبراير"},{3,"مارس"},{4,"أبريل"},{5,"مايو"},{6,"يونيو"},{7,"يوليو"},{8,"أغسطس"},{9,"سبتمبر"},{10,"أكتوبر"},{11,"نوفمبر"},{12,"ديسمبر"}};
+    // ✅ دعم لوحة المفاتيح للـ Accessibility
+    private void HandleKeyDown(KeyboardEventArgs e, string routeCode)
+    {
+        if (e.Key == "Enter" || e.Key == " ") GoTo(routeCode);
+    }
+
+    private static string GetGreeting()
+    {
+        var h = DateTime.Now.Hour;
+        if (h >= 5 && h < 12) return "صباح الخير";
+        if (h >= 12 && h < 17) return "نهار سعيد";
+        return "مساء الخير";
+    }
+
+    private static readonly Dictionary<int, string> ArabicMonths = new() {
+        {1,"يناير"},{2,"فبراير"},{3,"مارس"},{4,"أبريل"},{5,"مايو"},{6,"يونيو"},
+        {7,"يوليو"},{8,"أغسطس"},{9,"سبتمبر"},{10,"أكتوبر"},{11,"نوفمبر"},{12,"ديسمبر"}
+    };
+
     private string GetArabicMonthName(string? monthKey)
     {
         if (string.IsNullOrEmpty(monthKey)) return "—";
-        try{var parts=monthKey.Split('-'); if(parts.Length==2 && int.TryParse(parts[1], out int m)) return ArabicMonths.ContainsKey(m)?ArabicMonths[m]:monthKey;}catch{}
+        try {
+            var parts = monthKey.Split('-'); 
+            if (parts.Length == 2 && int.TryParse(parts[1], out int m)) 
+                return ArabicMonths.ContainsKey(m) ? ArabicMonths[m] : monthKey;
+        } catch { }
         return monthKey;
     }
+
     private void GoTo(string code) => Navigation.NavigateTo(ModuleRouteHelper.GetRoute(code));
+    
     private string GetInitials()
     {
         if (string.IsNullOrWhiteSpace(UserSession.FullName)) return "YK";
         var parts = UserSession.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length>=2?$"{parts[0][0]}{parts[1][0]}".ToUpper():parts[0][0].ToString().ToUpper();
+        return parts.Length >= 2 ? $"{parts[0][0]}{parts[1][0]}".ToUpper() : parts[0][0].ToString().ToUpper();
     }
-    private static string GetAlertColor(int level)=>level switch{0=>"#10b981",1=>"#f59e0b",2=>"#f97316",3=>"#ef4444",_=>"#6b7280"};
+
+    private static string GetAlertColor(int level) => level switch {
+        0 => "#10b981", 1 => "#f59e0b", 2 => "#f97316", 3 => "#ef4444", _ => "#6b7280"
+    };
+
+    private bool CanViewPurchases => PermissionService.CanView("SCR_PR") || PermissionService.CanView("SCR_PO") || PermissionService.CanView("SCR_PINV");
+    private bool CanViewStock => PermissionService.CanView("SCR_STOCK") || PermissionService.CanView("SCR_WAREHOUSES");
+    private bool CanViewFinance => PermissionService.CanView("SCR_COA") || PermissionService.CanView("SCR_JV") || PermissionService.CanView("SCR_PINV");
+    private bool CanViewItems => PermissionService.CanView("SCR_ITEMS");
+    private bool CanViewSuppliers => PermissionService.CanView("SCR_SUPPLIERS");
+    private bool CanViewCustomers => PermissionService.CanView("SCR_CUSTOMERS");
+    private bool CanViewEmployees => PermissionService.CanView("SCR_EMP") || PermissionService.CanView("SCR_DEPARTMENTS");
+    private bool CanViewWarehouses => PermissionService.CanView("SCR_WAREHOUSES");
+    private bool CanViewAudit => PermissionService.CanView("SCR_AUDIT") || PermissionService.CanView("SCR_LOGINLOG") || true; 
+    private bool HasAnyStatsPermission => CanViewItems || CanViewSuppliers || CanViewCustomers || CanViewEmployees || CanViewWarehouses || CanViewAudit;
 
     public void Dispose()
     {
-        _autoRefreshTimer?.Stop();
-        _autoRefreshTimer?.Dispose();
-        _autoRefreshTimer = null;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
     }
 }
+    

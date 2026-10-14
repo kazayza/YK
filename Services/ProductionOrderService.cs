@@ -8,12 +8,11 @@ namespace YKCoatings.Services
         private readonly AuditService _audit;
         private readonly NotificationService _notification;
         private sealed class ProductionOrderBomCalcDto
-{
-    public decimal BatchSize { get; set; }
-    public decimal OutputQty { get; set; }
-    public decimal LaborCostPerBatch { get; set; }
-    public decimal OverheadCostPerBatch { get; set; }
-}
+        {
+            public decimal OutputQty { get; set; }
+            public decimal LaborCostPerBatch { get; set; }
+            public decimal OverheadCostPerBatch { get; set; }
+        }
         public ProductionOrderService(
             IConfiguration configuration,
             AuditService audit,
@@ -182,7 +181,6 @@ WHERE ProductionOrderID = @OrderID";
                 // جلب بيانات الوصفة لحساب عدد الدفعات
                 var bomData = await connection.QueryFirstOrDefaultAsync<ProductionOrderBomCalcDto>(
     @"SELECT
-          ISNULL(BatchSize, 0) AS BatchSize,
           ISNULL(OutputQty, 0) AS OutputQty,
           ISNULL(LaborCostPerBatch, 0) AS LaborCostPerBatch,
           ISNULL(OverheadCostPerBatch, 0) AS OverheadCostPerBatch
@@ -190,8 +188,8 @@ WHERE ProductionOrderID = @OrderID";
       WHERE BOMID = @BOMID",
     new { order.BOMID }, transaction);
 
-decimal bomBatchSize = bomData?.BatchSize ?? 0m;
-decimal multiplier = bomBatchSize > 0 ? order.PlannedQty / bomBatchSize : 1m;
+decimal bomOutputQty = bomData?.OutputQty ?? 0m;
+decimal multiplier = bomOutputQty > 0 ? order.PlannedQty / bomOutputQty : 1m;
 
                 int numberOfBatches = order.NumberOfBatches > 0
                     ? order.NumberOfBatches
@@ -589,10 +587,12 @@ SELECT
     i.ItemNameAr AS ItemName,
     pom.UnitID,
     u.UnitNameAr AS UnitName,
-    pom.MaterialType,
-    CASE pom.MaterialType
-        WHEN 1 THEN N'مادة خام'
-        WHEN 2 THEN N'مادة تعبئة'
+    CASE WHEN pom.MaterialType = 1 AND i.ItemType = 4 THEN 3 ELSE pom.MaterialType END AS MaterialType,
+    CASE
+        WHEN pom.MaterialType = 1 AND i.ItemType = 4 THEN N'منتج تام'
+        WHEN pom.MaterialType = 1 THEN N'مادة خام'
+        WHEN pom.MaterialType = 2 THEN N'مادة تعبئة'
+        ELSE N'غير معروف'
     END AS MaterialTypeName,
     ISNULL(pom.RequiredQty, 0) AS RequiredQty,
     ISNULL(pom.IssuedQty, 0) AS IssuedQty,
@@ -630,12 +630,12 @@ ORDER BY pom.MaterialType, pom.LineNumber";
             int bomId,
             decimal plannedQty)
         {
-            // جلب حجم الدفعة من الوصفة
-            var batchSize = await connection.ExecuteScalarAsync<decimal>(
-                @"SELECT ISNULL(BatchSize, 1) FROM dbo.BillOfMaterials WHERE BOMID = @BOMID",
+            // PlannedQty is entered in the BOM output unit, so scale from the expected output quantity.
+            var outputQty = await connection.ExecuteScalarAsync<decimal>(
+                @"SELECT ISNULL(OutputQty, 0) FROM dbo.BillOfMaterials WHERE BOMID = @BOMID",
                 new { BOMID = bomId }, transaction);
 
-            decimal multiplier = batchSize > 0 ? plannedQty / batchSize : 1;
+            decimal multiplier = outputQty > 0 ? plannedQty / outputQty : 1;
 
             // حذف المواد القديمة
             await connection.ExecuteAsync(
@@ -898,8 +898,8 @@ SELECT @NextNum;";
                 var cell = ws.Cell(headerRow, i + 1);
                 cell.Value = headers[i];
                 cell.Style.Font.Bold = true;
-                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1d143f");
-                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#0A0F1E");
+                cell.Style.Font.FontColor = XLColor.FromHtml("#F5E6C8");
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             }
@@ -928,12 +928,12 @@ SELECT @NextNum;";
                 for (int i = 1; i <= 12; i++)
                 {
                     ws.Cell(row, i).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                    ws.Cell(row, i).Style.Border.OutsideBorderColor = XLColor.FromHtml("#e5e7eb");
+                    ws.Cell(row, i).Style.Border.OutsideBorderColor = XLColor.FromHtml("#e8e2d0");
                 }
 
                 if (num % 2 == 0)
                     ws.Range(row, 1, row, 12)
-                      .Style.Fill.BackgroundColor = XLColor.FromHtml("#f8f7ff");
+                      .Style.Fill.BackgroundColor = XLColor.FromHtml("#fcfaf6");
 
                 row++;
             }

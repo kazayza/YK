@@ -1,0 +1,633 @@
+@page "/sales-returns/new"
+@page "/sales-returns/edit/{ReturnId:int}"
+@page "/sales-returns/view/{ReturnId:int}"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesReturnService ReturnService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="access-state" dir="rtl"><div class="access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="access-state" dir="rtl"><div class="access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6m0-6 6 6"/></svg></div><h4>ليس لديك صلاحية عرض مرتجعات المبيعات</h4><button class="btn btn-secondary" @onclick="GoBack">رجوع</button></div>
+}
+else
+{
+    <main class="return-editor" dir="rtl">
+        <header class="editor-hero">
+            <div class="gold-rule"></div>
+            <div class="hero-watermark"><img src="/images/yk-icon-gold.png" alt="" /></div>
+            <div class="hero-line">
+                <div class="hero-heading">
+                    <button class="back-button" title="العودة للقائمة" @onclick="GoBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m0 0 7-7m-7 7 7 7"/></svg></button>
+                    <div class="brand-mark"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+                    <div>
+                        <h1>@pageTitle</h1>
+                        <div class="hero-meta">
+                            @if (ReturnId > 0 && !string.IsNullOrWhiteSpace(header.ReturnNumber))
+                            {
+                                <code class="doc-code">@header.ReturnNumber</code>
+                                <span class="status-chip" style="--status-color:@SalesReturnService.GetReturnStatusColor(header.ReturnStatus)">@SalesReturnService.GetReturnStatusName(header.ReturnStatus)</span>
+                            }
+                            <span class="source-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16h16V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>فاتورة معتمدة</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-tools">
+                    <div class="workflow-mini"><span class="done">عرض سعر</span><i></i><span class="done">أمر بيع</span><i></i><span class="done">فاتورة</span><i></i><span class="active">مرتجع</span></div>
+                    @if (ReturnId > 0 && permissions.CanPrint)
+                    {
+                        <button class="btn btn-secondary" @onclick="PrintReturn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>طباعة</button>
+                    }
+                </div>
+            </div>
+        </header>
+
+        @if (isLoading)
+        {
+            <section class="loading-card"><span class="spinner"></span><p>جاري تحميل بيانات المرتجع...</p></section>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(sourceWarning))
+            {
+                <section class="rejection-note"><span class="note-sign"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5m0 4h.01"/></svg></span><div><strong>تعذر التحقق من المصدر</strong><p>@sourceWarning</p></div></section>
+            }
+
+            @if (isApprovalMode)
+            {
+                <section class="approval-panel">
+                    <div class="approval-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+                    <div class="approval-copy"><strong>المرتجع بانتظار اعتمادك</strong><span>الاعتماد يحدّث رصيد العميل، ويعكس تكلفة FIFO للمقبول للمخزون، وينشئ قيداً محاسبياً متوازناً.</span></div>
+                    <div class="approval-actions"><button class="btn btn-approve" @onclick="ApproveReturn" disabled="@isSaving || invoiceContext == null || unsupportedDetails.Count > 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>@(isSaving ? "جارٍ الاعتماد..." : "اعتماد")</button><button class="btn btn-reject" @onclick="OpenRejectDialog" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m7 7 10 10M17 7 7 17"/></svg>رفض مع سبب</button></div>
+                </section>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(header.RejectionReason) && (header.ReturnStatus is 1 or 4))
+            {
+                <section class="rejection-note"><span class="note-sign"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5m0 4h.01"/></svg></span><div><strong>سبب الرفض السابق</strong><p>@header.RejectionReason</p></div></section>
+            }
+
+            @if (isNewMode)
+            {
+                <section class="panel invoice-source-panel">
+                    <div class="panel-title"><span class="section-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v18h16V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span><div><h2>الفاتورة الأصلية</h2><p>تظهر الفواتير المعتمدة ذات حركة FIFO أصلية فقط، وبعملة النظام ومن دون شحن أو تكاليف إضافية.</p></div></div>
+                    <div class="form-grid two-col">
+                        <div class="field"><label class="required">اختيار الفاتورة</label><SearchableSelect Items="@eligibleInvoices" @bind-SelectedId="selectedInvoiceId" OnSelected="OnInvoiceSelected" Placeholder="ابحث برقم الفاتورة أو العميل..." IsDisabled="@isSaving" /></div>
+                        @if (invoiceContext != null)
+                        {
+                            <div class="invoice-facts"><div><small>رقم الفاتورة</small><strong>@invoiceContext.InvoiceNumber</strong></div><div><small>تاريخ الفاتورة</small><strong>@invoiceContext.InvoiceDate.ToString("dd/MM/yyyy")</strong></div><div><small>العميل</small><strong>@invoiceContext.CustomerNameAr</strong></div><div><small>إجمالي الفاتورة</small><strong>@invoiceContext.TotalAmount.ToString("#,##0.00") ج.م</strong></div></div>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (invoiceContext != null || ReturnId > 0)
+            {
+                <section class="panel">
+                    <div class="panel-title"><span class="section-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h16M4 12h16M4 19h16"/><circle cx="8" cy="5" r="1"/><circle cx="14" cy="12" r="1"/></svg></span><div><h2>بيانات المرتجع</h2><p>كود نوع المرتجع محفوظ كما في المخطط؛ معناه التجاري غير موثق، لذلك لا نعرض تصنيفاً تخمينياً.</p></div></div>
+                    <div class="form-grid four-col">
+                        <div class="field"><label>رقم المرتجع</label><input class="readonly" value="@(string.IsNullOrWhiteSpace(header.ReturnNumber) ? "يُنشأ عند الحفظ" : header.ReturnNumber)" disabled /></div>
+                        <div class="field"><label class="required">تاريخ المرتجع</label><input type="date" @bind="header.ReturnDate" disabled="@isReadOnly" /></div>
+                        <div class="field"><label>العميل</label><input class="readonly" value="@(header.CustomerNameAr ?? invoiceContext?.CustomerNameAr ?? "—")" disabled /></div>
+                        <div class="field"><label class="required">مخزن الاستلام</label><select @bind="header.WarehouseID" disabled="@isReadOnly"><option value="0">اختر مخزناً نشطاً</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                        <div class="field span-four"><label>السبب العام</label><input @bind="header.ReturnReason" disabled="@isReadOnly" maxlength="500" placeholder="سبب الإرجاع أو رقم طلب العميل..." /></div>
+                    </div>
+                    <div class="field notes-field"><label>ملاحظات</label><textarea rows="2" @bind="header.Notes" disabled="@isReadOnly" placeholder="معلومات داخلية توضح حالة المرتجع أو طريقة المعالجة..."></textarea></div>
+                    <div class="policy-inline"><span class="policy-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg></span><span>يُنشأ إشعار دائن للعميل عند الاعتماد؛ لا يتضمن هذا المسار صرف نقدية. السليم فقط يعود إلى المخزون المتاح.</span></div>
+                </section>
+            }
+
+            @if (invoiceContext != null && invoiceLines.Count > 0)
+            {
+                <section class="panel lines-panel">
+                    <div class="panel-title lines-heading"><span class="section-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 7 9-4 9 4-9 5-9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></svg></span><div><h2>الأصناف والكميات</h2><p>حدد الصنف وأدخل الكمية الفعلية المستلمة. الأسعار والضريبة مأخوذة من الفاتورة ولا يمكن تحريرها.</p></div><span class="selected-count">@SelectedLineCount سطر مختار</span></div>
+                    <div class="table-scroll">
+                        <table class="line-table">
+                            <thead><tr><th class="center">اختيار</th><th>الصنف</th><th>الوحدة</th><th class="num">كمية الفاتورة</th><th class="num">مرتجع/محجوز سابقاً</th><th class="num">المتاح</th><th class="num">سعر المرتجع</th><th class="center">الكمية المرتجعة</th><th>حالة الصنف</th><th>سبب السطر</th></tr></thead>
+                            <tbody>
+                                @foreach (var line in invoiceLines)
+                                {
+                                    <tr class="@(line.IsSelected ? "selected-line" : "")">
+                                        <td class="center"><input type="checkbox" class="check" @bind="line.IsSelected" disabled="@isReadOnly" aria-label="اختيار @line.ItemNameAr" /></td>
+                                        <td><div class="item-name"><code>@(line.ItemCode ?? "—")</code><strong>@line.ItemNameAr</strong></div></td>
+                                        <td class="muted">@line.UnitName</td>
+                                        <td class="num">@line.InvoiceQuantity.ToString("#,##0.####")</td>
+                                        <td class="num">@line.PreviouslyReturnedQuantity.ToString("#,##0.####")</td>
+                                        <td class="num available">@line.RemainingReturnQuantity.ToString("#,##0.####")</td>
+                                        <td class="num">@line.EffectiveReturnUnitPrice.ToString("#,##0.00")</td>
+                                        <td class="center"><input class="qty-input" type="number" min="0" max="@line.RemainingReturnQuantity" step="0.0001" @bind="line.ReturnQuantity" disabled="@(!line.IsSelected || isReadOnly)" aria-label="الكمية المرتجعة" /></td>
+                                        <td><select class="condition-select" @bind="line.ItemCondition" disabled="@(!line.IsSelected || isReadOnly)"><option value="1">سليم</option><option value="2">تالف</option><option value="3">منتهي الصلاحية</option></select></td>
+                                        <td><input class="reason-input" @bind="line.ReturnReason" maxlength="200" disabled="@(!line.IsSelected || isReadOnly)" placeholder="اختياري" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stock-explainer"><span class="condition-dot good"></span><span>السليم يعاد للمخزون بتكلفة FIFO من حركة البيع الأصلية.</span><span class="condition-dot bad"></span><span>التالف والمنتهي لا يعادان للمخزون المتاح ولا يعكسان تكلفة المبيعات.</span></div>
+                </section>
+            }
+
+            @if (unsupportedDetails.Count > 0)
+            {
+                <section class="panel">
+                    <div class="panel-title"><span class="section-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg></span><div><h2>سطور محفوظة غير قابلة للربط التلقائي</h2><p>نعرض البيانات كما هي ولا نعيد تسعيرها أو ترحيلها من دون مرجع فاتورة صالح.</p></div></div>
+                    <div class="table-scroll"><table class="line-table"><thead><tr><th>الصنف</th><th>الوحدة</th><th class="num">الكمية</th><th class="num">سعر السطر</th><th class="num">الإجمالي</th><th>الحالة</th></tr></thead><tbody>
+                        @foreach (var detail in unsupportedDetails)
+                        {
+                            <tr><td>@detail.ItemNameAr</td><td>@detail.UnitName</td><td class="num">@detail.Quantity.ToString("#,##0.####")</td><td class="num">@detail.UnitPrice.ToString("#,##0.00")</td><td class="num">@detail.LineTotalWithTax.ToString("#,##0.00")</td><td>@SalesReturnService.GetConditionName(detail.ItemCondition)</td></tr>
+                        }
+                    </tbody></table></div>
+                </section>
+            }
+
+            @if (invoiceContext != null && invoiceLines.Count > 0)
+            {
+                <section class="totals-panel">
+                    <div class="total-item"><small>قبل الضريبة</small><strong>@previewSubtotal.ToString("#,##0.00")</strong></div>
+                    <div class="total-item"><small>الضريبة</small><strong>@previewTax.ToString("#,##0.00")</strong></div>
+                    <div class="total-item grand"><small>إجمالي الإشعار الدائن</small><strong>@previewTotal.ToString("#,##0.00") ج.م</strong></div>
+                </section>
+            }
+            else if (ReturnId > 0 && details.Count > 0)
+            {
+                <section class="totals-panel"><div class="total-item"><small>قبل الضريبة</small><strong>@header.SubTotal.ToString("#,##0.00")</strong></div><div class="total-item"><small>الضريبة</small><strong>@header.TaxAmount.ToString("#,##0.00")</strong></div><div class="total-item grand"><small>إجمالي الإشعار الدائن</small><strong>@header.TotalAmount.ToString("#,##0.00") ج.م</strong></div></section>
+            }
+
+            @if (!isViewMode && !isApprovalMode && canEditCurrent)
+            {
+                <footer class="form-actions">
+                    <div class="primary-actions">
+                        <button class="btn btn-primary" @onclick="SaveReturn" disabled="@isSaving || invoiceContext == null || unsupportedDetails.Count > 0">
+                            @if (isSaving) { <span class="spinner small dark"></span> }
+                            else { <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg> }
+                            @(isNewMode ? "حفظ كمسودة" : "حفظ التعديلات")
+                        </button>
+                        @if (ReturnId > 0 && header.ReturnStatus == 1 && SelectedLineCount > 0 && unsupportedDetails.Count == 0)
+                        {
+                            <button class="btn btn-submit" @onclick="SubmitForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></svg>إرسال للاعتماد</button>
+                        }
+                    </div>
+                    <button class="btn btn-secondary" @onclick="GoBack">إلغاء / رجوع</button>
+                </footer>
+            }
+
+            @if (isViewMode || (ReturnId > 0 && !canEditCurrent && !isApprovalMode))
+            {
+                <footer class="form-actions read-only-actions"><span>هذا المستند للعرض فقط.</span><button class="btn btn-secondary" @onclick="GoBack">رجوع للقائمة</button></footer>
+            }
+        }
+    </main>
+
+    @if (showRejectDialog)
+    {
+        <div class="modal-backdrop" @onclick="CloseRejectDialog">
+            <section class="modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="reject-title">
+                <div class="modal-rule danger"></div>
+                <div class="modal-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5m0 4h.01"/></svg></div>
+                <h3 id="reject-title">رفض مرتجع المبيعات</h3>
+                <p>سبب الرفض سيُحفظ في ملاحظات المستند ويُرسل لمنشئه. لا تتغير أرصدة المخزون أو العميل.</p>
+                <textarea class="reject-input" rows="4" maxlength="1000" @bind="rejectReason" placeholder="اكتب سبباً واضحاً للرفض"></textarea>
+                @if (!string.IsNullOrWhiteSpace(rejectError)) { <div class="error-box">@rejectError</div> }
+                <div class="modal-actions"><button class="btn btn-danger" @onclick="ConfirmReject" disabled="@isSaving">@(isSaving ? "جارٍ الحفظ..." : "تأكيد الرفض")</button><button class="btn btn-secondary" @onclick="CloseRejectDialog">إلغاء</button></div>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(toast))
+    {
+        <div class="toast-wrap"><div class="toast @(toastOk ? "success" : "error")"><span>@toast</span><button title="إغلاق الإشعار" @onclick="() => toast = string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></div>
+    }
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--ink:#070B14;--ink2:#0A0F1E;--line:#e8e2d0;--cream:#fcfaf6}
+.return-editor{max-width:1370px;margin:0 auto;display:flex;flex-direction:column;gap:15px;font-family:'Tajawal',sans-serif;color:#111827}.editor-hero{position:relative;overflow:hidden;border-radius:20px;padding:18px 22px;background:linear-gradient(135deg,var(--ink),var(--ink2) 55%,#121a2e);border:1px solid rgba(212,175,55,.2);box-shadow:0 8px 30px rgba(0,0,0,.2)}.gold-rule{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}.hero-watermark{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.hero-watermark img{width:95px;height:95px;object-fit:contain}.hero-line{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.hero-heading{display:flex;align-items:center;gap:10px}.back-button{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.07);color:#f5e6c8;cursor:pointer}.back-button svg{width:16px;height:16px}.brand-mark{width:42px;height:42px;border:1px solid rgba(212,175,55,.22);border-radius:12px;background:rgba(212,175,55,.08);display:grid;place-items:center}.brand-mark img{width:26px;height:26px;object-fit:contain}.hero-heading h1{margin:0;color:#f5e6c8;font-size:1.15rem;font-weight:900}.hero-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:5px}.doc-code{padding:4px 9px;border:1px solid rgba(212,175,55,.3);border-radius:7px;background:rgba(212,175,55,.12);color:var(--gold);font:700 .79rem ui-monospace,monospace}.status-chip{padding:4px 10px;border-radius:999px;color:var(--status-color);border:1px solid color-mix(in srgb,var(--status-color) 35%,transparent);background:color-mix(in srgb,var(--status-color) 17%,transparent);font-size:.68rem;font-weight:900}.source-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid rgba(255,255,255,.1);border-radius:999px;color:#aab4c2;background:rgba(255,255,255,.05);font-size:.68rem;font-weight:700}.source-chip svg{width:13px;height:13px;color:var(--gold)}.hero-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.workflow-mini{display:flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.05);font-size:.66rem;font-weight:800;color:#6f7b8c}.workflow-mini span.done{color:#10b981}.workflow-mini span.active{color:var(--gold)}.workflow-mini i{width:14px;height:1px;background:rgba(255,255,255,.19)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 14px;border:1px solid transparent;border-radius:10px;font:800 .79rem 'Tajawal',sans-serif;cursor:pointer;transition:transform .16s,box-shadow .16s,background .16s}.btn:hover:not(:disabled){transform:translateY(-1px)}.btn:disabled{opacity:.55;cursor:not-allowed}.btn svg{width:15px;height:15px}.btn-primary{color:#171307;background:linear-gradient(135deg,#e4c25d,var(--gold-dark));box-shadow:0 3px 12px rgba(212,175,55,.2)}.btn-secondary{color:#475569;background:#fff;border-color:var(--line)}.btn-secondary:hover{border-color:var(--gold);background:var(--cream)}.btn-submit{color:#fff;background:linear-gradient(135deg,#d97706,#f59e0b)}.btn-approve{color:#fff;background:linear-gradient(135deg,#059669,#10b981)}.btn-reject,.btn-danger{color:#fff;background:linear-gradient(135deg,#ef4444,#b91c1c)}
+.panel{position:relative;overflow:hidden;padding:20px 21px;border:1px solid var(--line);border-radius:17px;background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.03)}.invoice-source-panel{overflow:visible}.panel:before{position:absolute;content:'';top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6}.panel-title{display:flex;align-items:center;gap:10px;margin-bottom:17px;padding-bottom:13px;border-bottom:1px solid #f1efe8}.panel-title h2{margin:0;color:#111827;font-size:.94rem;font-weight:900}.panel-title p{margin:3px 0 0;color:#8993a2;font-size:.73rem;line-height:1.5}.section-icon{width:37px;height:37px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px}.section-icon svg{width:18px;height:18px}.section-icon.cyan{color:#0891b2;background:#ecfeff;border:1px solid #a5f3fc}.section-icon.gold{color:var(--gold-dark);background:#fcfaf2;border:1px solid #ead8a2}.section-icon.green{color:#059669;background:#ecfdf5;border:1px solid #a7f3d0}.form-grid{display:grid;gap:13px}.two-col{grid-template-columns:minmax(240px,1fr) minmax(420px,1.4fr);align-items:end}.four-col{grid-template-columns:repeat(4,minmax(0,1fr))}.field{display:flex;flex-direction:column;gap:6px}.field label{color:#475569;font-size:.75rem;font-weight:800}.required:after{content:' *';color:#dc2626}.field input,.field select,.field textarea,.reject-input{width:100%;min-height:39px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;outline:0;background:#fff;color:#1f2937;font:500 .8rem 'Tajawal',sans-serif;transition:border .16s,box-shadow .16s}.field textarea,.reject-input{resize:vertical;line-height:1.65}.field input:focus,.field select:focus,.field textarea:focus,.reject-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.09)}.field .readonly,.field input:disabled,.field select:disabled,.field textarea:disabled{background:#f8fafc;color:#64748b}.span-four{grid-column:span 4}.notes-field{margin-top:13px}.invoice-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--cream)}.invoice-facts>div{display:flex;flex-direction:column;gap:4px;min-width:0}.invoice-facts small{color:#8b95a5;font-size:.65rem;font-weight:700}.invoice-facts strong{color:#172033;font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.policy-inline{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 11px;border:1px solid rgba(212,175,55,.2);border-radius:9px;background:#fcfaf2;color:#74653c;font-size:.7rem;line-height:1.6}.policy-mark{width:21px;height:21px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:rgba(212,175,55,.12);color:var(--gold-dark)}.policy-mark svg{width:13px;height:13px}
+.lines-panel{padding-bottom:15px}.lines-heading{flex-wrap:wrap}.selected-count{margin-right:auto;padding:5px 9px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.68rem;font-weight:800}.table-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px}.line-table{width:100%;min-width:1140px;border-collapse:collapse}.line-table th{padding:10px 11px;background:#fcfaf6;border-bottom:1px solid var(--line);color:#64748b;font-size:.67rem;font-weight:900;text-align:right;white-space:nowrap}.line-table td{padding:9px 11px;border-bottom:1px solid #f1f2f4;color:#374151;font-size:.74rem;white-space:nowrap}.line-table tbody tr:last-child td{border-bottom:0}.line-table tbody tr:hover,.line-table tbody tr.selected-line{background:rgba(212,175,55,.035)}.center{text-align:center}.num{text-align:left;font-variant-numeric:tabular-nums}.muted{color:#94a3b8}.available{font-weight:900;color:#047857}.item-name{display:flex;align-items:center;gap:8px;min-width:200px}.item-name code{padding:2px 6px;border-radius:5px;background:#f1f5f9;color:#2563eb;font-size:.66rem}.item-name strong{color:#172033;font-size:.75rem}.check{width:15px;height:15px;accent-color:var(--gold-dark);cursor:pointer}.qty-input{width:88px;height:32px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;text-align:center;font:700 .75rem ui-monospace,monospace;outline:0}.qty-input:focus{border-color:var(--gold)}.qty-input:disabled{background:#f8fafc;color:#94a3b8}.condition-select{min-width:120px;height:32px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:#fff;color:#334155;font:700 .7rem 'Tajawal',sans-serif}.condition-select:disabled,.reason-input:disabled{background:#f8fafc;color:#94a3b8}.reason-input{width:130px;height:32px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;font:500 .7rem 'Tajawal',sans-serif;outline:0}.reason-input:focus{border-color:var(--gold)}.stock-explainer{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:11px;color:#7b8796;font-size:.68rem}.condition-dot{width:8px;height:8px;border-radius:50%;margin-right:6px}.condition-dot.good{background:#10b981}.condition-dot.bad{margin-right:11px;background:#ef4444}
+.totals-panel{display:flex;align-items:stretch;justify-content:flex-end;gap:12px;flex-wrap:wrap;padding:14px 18px;border:1px solid var(--line);border-radius:15px;background:#fff}.total-item{display:flex;min-width:120px;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px 14px}.total-item small{color:#8993a2;font-size:.68rem;font-weight:700}.total-item strong{color:#172033;font-size:1rem;font-variant-numeric:tabular-nums}.total-item.grand{min-width:220px;border:1px solid rgba(212,175,55,.2);border-radius:11px;background:linear-gradient(135deg,var(--ink),#131c30)}.total-item.grand small{color:#b5bdc9}.total-item.grand strong{color:var(--gold);font-size:1.1rem}
+.form-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 17px;border:1px solid var(--line);border-radius:14px;background:#fff}.primary-actions{display:flex;align-items:center;gap:9px}.read-only-actions{color:#8b95a5;font-size:.76rem}.spinner{width:34px;height:34px;border:3px solid #eee9dc;border-top-color:var(--gold);border-radius:50%;animation:spin .75s linear infinite}.spinner.small{width:14px;height:14px;border-width:2px}.spinner.dark{border-color:rgba(7,11,20,.2);border-top-color:#171307}
+.approval-panel{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 17px;border:1px solid #a7f3d0;border-radius:14px;background:linear-gradient(100deg,#f0fdf7,#fff)}.approval-icon{width:39px;height:39px;flex:0 0 auto;display:grid;place-items:center;border:1px solid #a7f3d0;border-radius:11px;background:#ecfdf5;color:#059669}.approval-icon svg{width:20px;height:20px}.approval-copy{display:flex;flex:1;min-width:230px;flex-direction:column;gap:3px}.approval-copy strong{color:#065f46;font-size:.83rem}.approval-copy span{color:#6b7280;font-size:.7rem;line-height:1.5}.approval-actions{display:flex;gap:8px;flex-wrap:wrap}.rejection-note{display:flex;gap:10px;padding:12px 14px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b}.note-sign{width:26px;height:26px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;background:#fff;border:1px solid #fecaca}.note-sign svg{width:17px;height:17px}.rejection-note strong{font-size:.75rem}.rejection-note p{margin:3px 0 0;font-size:.74rem;line-height:1.6}
+.access-state,.loading-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:58px 20px;border:1px solid var(--line);border-radius:17px;background:#fff;text-align:center;color:#64748b}.access-icon{width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(212,175,55,.2);border-radius:15px;background:rgba(212,175,55,.07);color:var(--gold-dark)}.access-icon svg{width:28px;height:28px}.access-state h4{margin:0 0 5px;color:#334155}.loading-card p{margin:3px 0 0;font-size:.8rem}.modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;background:rgba(7,11,20,.56);backdrop-filter:blur(5px)}.modal{position:relative;overflow:hidden;width:min(100%,460px);padding:26px 23px 19px;border:1px solid var(--line);border-radius:18px;background:#fff;text-align:center;box-shadow:0 22px 60px rgba(0,0,0,.22)}.modal-rule{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#ef4444,#b91c1c,transparent)}.modal-icon{width:53px;height:53px;margin:0 auto 11px;display:grid;place-items:center;border:1px solid #fecaca;border-radius:14px;background:#fef2f2;color:#dc2626}.modal-icon svg{width:28px;height:28px}.modal h3{margin:0 0 8px;color:#111827;font-size:1rem}.modal p{margin:0;color:#6b7280;font-size:.76rem;line-height:1.7}.reject-input{width:100%;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;outline:0;font:500 .8rem 'Tajawal',sans-serif;resize:vertical}.reject-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.error-box{margin-top:10px;padding:9px 11px;border:1px solid #fecaca;border-radius:9px;background:#fef2f2;color:#991b1b;font-size:.75rem;text-align:right}.modal-actions{display:flex;justify-content:center;gap:9px;margin-top:16px}.toast-wrap{position:fixed;left:20px;bottom:20px;z-index:1100}.toast{display:flex;align-items:center;gap:13px;min-width:280px;max-width:min(550px,calc(100vw - 40px));padding:12px 14px;border:1px solid;border-radius:12px;box-shadow:0 12px 34px rgba(15,23,42,.17);font-size:.8rem;font-weight:700}.toast.success{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}.toast.error{color:#991b1b;background:#fef2f2;border-color:#fecaca}.toast button{display:grid;place-items:center;margin-right:auto;padding:4px;border:0;background:transparent;color:inherit;cursor:pointer}.toast button svg{width:14px;height:14px}
+@@keyframes spin{to{transform:rotate(360deg)}}
+@@media(max-width:900px){.four-col{grid-template-columns:repeat(2,minmax(0,1fr))}.span-four{grid-column:span 2}.two-col{grid-template-columns:1fr}.invoice-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@@media(max-width:620px){.hero-line{align-items:flex-start;flex-direction:column}.workflow-mini{max-width:100%;overflow:auto}.four-col{grid-template-columns:1fr}.span-four{grid-column:span 1}.invoice-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{padding:16px 13px}.panel-title{align-items:flex-start}.selected-count{margin-right:0}.form-actions{align-items:stretch;flex-direction:column}.primary-actions{align-items:stretch;flex-direction:column}.primary-actions .btn,.form-actions>.btn{width:100%}.approval-actions{width:100%}.approval-actions .btn{flex:1}.totals-panel{align-items:stretch;flex-direction:column}.total-item{flex-direction:row;justify-content:space-between}.total-item.grand{flex-direction:row}.hero-tools{width:100%;justify-content:space-between}}
+</style>
+
+@code {
+    [Parameter] public int ReturnId { get; set; }
+
+    private SalesReturnHeaderDto header = new() { ReturnDate = DateTime.Today, ReturnType = 1, ReturnStatus = 1 };
+    private ModulePermissionDto? permissions;
+    private List<LookupDto>? warehouses;
+    private List<SearchableItem> eligibleInvoices = new();
+    private List<SalesReturnInvoiceLineDto> invoiceLines = new();
+    private List<SalesReturnDetailDto> details = new();
+    private SalesReturnInvoiceContextDto? invoiceContext;
+    private int selectedInvoiceId;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool showRejectDialog;
+    private string rejectReason = string.Empty;
+    private string rejectError = string.Empty;
+    private string toast = string.Empty;
+    private bool toastOk = true;
+    private string sourceWarning = string.Empty;
+
+    private List<SalesReturnDetailDto> unsupportedDetails => invoiceContext == null
+        ? (ReturnId > 0 ? details : new List<SalesReturnDetailDto>())
+        : details.Where(x => x.InvoiceDetailID <= 0 ||
+            !invoiceLines.Any(line => line.InvoiceDetailID == x.InvoiceDetailID) ||
+            details.Count(other => other.InvoiceDetailID == x.InvoiceDetailID) > 1).ToList();
+
+    private bool isNewMode => ReturnId == 0;
+    private bool isViewMode => Navigation.Uri.Contains("/view/", StringComparison.OrdinalIgnoreCase);
+    private bool isApprovalMode => !isNewMode && !isViewMode && header.ReturnStatus == 2 && permissions?.CanApprove == true;
+    private bool canEditCurrent => isNewMode
+        ? permissions?.CanAdd == true
+        : (header.ReturnStatus is 1 or 4) &&
+          (permissions?.CanEdit == true || (permissions?.CanAdd == true && header.CreatedBy == UserSession.UserID));
+    private bool isReadOnly => isViewMode || (isNewMode ? permissions?.CanAdd != true : !canEditCurrent);
+    private string pageTitle => isNewMode ? "مرتجع مبيعات جديد" : isViewMode ? "عرض مرتجع مبيعات" : isApprovalMode ? "اعتماد مرتجع مبيعات" : "مرتجع مبيعات";
+    private int SelectedLineCount => invoiceLines.Count(x => x.IsSelected && x.ReturnQuantity > 0);
+
+    private decimal previewSubtotal => decimal.Round(
+        invoiceLines.Where(x => x.IsSelected && x.ReturnQuantity > 0)
+            .Sum(x => decimal.Round(x.EffectiveReturnUnitPrice * x.ReturnQuantity, 2, MidpointRounding.AwayFromZero)),
+        2, MidpointRounding.AwayFromZero);
+    private decimal previewTax => decimal.Round(
+        invoiceLines.Where(x => x.IsSelected && x.ReturnQuantity > 0 && x.InvoiceQuantity > 0)
+            .Sum(x => decimal.Round(x.OriginalTaxAmount * x.ReturnQuantity / x.InvoiceQuantity, 2, MidpointRounding.AwayFromZero)),
+        2, MidpointRounding.AwayFromZero);
+    private decimal previewTotal => decimal.Round(previewSubtotal + previewTax, 2, MidpointRounding.AwayFromZero);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!UserSession.IsLoggedIn)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_SRET");
+            if (permissions?.CanView != true) return;
+
+            warehouses = await LookupService.GetWarehousesAsync();
+            if (isNewMode)
+            {
+                if (permissions.CanAdd)
+                    eligibleInvoices = await ReturnService.GetEligibleInvoicesAsync(UserSession.CurrentUserID);
+            }
+            else
+            {
+                await LoadReturnAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر تحميل البيانات: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadReturnAsync()
+    {
+        sourceWarning = string.Empty;
+        var loaded = await ReturnService.GetReturnByIdAsync(ReturnId, UserSession.CurrentUserID);
+        if (loaded == null)
+        {
+            toast = "مرتجع المبيعات غير موجود.";
+            toastOk = false;
+            return;
+        }
+        header = loaded;
+        details = await ReturnService.GetReturnDetailsAsync(ReturnId, UserSession.CurrentUserID);
+        selectedInvoiceId = header.InvoiceID.GetValueOrDefault();
+        invoiceContext = null;
+        invoiceLines.Clear();
+        if (selectedInvoiceId <= 0)
+        {
+            sourceWarning = "المستند لا يرتبط بفاتورة أصلية؛ نعرض السطور المحفوظة للقراءة فقط ولا نسمح بترحيلها.";
+            return;
+        }
+
+        try
+        {
+            invoiceContext = await ReturnService.GetInvoiceContextAsync(selectedInvoiceId, UserSession.CurrentUserID);
+            invoiceLines = await ReturnService.GetInvoiceReturnLinesAsync(
+                selectedInvoiceId, UserSession.CurrentUserID, ReturnId);
+            ApplyCurrentDetailsToInvoiceLines();
+            if (unsupportedDetails.Count > 0)
+                sourceWarning = "يوجد سطر قديم غير قابل للربط الفريد بفاتورته الأصلية. نعرضه كما هو، ونمنع حفظ المسودة أو اعتمادها حتى لا تُفقد بياناته.";
+        }
+        catch (Exception ex)
+        {
+            invoiceContext = null;
+            invoiceLines.Clear();
+            sourceWarning = "تعذر إعادة بناء بيانات الفاتورة الأصلية؛ نعرض السطور المحفوظة فقط ولا نسمح بتعديلها أو اعتمادها. " + ex.Message;
+        }
+    }
+
+    private async Task OnInvoiceSelected(SearchableItem? item)
+    {
+        sourceWarning = string.Empty;
+        if (item == null || item.Id <= 0)
+        {
+            selectedInvoiceId = 0;
+            invoiceContext = null;
+            invoiceLines.Clear();
+            header.InvoiceID = null;
+            header.CustomerID = 0;
+            header.CustomerNameAr = null;
+            header.SalesRepID = null;
+            return;
+        }
+
+        isLoading = true;
+        try
+        {
+            selectedInvoiceId = item.Id;
+            header.InvoiceID = item.Id;
+            invoiceContext = await ReturnService.GetInvoiceContextAsync(item.Id, UserSession.CurrentUserID);
+            header.CustomerID = invoiceContext.CustomerID;
+            header.CustomerNameAr = invoiceContext.CustomerNameAr;
+            header.InvoiceNumber = invoiceContext.InvoiceNumber;
+            header.SalesRepID = invoiceContext.SalesRepID;
+            if (header.WarehouseID <= 0 && invoiceContext.WarehouseID.HasValue)
+                header.WarehouseID = invoiceContext.WarehouseID.Value;
+
+            invoiceLines = await ReturnService.GetInvoiceReturnLinesAsync(item.Id, UserSession.CurrentUserID);
+            foreach (var line in invoiceLines)
+            {
+                line.IsSelected = false;
+                line.ReturnQuantity = 0m;
+                line.ItemCondition = 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            invoiceContext = null;
+            invoiceLines.Clear();
+            toast = "تعذر تحميل أصناف الفاتورة: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyCurrentDetailsToInvoiceLines()
+    {
+        foreach (var line in invoiceLines)
+        {
+            var current = details.FirstOrDefault(x => x.InvoiceDetailID == line.InvoiceDetailID);
+            if (current == null) continue;
+            line.IsSelected = true;
+            line.ReturnQuantity = current.Quantity;
+            line.ItemCondition = current.ItemCondition;
+            line.ReturnReason = current.ReturnReason;
+        }
+    }
+
+    private SalesReturnSaveDto BuildSaveRequest()
+    {
+        var currentByInvoiceLine = details
+            .Where(x => x.InvoiceDetailID > 0)
+            .GroupBy(x => x.InvoiceDetailID)
+            .ToDictionary(x => x.Key, x => x.First());
+        return new SalesReturnSaveDto
+        {
+            ReturnID = ReturnId,
+            ReturnDate = header.ReturnDate,
+            ReturnType = header.ReturnType is >= 1 and <= 4 ? header.ReturnType : 1,
+            WarehouseID = header.WarehouseID,
+            ReturnReason = header.ReturnReason,
+            Notes = header.Notes,
+            Details = invoiceLines
+                .Where(x => x.IsSelected && x.ReturnQuantity > 0)
+                .Select(x =>
+                {
+                    currentByInvoiceLine.TryGetValue(x.InvoiceDetailID, out var current);
+                    return new SalesReturnDetailSaveDto
+                    {
+                        ReturnDetailID = current?.ReturnDetailID ?? 0,
+                        InvoiceDetailID = x.InvoiceDetailID,
+                        Quantity = x.ReturnQuantity,
+                        ItemCondition = x.ItemCondition,
+                        ReturnReason = x.ReturnReason,
+                        Notes = current?.Notes
+                    };
+                })
+                .ToList()
+        };
+    }
+
+    private async Task SaveReturn()
+    {
+        if (unsupportedDetails.Count > 0)
+        {
+            toast = "يوجد سطر قديم غير مرتبط بفاتورة؛ لا نحفظ فوقه حتى لا نفقده.";
+            toastOk = false;
+            return;
+        }
+        if (invoiceContext == null || selectedInvoiceId <= 0)
+        {
+            toast = "اختر فاتورة أصلية معتمدة أولاً.";
+            toastOk = false;
+            return;
+        }
+        if (header.WarehouseID <= 0)
+        {
+            toast = "اختر مخزن الاستلام.";
+            toastOk = false;
+            return;
+        }
+        if (SelectedLineCount == 0)
+        {
+            toast = "حدد صنفاً واحداً وأدخل كمية مرتجعة أكبر من صفر.";
+            toastOk = false;
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            var request = BuildSaveRequest();
+            if (isNewMode)
+            {
+                var newId = await ReturnService.CreateDraftAsync(
+                    selectedInvoiceId, request, UserSession.CurrentUserID);
+                ReturnId = newId;
+                await LoadReturnAsync();
+                toast = "تم إنشاء مسودة المرتجع.";
+                toastOk = true;
+                Navigation.NavigateTo($"/sales-returns/edit/{newId}", forceLoad: false);
+                return;
+            }
+
+            await ReturnService.SaveDraftAsync(request, UserSession.CurrentUserID);
+            await LoadReturnAsync();
+            toast = "تم حفظ تعديلات المسودة.";
+            toastOk = true;
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر حفظ المرتجع: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task SubmitForApproval()
+    {
+        if (unsupportedDetails.Count > 0)
+        {
+            toast = "يوجد سطر قديم غير مرتبط بفاتورة؛ لا يمكن إرساله للاعتماد.";
+            toastOk = false;
+            return;
+        }
+        if (ReturnId <= 0 || SelectedLineCount == 0)
+        {
+            toast = "احفظ المسودة وبها سطر واحد على الأقل قبل الإرسال.";
+            toastOk = false;
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            await ReturnService.SubmitForApprovalAsync(ReturnId, UserSession.CurrentUserID);
+            await LoadReturnAsync();
+            toast = "تم إرسال المرتجع للاعتماد وإشعار المعتمدين.";
+            toastOk = true;
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر إرسال المرتجع: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ApproveReturn()
+    {
+        if (invoiceContext == null || unsupportedDetails.Count > 0)
+        {
+            toast = "لا يمكن اعتماد مستند تعذر ربطه بالكامل بسطور الفاتورة الأصلية.";
+            toastOk = false;
+            return;
+        }
+        if (!await ConfirmActionAsync(
+                "اعتماد المرتجع؟\n\nسيُنشأ إشعار دائن للعميل دون رد نقدي آلي. تعاد الأصناف السليمة فقط للمخزون، وتُستعاد تكلفتها من حركات FIFO للفاتورة."))
+            return;
+
+        isSaving = true;
+        try
+        {
+            await ReturnService.ApproveAsync(
+                ReturnId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            await LoadReturnAsync();
+            toast = "تم اعتماد المرتجع وتحديث الأرصدة والقيد المحاسبي.";
+            toastOk = true;
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر اعتماد المرتجع: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task<bool> ConfirmActionAsync(string message)
+    {
+        try { return await JS.InvokeAsync<bool>("confirm", message); }
+        catch { return false; }
+    }
+
+    private void OpenRejectDialog()
+    {
+        rejectReason = string.Empty;
+        rejectError = string.Empty;
+        showRejectDialog = true;
+    }
+
+    private void CloseRejectDialog()
+    {
+        showRejectDialog = false;
+        rejectError = string.Empty;
+    }
+
+    private async Task ConfirmReject()
+    {
+        if (string.IsNullOrWhiteSpace(rejectReason))
+        {
+            rejectError = "أدخل سبب الرفض.";
+            return;
+        }
+
+        isSaving = true;
+        rejectError = string.Empty;
+        try
+        {
+            await ReturnService.RejectAsync(
+                ReturnId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            showRejectDialog = false;
+            await LoadReturnAsync();
+            toast = "تم رفض المرتجع وإشعار منشئه بالسبب.";
+            toastOk = true;
+        }
+        catch (Exception ex)
+        {
+            rejectError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task PrintReturn()
+    {
+        try
+        {
+            var html = await ReturnService.GenerateReturnHtmlAsync(ReturnId, UserSession.CurrentUserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذرت الطباعة: " + ex.Message;
+            toastOk = false;
+        }
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/sales-returns");
+}

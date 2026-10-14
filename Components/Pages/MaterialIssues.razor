@@ -7,7 +7,7 @@
 @inject PermissionService PermissionService
 @inject IJSRuntime JS
 
-<PageTitle>أذون صرف الخامات - واي كي كوتينج</PageTitle>
+<PageTitle>أذون صرف مكونات التصنيع - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -28,14 +28,14 @@ else if (permissions is null || !Perms.CanView)
 }
 else
 {
-    <div class="mi-page">
+    <div class="mi-page yk-gold-page">
 
         <!-- Header -->
         <div class="page-header">
             <div class="header-content">
                 <h1 class="header-title">
                     <i class="bi bi-box-arrow-up-right"></i>
-                    أذون صرف الخامات
+                    أذون صرف مكونات التصنيع
                 </h1>
                 <p class="header-subtitle">Material Issue Orders</p>
             </div>
@@ -322,14 +322,14 @@ else
 
 <style>
     :root {
-        --c-primary: #4f46e5; --c-primary-lt: #eef2ff; --c-primary-dk: #3730a3;
+        --c-primary: #D4AF37; --c-primary-lt: rgba(212,175,55,.10); --c-primary-dk: #9C7C2E;
         --c-success: #10b981; --c-success-lt: #ecfdf5;
         --c-warning: #f59e0b; --c-warning-lt: #fffbeb;
         --c-danger: #ef4444;  --c-danger-lt: #fef2f2;
         --c-info: #0ea5e9;    --c-info-lt: #f0f9ff;
         --c-secondary: #64748b; --c-secondary-lt: #f1f5f9;
-        --c-indigo: #4f46e5;  --c-indigo-lt: #eef2ff;
-        --c-surface: #fff;    --c-bg: #f8fafc;
+        --c-indigo: #D4AF37;  --c-indigo-lt: rgba(212,175,55,.10);
+        --c-surface: #fff;    --c-bg: #f8f6f0;
         --c-border: #e2e8f0;  --c-text: #0f172a;
         --c-text-2: #64748b;  --c-text-3: #94a3b8;
         --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
@@ -355,10 +355,10 @@ else
     }
 
     .page-header {
-        background: linear-gradient(135deg, #4f46e5, #3730a3);
+        background: linear-gradient(135deg, #D4AF37, #9C7C2E);
         border-radius: var(--r-xl); padding: 1.75rem 2rem;
         display: flex; justify-content: space-between; align-items: center;
-        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        box-shadow: 0 8px 32px rgba(212,175,55,.25);
         position: relative; overflow: hidden; flex-wrap: wrap; gap: 1rem;
     }
     .page-header::before {
@@ -382,9 +382,9 @@ else
         padding: .6rem 1.25rem; font-size: .88rem; font-weight: 600;
         display: inline-flex; align-items: center; gap: .45rem;
         cursor: pointer; transition: all .2s;
-        box-shadow: 0 4px 12px rgba(79,70,229,.3); white-space: nowrap;
+        box-shadow: 0 4px 12px rgba(212,175,55,.3); white-space: nowrap;
     }
-    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.4); }
+    .btn-primary-modern:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(212,175,55,.4); }
     .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
     .btn-success-modern {
         background: linear-gradient(135deg, var(--c-success), #059669);
@@ -439,7 +439,7 @@ else
     }
     .filter-input:focus, .filter-select:focus {
         border-color: var(--c-primary); background: #fff;
-        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+        box-shadow: 0 0 0 3px rgba(212,175,55,.1);
     }
     .search-wrap { position: relative; }
     .search-ico { position: absolute; right: .85rem; top: 50%; transform: translateY(-50%); color: var(--c-text-3); pointer-events: none; }
@@ -466,7 +466,7 @@ else
     .table-scroll { overflow-x: auto; }
     .mi-table { width: 100%; border-collapse: collapse; }
     .mi-table thead th {
-        background: #f8fafc; padding: .85rem 1rem;
+        background: #f8f6f0; padding: .85rem 1rem;
         font-size: .76rem; font-weight: 700; color: var(--c-text-3);
         text-transform: uppercase; letter-spacing: .06em;
         border-bottom: 2px solid var(--c-border); white-space: nowrap; text-align: right;
@@ -685,7 +685,7 @@ else
 
     private string BuildPrintHtml(MaterialIssueEditDto issue, List<MaterialIssueDetailDto> details)
     {
-        var thStyle = "padding:11px 14px;text-align:right;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;font-size:13px;";
+        var thStyle = "padding:11px 14px;text-align:right;font-weight:700;color:#374151;border-bottom:2px solid #e8e2d0;font-size:13px;";
         var tdStyle = "padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;";
         var rows = new System.Text.StringBuilder();
         int n = 1;
@@ -693,8 +693,9 @@ else
         {
             rows.Append($@"<tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{n++}</td>
-                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{d.ItemCode}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{d.ItemCode}</td>
                 <td style='{tdStyle}font-weight:600;'>{d.ItemName}</td>
+                <td style='{tdStyle}text-align:center;'>{d.MaterialTypeName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{d.RequiredQty:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#10b981;font-weight:700;'>{d.IssueQty:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{d.UnitName}</td>
@@ -703,35 +704,35 @@ else
         }
         return $@"<!DOCTYPE html><html lang='ar' dir='rtl'><head><meta charset='UTF-8'>
 <title>إذن صرف - {issue.IssueNumber}</title>
-<style>*{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:'Segoe UI',sans-serif;direction:rtl;background:#fff;color:#1f2937;padding:30px;font-size:14px;line-height:1.6;}}.no-print{{}}@media print{{.no-print{{display:none!important;}}body{{padding:15px;}}}}</style>
+<style>*{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:'Tajawal','Segoe UI',sans-serif;direction:rtl;background:#fff;color:#0A0F1E;padding:30px;font-size:14px;line-height:1.6;}}.no-print{{}}@media print{{.no-print{{display:none!important;}}body{{padding:15px;}}}}</style>
 </head><body>
 <div class='no-print' style='margin-bottom:24px;display:flex;gap:10px;justify-content:flex-end;'>
-<button onclick='window.print()' style='background:#4f46e5;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>🖨️ طباعة</button>
+<button onclick='window.print()' style='background:#D4AF37;color:#0A0F1E;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>🖨️ طباعة</button>
 <button onclick='window.close()' style='background:#6b7280;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>✕ إغلاق</button>
 </div>
-<div style='text-align:center;border-bottom:3px solid #4f46e5;padding-bottom:20px;margin-bottom:28px;'>
+<div style='text-align:center;border-bottom:3px solid #D4AF37;padding-bottom:20px;margin-bottom:28px;'>
 <div style='font-size:2.2rem;margin-bottom:8px;'>📦</div>
-<h1 style='font-size:1.7rem;font-weight:800;color:#1f2937;margin:0;'>واي كي كوتينج ERP</h1>
-<p style='color:#6b7280;margin:6px 0 0;'>إذن صرف خامات (Material Issue)</p>
+<h1 style='font-size:1.7rem;font-weight:800;color:#0A0F1E;margin:0;'>واي كي كوتينج ERP</h1>
+<p style='color:#6b7280;margin:6px 0 0;'>إذن صرف مكونات التصنيع (Material Issue)</p>
 </div>
-<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;background:#f9fafb;padding:20px;border-radius:12px;margin-bottom:28px;border:1px solid #e5e7eb;'>
-<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>رقم الإذن:</span><span style='font-weight:800;color:#4f46e5;font-size:13px;'>{issue.IssueNumber}</span></div>
+<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;background:#fcfaf6;padding:20px;border-radius:12px;margin-bottom:28px;border:1px solid #e8e2d0;'>
+<div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>رقم الإذن:</span><span style='font-weight:800;color:#9C7C2E;font-size:13px;'>{issue.IssueNumber}</span></div>
 <div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>التاريخ:</span><span style='font-size:13px;'>{issue.IssueDate:dd/MM/yyyy}</span></div>
 <div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>أمر التصنيع:</span><span style='font-size:13px;'>{issue.OrderNumber}</span></div>
 <div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>المنتج:</span><span style='font-size:13px;'>{issue.ProductName}</span></div>
 <div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>المخزن:</span><span style='font-size:13px;'>{issue.WarehouseName}</span></div>
 <div style='display:flex;gap:10px;'><span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>عدد الأصناف:</span><span style='font-size:13px;'>{issue.TotalItems}</span></div>
 </div>
-<table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin-bottom:8px;'>
-<thead><tr style='background:#f8fafc;'>
-<th style='{thStyle}text-align:center;width:40px;'>#</th><th style='{thStyle}'>كود الصنف</th><th style='{thStyle}'>اسم الصنف</th>
+<table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+<thead><tr style='background:#f8f6f0;'>
+<th style='{thStyle}text-align:center;width:40px;'>#</th><th style='{thStyle}'>كود الصنف</th><th style='{thStyle}'>اسم الصنف</th><th style='{thStyle}text-align:center;'>النوع</th>
 <th style='{thStyle}text-align:center;'>المطلوب</th><th style='{thStyle}text-align:center;'>المصروف</th>
 <th style='{thStyle}text-align:center;'>الوحدة</th><th style='{thStyle}text-align:left;'>التكلفة (ج.م)</th>
 </tr></thead><tbody>{rows}</tbody>
-<tfoot><tr style='background:#f8fafc;'><td colspan='6' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>الإجمالي</td>
+<tfoot><tr style='background:#f8f6f0;'><td colspan='7' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>الإجمالي</td>
 <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>{issue.TotalCost:N2}</td></tr></tfoot>
 </table>
-<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e5e7eb;text-align:center;color:#94a3b8;font-size:12px;'>
+<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e8e2d0;text-align:center;color:#94a3b8;font-size:12px;'>
 <p>تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd - hh:mm tt}</p><p style='margin-top:4px;'>واي كي كوتينج ERP — نظام تخطيط موارد المؤسسات</p>
 </div></body></html>";
     }

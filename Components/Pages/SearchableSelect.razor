@@ -1,7 +1,7 @@
 ﻿@using YKCoatings.Services
 @using YKCoatings.Helpers
 
-<div class="ss-wrap" @onclick:stopPropagation="true">
+<div class="ss-wrap @(IsLuxury ? "ss-luxury" : "")" @onclick:stopPropagation="true">
     <div class="ss-input-wrap @(isOpen ? "focused" : "") @(IsDisabled ? "disabled" : "")">
         @if (hasSelection)
         {
@@ -9,7 +9,7 @@
                 <span class="ss-selected-text">@GetSelectedName()</span>
                 @if (!IsDisabled)
                 {
-                    <button class="ss-clear" @onclick="ClearSelection" type="button">✕</button>
+                    <button class="ss-clear" @onclick="ClearSelection" type="button" aria-label="مسح الاختيار"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
                 }
             </div>
         }
@@ -134,6 +134,7 @@
         transition: .2s;
     }
     .ss-clear:hover { background: #bfdbfe; }
+    .ss-clear svg { width: 12px; height: 12px; }
 
     .ss-dropdown {
         position: absolute;
@@ -196,6 +197,43 @@
         inset: 0;
         z-index: 400;
     }
+
+    .ss-wrap.ss-luxury .ss-input-wrap {
+        border-color: rgba(212,175,55,.32);
+        background: #171819;
+        color: #f5f1e8;
+    }
+    .ss-wrap.ss-luxury .ss-input-wrap.focused {
+        border-color: #d4af37;
+        box-shadow: 0 0 0 3px rgba(212,175,55,.13);
+    }
+    .ss-wrap.ss-luxury .ss-input { color: #f5f1e8; }
+    .ss-wrap.ss-luxury .ss-input::placeholder { color: #9b9689; }
+    .ss-wrap.ss-luxury .ss-search-icon { color: #d4af37; }
+    .ss-wrap.ss-luxury .ss-selected {
+        background: rgba(212,175,55,.1);
+        border-color: rgba(212,175,55,.28);
+    }
+    .ss-wrap.ss-luxury .ss-selected-text { color: #e5cf8a; }
+    .ss-wrap.ss-luxury .ss-clear {
+        background: rgba(212,175,55,.15);
+        color: #e5cf8a;
+    }
+    .ss-wrap.ss-luxury .ss-clear:hover { background: rgba(212,175,55,.25); }
+    .ss-wrap.ss-luxury .ss-dropdown {
+        background: #171819;
+        border-color: rgba(212,175,55,.3);
+        box-shadow: 0 14px 36px rgba(0,0,0,.38);
+    }
+    .ss-wrap.ss-luxury .ss-option { border-bottom-color: rgba(255,255,255,.06); }
+    .ss-wrap.ss-luxury .ss-option:hover { background: rgba(212,175,55,.1); }
+    .ss-wrap.ss-luxury .ss-opt-name { color: #f4f0e6; }
+    .ss-wrap.ss-luxury .ss-opt-code {
+        background: rgba(212,175,55,.12);
+        color: #e5cf8a;
+    }
+    .ss-wrap.ss-luxury .ss-empty,
+    .ss-wrap.ss-luxury .ss-more { color: #aaa391; }
 </style>
 
 @code {
@@ -205,6 +243,7 @@
     [Parameter] public EventCallback<SearchableItem?> OnSelected { get; set; }
     [Parameter] public string Placeholder { get; set; } = "ابحث واختر...";
     [Parameter] public bool IsDisabled { get; set; } = false;
+    [Parameter] public bool IsLuxury { get; set; } = false;
     [Parameter] public int MaxResults { get; set; } = 15;
     [Parameter] public int MinChars { get; set; } = 1;
 
@@ -212,6 +251,7 @@
     private bool isOpen = false;
     private SearchableItem? selectedItem;
     private List<SearchableItem> filteredItems = new();
+    private List<SearchableItem>? previousItems;
 
     private bool hasSelection => selectedItem is not null && selectedItem.Id > 0;
 
@@ -224,6 +264,9 @@
 
     protected override void OnParametersSet()
     {
+        var itemsChanged = !ReferenceEquals(previousItems, Items);
+        previousItems = Items;
+
         if (SelectedId > 0 && Items is not null)
         {
             var found = Items.FirstOrDefault(i => i.Id == SelectedId);
@@ -234,6 +277,9 @@
         {
             selectedItem = null;
         }
+
+        if (itemsChanged)
+            DoSearch();
     }
 
     private void Open()

@@ -1,0 +1,649 @@
+@page "/quotations/new"
+@page "/quotations/edit/{QuotationId:int}"
+@page "/quotations/view/{QuotationId:int}"
+
+@using System.Globalization
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesQuotationService QuotationService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="quotation-access" dir="rtl"><div class="quotation-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>يجب تسجيل الدخول أولاً</h3></div>
+}
+else if (permissions is null || !permissions.CanView || (isNewMode && !permissions.CanAdd))
+{
+    <div class="quotation-access" dir="rtl"><div class="quotation-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></div><h3>ليس لديك صلاحية لفتح هذه الشاشة</h3><button class="quotation-btn secondary" @onclick="GoBack">العودة لعروض الأسعار</button></div>
+}
+else
+{
+    <main class="quotation-edit-page" dir="rtl">
+        <header class="quotation-hero">
+            <div class="quotation-hero-top"></div>
+            <button class="quotation-back" @onclick="GoBack" aria-label="العودة لعروض الأسعار"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 12H5m7 7-7-7 7-7"/></svg><span>عروض الأسعار</span></button>
+            <div class="quotation-hero-body">
+                <div class="quotation-hero-symbol"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+                <div class="quotation-heading">
+                    
+                    <h1>@pageTitle</h1>
+                    <p>@(string.IsNullOrWhiteSpace(header.QuotationNumber) ? "أدخل بيانات العرض وأضف أصناف التسعير" : $"{header.QuotationNumber} · {header.CustomerNameAr ?? "لم يتم اختيار العميل"}")</p>
+                </div>
+                <div class="quotation-hero-actions">
+                    @if (header.QuotationID > 0)
+                    {
+                        <span class="quotation-status-pill" style="--q-status:@SalesQuotationService.GetStatusColor(header.QuotationStatus)"><i></i>@SalesQuotationService.GetStatusName(header.QuotationStatus)</span>
+                        @if (permissions.CanPrint)
+                        {
+                            <button class="quotation-btn header-quiet" @onclick="PrintDocument" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>
+                        }
+                    }
+                    <span class="quotation-mode-tag">@(isNewMode ? "إنشاء جديد" : isViewMode ? "عرض فقط" : header.QuotationStatus == 2 && permissions.CanApprove ? "مراجعة واعتماد" : "تفاصيل العرض")</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="quotation-steps" aria-label="مسار عرض السعر">
+            <div class="quotation-step @(header.QuotationStatus == 1 ? "current" : "done")"><span class="quotation-step-no">1</span><span>إعداد العرض</span></div><span class="quotation-step-line"></span>
+            <div class="quotation-step @(header.QuotationStatus == 2 ? "current" : (header.QuotationStatus == 3 || header.QuotationStatus == 5) ? "done" : "")"><span class="quotation-step-no">2</span><span>الاعتماد</span></div><span class="quotation-step-line"></span>
+            <div class="quotation-step @(header.QuotationStatus == 5 ? "current done" : header.QuotationStatus == 3 ? "ready" : "")"><span class="quotation-step-no">3</span><span>الإرسال للعميل</span></div><span class="quotation-step-line"></span>
+            <div class="quotation-step"><span class="quotation-step-no">4</span><span>أمر البيع</span></div>
+        </section>
+
+        @if (isLoading)
+        {
+            <div class="quotation-loading"><span class="quotation-spinner"></span><p>جاري تحميل بيانات العرض...</p></div>
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="quotation-error-banner" role="alert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg><span>@loadError</span></div>
+        }
+        else
+        {
+            @if (header.QuotationStatus == 2 && permissions.CanApprove && !isViewMode)
+            {
+                <section class="quotation-approval-banner">
+                    <span class="approval-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+                    <div class="approval-copy"><strong>العرض بانتظار اعتمادك</strong><span>راجع العميل والأصناف والإجماليات قبل اتخاذ القرار.</span></div>
+                    <div class="approval-actions"><button class="quotation-btn approve-btn" @onclick="ApproveQuotation" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>اعتماد</button><button class="quotation-btn reject-btn" @onclick="OpenRejectDialog" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 6-12 12M6 6l12 12"/></svg>رفض</button></div>
+                </section>
+            }
+
+            <section class="quotation-panel">
+                <div class="quotation-panel-heading">
+                    <span class="quotation-panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>
+                    <div><h2>البيانات الأساسية</h2><p>العميل والتواريخ والمرجع التجاري للعرض</p></div>
+                </div>
+                <div class="quotation-form-grid">
+                    <div class="quotation-field wide">
+                        <label class="required">العميل</label>
+                        <SearchableSelect Items="@customers" @bind-SelectedId="header.CustomerID" OnSelected="OnCustomerSelected" Placeholder="ابحث باسم العميل أو كوده..." IsDisabled="@(!CanModify)" />
+                    </div>
+                    <div class="quotation-field"><label>رقم عرض السعر</label><input class="quotation-input ltr" value="@(header.QuotationNumber ?? "سيُنشأ عند الحفظ")" readonly /></div>
+                    <div class="quotation-field"><label class="required">تاريخ العرض</label><input class="quotation-input" type="date" @bind="header.QuotationDate" disabled="@(!CanModify)" /></div>
+                    <div class="quotation-field"><label>صالح حتى</label><input class="quotation-input" type="date" @bind="header.ValidUntilDate" disabled="@(!CanModify)" /></div>
+                    <div class="quotation-field"><label>مندوب المبيعات</label><select class="quotation-input" @bind="salesRepValue" disabled="@(!CanModify)"><option value="0">بدون تعيين</option>@foreach (var representative in salesReps){<option value="@representative.Id">@representative.Name</option>}</select></div>
+                    <div class="quotation-field wide"><label>ملاحظات وشروط العرض</label><textarea class="quotation-input quotation-textarea" @bind="header.Notes" disabled="@(!CanModify)" maxlength="2000" placeholder="اكتب أي ملاحظات أو شروط تخص هذا العرض..."></textarea></div>
+                </div>
+            </section>
+
+            <section class="quotation-panel quotation-lines-panel">
+                <div class="quotation-panel-heading quotation-lines-heading">
+                    <span class="quotation-panel-icon items"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></span>
+                    <div><h2>الأصناف والتسعير</h2><p>أضف البنود والكميات والأسعار والخصم والضريبة</p></div>
+                    <span class="quotation-line-count">@details.Count صنف</span>
+                    @if (CanModify)
+                    {
+                        <button class="quotation-btn add-line-btn" @onclick="OpenNewLine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>
+                    }
+                </div>
+
+                @if (details.Count == 0)
+                {
+                    <div class="quotation-lines-empty"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h4"/></svg></div><strong>لم تتم إضافة أصناف</strong><span>@(CanModify ? "أضف أول صنف لاحتساب الإجماليات." : "لا توجد تفاصيل محفوظة في هذا العرض.")</span></div>
+                }
+                else
+                {
+                    <div class="quotation-table-scroll"><table class="quotation-lines-table"><thead><tr><th class="line-index">م</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>سعر الوحدة</th><th>خصم %</th><th>ضريبة %</th><th>الإجمالي شامل الضريبة</th>@if (CanModify){<th class="center">إجراءات</th>}</tr></thead><tbody>
+                    @foreach (var line in details.OrderBy(x => x.LineNumber))
+                    {
+                        <tr>
+                            <td class="line-index">@line.LineNumber</td>
+                            <td><strong class="line-item-name">@line.ItemNameAr</strong><span class="line-item-code">@line.ItemCode</span></td>
+                            <td>@(line.UnitName ?? "—")</td>
+                            <td class="numeric">@line.Quantity.ToString("#,##0.####")</td>
+                            <td class="numeric">@line.UnitPrice.ToString("#,##0.00")</td>
+                            <td class="numeric">@line.DiscountPercent.ToString("0.##")%</td>
+                            <td class="numeric">@line.TaxRate.ToString("0.##")%</td>
+                            <td class="numeric line-total">@line.LineTotalWithTax.ToString("#,##0.00") <small>ج.م</small></td>
+                            @if (CanModify)
+                            {
+                                <td class="center"><div class="line-actions"><button class="line-action edit" title="تعديل السطر" aria-label="تعديل السطر" @onclick="() => EditLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button><button class="line-action remove" title="حذف السطر" aria-label="حذف السطر" @onclick="() => RemoveLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg></button></div></td>
+                            }
+                        </tr>
+                    }
+                    </tbody></table></div>
+                }
+
+                <div class="quotation-totals">
+                    <div class="quotation-total-item"><span>الإجمالي قبل الخصم</span><strong>@GrossTotal.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    <div class="quotation-total-item"><span>إجمالي الخصم</span><strong class="discount-value">− @DiscountTotal.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    <div class="quotation-total-item"><span>الإجمالي قبل الضريبة</span><strong>@SubTotal.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    <div class="quotation-total-item"><span>إجمالي الضريبة</span><strong>@TaxTotal.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    <div class="quotation-grand-total"><span>الإجمالي شامل الضريبة</span><strong>@GrandTotal.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                </div>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(header.RejectionReason))
+            {
+                <section class="quotation-rejection-note"><span class="rejection-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg></span><div><strong>سبب الرفض</strong><p>@header.RejectionReason</p></div></section>
+            }
+
+            <footer class="quotation-footer-actions">
+                <button class="quotation-btn secondary" @onclick="GoBack" disabled="@isBusy">إغلاق</button>
+                <div class="quotation-primary-actions">
+                    @if (CanModify)
+                    {
+                        <button class="quotation-btn save-btn" @onclick="SaveDraft" disabled="@isBusy">
+                            @if (isSaving){<span class="quotation-mini-spinner"></span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>}
+                            حفظ المسودة
+                        </button>
+                        @if (header.QuotationStatus == 1 && details.Count > 0)
+                        {
+                            <button class="quotation-btn submit-btn" @onclick="SubmitForApproval" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>إرسال للاعتماد</button>
+                        }
+                    }
+                    @if (!isViewMode && header.QuotationStatus == 3 && (permissions.CanEdit || permissions.CanApprove))
+                    {
+                        <button class="quotation-btn send-customer-btn" @onclick="MarkAsSent" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>تسجيل الإرسال للعميل</button>
+                    }
+                    @if (!isNewMode && permissions.CanDelete && header.QuotationStatus == 1 && !isViewMode)
+                    {
+                        <button class="quotation-btn delete-draft-btn" @onclick="DeleteCurrentDraft" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6"/></svg>حذف المسودة</button>
+                    }
+                </div>
+            </footer>
+        }
+    </main>
+
+    @if (showLineDialog)
+    {
+        <div class="quotation-modal-backdrop" role="presentation" @onclick="CloseLineDialog">
+            <section class="quotation-modal" role="dialog" aria-modal="true" aria-labelledby="line-modal-title" @onclick:stopPropagation="true">
+                <div class="quotation-modal-top"></div>
+                <header class="quotation-modal-header"><div><span class="modal-eyebrow">تفاصيل التسعير</span><h2 id="line-modal-title">@(isEditingLine ? "تعديل صنف" : "إضافة صنف")</h2></div><button class="quotation-modal-close" aria-label="إغلاق" @onclick="CloseLineDialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 6-12 12M6 6l12 12"/></svg></button></header>
+                <div class="quotation-modal-body">
+                    <div class="quotation-field modal-full"><label class="required">الصنف</label><SearchableSelect Items="@saleItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث باسم الصنف أو كوده..." IsDisabled="@isBusy" /></div>
+                    <div class="quotation-field"><label class="required">الوحدة</label><select class="quotation-input" @bind="editLine.UnitID" disabled="@isBusy"><option value="0">اختر الوحدة</option>@foreach (var unit in units){<option value="@unit.Id">@unit.Name</option>}</select></div>
+                    <div class="quotation-field"><label class="required">الكمية</label><input class="quotation-input ltr" type="number" min="0.0001" step="0.0001" @bind="editLine.Quantity" disabled="@isBusy" /></div>
+                    <div class="quotation-field"><label class="required">سعر الوحدة (ج.م)</label><input class="quotation-input ltr" type="number" min="0" step="0.01" @bind="editLine.UnitPrice" disabled="@isBusy" /></div>
+                    <div class="quotation-field"><label>الخصم (%)</label><input class="quotation-input ltr" type="number" min="0" max="100" step="0.01" @bind="editLine.DiscountPercent" disabled="@isBusy" /></div>
+                    <div class="quotation-field"><label>الضريبة (%)</label><input class="quotation-input ltr" type="number" min="0" max="100" step="0.01" @bind="editLine.TaxRate" disabled="@isBusy" /></div>
+                    <div class="quotation-field modal-full"><label>ملاحظة السطر</label><input class="quotation-input" @bind="editLine.Notes" disabled="@isBusy" maxlength="200" placeholder="اختياري" /></div>
+                    <div class="quotation-line-preview modal-full"><span>إجمالي السطر شامل الضريبة</span><strong>@editLine.LineTotalWithTax.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    @if (!string.IsNullOrWhiteSpace(lineError)){<div class="quotation-inline-error modal-full">@lineError</div>}
+                </div>
+                <footer class="quotation-modal-footer"><button class="quotation-btn secondary" @onclick="CloseLineDialog" disabled="@isBusy">إلغاء</button><button class="quotation-btn save-btn" @onclick="SaveLine" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 12 4 4L19 6"/></svg>حفظ السطر</button></footer>
+            </section>
+        </div>
+    }
+
+    @if (showRejectDialog)
+    {
+        <div class="quotation-modal-backdrop" role="presentation" @onclick="CloseRejectDialog">
+            <section class="quotation-modal reject-modal" role="dialog" aria-modal="true" aria-labelledby="reject-modal-title" @onclick:stopPropagation="true">
+                <div class="quotation-modal-top danger"></div>
+                <header class="quotation-modal-header"><div><span class="modal-eyebrow danger-text">قرار الاعتماد</span><h2 id="reject-modal-title">رفض عرض السعر</h2></div><button class="quotation-modal-close" aria-label="إغلاق" @onclick="CloseRejectDialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 6-12 12M6 6l12 12"/></svg></button></header>
+                <div class="quotation-modal-body single-column"><div class="quotation-field"><label class="required">سبب الرفض</label><textarea class="quotation-input quotation-textarea" @bind="rejectReason" maxlength="500" placeholder="اكتب سبباً واضحاً لإرساله إلى منشئ العرض..."></textarea></div>@if (!string.IsNullOrWhiteSpace(rejectError)){<div class="quotation-inline-error">@rejectError</div>}</div>
+                <footer class="quotation-modal-footer"><button class="quotation-btn secondary" @onclick="CloseRejectDialog" disabled="@isBusy">إلغاء</button><button class="quotation-btn reject-btn" @onclick="ConfirmReject" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 6-12 12M6 6l12 12"/></svg>تأكيد الرفض</button></footer>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(toastMessage))
+    {
+        <div class="quotation-toast" role="status"><span class="quotation-toast-icon @(toastSuccess ? "success" : "error")">@if(toastSuccess){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>}</span><span>@toastMessage</span><button aria-label="إغلاق الإشعار" @onclick="() => toastMessage = string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
+    }
+}
+
+<style>
+.quotation-edit-page{--qe-gold:#d4af37;--qe-dark:#171819;--qe-line:#eae6dc;max-width:1480px;margin:0 auto;padding:24px 22px 40px;color:#24262b}.quotation-hero{position:relative;padding:20px 24px 21px;border-radius:20px;color:#f6f0df;background:radial-gradient(circle at 4% 0,rgba(212,175,55,.12),transparent 35%),linear-gradient(115deg,#111213,#21211f 66%,#191a19);border:1px solid rgba(212,175,55,.17);box-shadow:0 16px 38px rgba(13,14,16,.14);overflow:hidden}.quotation-hero-top{position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,#a98518,#f5e4a6,#d4af37,transparent)}.quotation-back{position:relative;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:#d8cfb1;padding:3px 0 12px;font:inherit;font-size:.75rem;font-weight:700;cursor:pointer}.quotation-back svg{width:16px;height:16px}.quotation-back:hover{color:#f5dc8c}.quotation-hero-body{display:flex;align-items:center;gap:16px}.quotation-hero-symbol{width:54px;height:54px;display:grid;place-items:center;border:1px solid rgba(212,175,55,.32);border-radius:16px;background:rgba(255,255,255,.035);flex:0 0 auto}.quotation-hero-symbol img{width:34px;height:34px;object-fit:contain}.quotation-heading{min-width:0}.quotation-eyebrow{color:#c5b77f;font-size:.67rem;font-weight:800;letter-spacing:1.2px}.quotation-eyebrow span{margin-right:9px;color:#927b36;font-size:.62rem;letter-spacing:1.4px}.quotation-heading h1{margin:7px 0 4px;font-size:1.45rem;color:#fff9e7;font-weight:800}.quotation-heading p{margin:0;color:#aaa695;font-size:.79rem}.quotation-hero-actions{display:flex;align-items:center;gap:9px;margin-right:auto;flex-wrap:wrap}.quotation-mode-tag{padding:7px 10px;border:1px solid rgba(212,175,55,.18);border-radius:9px;background:rgba(212,175,55,.06);color:#d3c497;font-size:.68rem;font-weight:800}.quotation-status-pill{--q-status:#64748b;display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid color-mix(in srgb,var(--q-status) 45%,transparent);border-radius:999px;background:color-mix(in srgb,var(--q-status) 11%,transparent);color:var(--q-status);font-size:.72rem;font-weight:800}.quotation-status-pill i{width:7px;height:7px;border-radius:50%;background:currentColor}.quotation-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 14px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:.78rem;font-weight:800;cursor:pointer;transition:.18s;white-space:nowrap}.quotation-btn:hover:not(:disabled){transform:translateY(-1px)}.quotation-btn:disabled{opacity:.58;cursor:not-allowed}.quotation-btn svg{width:17px;height:17px;flex:0 0 auto}.quotation-btn.header-quiet{color:#e7dcc0;background:rgba(255,255,255,.035);border-color:rgba(212,175,55,.22)}.quotation-btn.secondary{color:#5e6570;background:#faf9f6;border-color:#e7e3d8}.quotation-btn.save-btn{color:#2f2815;background:linear-gradient(135deg,#f0dc9a,#d5b144);border-color:#dfc76d}.quotation-btn.submit-btn{color:#fff;background:#1f5b78;border-color:#194e67}.quotation-btn.approve-btn{color:#fff;background:#13815b;border-color:#0e704e}.quotation-btn.reject-btn{color:#fff;background:#ad2730;border-color:#9e2028}.quotation-btn.send-customer-btn{color:#fff;background:#2363a1;border-color:#1d568d}.quotation-btn.delete-draft-btn{color:#ae2a34;background:#fff;border-color:#f0d8d8}
+.quotation-steps{display:flex;align-items:center;justify-content:center;gap:11px;margin:15px 0;padding:12px 18px;border:1px solid var(--qe-line);border-radius:14px;background:#fff;box-shadow:0 5px 17px rgba(20,20,22,.03)}.quotation-step{display:flex;align-items:center;gap:8px;color:#a0a3aa;font-size:.71rem;font-weight:700;white-space:nowrap}.quotation-step-no{width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:#f5f4f0;border:1px solid #e9e6dd;color:#969aa2;font-size:.68rem;font-weight:800}.quotation-step.current{color:#8a6a14}.quotation-step.current .quotation-step-no{color:#806316;border-color:#e5d493;background:#fbf5df}.quotation-step.done{color:#15825b}.quotation-step.done .quotation-step-no{color:#12815b;border-color:#ccebdc;background:#edf9f2}.quotation-step.ready{color:#4772a5}.quotation-step.ready .quotation-step-no{color:#4772a5;border-color:#d4e3f4;background:#f1f7ff}.quotation-step-line{width:min(10vw,90px);height:1px;background:linear-gradient(90deg,#eee9dc,#d8c889,#eee9dc)}
+.quotation-panel{margin-top:14px;background:#fff;border:1px solid var(--qe-line);border-radius:16px;padding:18px 20px;box-shadow:0 6px 22px rgba(20,20,22,.03)}.quotation-panel-heading{display:flex;align-items:center;gap:11px;margin-bottom:17px}.quotation-panel-icon{width:39px;height:39px;display:grid;place-items:center;border-radius:12px;background:#fbf6e5;border:1px solid #efe3b9;color:#91711b;flex:0 0 auto}.quotation-panel-icon svg{width:20px;height:20px}.quotation-panel-icon.items{color:#416b9f;background:#eef5ff;border-color:#dbe7f5}.quotation-panel-heading h2{margin:0;color:#282a30;font-size:.93rem;font-weight:800}.quotation-panel-heading p{margin:4px 0 0;color:#969aa2;font-size:.7rem}.quotation-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 13px}.quotation-field{min-width:0;display:flex;flex-direction:column;gap:7px}.quotation-field.wide{grid-column:span 2}.quotation-field label{color:#606772;font-size:.72rem;font-weight:800}.quotation-field label.required:after{content:' *';color:#b4343b}.quotation-input{width:100%;min-width:0;min-height:41px;padding:9px 11px;border:1px solid #e4e1d8;border-radius:9px;outline:0;background:#fdfcf9;color:#282a30;font:inherit;font-size:.79rem;transition:border-color .17s,box-shadow .17s}.quotation-input:focus{border-color:#d0b24b;box-shadow:0 0 0 3px rgba(212,175,55,.11)}.quotation-input:disabled{background:#f6f5f1;color:#717781;opacity:.9}.quotation-input.ltr{direction:ltr;text-align:right;font-variant-numeric:tabular-nums}.quotation-textarea{min-height:76px;resize:vertical;line-height:1.6}.quotation-lines-panel{padding-bottom:0}.quotation-lines-heading{margin-bottom:15px}.quotation-line-count{margin-right:auto;margin-left:10px;padding:6px 9px;border:1px solid #eee7d3;border-radius:8px;background:#fbf8ee;color:#866917;font-size:.69rem;font-weight:800;white-space:nowrap}.add-line-btn{color:#745a12;background:#fcf7e6;border-color:#eee1b3}.add-line-btn:hover{background:#f7efcf}
+.quotation-lines-empty{text-align:center;padding:28px 10px 30px;color:#858b95}.quotation-lines-empty>div{width:48px;height:48px;margin:0 auto 10px;display:grid;place-items:center;border-radius:14px;background:#f7f6f1;border:1px solid #ebe8df;color:#a48b42}.quotation-lines-empty svg{width:23px;height:23px}.quotation-lines-empty strong,.quotation-lines-empty span{display:block}.quotation-lines-empty strong{color:#555b65;font-size:.8rem}.quotation-lines-empty span{margin-top:5px;font-size:.71rem}.quotation-table-scroll{overflow:auto;border:1px solid #efede7;border-radius:11px}.quotation-lines-table{width:100%;min-width:950px;border-collapse:separate;border-spacing:0}.quotation-lines-table th{padding:11px 12px;background:#faf9f5;border-bottom:1px solid #eae7df;text-align:right;color:#777e87;font-size:.67rem;font-weight:800;white-space:nowrap}.quotation-lines-table td{padding:11px 12px;border-bottom:1px solid #f0eee9;color:#555b63;font-size:.74rem;white-space:nowrap}.quotation-lines-table tbody tr:last-child td{border-bottom:0}.quotation-lines-table tbody tr:hover{background:#fffdf7}.quotation-lines-table th.center,.quotation-lines-table td.center{text-align:center}.quotation-lines-table .line-index{width:42px;text-align:center;color:#999da5}.line-item-name,.line-item-code{display:block}.line-item-name{color:#30333a;font-size:.75rem}.line-item-code{margin-top:4px;color:#969ba4;font-size:.65rem;direction:ltr;text-align:right}.numeric{font-variant-numeric:tabular-nums}.line-total{color:#796016!important;font-weight:800}.line-total small,.quotation-total-item small,.quotation-grand-total small,.quotation-line-preview small{font-size:.64rem;color:#858991}.line-actions{display:flex;align-items:center;justify-content:center;gap:5px}.line-action{width:29px;height:29px;border:1px solid #e8e5dd;border-radius:8px;background:#fff;display:grid;place-items:center;cursor:pointer}.line-action svg{width:14px;height:14px}.line-action.edit{color:#92731e;border-color:#eee3bd}.line-action.edit:hover{background:#fbf6e6}.line-action.remove{color:#bd323b;border-color:#f0dada}.line-action.remove:hover{background:#fff2f1}.quotation-totals{display:flex;justify-content:flex-end;align-items:stretch;gap:0;margin:0 -20px;padding:13px 20px;background:#fcfbf8;border-top:1px solid #efede6;border-radius:0 0 16px 16px}.quotation-total-item{min-width:142px;padding:3px 15px;border-left:1px solid #eae7de}.quotation-total-item:first-child{padding-right:0}.quotation-total-item span,.quotation-total-item strong{display:block}.quotation-total-item span{color:#8a9099;font-size:.66rem;font-weight:700}.quotation-total-item strong{margin-top:6px;color:#41454d;font-size:.82rem;font-variant-numeric:tabular-nums}.quotation-total-item strong.discount-value{color:#b23a3c}.quotation-grand-total{min-width:188px;padding:3px 17px 3px 0}.quotation-grand-total span,.quotation-grand-total strong{display:block}.quotation-grand-total span{color:#8c6e18;font-size:.68rem;font-weight:800}.quotation-grand-total strong{margin-top:5px;color:#816313;font-size:1.12rem;font-weight:900;font-variant-numeric:tabular-nums}.quotation-rejection-note{display:flex;gap:11px;margin-top:13px;padding:13px 15px;background:#fff5f4;border:1px solid #f2d8d5;border-radius:12px}.rejection-icon{width:32px;height:32px;display:grid;place-items:center;flex:0 0 auto;border-radius:9px;background:#fae8e6;color:#ae3138}.rejection-icon svg{width:17px;height:17px}.quotation-rejection-note strong{display:block;color:#a02e34;font-size:.76rem}.quotation-rejection-note p{margin:4px 0 0;color:#78484a;font-size:.74rem;line-height:1.6;white-space:pre-wrap}
+.quotation-footer-actions{display:flex;justify-content:space-between;gap:12px;margin-top:15px;padding:13px 15px;background:#fff;border:1px solid var(--qe-line);border-radius:14px;box-shadow:0 5px 17px rgba(20,20,22,.025)}.quotation-primary-actions{display:flex;gap:8px;flex-wrap:wrap}.quotation-approval-banner{display:flex;align-items:center;gap:11px;margin:14px 0;padding:13px 16px;border:1px solid #eddca1;border-radius:13px;background:linear-gradient(100deg,#fffbee,#fffdf7)}.approval-icon{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border-radius:11px;background:#fbf1ce;color:#97751a}.approval-icon svg{width:21px;height:21px}.approval-copy{min-width:0;flex:1}.approval-copy strong,.approval-copy span{display:block}.approval-copy strong{color:#634d10;font-size:.78rem}.approval-copy span{margin-top:4px;color:#8c7d53;font-size:.7rem}.approval-actions{display:flex;gap:8px}.quotation-error-banner{display:flex;align-items:center;gap:9px;margin-top:14px;padding:13px 15px;background:#fff2f1;border:1px solid #f0d0cd;border-radius:11px;color:#a02e34;font-size:.78rem}.quotation-error-banner svg{width:20px;height:20px;flex:0 0 auto}.quotation-loading{padding:52px 15px;text-align:center;color:#8b9098;background:#fff;border:1px solid var(--qe-line);border-radius:15px}.quotation-loading p{font-size:.8rem}.quotation-spinner{display:inline-block;width:37px;height:37px;border:3px solid #eee8d8;border-top-color:#c1a039;border-radius:50%;animation:quotationSpin .75s linear infinite}.quotation-mini-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(80,63,12,.22);border-top-color:currentColor;border-radius:50%;animation:quotationSpin .7s linear infinite}.quotation-access{max-width:720px;margin:40px auto;padding:45px 20px;text-align:center;background:#fff;border:1px solid #eae6dc;border-radius:18px}.quotation-access-icon{width:58px;height:58px;display:grid;place-items:center;margin:0 auto 12px;border-radius:16px;background:#faf6e7;border:1px solid #efe4bd;color:#98781e}.quotation-access-icon svg{width:29px;height:29px}.quotation-access h3{margin:0;color:#303239;font-size:.98rem}.quotation-access .quotation-btn{margin-top:15px}
+.quotation-modal-backdrop{position:fixed;inset:0;z-index:1500;display:grid;place-items:center;padding:18px;background:rgba(11,13,16,.6);backdrop-filter:blur(5px)}.quotation-modal{position:relative;width:min(100%,650px);max-height:min(90vh,840px);overflow:auto;background:#fff;border:1px solid #e4dfd2;border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.25);animation:quotationModalIn .2s ease}.quotation-modal-top{position:absolute;top:0;right:0;left:0;height:3px;background:linear-gradient(90deg,transparent,#d4af37,#f0dc96,#d4af37,transparent)}.quotation-modal-top.danger{background:linear-gradient(90deg,transparent,#b63039,#e9999c,#b63039,transparent)}.quotation-modal-header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:17px 20px 13px;background:#fff;border-bottom:1px solid #f0ede5}.modal-eyebrow{color:#9a7a1b;font-size:.63rem;font-weight:800;letter-spacing:1px}.modal-eyebrow.danger-text{color:#a62d35}.quotation-modal-header h2{margin:5px 0 0;color:#24262b;font-size:1rem}.quotation-modal-close{width:31px;height:31px;display:grid;place-items:center;border:1px solid #e8e4da;border-radius:9px;background:#fff;color:#757b85;cursor:pointer}.quotation-modal-close svg{width:15px;height:15px}.quotation-modal-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding:17px 20px}.quotation-modal-body.single-column{grid-template-columns:1fr}.quotation-field.modal-full,.quotation-line-preview.modal-full,.quotation-inline-error.modal-full{grid-column:1/-1}.quotation-line-preview{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border:1px solid #eee5c9;border-radius:10px;background:#fcf8e9;color:#7c651d;font-size:.74rem;font-weight:800}.quotation-line-preview strong{font-size:.97rem;font-variant-numeric:tabular-nums}.quotation-modal-footer{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;padding:13px 20px;background:#fcfbf8;border-top:1px solid #edeae3}.quotation-inline-error{padding:9px 11px;border:1px solid #f0d0cd;border-radius:9px;background:#fff4f3;color:#a12e34;font-size:.73rem}.reject-modal{max-width:520px}.quotation-toast{position:fixed;left:20px;bottom:20px;z-index:1700;display:flex;align-items:center;gap:10px;max-width:min(520px,calc(100vw - 40px));padding:12px 14px;border:1px solid #e8e3d8;border-radius:13px;background:#fff;box-shadow:0 14px 40px rgba(17,19,24,.17);color:#343841;font-size:.79rem;font-weight:700;animation:quotationToastIn .2s ease}.quotation-toast-icon{width:26px;height:26px;display:grid;place-items:center;flex:0 0 auto;border-radius:8px}.quotation-toast-icon svg{width:15px;height:15px}.quotation-toast-icon.success{color:#08754f;background:#e8f7ef}.quotation-toast-icon.error{color:#b02b34;background:#fff0ef}.quotation-toast button{width:24px;height:24px;margin-right:auto;border:0;background:transparent;color:#838995;display:grid;place-items:center;cursor:pointer}.quotation-toast button svg{width:14px;height:14px}
+@@keyframes quotationSpin{to{transform:rotate(360deg)}}@@keyframes quotationModalIn{from{opacity:0;transform:translateY(7px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}@@keyframes quotationToastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:950px){.quotation-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.quotation-totals{flex-wrap:wrap;justify-content:flex-start;gap:8px}.quotation-total-item{min-width:130px;padding:4px 10px;border-left:0;border-right:1px solid #eae7de}.quotation-total-item:first-child{padding-right:10px}.quotation-grand-total{min-width:170px;padding:4px 10px}}
+@@media(max-width:650px){.quotation-edit-page{padding:14px 11px 28px}.quotation-hero{padding:17px 15px;border-radius:16px}.quotation-hero-body{align-items:flex-start;gap:11px;flex-wrap:wrap}.quotation-hero-symbol{width:43px;height:43px;flex-basis:43px;border-radius:13px}.quotation-hero-symbol img{width:28px;height:28px}.quotation-heading h1{font-size:1.2rem}.quotation-heading p{font-size:.71rem}.quotation-hero-actions{width:100%;margin-right:0}.quotation-steps{justify-content:flex-start;overflow:auto;gap:8px;padding:10px}.quotation-step{font-size:.65rem}.quotation-step-no{width:23px;height:23px}.quotation-step-line{width:22px;flex:0 0 22px}.quotation-panel{padding:14px 12px}.quotation-form-grid{grid-template-columns:1fr 1fr;gap:11px 9px}.quotation-field.wide{grid-column:span 2}.quotation-panel-heading h2{font-size:.84rem}.quotation-panel-heading p{font-size:.65rem}.quotation-panel-heading{gap:8px}.quotation-panel-icon{width:34px;height:34px;border-radius:10px}.quotation-line-count{margin-left:0}.add-line-btn{min-height:35px;padding:6px 9px;font-size:.7rem}.quotation-lines-heading{flex-wrap:wrap}.quotation-lines-heading>div{flex:1}.quotation-totals{margin:0 -12px;padding:12px}.quotation-total-item,.quotation-grand-total{min-width:calc(50% - 8px);padding:4px 9px}.quotation-total-item span{font-size:.61rem}.quotation-total-item strong{font-size:.75rem}.quotation-grand-total strong{font-size:1rem}.quotation-footer-actions{align-items:stretch;flex-direction:column;padding:10px}.quotation-primary-actions{display:grid;grid-template-columns:1fr 1fr}.quotation-primary-actions .quotation-btn{white-space:normal;line-height:1.35}.quotation-footer-actions>.quotation-btn{width:100%}.quotation-approval-banner{align-items:flex-start;flex-wrap:wrap;padding:11px}.approval-copy{flex:1}.approval-actions{width:100%;margin-right:48px}.approval-actions .quotation-btn{flex:1}.quotation-modal-body{grid-template-columns:1fr;padding:14px}.quotation-modal-body .quotation-field.modal-full,.quotation-line-preview.modal-full,.quotation-inline-error.modal-full{grid-column:1}.quotation-modal-header,.quotation-modal-footer{padding-left:14px;padding-right:14px}.quotation-toast{left:10px;bottom:10px;max-width:calc(100vw - 20px)}}
+</style>
+
+@code {
+    [Parameter] public int QuotationId { get; set; }
+
+    private ModulePermissionDto? permissions;
+    private SalesQuotationHeaderDto header = new();
+    private List<SalesQuotationDetailDto> details = new();
+    private List<SearchableItem> customers = new();
+    private List<SearchableItem> saleItems = new();
+    private List<LookupDto> units = new();
+    private List<LookupDto> salesReps = new();
+    private SalesQuotationDetailDto editLine = new();
+    private int salesRepValue
+    {
+        get => header.SalesRepID ?? 0;
+        set => header.SalesRepID = value > 0 ? value : null;
+    }
+    private string pageTitle = "عرض سعر جديد";
+    private string loadError = string.Empty;
+    private string lineError = string.Empty;
+    private string rejectReason = string.Empty;
+    private string rejectError = string.Empty;
+    private string toastMessage = string.Empty;
+    private bool toastSuccess = true;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool isApproving;
+    private bool showLineDialog;
+    private bool showRejectDialog;
+    private bool isEditingLine;
+    private bool isNewMode;
+    private bool isViewMode;
+
+    private bool CanModify => permissions is not null && !isViewMode &&
+        (isNewMode ? permissions.CanAdd : header.QuotationStatus == 1 && permissions.CanEdit);
+    private bool isBusy => isSaving || isApproving;
+    private decimal GrossTotal => Math.Round(details.Sum(x => x.Quantity * x.UnitPrice), 2, MidpointRounding.AwayFromZero);
+    private decimal DiscountTotal => Math.Round(details.Sum(x => x.DiscountAmount), 2, MidpointRounding.AwayFromZero);
+    private decimal SubTotal => Math.Round(details.Sum(x => x.LineTotal), 2, MidpointRounding.AwayFromZero);
+    private decimal TaxTotal => Math.Round(details.Sum(x => x.TaxAmount), 2, MidpointRounding.AwayFromZero);
+    private decimal GrandTotal => Math.Round(details.Sum(x => x.LineTotalWithTax), 2, MidpointRounding.AwayFromZero);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_QUOT");
+        isNewMode = QuotationId <= 0;
+        var route = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+        isViewMode = route.StartsWith("quotations/view/", StringComparison.OrdinalIgnoreCase);
+        pageTitle = isNewMode ? "عرض سعر جديد" : "تفاصيل عرض السعر";
+
+        if (permissions?.CanView != true || (isNewMode && permissions.CanAdd != true))
+        {
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            await LoadLookupsAsync();
+            if (!isNewMode)
+            {
+                header = await QuotationService.GetQuotationByIdAsync(QuotationId)
+                    ?? throw new InvalidOperationException("عرض السعر غير موجود");
+                details = await QuotationService.GetQuotationDetailsAsync(QuotationId);
+                pageTitle = isViewMode ? "عرض تفاصيل عرض السعر"
+                    : header.QuotationStatus == 2 && permissions.CanApprove ? "مراجعة واعتماد عرض السعر"
+                    : header.QuotationStatus == 1 && permissions.CanEdit ? "تعديل عرض السعر"
+                    : "تفاصيل عرض السعر";
+            }
+            else
+            {
+                header = new SalesQuotationHeaderDto
+                {
+                    QuotationDate = DateTime.Today,
+                    QuotationStatus = 1
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        customers = await LookupService.GetCustomersSearchableAsync();
+        saleItems = await LookupService.GetItemsForSaleSearchableAsync();
+        units = await LookupService.GetUnitsAsync();
+        try { salesReps = await LookupService.GetSalesRepsAsync(); }
+        catch { salesReps = new List<LookupDto>(); }
+    }
+
+    private Task OnCustomerSelected(SearchableItem? item)
+    {
+        header.CustomerID = item?.Id ?? 0;
+        header.CustomerNameAr = item?.Name;
+        header.CustomerCode = item?.Code;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnItemSelected(SearchableItem? item)
+    {
+        if (item is null)
+        {
+            editLine.ItemID = 0;
+            editLine.ItemCode = null;
+            editLine.ItemNameAr = null;
+            return;
+        }
+
+        editLine.ItemID = item.Id;
+        editLine.ItemCode = item.Code;
+        editLine.ItemNameAr = item.Name;
+        try
+        {
+            var info = await LookupService.GetItemQuickInfoAsync(item.Id);
+            if (info is not null)
+            {
+                if (info.UnitID > 0) editLine.UnitID = info.UnitID;
+                if (info.SalesPrice > 0) editLine.UnitPrice = info.SalesPrice;
+            }
+            else if (decimal.TryParse(item.Extra, NumberStyles.Any, CultureInfo.InvariantCulture, out var price))
+            {
+                editLine.UnitPrice = price;
+            }
+
+            editLine.UnitName = units.FirstOrDefault(x => x.Id == editLine.UnitID)?.Name;
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر تحميل بيانات الصنف: " + ex.Message, false);
+        }
+    }
+
+    private void OpenNewLine()
+    {
+        if (!CanModify) return;
+        isEditingLine = false;
+        editLine = new SalesQuotationDetailDto { Quantity = 1m, TaxRate = 14m };
+        lineError = string.Empty;
+        showLineDialog = true;
+    }
+
+    private void EditLine(SalesQuotationDetailDto line)
+    {
+        if (!CanModify) return;
+        isEditingLine = true;
+        editLine = new SalesQuotationDetailDto
+        {
+            QuotationDetailID = line.QuotationDetailID,
+            QuotationID = line.QuotationID,
+            LineNumber = line.LineNumber,
+            ItemID = line.ItemID,
+            ItemCode = line.ItemCode,
+            ItemNameAr = line.ItemNameAr,
+            UnitID = line.UnitID,
+            UnitName = line.UnitName,
+            Quantity = line.Quantity,
+            UnitPrice = line.UnitPrice,
+            DiscountPercent = line.DiscountPercent,
+            TaxRate = line.TaxRate,
+            Notes = line.Notes
+        };
+        lineError = string.Empty;
+        showLineDialog = true;
+    }
+
+    private void CloseLineDialog()
+    {
+        if (isBusy) return;
+        showLineDialog = false;
+        lineError = string.Empty;
+    }
+
+    private void SaveLine()
+    {
+        lineError = string.Empty;
+        if (editLine.ItemID <= 0) { lineError = "اختر الصنف"; return; }
+        if (editLine.UnitID <= 0) { lineError = "اختر الوحدة"; return; }
+        if (editLine.Quantity <= 0) { lineError = "الكمية يجب أن تكون أكبر من صفر"; return; }
+        if (editLine.UnitPrice < 0) { lineError = "سعر الوحدة لا يمكن أن يكون سالباً"; return; }
+        if (editLine.DiscountPercent is < 0 or > 100) { lineError = "نسبة الخصم يجب أن تكون بين 0 و100"; return; }
+        if (editLine.TaxRate is < 0 or > 100) { lineError = "معدل الضريبة يجب أن يكون بين 0 و100"; return; }
+
+        editLine.UnitName = units.FirstOrDefault(x => x.Id == editLine.UnitID)?.Name;
+        if (isEditingLine)
+        {
+            var index = details.FindIndex(x => x.QuotationDetailID == editLine.QuotationDetailID && x.QuotationDetailID > 0);
+            if (index < 0) index = details.FindIndex(x => x.LineNumber == editLine.LineNumber);
+            if (index >= 0) details[index] = editLine;
+        }
+        else
+        {
+            editLine.LineNumber = details.Count == 0 ? 1 : details.Max(x => x.LineNumber) + 1;
+            details.Add(editLine);
+        }
+        RenumberLines();
+        showLineDialog = false;
+    }
+
+    private void RemoveLine(SalesQuotationDetailDto line)
+    {
+        if (!CanModify) return;
+        details.Remove(line);
+        RenumberLines();
+    }
+
+    private void RenumberLines()
+    {
+        for (var index = 0; index < details.Count; index++) details[index].LineNumber = index + 1;
+    }
+
+    private async Task SaveDraft()
+    {
+        if (!CanModify || isBusy) return;
+        var oldId = QuotationId;
+        var savedId = await PersistAsync();
+        if (!savedId.HasValue) return;
+        await ShowToastAsync("تم حفظ المسودة");
+        if (oldId <= 0) Navigation.NavigateTo($"/quotations/edit/{savedId.Value}", replace: true);
+    }
+
+    private async Task<int?> PersistAsync()
+    {
+        if (header.CustomerID <= 0)
+        {
+            await ShowToastAsync("اختر العميل أولاً", false);
+            return null;
+        }
+        if (header.QuotationDate == default)
+        {
+            await ShowToastAsync("حدد تاريخ عرض السعر", false);
+            return null;
+        }
+
+        isSaving = true;
+        var wasNew = isNewMode;
+        try
+        {
+            header.QuotationID = QuotationId;
+            var savedId = await QuotationService.SaveQuotationAsync(header, details, UserSession.UserID);
+            QuotationId = savedId;
+            isNewMode = false;
+            if (wasNew) pageTitle = "تفاصيل عرض السعر";
+            header = await QuotationService.GetQuotationByIdAsync(savedId) ?? header;
+            details = await QuotationService.GetQuotationDetailsAsync(savedId);
+            return savedId;
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر حفظ العرض: " + ex.Message, false);
+            return null;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task SubmitForApproval()
+    {
+        if (!CanModify || details.Count == 0 || isBusy) return;
+        var isNew = QuotationId <= 0;
+        var savedId = await PersistAsync();
+        if (!savedId.HasValue) return;
+
+        isApproving = true;
+        try
+        {
+            await QuotationService.SubmitForApprovalAsync(savedId.Value, UserSession.UserID);
+            header.QuotationStatus = 2;
+            header.SubmittedDate = DateTime.Now;
+            await ShowToastAsync("تم إرسال عرض السعر للاعتماد");
+            if (isNew) Navigation.NavigateTo($"/quotations/edit/{savedId.Value}", replace: true);
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر الإرسال للاعتماد: " + ex.Message, false);
+        }
+        finally
+        {
+            isApproving = false;
+        }
+    }
+
+    private async Task ApproveQuotation()
+    {
+        if (permissions?.CanApprove != true || header.QuotationStatus != 2 || isBusy) return;
+        isApproving = true;
+        try
+        {
+            await QuotationService.ApproveAsync(QuotationId, UserSession.UserID);
+            header.QuotationStatus = 3;
+            header.ApprovedDate = DateTime.Now;
+            pageTitle = "تفاصيل عرض السعر";
+            await ShowToastAsync("تم اعتماد عرض السعر");
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر اعتماد العرض: " + ex.Message, false);
+        }
+        finally
+        {
+            isApproving = false;
+        }
+    }
+
+    private void OpenRejectDialog()
+    {
+        rejectReason = string.Empty;
+        rejectError = string.Empty;
+        showRejectDialog = true;
+    }
+
+    private void CloseRejectDialog()
+    {
+        if (isBusy) return;
+        showRejectDialog = false;
+        rejectError = string.Empty;
+    }
+
+    private async Task ConfirmReject()
+    {
+        if (string.IsNullOrWhiteSpace(rejectReason)) { rejectError = "أدخل سبب الرفض"; return; }
+        isApproving = true;
+        rejectError = string.Empty;
+        try
+        {
+            await QuotationService.RejectAsync(QuotationId, rejectReason, UserSession.UserID);
+            header.QuotationStatus = 4;
+            header.RejectionReason = rejectReason.Trim();
+            pageTitle = "تفاصيل عرض السعر";
+            showRejectDialog = false;
+            await ShowToastAsync("تم رفض عرض السعر وإشعار منشئه");
+        }
+        catch (Exception ex)
+        {
+            rejectError = ex.Message;
+        }
+        finally
+        {
+            isApproving = false;
+        }
+    }
+
+    private async Task MarkAsSent()
+    {
+        if (isBusy || header.QuotationStatus != 3 || (permissions?.CanEdit != true && permissions?.CanApprove != true)) return;
+        isApproving = true;
+        try
+        {
+            await QuotationService.MarkSentToCustomerAsync(QuotationId, UserSession.UserID);
+            header.QuotationStatus = 5;
+            header.SentDate = DateTime.Now;
+            pageTitle = "تفاصيل عرض السعر";
+            await ShowToastAsync("تم تسجيل إرسال العرض للعميل");
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر تسجيل الإرسال: " + ex.Message, false);
+        }
+        finally
+        {
+            isApproving = false;
+        }
+    }
+
+    private async Task DeleteCurrentDraft()
+    {
+        if (isBusy || permissions?.CanDelete != true || header.QuotationStatus != 1 || QuotationId <= 0) return;
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"هل تريد حذف المسودة {header.QuotationNumber}؟");
+        if (!confirmed) return;
+        isSaving = true;
+        try
+        {
+            await QuotationService.DeleteQuotationAsync(QuotationId, UserSession.UserID);
+            await ShowToastAsync("تم حذف المسودة");
+            Navigation.NavigateTo("/quotations");
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر حذف المسودة: " + ex.Message, false);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task PrintDocument()
+    {
+        try
+        {
+            var html = await QuotationService.GenerateReportHtmlAsync(QuotationId, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذرت الطباعة: " + ex.Message, false);
+        }
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/quotations");
+
+    private async Task ShowToastAsync(string message, bool success = true)
+    {
+        toastMessage = message;
+        toastSuccess = success;
+        await Task.Delay(3500);
+        if (toastMessage == message) toastMessage = string.Empty;
+    }
+}

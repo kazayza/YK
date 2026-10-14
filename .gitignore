@@ -1,2 +1,32 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+/_vout/
+.vs/
 
-_*.txt
+# Ignore publish only if it is generated output, not a manually maintained deployment source
+/publish/
+
+# Local environment configuration
+/appsettings.Development.json
+/appsettings.Production.json
+/appsettings.*.local.json
+/appsettings.json
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+secrets.json
+**/secrets.json
+
+# Private certificates and keys
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+
+# IDE user files
+*.user
+*.suo

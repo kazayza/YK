@@ -35,11 +35,19 @@
     --yk-text-3:#94a3b8;
     --yk-border:#e8e2d0;
     --yk-border-gold:rgba(212,175,55,.18);
+    --yk-gold-border:var(--yk-border-gold);
     --yk-radius:12px;
     --yk-radius-lg:16px;
     --yk-shadow:0 4px 16px rgba(0,0,0,.06);
     --yk-shadow-lg:0 12px 32px rgba(0,0,0,.12);
     --yk-transition:.25s cubic-bezier(.4,0,.2,1);
+
+    /* Bootstrap compatibility: route all generic primary utilities through the brand gold. */
+    --bs-primary:var(--yk-gold);
+    --bs-primary-rgb:212,175,55;
+    --bs-link-color:var(--yk-gold-dark);
+    --bs-link-hover-color:var(--yk-gold);
+    --bs-focus-ring-color:rgba(212,175,55,.22);
 }
 
 /* Base */
@@ -51,6 +59,9 @@ body{
 }
 h1,h2,h3,h4,h5,h6{font-family:'Tajawal',sans-serif;font-weight:800}
 ::selection{background:var(--yk-gold);color:var(--yk-black2)}
+.text-primary{color:var(--yk-gold-dark)!important}
+.bg-primary{background-color:var(--yk-gold)!important;color:var(--yk-black2)!important}
+.border-primary{border-color:var(--yk-gold)!important}
 
 /* Buttons - Gold Primary */
 .btn-primary,.btn-primary:hover,.btn-primary:focus{

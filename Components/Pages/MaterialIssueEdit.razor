@@ -25,13 +25,13 @@ else if (isLoading)
 }
 else
 {
-    <div class="mi-edit-page">
+    <div class="mi-edit-page yk-gold-page">
 
         <div class="page-header">
             <div class="header-content">
                 <h1 class="header-title">
                     <i class="bi bi-box-arrow-up-right"></i>
-                    @if (Id == 0) { <span>إنشاء إذن صرف خامات</span> }
+                    @if (Id == 0) { <span>إنشاء إذن صرف مكونات التصنيع</span> }
                     else if (isViewMode) { <span>عرض إذن الصرف</span> }
                     else { <span>تعديل إذن الصرف</span> }
                 </h1>
@@ -152,6 +152,10 @@ else
                         <i class="bi bi-bag-fill" style="color:#d97706;"></i>
                         <span>تعبئة: <strong>@pendingMaterials.Count(m => m.MaterialType == 2)</strong></span>
                     </div>
+                    <div class="mat-summary-item">
+                        <i class="bi bi-box-seam-fill" style="color:var(--yk-gold-dark);"></i>
+                        <span>منتجات تامة: <strong>@pendingMaterials.Count(m => m.MaterialType == 3)</strong></span>
+                    </div>
                 </div>
 
                 <div class="table-scroll">
@@ -178,7 +182,7 @@ else
                                     <td class="tc row-num">@(idx++)</td>
                                     <td><span class="code-chip">@mat.ItemCode</span></td>
                                     <td class="item-name-cell">@mat.ItemName</td>
-                                    <td><span class="type-chip @(mat.MaterialType == 1 ? "type-raw" : "type-pkg")">@mat.MaterialTypeName</span></td>
+                                    <td><span class="type-chip @GetMaterialTypeClass(mat.MaterialType)">@mat.MaterialTypeName</span></td>
                                     <td class="tc fw600">@mat.RequiredQty.ToString("N3")</td>
                                     <td class="tc text-muted">@mat.AlreadyIssuedQty.ToString("N3")</td>
                                     <td class="tc remaining-val">@mat.RemainingQty.ToString("N3")</td>
@@ -270,7 +274,7 @@ else
                                     <td class="tc row-num">@(si++)</td>
                                     <td><span class="code-chip">@d.ItemCode</span></td>
                                     <td class="item-name-cell">@d.ItemName</td>
-                                    <td><span class="type-chip @(d.MaterialType == 1 ? "type-raw" : "type-pkg")">@d.MaterialTypeName</span></td>
+                                    <td><span class="type-chip @GetMaterialTypeClass(d.MaterialType)">@d.MaterialTypeName</span></td>
                                     <td class="tc fw600">@d.RequiredQty.ToString("N3")</td>
                                     <td class="tc issued-val">@d.IssueQty.ToString("N3")</td>
                                     <td class="tr">@d.UnitCost.ToString("N2")</td>
@@ -322,7 +326,7 @@ else
 
 <style>
     :root {
-        --c-primary: #4f46e5; --c-primary-lt: #eef2ff; --c-primary-dk: #3730a3;
+        --c-primary: #D4AF37; --c-primary-lt: rgba(212,175,55,.10); --c-primary-dk: #9C7C2E;
         --c-success: #10b981; --c-success-lt: #ecfdf5;
         --c-warning: #f59e0b; --c-warning-lt: #fffbeb;
         --c-danger: #ef4444;  --c-danger-lt: #fef2f2;
@@ -342,7 +346,7 @@ else
     .loading-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 1rem; color: var(--c-text-3); }
     .spinner-lg { width: 56px; height: 56px; border: 4px solid var(--c-border); border-top-color: var(--c-primary); border-radius: 50%; animation: spin .7s linear infinite; }
 
-    .page-header { background: linear-gradient(135deg, #4f46e5, #3730a3); border-radius: var(--r-xl); padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 32px rgba(79,70,229,.25); position: relative; overflow: hidden; flex-wrap: wrap; gap: 1rem; }
+    .page-header { background: linear-gradient(135deg, #D4AF37, #9C7C2E); border-radius: var(--r-xl); padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 32px rgba(212,175,55,.25); position: relative; overflow: hidden; flex-wrap: wrap; gap: 1rem; }
     .page-header::before { content: ''; position: absolute; top: -40px; left: -40px; width: 180px; height: 180px; background: rgba(255,255,255,.06); border-radius: 50%; }
     .header-content { position: relative; z-index: 1; }
     .header-title { color: #fff; font-size: 1.35rem; font-weight: 700; margin: 0 0 .2rem; display: flex; align-items: center; gap: .5rem; }
@@ -364,7 +368,7 @@ else
     .form-lbl { font-size: .8rem; font-weight: 600; color: var(--c-text-2); }
     .form-lbl.required::after { content: ' *'; color: var(--c-danger); font-weight: 700; }
     .form-ctrl { border: 1.5px solid var(--c-border); border-radius: var(--r-sm); padding: .55rem .9rem; font-size: .88rem; color: var(--c-text); background: #fafafa; transition: all .2s; outline: none; width: 100%; }
-    .form-ctrl:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+    .form-ctrl:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(212,175,55,.1); }
     .form-ctrl:disabled { background: #f1f5f9; color: var(--c-text-2); cursor: not-allowed; }
     .readonly-field { background: #f8fafc !important; color: var(--c-text-2) !important; }
     .textarea-ctrl { resize: vertical; min-height: 60px; }
@@ -393,6 +397,8 @@ else
     .type-chip { display: inline-flex; padding: .15rem .5rem; border-radius: 12px; font-size: .72rem; font-weight: 700; }
     .type-raw { background: var(--c-info-lt); color: #0284c7; }
     .type-pkg { background: var(--c-warning-lt); color: #b45309; }
+    .type-finished { background: var(--yk-gold-10); color: var(--yk-gold-dark); border: 1px solid var(--yk-border-gold); }
+    .type-other { background: #f3f4f6; color: #6b7280; }
     .fw600 { font-weight: 600; }
     .fw700 { font-weight: 700; }
     .fw800 { font-weight: 800; }
@@ -408,7 +414,7 @@ else
         font-weight: 600; color: var(--c-primary); background: #fafafa;
         transition: all .2s; outline: none;
     }
-    .issue-input:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+    .issue-input:focus { border-color: var(--c-primary); background: #fff; box-shadow: 0 0 0 3px rgba(212,175,55,.1); }
     .issue-qty-display { font-weight: 700; color: var(--c-success); }
 
     .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 2rem; gap: 1rem; }
@@ -424,8 +430,8 @@ else
     .btn-action:disabled { opacity: .6; cursor: not-allowed; }
     .btn-action.approve { background: #059669; }
     .btn-action:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
-    .btn-save { background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk)); color: #fff; border: none; border-radius: var(--r-sm); padding: .6rem 1.5rem; font-size: .88rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: .45rem; transition: all .2s; box-shadow: 0 4px 12px rgba(79,70,229,.3); }
-    .btn-save:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.4); }
+    .btn-save { background: linear-gradient(135deg, var(--c-primary), var(--c-primary-dk)); color: #fff; border: none; border-radius: var(--r-sm); padding: .6rem 1.5rem; font-size: .88rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: .45rem; transition: all .2s; box-shadow: 0 4px 12px rgba(212,175,55,.3); }
+    .btn-save:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(212,175,55,.4); }
     .btn-save:disabled { opacity: .6; cursor: not-allowed; }
     .btn-back { background: var(--c-secondary-lt); color: var(--c-secondary); border: none; border-radius: var(--r-sm); padding: .6rem 1.2rem; font-size: .85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: .4rem; }
 
@@ -668,6 +674,14 @@ else
     private void GoBack() => NavigationManager.NavigateTo("/material-issues");
 
     private async Task ClearMessage() { await Task.Delay(4000); resultMessage = null; StateHasChanged(); }
+
+    private string GetMaterialTypeClass(int materialType) => materialType switch
+    {
+        1 => "type-raw",
+        2 => "type-pkg",
+        3 => "type-finished",
+        _ => "type-other"
+    };
 
     private string GetStatusClass(int s) => s switch { 1 => "s-draft", 2 => "s-issued", 3 => "s-cancelled", _ => "s-draft" };
     private string GetStatusName(int s) => s switch { 1 => "مسودة", 2 => "تم الصرف", 3 => "ملغي", _ => "—" };

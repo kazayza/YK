@@ -1,6 +1,7 @@
 ﻿@page "/boms/edit/{BOMID:int}"
 @using YKCoatings.Services
 @using YKCoatings.Models
+@using System.Globalization
 @inject BOMService BomService
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
@@ -28,7 +29,7 @@ else if (perms == null || !perms.CanView)
 }
 else
 {
-    <div class="edit-page" dir="rtl">
+    <div class="edit-page yk-gold-page" dir="rtl">
 
         @if (isLoading)
         {
@@ -215,12 +216,14 @@ else
                                 <label class="flabel required">الكمية الناتجة</label>
                                 <input type="number" step="0.0001" class="finput"
                                        @bind="bom.OutputQty"
+                                       @bind:after="OnOutputQuantityChanged"
                                        disabled="@(!CanEditHeader || !perms.CanEdit)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">وحدة الناتج</label>
                                 <select class="fselect"
                                         @bind="bom.OutputUnitID"
+                                        @bind:after="OnOutputUnitChanged"
                                         disabled="@(!CanEditHeader || !perms.CanEdit)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @foreach (var unit in unitLookup)
@@ -229,6 +232,12 @@ else
                                     }
                                 </select>
                             </div>
+                            @if (outputBasisDirty)
+                            {
+                                <div class="field-hint warning" style="grid-column:1 / -1; padding:.55rem .75rem; border-radius:8px; background:#fff8e8;">
+                                    تغيّر أساس الناتج ولم يُحفظ بعد؛ احفظ الرأس قبل حفظ أي سطر بالنسبة. لا تُحوّل الوحدات تلقائياً.
+                                </div>
+                            }
                             <div class="form-group-modern">
                                 <label class="flabel">نسبة الهالك %</label>
                                 <input type="number" step="0.01" class="finput"
@@ -280,25 +289,26 @@ else
                             <div class="form-group-modern">
                                 <label class="flabel">نوع المادة</label>
                                 <select class="fselect" @bind="detailModel.MaterialType"
+                                        @bind:after="OnMaterialTypeChanged"
                                         disabled="@(!CanEditLines || !perms.CanEdit)">
                                     <option value="1">خامة</option>
                                     <option value="2">تعبئة</option>
+                                    <option value="3">منتج نهائي</option>
                                 </select>
+                                <span class="field-hint">قائمة الأصناف تتغير حسب نوع المادة المختار.</span>
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">الصنف</label>
-                                <select class="fselect" @bind="detailModel.ItemID"
-                                        disabled="@(!CanEditLines || !perms.CanEdit)">
-                                    <option value="0">-- اختر الصنف --</option>
-                                    @foreach (var item in materialLookup)
-                                    {
-                                        <option value="@item.Id">@item.Name</option>
-                                    }
-                                </select>
+                                <SearchableSelect Items="@filteredMaterialLookup"
+                                                  @bind-SelectedId="detailModel.ItemID"
+                                                  OnSelected="OnMaterialSelected"
+                                                  Placeholder="ابحث بالعربي أو الإنجليزي أو كود الصنف..."
+                                                  IsDisabled="@(!CanEditLines || !perms.CanEdit)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">الوحدة</label>
                                 <select class="fselect" @bind="detailModel.UnitID"
+                                        @bind:after="OnUnitChanged"
                                         disabled="@(!CanEditLines || !perms.CanEdit)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @foreach (var unit in unitLookup)
@@ -306,12 +316,82 @@ else
                                         <option value="@unit.Id">@unit.Name</option>
                                     }
                                 </select>
+                                <span class="field-hint">تُملأ تلقائياً من الوحدة الأساسية للصنف المختار.</span>
                             </div>
                             <div class="form-group-modern">
-                                <label class="flabel required">الكمية</label>
+                                <label class="flabel">طريقة إدخال المكوّن</label>
+                                <select class="fselect" @bind="detailModel.InputMode"
+                                        @bind:after="OnInputModeChanged"
+                                        disabled="@(!CanEditLines || !perms.CanEdit)">
+                                    <option value="1">إدخال الكمية</option>
+                                    <option value="2" disabled="@(!IsCompositionMaterialType(detailModel.MaterialType))">إدخال النسبة من المنتج النهائي</option>
+                                </select>
+                                <span class="field-hint">اختر طريقة لكل سطر ويمكن المزج؛ حد 100% يحسب سطور النسبة المُدخلة فقط. التعبئة كمية يدوية.</span>
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">@(IsPercentageMode ? "الكمية المحسوبة" : "كمية المكوّن")</label>
                                 <input type="number" step="0.000001" class="finput"
                                        @bind="detailModel.Quantity"
+                                       @bind:after="OnQuantityChanged"
+                                       readonly="@IsPercentageMode"
                                        disabled="@(!CanEditLines || !perms.CanEdit)" />
+                                @if (IsPercentageMode)
+                                {
+                                    <span class="field-hint">تُحسب تلقائياً من النسبة وكمية الناتج النهائي.</span>
+                                }
+                                else
+                                {
+                                    <span class="field-hint">أدخل الكمية يدوياً؛ النسبة للمعاينة إن تطابقت الوحدة ولا تدخل في حد 100%.</span>
+                                }
+                            </div>
+                            <div class="form-group-modern">
+                                <label class="flabel">النسبة من المنتج النهائي</label>
+                                <div class="percentage-input-wrap">
+                                    @if (IsPercentageMode)
+                                    {
+                                        <input type="number" min="0" max="100" step="any" inputmode="decimal" class="finput"
+                                               @bind="detailModel.Percentage"
+                                               @bind:event="oninput"
+                                               @bind:after="OnPercentageChanged"
+                                               disabled="@(!CanEditLines || !perms.CanEdit || !IsCompositionMaterialType(detailModel.MaterialType) || !CanUseWeightPercentage(detailModel.UnitID))" />
+                                    }
+                                    else
+                                    {
+                                        <input type="number" step="any" class="finput"
+                                               value="@PercentagePreviewValue"
+                                               readonly
+                                               disabled="@(!IsCompositionMaterialType(detailModel.MaterialType) || !CanUseWeightPercentage(detailModel.UnitID))" />
+                                    }
+                                    <span class="percentage-input-suffix" aria-hidden="true">%</span>
+                                </div>
+                                @if (ProposedInputPercentageTotal > 100m)
+                                {
+                                    <span class="field-hint warning">مجموع سطور النسبة المُدخلة سيتجاوز 100%؛ لا يمكن حفظ هذا التعديل.</span>
+                                }
+                                else if (IsPercentageMode && !CanUseWeightPercentage(detailModel.UnitID))
+                                {
+                                    <span class="field-hint warning">لا يمكن حساب النسبة بهذه الوحدة. اختر وحدة وزن مطابقة لوحدة الناتج أو بدّل طريقة الإدخال إلى الكمية؛ لا يتم تحويل الوحدات تلقائياً.</span>
+                                }
+                                else if (IsPercentageMode && (detailModel.Percentage <= 0m || detailModel.Percentage > 100m))
+                                {
+                                    <span class="field-hint warning">أدخل نسبة أكبر من صفر ولا تتجاوز 100%؛ ومجموع سطور النسبة المُدخلة يجب ألا يتجاوز 100%.</span>
+                                }
+                                else if (IsPercentageMode)
+                                {
+                                    <span class="field-hint">أدخل النسبة؛ والكمية تُحسب من الناتج. إجمالي 100% يشمل سطور النسبة المُدخلة فقط.</span>
+                                }
+                                else if (!IsCompositionMaterialType(detailModel.MaterialType))
+                                {
+                                    <span class="field-hint">النسبة لا تنطبق على مواد التعبئة.</span>
+                                }
+                                else if (CanUseWeightPercentage(detailModel.UnitID))
+                                {
+                                    <span class="field-hint">هذه نسبة معاينة محسوبة من الكمية؛ اختر طريقة النسبة لإدخالها مباشرةً.</span>
+                                }
+                                else
+                                {
+                                    <span class="field-hint">لا يمكن حساب النسبة دون وحدة وزن مطابقة؛ الكمية اليدوية تظل متاحة.</span>
+                                }
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">الهالك %</label>
@@ -324,7 +404,7 @@ else
                                 <select class="fselect" @bind="SubstituteItemIdValue"
                                         disabled="@(!CanEditLines || !perms.CanEdit)">
                                     <option value="0">-- لا يوجد --</option>
-                                    @foreach (var item in materialLookup)
+                                    @foreach (var item in filteredMaterialLookup)
                                     {
                                         <option value="@item.Id">@item.Name</option>
                                     }
@@ -382,7 +462,24 @@ else
                                 <i class="bi bi-list-ul" style="color:var(--c-primary)"></i>
                                 قائمة المكونات
                             </span>
-                            <span class="count-badge-sm">@details.Count عنصر</span>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="count-badge-sm">@details.Count عنصر</span>
+                                <span class="count-badge-sm">
+                                    إجمالي النسب المُدخلة: @(TotalInputPercentage.ToString("N2") + "%")
+                                </span>
+                                @if (HasIncompatiblePercentageLines)
+                                {
+                                    <span class="field-hint warning">يوجد سطر بنمط النسبة ووحدته لا تطابق وحدة الناتج؛ بدّل نمطه إلى كمية أو طابق الوحدة.</span>
+                                }
+                                @if (HasUncomputableQuantityRatios)
+                                {
+                                    <span class="field-hint warning">تعذّر عرض نسبة معاينة لبعض سطور الكمية لاختلاف الوحدة؛ هذه السطور لا تدخل في إجمالي النسب المُدخلة.</span>
+                                }
+                                @if (TotalInputPercentage > 100m)
+                                {
+                                    <span class="field-hint warning">مجموع النسب التي أُدخلت كنسبة يتجاوز 100%؛ لن يُسمح بالحفظ أو التنشيط.</span>
+                                }
+                            </div>
                         </div>
                         <div class="table-scroll">
                             <table class="modern-table">
@@ -393,6 +490,8 @@ else
                                         <th>الصنف</th>
                                         <th class="tc">الوحدة</th>
                                         <th class="tc">الكمية</th>
+                                        <th class="tc">طريقة الإدخال</th>
+                                        <th class="tc">النسبة %</th>
                                         <th class="tc">الهالك%</th>
                                         <th class="tc">الصافي</th>
                                         <th class="tl">تكلفة الوحدة</th>
@@ -410,8 +509,8 @@ else
                                             <tr>
                                                 <td class="row-num">@row.LineNumber</td>
                                                 <td>
-                                                    <span class="type-chip @(row.MaterialType == 1 ? "chip-raw" : "chip-pkg")">
-                                                        <i class="bi bi-@(row.MaterialType == 1 ? "box-fill" : "bag-fill")"></i>
+                                                    <span class="type-chip @GetMaterialTypeClass(row.MaterialType)">
+                                                        <i class="bi @GetMaterialTypeIcon(row.MaterialType)"></i>
                                                         @row.MaterialTypeName
                                                     </span>
                                                 </td>
@@ -421,6 +520,12 @@ else
                                                 </td>
                                                 <td class="tc">@row.UnitName</td>
                                                 <td class="tc fw-600">@row.Quantity.ToString("N4")</td>
+                                                <td class="tc">
+                                                    <span class="input-mode-chip @(row.InputPercentage.HasValue ? "mode-percent" : "mode-quantity")">
+                                                        @(row.InputPercentage.HasValue ? "نسبة" : "كمية")
+                                                    </span>
+                                                </td>
+                                                <td class="tc">@FormatLinePercentage(row)</td>
                                                 <td class="tc">@row.WastePercent.ToString("N2")%</td>
                                                 <td class="tc">@row.NetQuantity.ToString("N4")</td>
                                                 <td class="tl mono">@row.UnitCost.ToString("N4")</td>
@@ -463,7 +568,7 @@ else
                                     else
                                     {
                                         <tr>
-                                            <td colspan="12" class="empty-row">
+                                            <td colspan="14" class="empty-row">
                                                 <i class="bi bi-inbox" style="font-size:1.5rem; display:block; margin-bottom:.5rem;"></i>
                                                 لا توجد مكونات بعد
                                             </td>
@@ -684,11 +789,11 @@ else
                 {
                     <div class="costs-summary-grid">
                         <div class="cost-summary-card">
-                            <div class="csc-icon" style="background:#eff6ff; color:#2563eb;">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
                                 <i class="bi bi-box-fill"></i>
                             </div>
                             <div class="csc-label">تكلفة المواد الخام</div>
-                            <div class="csc-value" style="color:#2563eb;">@costs.RawMaterialCost.ToString("N2")</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark);">@costs.RawMaterialCost.ToString("N2")</div>
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card">
@@ -700,6 +805,14 @@ else
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
+                                <i class="bi bi-box-seam-fill"></i>
+                            </div>
+                            <div class="csc-label">تكلفة المنتجات التامة كمكونات</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark);">@costs.FinishedProductComponentCost.ToString("N2")</div>
+                            <div class="csc-currency">ج.م</div>
+                        </div>
+                        <div class="cost-summary-card">
                             <div class="csc-icon" style="background:#ecfdf5; color:#10b981;">
                                 <i class="bi bi-collection-fill"></i>
                             </div>
@@ -708,35 +821,35 @@ else
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card">
-                            <div class="csc-icon" style="background:#f5f3ff; color:#2563eb;">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
                                 <i class="bi bi-people-fill"></i>
                             </div>
                             <div class="csc-label">تكلفة العمالة</div>
-                            <div class="csc-value" style="color:#2563eb;">@bom.LaborCostPerBatch.ToString("N2")</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark);">@bom.LaborCostPerBatch.ToString("N2")</div>
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card">
-                            <div class="csc-icon" style="background:#f5f3ff; color:#1d4ed8;">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
                                 <i class="bi bi-gear-wide-connected"></i>
                             </div>
                             <div class="csc-label">المصاريف غير المباشرة</div>
-                            <div class="csc-value" style="color:#1d4ed8;">@bom.OverheadCostPerBatch.ToString("N2")</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark);">@bom.OverheadCostPerBatch.ToString("N2")</div>
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card highlight-card">
-                            <div class="csc-icon" style="background:#d1fae5; color:#059669;">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
                                 <i class="bi bi-cash-stack"></i>
                             </div>
                             <div class="csc-label">إجمالي تكلفة الدفعة</div>
-                            <div class="csc-value" style="color:#059669; font-size:1.6rem;">@costs.TotalBatchCost.ToString("N2")</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark); font-size:1.6rem;">@costs.TotalBatchCost.ToString("N2")</div>
                             <div class="csc-currency">ج.م</div>
                         </div>
                         <div class="cost-summary-card highlight-card">
-                            <div class="csc-icon" style="background:#eef2ff; color:#4f46e5;">
+                            <div class="csc-icon" style="background:var(--yk-gold-10); color:var(--yk-gold-dark);">
                                 <i class="bi bi-tag-fill"></i>
                             </div>
                             <div class="csc-label">تكلفة الوحدة</div>
-                            <div class="csc-value" style="color:#4f46e5; font-size:1.6rem;">@costs.UnitCost.ToString("N4")</div>
+                            <div class="csc-value" style="color:var(--yk-gold-dark); font-size:1.6rem;">@costs.UnitCost.ToString("N4")</div>
                             <div class="csc-currency">ج.م / وحدة</div>
                         </div>
                     </div>
@@ -883,9 +996,9 @@ else
 <style>
     /* ===== Variables ===== */
     :root {
-        --c-primary:      #4f46e5;
-        --c-primary-lt:   #eef2ff;
-        --c-primary-dk:   #3730a3;
+        --c-primary:      #D4AF37;
+        --c-primary-lt:   rgba(212,175,55,.10);
+        --c-primary-dk:   #9C7C2E;
         --c-success:      #10b981;
         --c-success-lt:   #ecfdf5;
         --c-warning:      #f59e0b;
@@ -976,7 +1089,7 @@ else
         align-items: center;
         flex-wrap: wrap;
         gap: 1rem;
-        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        box-shadow: 0 8px 32px rgba(212,175,55,.25);
         position: relative;
         overflow: hidden;
     }
@@ -1170,7 +1283,7 @@ else
     .tab-item.tab-active {
         background: var(--c-primary);
         color: white;
-        box-shadow: 0 3px 10px rgba(79,70,229,.3);
+        box-shadow: 0 3px 10px rgba(212,175,55,.3);
     }
     .tab-badge {
         background: rgba(255,255,255,.25);
@@ -1246,7 +1359,7 @@ else
     .finput:focus, .fselect:focus, .ftextarea:focus {
         border-color: var(--c-primary);
         background: white;
-        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+        box-shadow: 0 0 0 3px rgba(212,175,55,.1);
     }
     .finput:disabled, .fselect:disabled, .ftextarea:disabled {
         background: #f1f5f9;
@@ -1255,6 +1368,20 @@ else
         border-color: #e2e8f0;
     }
     .ftextarea { resize: vertical; min-height: 90px; }
+    .finput[readonly] { cursor: default; }
+    .percentage-input-wrap { position: relative; width: 100%; }
+    .percentage-input-wrap .finput { padding-inline-end: 2.25rem; }
+    .percentage-input-suffix {
+        position: absolute;
+        inset-inline-end: .85rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--yk-gold-dark, #9C7C2E);
+        font-weight: 700;
+        font-size: .85rem;
+        pointer-events: none;
+        line-height: 1;
+    }
 
     .field-hint {
         font-size: .74rem;
@@ -1394,6 +1521,21 @@ else
     }
     .chip-raw { background: var(--c-info-lt);    color: var(--c-info); }
     .chip-pkg { background: var(--c-warning-lt); color: #d97706; }
+    .chip-finished { background: var(--yk-gold-10); color: var(--yk-gold-dark); border: 1px solid var(--yk-border-gold); }
+    .input-mode-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 3.1rem;
+        padding: .18rem .5rem;
+        border: 1px solid var(--yk-border-gold, #e5d8b3);
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .input-mode-chip.mode-percent { background: var(--yk-gold-10, #f7f1df); color: var(--yk-gold-dark, #9C7C2E); }
+    .input-mode-chip.mode-quantity { background: #f7f8fa; color: #5f6673; border-color: #e2e5eb; }
 
     .item-name { font-weight: 600; font-size: .84rem; }
     .item-code { font-size: .73rem; color: var(--c-text-3); font-family: monospace; margin-top: .1rem; }
@@ -1618,10 +1760,12 @@ else
     private List<BOMLookupDto> productLookup  = new();
     private List<BOMLookupDto> unitLookup     = new();
     private List<BOMLookupDto> stageLookup    = new();
-    private List<BOMLookupDto> materialLookup = new();
+    private List<SearchableItem> materialLookup = new();
+    private List<SearchableItem> filteredMaterialLookup = new();
 
     private BOMDetailDto detailModel = new();
     private BOMStageDto  stageModel  = new();
+    private bool outputBasisDirty;
 
     private bool isLoading     = true;
     private bool lookupsLoaded = false;
@@ -1700,6 +1844,7 @@ else
         unitLookup     = await BomService.GetUnitsLookupAsync();
         stageLookup    = await BomService.GetStagesLookupAsync();
         materialLookup = await BomService.GetMaterialItemsLookupAsync();
+        RefreshFilteredMaterialLookup();
     }
 
     private async Task LoadPageAsync()
@@ -1758,6 +1903,8 @@ else
             return;
         }
         await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        outputBasisDirty = false;
+        await ReloadDetailsAsync();
         await ReloadCostsAsync();
         await ReloadAuditAsync();
         await Alert("تم حفظ التعديلات بنجاح ✅");
@@ -1768,6 +1915,8 @@ else
         if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
         if (!await ValidateHeaderAsync()) return;
         await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        outputBasisDirty = false;
+        await ReloadDetailsAsync();
         await ReloadCostsAsync();
         await ReloadAuditAsync();
         await Alert("تم حفظ بيانات التكاليف بنجاح ✅");
@@ -1781,16 +1930,86 @@ else
         if (bom.BatchUnitID   <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الدفعة");          return false; }
         if (bom.OutputQty     <= 0)                   { currentTab = 1; await Alert("يجب إدخال كمية ناتجة أكبر من صفر"); return false; }
         if (bom.OutputUnitID  <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الناتج");          return false; }
+
+        if (HasIncompatiblePercentageLines)
+        {
+            currentTab = 2;
+            await Alert("يوجد مكوّن محفوظ بنمط النسبة ووحدته لا تطابق وحدة وزن الناتج. طابق الوحدة أو بدّل نمط المكوّن إلى الكمية.");
+            return false;
+        }
+
+        if (TotalInputPercentage > 100m)
+        {
+            currentTab = 2;
+            await Alert($"مجموع النسب التي أُدخلت كنسبة {TotalInputPercentage:N4}%؛ يجب ألا يتجاوز 100%.");
+            return false;
+        }
+
         return true;
     }
 
     private async Task SaveDetailAsync()
     {
         if (IsNew)                    { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        if (outputBasisDirty && IsPercentageMode)
+        {
+            await Alert("احفظ كمية ووحدة الناتج في الرأس أولاً قبل حفظ سطر بالنسبة. إذا منع عدم تطابق الوحدات حفظ الرأس، بدّل السطر مؤقتاً إلى وضع الكمية ثم عالج الوحدات دون تحويل تلقائي.");
+            return;
+        }
         if (detailModel.ItemID <= 0)  { await Alert("يجب اختيار الصنف");     return; }
         if (detailModel.UnitID <= 0)  { await Alert("يجب اختيار الوحدة");    return; }
-        if (detailModel.Quantity <= 0){ await Alert("يجب إدخال كمية أكبر من صفر"); return; }
         if (detailModel.StageNumber <= 0) detailModel.StageNumber = 1;
+
+        var isPercentageMode = IsPercentageMode;
+        if (isPercentageMode)
+        {
+            if (!IsCompositionMaterialType(detailModel.MaterialType) || !CanUseWeightPercentage(detailModel.UnitID))
+            {
+                await Alert("لا يمكن تطبيق النسبة على هذا النوع أو بهذه الوحدة. اختر خامة/منتجاً نهائياً بوحدة وزن مطابقة لوحدة الناتج، أو حوّل طريقة الإدخال إلى كمية.");
+                return;
+            }
+
+            if (detailModel.Percentage <= 0m || detailModel.Percentage > 100m)
+            {
+                await Alert("أدخل نسبة أكبر من صفر، ولا تتجاوز 100%.");
+                return;
+            }
+
+            detailModel.InputPercentage = Math.Round(detailModel.Percentage, 10, MidpointRounding.AwayFromZero);
+            detailModel.Percentage = detailModel.InputPercentage.Value;
+            detailModel.Quantity = CalculateQuantityFromPercentage(detailModel.InputPercentage.Value);
+        }
+        else
+        {
+            detailModel.InputPercentage = null;
+            UpdatePercentagePreview();
+        }
+
+        if (detailModel.Quantity <= 0m)
+        {
+            await Alert(isPercentageMode
+                ? "الكمية الناتجة من هذه النسبة تساوي صفراً؛ زد النسبة أو كمية الناتج."
+                : "يجب إدخال كمية أكبر من صفر.");
+            return;
+        }
+
+        if (detailModel.MaterialType == 3 &&
+            await BomService.WouldCreateCircularBOMAsync(
+                bom.ProductItemID, detailModel.ItemID, detailModel.BOMDetailID))
+        {
+            await Alert("إضافة هذا المنتج ستُنشئ وصفة دائرية؛ اختر منتجاً لا يعتمد مباشرة أو بشكل غير مباشر على المنتج الحالي.");
+            return;
+        }
+
+        var proposedTotal = details
+            .Where(row => row.InputPercentage.HasValue)
+            .Where(row => row.BOMDetailID != detailModel.BOMDetailID)
+            .Sum(row => row.InputPercentage!.Value) + CurrentDetailPercentageForTotal;
+        if (proposedTotal > 100m)
+        {
+            await Alert($"مجموع النسب التي أُدخلت كنسبة سيكون {proposedTotal:N4}%؛ يجب ألا يتجاوز 100%.");
+            return;
+        }
 
         var dup = await BomService.IsDuplicateItemAsync(BOMID, detailModel.ItemID, detailModel.BOMDetailID);
         if (dup) { await Alert("هذا الصنف موجود بالفعل داخل الوصفة"); return; }
@@ -1822,6 +2041,12 @@ else
             UnitID            = row.UnitID,
             UnitName          = row.UnitName,
             Quantity          = row.Quantity,
+            InputPercentage   = row.InputPercentage,
+            InputMode         = row.InputPercentage.HasValue ? 2 : 1,
+            Percentage        = row.InputPercentage ??
+                (IsCompositionMaterialType(row.MaterialType) && CanUseWeightPercentage(row.UnitID)
+                    ? CalculatePercentage(row.Quantity)
+                    : 0m),
             WastePercent      = row.WastePercent,
             NetQuantity       = row.NetQuantity,
             UnitCost          = row.UnitCost,
@@ -1833,6 +2058,7 @@ else
             StageNumber       = row.StageNumber,
             Notes             = row.Notes
         };
+        RefreshFilteredMaterialLookup();
     }
 
     private async Task DeleteDetailAsync(int id)
@@ -1844,16 +2070,213 @@ else
         ResetDetailForm();
     }
 
-    private void ResetDetailForm() =>
+    private void ResetDetailForm()
+    {
         detailModel = new BOMDetailDto
         {
             BOMID       = BOMID,
             MaterialType = 1,
+            InputMode   = 1,
+            InputPercentage = null,
             WastePercent = 0,
             StageNumber  = 1,
             Sequence     = 0,
             IsOptional   = false
         };
+        RefreshFilteredMaterialLookup();
+    }
+
+    private string GetMaterialTypeClass(int materialType) => materialType switch
+    {
+        1 => "chip-raw",
+        2 => "chip-pkg",
+        3 => "chip-finished",
+        _ => "chip-pkg"
+    };
+
+    private string GetMaterialTypeIcon(int materialType) => materialType switch
+    {
+        1 => "bi-box-fill",
+        2 => "bi-bag-fill",
+        3 => "bi-box-seam-fill",
+        _ => "bi-question-circle"
+    };
+
+    private int SelectedItemType => detailModel.MaterialType switch
+    {
+        1 => 1, // خامة
+        2 => 2, // تعبئة
+        3 => 4, // صنف منتج نهائي
+        _ => 0
+    };
+
+    private void RefreshFilteredMaterialLookup() =>
+        filteredMaterialLookup = materialLookup.Where(item => item.ItemType == SelectedItemType).ToList();
+
+    private bool IsCompositionMaterialType(int materialType) => materialType is 1 or 3;
+
+    private bool IsPercentageMode => detailModel.InputMode == 2;
+
+    private string PercentagePreviewValue => IsCompositionMaterialType(detailModel.MaterialType) && CanUseWeightPercentage(detailModel.UnitID)
+        ? detailModel.Percentage.ToString("0.############", CultureInfo.InvariantCulture)
+        : string.Empty;
+
+    private bool IsWeightUnit(int unitId) =>
+        unitLookup.Any(unit => unit.Id == unitId &&
+            string.Equals(unit.UnitType, "Weight", StringComparison.OrdinalIgnoreCase));
+
+    private bool CanUseWeightPercentage(int unitId) =>
+        bom.OutputQty > 0 && bom.OutputUnitID > 0 && unitId > 0 &&
+        unitId == bom.OutputUnitID && IsWeightUnit(unitId);
+
+    private decimal CalculatePercentage(decimal quantity) =>
+        bom.OutputQty > 0 ? Math.Round(quantity / bom.OutputQty * 100m, 10, MidpointRounding.AwayFromZero) : 0m;
+
+    private decimal CalculateExactPercentage(decimal quantity) =>
+        bom.OutputQty > 0 ? quantity / bom.OutputQty * 100m : 0m;
+
+    private decimal CalculateQuantityFromPercentage(decimal percentage) =>
+        Math.Round(bom.OutputQty * percentage / 100m, 6, MidpointRounding.AwayFromZero);
+
+    private decimal? GetLinePercentage(BOMDetailDto row)
+    {
+        if (row.InputPercentage.HasValue)
+            return CanUseWeightPercentage(row.UnitID) ? row.InputPercentage.Value : null;
+
+        return IsCompositionMaterialType(row.MaterialType) && CanUseWeightPercentage(row.UnitID)
+            ? CalculateExactPercentage(row.Quantity)
+            : null;
+    }
+
+    private string FormatLinePercentage(BOMDetailDto row) =>
+        GetLinePercentage(row) is decimal percentage ? $"{percentage:N2}%" : "—";
+
+    private decimal TotalInputPercentage => details
+        .Where(row => row.InputPercentage.HasValue)
+        .Sum(row => row.InputPercentage.GetValueOrDefault());
+
+    private bool HasIncompatiblePercentageLines => details.Any(row =>
+        row.InputPercentage.HasValue &&
+        (!IsCompositionMaterialType(row.MaterialType) || !CanUseWeightPercentage(row.UnitID)));
+
+    private bool HasUncomputableQuantityRatios => details.Any(row =>
+        IsCompositionMaterialType(row.MaterialType) &&
+        !row.InputPercentage.HasValue &&
+        !CanUseWeightPercentage(row.UnitID));
+
+    private decimal CurrentDetailPercentageForTotal =>
+        IsPercentageMode && IsCompositionMaterialType(detailModel.MaterialType) && CanUseWeightPercentage(detailModel.UnitID)
+            ? detailModel.Percentage
+            : 0m;
+
+    private decimal ProposedInputPercentageTotal =>
+        details.Where(row => row.InputPercentage.HasValue)
+               .Where(row => row.BOMDetailID != detailModel.BOMDetailID)
+               .Sum(row => row.InputPercentage.GetValueOrDefault()) + CurrentDetailPercentageForTotal;
+
+    private void OnMaterialTypeChanged()
+    {
+        detailModel.ItemID = 0;
+        detailModel.UnitID = 0;
+        detailModel.Quantity = 0;
+        detailModel.Percentage = 0;
+        detailModel.InputPercentage = null;
+        detailModel.InputMode = 1;
+        detailModel.SubstituteItemID = null;
+        RefreshFilteredMaterialLookup();
+    }
+
+    private Task OnMaterialSelected(SearchableItem? selected)
+    {
+        detailModel.UnitID = selected?.PrimaryUnitID ?? 0;
+        detailModel.Quantity = 0;
+        detailModel.Percentage = 0;
+        detailModel.InputPercentage = null;
+        if (!IsPercentageMode)
+            UpdatePercentagePreview();
+        return Task.CompletedTask;
+    }
+
+    private void OnInputModeChanged()
+    {
+        if (IsPercentageMode)
+        {
+            detailModel.Percentage = IsCompositionMaterialType(detailModel.MaterialType) && CanUseWeightPercentage(detailModel.UnitID)
+                ? CalculatePercentage(detailModel.Quantity)
+                : 0m;
+            RecalculateCurrentQuantityFromPercentage();
+        }
+        else
+        {
+            detailModel.InputPercentage = null;
+            UpdatePercentagePreview();
+        }
+    }
+
+    private void OnUnitChanged()
+    {
+        if (IsPercentageMode)
+        {
+            if (CanUseWeightPercentage(detailModel.UnitID))
+                RecalculateCurrentQuantityFromPercentage();
+        }
+        else
+        {
+            UpdatePercentagePreview();
+        }
+    }
+
+    private void OnOutputQuantityChanged()
+    {
+        outputBasisDirty = true;
+        if (IsPercentageMode)
+        {
+            if (CanUseWeightPercentage(detailModel.UnitID))
+                RecalculateCurrentQuantityFromPercentage();
+        }
+        else
+        {
+            UpdatePercentagePreview();
+        }
+    }
+
+    private void OnOutputUnitChanged()
+    {
+        outputBasisDirty = true;
+        OnUnitChanged();
+    }
+
+    private void OnQuantityChanged()
+    {
+        if (!IsPercentageMode)
+            UpdatePercentagePreview();
+    }
+
+    private void UpdatePercentagePreview()
+    {
+        detailModel.Percentage = IsCompositionMaterialType(detailModel.MaterialType) && CanUseWeightPercentage(detailModel.UnitID)
+            ? CalculatePercentage(detailModel.Quantity)
+            : 0m;
+    }
+
+    private void OnPercentageChanged() => RecalculateCurrentQuantityFromPercentage();
+
+    private void RecalculateCurrentQuantityFromPercentage()
+    {
+        if (!IsPercentageMode)
+            return;
+
+        if (!CanUseWeightPercentage(detailModel.UnitID))
+            return;
+
+        if (detailModel.Percentage <= 0m || detailModel.Percentage > 100m)
+        {
+            detailModel.Quantity = 0m;
+            return;
+        }
+
+        detailModel.Quantity = CalculateQuantityFromPercentage(detailModel.Percentage);
+    }
 
     private async Task SaveStageAsync()
     {
@@ -1929,7 +2352,12 @@ else
     private async Task ActivateAsync()
     {
         if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
+        if (!await ValidateHeaderAsync()) return;
         await BomService.UpdateBOMAsync(bom, CurrentUserId);
+        outputBasisDirty = false;
+        await ReloadDetailsAsync();
+        await ReloadCostsAsync();
+        await ReloadAuditAsync();
         var existing = await BomService.CheckActiveVersionExistsAsync(bom.ProductItemID, bom.BOMID);
         if (existing.Exists)
         {

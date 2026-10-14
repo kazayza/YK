@@ -28,7 +28,7 @@ else if (permissions == null || !permissions.CanView)
 }
 else
 {
-    <div class="bom-page">
+    <div class="bom-page yk-gold-page">
 
         <!-- ===== Header ===== -->
         <div class="page-header">
@@ -236,6 +236,10 @@ else
                                                 <i class="bi bi-bag-fill"></i>
                                                 @bom.PackagingMaterialCount
                                             </span>
+                                            <span class="comp-chip finished" title="منتج نهائي">
+                                                <i class="bi bi-box-seam-fill"></i>
+                                                @bom.FinishedProductComponentCount
+                                            </span>
                                         </div>
                                     </td>
                                     <td class="tr">
@@ -291,9 +295,9 @@ else
 <style>
     /* ===== Variables ===== */
     :root {
-        --c-primary:      #4f46e5;
-        --c-primary-lt:   #eef2ff;
-        --c-primary-dk:   #3730a3;
+        --c-primary:      #D4AF37;
+        --c-primary-lt:   rgba(212,175,55,.10);
+        --c-primary-dk:   #9C7C2E;
         --c-success:      #10b981;
         --c-success-lt:   #ecfdf5;
         --c-warning:      #f59e0b;
@@ -305,7 +309,7 @@ else
         --c-secondary:    #64748b;
         --c-secondary-lt: #f1f5f9;
         --c-surface:      #ffffff;
-        --c-bg:           #f8fafc;
+        --c-bg:           #f8f6f0;
         --c-border:       #e2e8f0;
         --c-text:         #0f172a;
         --c-text-2:       #64748b;
@@ -361,7 +365,7 @@ else
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 8px 32px rgba(79,70,229,.25);
+        box-shadow: 0 8px 32px rgba(212,175,55,.25);
         position: relative;
         overflow: hidden;
         flex-wrap: wrap;
@@ -418,12 +422,12 @@ else
         gap: .45rem;
         cursor: pointer;
         transition: all .2s;
-        box-shadow: 0 4px 12px rgba(79,70,229,.3);
+        box-shadow: 0 4px 12px rgba(212,175,55,.3);
         white-space: nowrap;
     }
     .btn-primary-modern:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 6px 18px rgba(79,70,229,.4);
+        box-shadow: 0 6px 18px rgba(212,175,55,.4);
     }
     .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
 
@@ -538,7 +542,7 @@ else
     .filter-select:focus {
         border-color: var(--c-primary);
         background: #fff;
-        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+        box-shadow: 0 0 0 3px rgba(212,175,55,.1);
     }
     .search-wrap { position: relative; }
     .search-ico {
@@ -619,7 +623,7 @@ else
         border-collapse: collapse;
     }
     .bom-table thead th {
-        background: #f8fafc;
+        background: #f8f6f0;
         padding: .85rem 1rem;
         font-size: .76rem;
         font-weight: 700;
@@ -688,6 +692,7 @@ else
     }
     .comp-chip.raw { background: var(--c-info-lt);    color: var(--c-info); }
     .comp-chip.pkg { background: var(--c-warning-lt); color: #d97706; }
+    .comp-chip.finished { background: var(--yk-gold-10); color: var(--yk-gold-dark); border: 1px solid var(--yk-border-gold); }
 
     .cost-val {
         font-weight: 700;
@@ -901,11 +906,12 @@ else
         var bom = await BomService.GetBOMByIdAsync(bomId);
         if (bom == null) return;
 
-        var allDetails        = await BomService.GetBOMDetailsAsync(bomId);
-        var rawMaterials      = allDetails.Where(x => x.MaterialType == 1).ToList();
+        var allDetails = await BomService.GetBOMDetailsAsync(bomId);
+        var rawMaterials = allDetails.Where(x => x.MaterialType == 1).ToList();
         var packagingMaterials = allDetails.Where(x => x.MaterialType == 2).ToList();
+        var finishedProductComponents = allDetails.Where(x => x.MaterialType == 3).ToList();
 
-        var html = BuildPrintHtml(bom, rawMaterials, packagingMaterials);
+        var html = BuildPrintHtml(bom, rawMaterials, packagingMaterials, finishedProductComponents);
         await JS.InvokeVoidAsync("printHtml", html);
     }
 
@@ -930,10 +936,11 @@ else
     private string BuildPrintHtml(
         BOMEditDto bom,
         List<BOMDetailDto> rawMaterials,
-        List<BOMDetailDto> packagingMaterials)
+        List<BOMDetailDto> packagingMaterials,
+        List<BOMDetailDto> finishedProductComponents)
     {
         var thStyle = "padding:11px 14px;text-align:right;font-weight:700;" +
-                      "color:#374151;border-bottom:2px solid #e5e7eb;font-size:13px;";
+                      "color:#374151;border-bottom:2px solid #e8e2d0;font-size:13px;";
         var tdStyle = "padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;";
 
         // ===== صفوف المواد الخام =====
@@ -944,7 +951,7 @@ else
             rawRows.Append($@"
             <tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{i++}</td>
-                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{item.ItemCode}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{item.ItemCode}</td>
                 <td style='{tdStyle}font-weight:600;'>{item.ItemName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{item.Quantity:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{item.UnitName}</td>
@@ -960,7 +967,23 @@ else
             pkgRows.Append($@"
             <tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{j++}</td>
-                <td style='{tdStyle}font-family:monospace;color:#4f46e5;font-weight:700;'>{item.ItemCode}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{item.ItemCode}</td>
+                <td style='{tdStyle}font-weight:600;'>{item.ItemName}</td>
+                <td style='{tdStyle}text-align:center;font-weight:600;'>{item.Quantity:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{item.UnitName}</td>
+                <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{item.LineCost:N2}</td>
+            </tr>");
+        }
+
+        // ===== صفوف المنتجات التامة المستخدمة كمكونات =====
+        var finishedRows = new System.Text.StringBuilder();
+        int k = 1;
+        foreach (var item in finishedProductComponents)
+        {
+            finishedRows.Append($@"
+            <tr>
+                <td style='{tdStyle}text-align:center;color:#94a3b8;'>{k++}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{item.ItemCode}</td>
                 <td style='{tdStyle}font-weight:600;'>{item.ItemName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{item.Quantity:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{item.UnitName}</td>
@@ -971,7 +994,7 @@ else
         // ===== Table Header مشترك =====
         var tHead = $@"
         <thead>
-            <tr style='background:#f8fafc;'>
+            <tr style='background:#f8f6f0;'>
                 <th style='{thStyle}text-align:center;width:40px;'>#</th>
                 <th style='{thStyle}'>كود الصنف</th>
                 <th style='{thStyle}'>اسم الصنف</th>
@@ -982,16 +1005,16 @@ else
         </thead>";
 
         var rawSection = rawMaterials.Any() ? $@"
-        <h3 style='border-right:4px solid #4f46e5;padding-right:12px;
-                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+        <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
             📦 المواد الخام ({rawMaterials.Count} صنف)
         </h3>
-        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
             {tHead}
             <tbody>{rawRows}</tbody>
             <tfoot>
-                <tr style='background:#f8fafc;'>
+                <tr style='background:#f8f6f0;'>
                     <td colspan='5' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>
                         إجمالي المواد الخام
                     </td>
@@ -1004,20 +1027,41 @@ else
 
         var pkgSection = packagingMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #10b981;padding-right:12px;
-                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
             🎁 مواد التعبئة والتغليف ({packagingMaterials.Count} صنف)
         </h3>
-        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
             {tHead}
             <tbody>{pkgRows}</tbody>
             <tfoot>
-                <tr style='background:#f8fafc;'>
+                <tr style='background:#f8f6f0;'>
                     <td colspan='5' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>
                         إجمالي مواد التعبئة
                     </td>
                     <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>
                         {packagingMaterials.Sum(x => x.LineCost):N2}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>" : "";
+
+        var finishedSection = finishedProductComponents.Any() ? $@"
+        <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
+            🏭 المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
+        </h3>
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
+                      border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+            {tHead}
+            <tbody>{finishedRows}</tbody>
+            <tfoot>
+                <tr style='background:#f8f6f0;'>
+                    <td colspan='5' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>
+                        إجمالي تكلفة المنتجات التامة
+                    </td>
+                    <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>
+                        {finishedProductComponents.Sum(x => x.LineCost):N2}
                     </td>
                 </tr>
             </tfoot>
@@ -1031,7 +1075,8 @@ else
         var statusColor = bom.BOMStatus == 2 ? "#065f46" : "#374151";
 
         var totalMaterial = rawMaterials.Sum(x => x.LineCost)
-                          + packagingMaterials.Sum(x => x.LineCost);
+                          + packagingMaterials.Sum(x => x.LineCost)
+                          + finishedProductComponents.Sum(x => x.LineCost);
         var totalBatch    = totalMaterial
                           + bom.LaborCostPerBatch
                           + bom.OverheadCostPerBatch;
@@ -1053,7 +1098,7 @@ else
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{
         font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-        direction:rtl; background:#fff; color:#1f2937;
+        direction:rtl; background:#fff; color:#0A0F1E;
         padding:30px; font-size:14px; line-height:1.6;
     }}
     .no-print {{ }}
@@ -1068,7 +1113,7 @@ else
 <!-- أزرار الطباعة -->
 <div class='no-print' style='margin-bottom:24px;display:flex;gap:10px;justify-content:flex-end;'>
     <button onclick='window.print()'
-        style='background:#4f46e5;color:#fff;border:none;padding:10px 24px;
+        style='background:#D4AF37;color:#0A0F1E;border:none;padding:10px 24px;
                border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
         🖨️ طباعة
     </button>
@@ -1080,20 +1125,20 @@ else
 </div>
 
 <!-- Header -->
-<div style='text-align:center;border-bottom:3px solid #4f46e5;
+<div style='text-align:center;border-bottom:3px solid #D4AF37;
             padding-bottom:20px;margin-bottom:28px;'>
     <div style='font-size:2.2rem;margin-bottom:8px;'>🏭</div>
-    <h1 style='font-size:1.7rem;font-weight:800;color:#1f2937;margin:0;'>واي كي كوتينج ERP</h1>
+    <h1 style='font-size:1.7rem;font-weight:800;color:#0A0F1E;margin:0;'>واي كي كوتينج ERP</h1>
     <p style='color:#6b7280;margin:6px 0 0;'>وصفة التصنيع (Bill of Materials)</p>
 </div>
 
 <!-- BOM Info Grid -->
 <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;
-            background:#f9fafb;padding:20px;border-radius:12px;
-            margin-bottom:28px;border:1px solid #e5e7eb;'>
+            background:#fcfaf6;padding:20px;border-radius:12px;
+            margin-bottom:28px;border:1px solid #e8e2d0;'>
     <div style='display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>كود الوصفة:</span>
-        <span style='font-weight:800;color:#4f46e5;font-size:13px;'>{bom.BOMCode}</span>
+        <span style='font-weight:800;color:#9C7C2E;font-size:13px;'>{bom.BOMCode}</span>
     </div>
     <div style='display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>اسم الوصفة:</span>
@@ -1125,7 +1170,7 @@ else
         <span style='font-size:13px;'>{bom.OverheadCostPerBatch:N2} ج.م</span>
     </div>
     <!-- Total Row -->
-    <div style='grid-column:span 2;border-top:2px solid #e5e7eb;
+    <div style='grid-column:span 2;border-top:2px solid #e8e2d0;
                 padding-top:14px;margin-top:6px;display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>إجمالي التكلفة:</span>
         <span style='font-weight:800;color:#10b981;font-size:1.1rem;'>{totalBatch:N2} ج.م</span>
@@ -1134,10 +1179,11 @@ else
 
 {rawSection}
 {pkgSection}
+{finishedSection}
 {notesSection}
 
 <!-- Footer -->
-<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e5e7eb;
+<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e8e2d0;
             text-align:center;color:#94a3b8;font-size:12px;'>
     <p>تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd - hh:mm tt}</p>
     <p style='margin-top:4px;'>واي كي كوتينج ERP — نظام تخطيط موارد المؤسسات</p>

@@ -1,0 +1,41 @@
+﻿--- po-verify / recent png search ---
+
+FullName                                                              Length LastWriteTime       
+--------                                                              ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\po-verify.png 537011 10/9/2026 9:57:31 PM
+
+
+
+FullName                                                                            Length LastWriteTime       
+--------                                                                            ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\.playwright-mcp\po-live.png 204183 10/9/2026 9:55:37 PM
+
+
+
+FullName                                                                                   Length LastWriteTime       
+--------                                                                                   ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\.playwright-mcp\po-actual-view.png 287460 10/9/2026 9:56:47 PM
+
+
+
+FullName                                                              Length LastWriteTime       
+--------                                                              ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\po-verify.png 537011 10/9/2026 9:57:31 PM
+
+
+
+FullName                                                                            Length LastWriteTime       
+--------                                                                            ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\.playwright-mcp\po-live.png 204183 10/9/2026 9:55:37 PM
+
+
+
+FullName                                                                                   Length LastWriteTime       
+--------                                                                                   ------ -------------       
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\po-actual-view.png                 143757 10/9/2026 9:59:33 PM
+C:\Users\Admin\AppData\Local\Programs\Microsoft VS Code\.playwright-mcp\po-actual-view.png 287460 10/9/2026 9:56:47 PM
+
+
+--- user .playwright-mcp ---
+none
+DONE

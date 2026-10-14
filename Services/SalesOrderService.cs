@@ -17,6 +17,16 @@ namespace YKCoatings.Services
             _notif = notif;
         }
 
+        private async Task<bool> IsRemainingQtyWritableAsync(SqlConnection connection, SqlTransaction transaction)
+        {
+            var isWritable = await connection.QueryFirstOrDefaultAsync<int?>(@"
+SELECT CASE WHEN is_computed = 0 THEN 1 ELSE 0 END
+FROM sys.columns
+WHERE object_id = OBJECT_ID(N'dbo.SalesOrderDetails', N'U')
+  AND name = N'RemainingQty';", transaction: transaction);
+            return isWritable == 1;
+        }
+
         // ==========================================
         // قائمة أوامر البيع - السكيما الفعلية 28 عمود: SONumber, SODate, SOStatus, RequiredDate, DeliveryDate...
         // ==========================================
@@ -35,7 +45,7 @@ SELECT
     CASE WHEN so.QuotationID IS NOT NULL THEN N'من عرض سعر' ELSE N'يدوي' END AS OrderSourceName,
     so.CustomerID, c.CustomerCode, c.CustomerNameAr,
     so.QuotationID, sq.QuotationNumber AS LinkedQuotationNumber,
-    so.SalesRepID, ISNULL(sr.RepName, e.FullNameAr) AS SalesRepName,
+    so.SalesRepID, e.FullNameAr AS SalesRepName,
     ISNULL(so.TotalAmount,0) AS TotalAmount, ISNULL(so.TaxAmount,0) AS TaxAmount, ISNULL(so.SubTotal,0) AS SubTotal,
     so.RequiredDate AS ExpectedDeliveryDate, so.ApprovedDate,
     ISNULL((SELECT COUNT(*) FROM dbo.SalesOrderDetails d WHERE d.SalesOrderID=so.SalesOrderID),0) AS ItemCount,
@@ -44,7 +54,7 @@ SELECT
     ISNULL((SELECT SUM(ISNULL(RemainingQty, OrderedQty - ISNULL(DeliveredQty,0))) FROM dbo.SalesOrderDetails d WHERE d.SalesOrderID=so.SalesOrderID),0) AS TotalRemainingQty,
     CASE WHEN so.RequiredDate IS NOT NULL AND so.RequiredDate < CAST(GETDATE() AS DATE) AND so.SOStatus IN (1,2,3) THEN 1 ELSE 0 END AS IsOverdue,
     CASE WHEN so.RequiredDate IS NOT NULL AND so.RequiredDate < CAST(GETDATE() AS DATE) THEN DATEDIFF(DAY, so.RequiredDate, GETDATE()) ELSE 0 END AS DaysOverdue,
-    w.WarehouseNameAr, pt.TermNameAr AS PaymentTermName, cur.CurrencyCode, pl.PriceListName,
+    w.WarehouseNameAr, pt.TermNameAr AS PaymentTermName, cur.CurrencyCode, pl.PriceListNameAr AS PriceListName,
     NULL AS RejectionReason,
     so.CreatedDate
 FROM dbo.SalesOrders so
@@ -60,7 +70,7 @@ ORDER BY so.SODate DESC, so.SalesOrderID DESC";
                 var result = await connection.QueryAsync<SalesOrderListDto>(sql);
                 return result.ToList();
             }
-            catch (Exception ex)
+            catch
             {
                 // Fallback مبسط جداً
                 try
@@ -113,8 +123,8 @@ SELECT
     so.PaymentTermID, pt.TermNameAr AS PaymentTermName,
     so.CurrencyID, cur.CurrencyCode, cur.Symbol AS CurrencySymbol, ISNULL(so.ExchangeRate,1) AS ExchangeRate,
     so.WarehouseID, w.WarehouseNameAr,
-    so.PriceListID, pl.PriceListName,
-    so.SalesRepID, ISNULL(sr.RepName, e.FullNameAr) AS SalesRepName,
+    so.PriceListID, pl.PriceListNameAr AS PriceListName,
+    so.SalesRepID, e.FullNameAr AS SalesRepName,
     ISNULL(so.SubTotal,0) AS SubTotal, ISNULL(so.DiscountPercent,0) AS DiscountPercent, ISNULL(so.DiscountAmount,0) AS DiscountAmount,
     ISNULL(so.TaxAmount,0) AS TaxAmount, ISNULL(so.ShippingCost,0) AS ShippingCost, 0 AS OtherCosts, ISNULL(so.TotalAmount,0) AS TotalAmount,
     NULL AS SubmittedBy, NULL AS SubmittedDate,
@@ -133,7 +143,17 @@ LEFT JOIN dbo.SalesRepresentatives sr ON so.SalesRepID=sr.SalesRepID
 LEFT JOIN dbo.Employees e ON sr.EmployeeID=e.EmployeeID
 LEFT JOIN dbo.Employees ap ON so.ApprovedBy=ap.EmployeeID
 WHERE so.SalesOrderID=@ID";
-            return await connection.QueryFirstOrDefaultAsync<SalesOrderHeaderDto>(sql, new { ID = salesOrderId });
+            var order = await connection.QueryFirstOrDefaultAsync<SalesOrderHeaderDto>(sql, new { ID = salesOrderId });
+            if (order is null) return null;
+
+            if ((order.OrderStatus is 1 or 4) && !string.IsNullOrWhiteSpace(order.Notes))
+            {
+                const string rejectionMarker = " - رفض: ";
+                var markerIndex = order.Notes.LastIndexOf(rejectionMarker, StringComparison.Ordinal);
+                if (markerIndex >= 0) order.RejectionReason = order.Notes[(markerIndex + rejectionMarker.Length)..].Trim();
+            }
+
+            return order;
         }
 
         public async Task<List<SalesOrderDetailDto>> GetOrderDetailsAsync(int salesOrderId)
@@ -318,13 +338,15 @@ WHERE SalesOrderID=@SalesOrderID";
                 var lineTotal = detail.UnitPrice * detail.OrderedQty - discountAmt;
                 var taxAmt = lineTotal * detail.TaxRate / 100m;
                 var lineWithTax = lineTotal + taxAmt;
-                var remainingQty = detail.OrderedQty;
+                var remainingQtyIsWritable = await IsRemainingQtyWritableAsync(connection, transaction);
+                var remainingQtyColumn = remainingQtyIsWritable ? ", RemainingQty" : string.Empty;
+                var remainingQtyValue = remainingQtyIsWritable ? ", @RemainingQty" : string.Empty;
 
-                var sql = @"
+                var sql = $@"
 INSERT INTO dbo.SalesOrderDetails
-(SalesOrderID, LineNumber, ItemID, UnitID, OrderedQty, DeliveredQty, RemainingQty, UnitPrice, DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax, LineStatus, Notes)
+(SalesOrderID, LineNumber, ItemID, UnitID, OrderedQty, DeliveredQty{remainingQtyColumn}, UnitPrice, DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax, LineStatus, Notes)
 VALUES
-(@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty, 0, @RemainingQty, @UnitPrice, @DiscountPercent, @DiscountAmount, @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax, 1, @Notes);
+(@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty, 0{remainingQtyValue}, @UnitPrice, @DiscountPercent, @DiscountAmount, @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax, 1, @Notes);
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
                 var newId = await connection.ExecuteScalarAsync<int>(sql, new
@@ -334,7 +356,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     detail.ItemID,
                     detail.UnitID,
                     detail.OrderedQty,
-                    RemainingQty = remainingQty,
+                    RemainingQty = detail.OrderedQty,
                     detail.UnitPrice,
                     detail.DiscountPercent,
                     DiscountAmount = discountAmt,
@@ -380,7 +402,9 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 var taxAmt = lineTotal * detail.TaxRate / 100m;
                 var lineWithTax = lineTotal + taxAmt;
 
-                var sql = @"UPDATE dbo.SalesOrderDetails SET ItemID=@ItemID, UnitID=@UnitID, OrderedQty=@OrderedQty, RemainingQty=@OrderedQty, UnitPrice=@UnitPrice, DiscountPercent=@DiscountPercent, DiscountAmount=@DiscountAmount, LineTotal=@LineTotal, TaxRate=@TaxRate, TaxAmount=@TaxAmount, LineTotalWithTax=@LineTotalWithTax, Notes=@Notes WHERE SODetailID=@SODetailID";
+                var remainingQtyIsWritable = await IsRemainingQtyWritableAsync(connection, transaction);
+                var remainingQtyAssignment = remainingQtyIsWritable ? ", RemainingQty=@OrderedQty" : string.Empty;
+                var sql = $@"UPDATE dbo.SalesOrderDetails SET ItemID=@ItemID, UnitID=@UnitID, OrderedQty=@OrderedQty{remainingQtyAssignment}, UnitPrice=@UnitPrice, DiscountPercent=@DiscountPercent, DiscountAmount=@DiscountAmount, LineTotal=@LineTotal, TaxRate=@TaxRate, TaxAmount=@TaxAmount, LineTotalWithTax=@LineTotalWithTax, Notes=@Notes WHERE SODetailID=@SODetailID";
 
                 await connection.ExecuteAsync(sql, new
                 {
@@ -710,7 +734,8 @@ tr:nth-child(even){{background:#fcfaf6}}
             using var connection = CreateConnection();
             try
             {
-                var sql = @"SELECT QuotationID AS Id, QuotationNumber + N' - ' + c.CustomerNameAr AS Name, QuotationNumber AS Code
+                var sql = @"SELECT sq.QuotationID AS Id, sq.QuotationNumber + N' - ' + c.CustomerNameAr AS Name,
+                                   sq.QuotationNumber AS Code, CAST(sq.CustomerID AS NVARCHAR(20)) AS Extra
                             FROM dbo.SalesQuotations sq
                             INNER JOIN dbo.Customers c ON sq.CustomerID=c.CustomerID
                             WHERE sq.QuotationStatus IN (3,5)
@@ -722,7 +747,9 @@ tr:nth-child(even){{background:#fcfaf6}}
             {
                 try
                 {
-                    var sql2 = @"SELECT QuotationID AS Id, CAST(QuotationID AS NVARCHAR) AS Name, CAST(QuotationID AS NVARCHAR) AS Code FROM dbo.SalesQuotations ORDER BY QuotationID DESC";
+                    var sql2 = @"SELECT QuotationID AS Id, CAST(QuotationID AS NVARCHAR) AS Name, CAST(QuotationID AS NVARCHAR) AS Code,
+                                       CAST(CustomerID AS NVARCHAR(20)) AS Extra
+                                FROM dbo.SalesQuotations WHERE QuotationStatus IN (3,5) ORDER BY QuotationID DESC";
                     var result = await connection.QueryAsync<SearchableItem>(sql2);
                     return result.ToList();
                 }
@@ -735,7 +762,11 @@ tr:nth-child(even){{background:#fcfaf6}}
             using var connection = CreateConnection();
             try
             {
-                var sql = @"SELECT
+                var detailColumns = (await connection.QueryAsync<string>(@"SELECT name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.SalesQuotationDetails', N'U')"))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var discountPercent = detailColumns.Contains("DiscountPercent") ? "ISNULL(sqd.DiscountPercent,0)" : "CAST(0 AS DECIMAL(5,2))";
+                var taxRate = detailColumns.Contains("TaxRate") ? "ISNULL(sqd.TaxRate,14)" : "CAST(14 AS DECIMAL(5,2))";
+                var sql = $@"SELECT
                                 sqd.QuotationDetailID,
                                 sqd.QuotationID,
                                 sq.QuotationNumber,
@@ -749,6 +780,8 @@ tr:nth-child(even){{background:#fcfaf6}}
                                 0 AS TotalOrderedQty,
                                 ISNULL(sqd.Quantity,0) AS RemainingToOrder,
                                 ISNULL(sqd.UnitPrice,0) AS UnitPrice,
+                                {discountPercent} AS DiscountPercent,
+                                {taxRate} AS TaxRate,
                                 0 AS CurrentStock
                             FROM dbo.SalesQuotationDetails sqd
                             INNER JOIN dbo.SalesQuotations sq ON sqd.QuotationID=sq.QuotationID
@@ -773,26 +806,51 @@ tr:nth-child(even){{background:#fcfaf6}}
             using var transaction = connection.BeginTransaction();
             try
             {
-                var soStatus = await connection.QueryFirstOrDefaultAsync<int?>(@"SELECT SOStatus FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId }, transaction);
-                if (soStatus != 1) throw new Exception("لا يمكن تحميل سطور على أمر بيع ليس في حالة مسودة");
+                var orderState = await connection.QueryFirstOrDefaultAsync<QuotationOrderState>(@"SELECT SOStatus, CustomerID FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId }, transaction);
+                if (orderState is null) throw new Exception("أمر البيع غير موجود");
+                if (orderState.SOStatus != 1) throw new Exception("لا يمكن تحميل سطور على أمر بيع ليس في حالة مسودة");
+
+                var quotationState = await connection.QueryFirstOrDefaultAsync<QuotationImportState>(@"SELECT QuotationStatus, CustomerID FROM dbo.SalesQuotations WHERE QuotationID=@ID", new { ID = quotationId }, transaction);
+                if (quotationState is null) throw new Exception("عرض السعر غير موجود");
+                if (quotationState.QuotationStatus is not (3 or 5)) throw new Exception("يمكن تحميل السطور من عرض معتمد فقط");
+                if (quotationState.CustomerID != orderState.CustomerID) throw new Exception("يجب أن يطابق عميل أمر البيع العميل المرتبط بعرض السعر");
 
                 var maxLine = await connection.QueryFirstOrDefaultAsync<int>(@"SELECT ISNULL(MAX(LineNumber),0) FROM dbo.SalesOrderDetails WHERE SalesOrderID=@ID", new { ID = salesOrderId }, transaction);
 
-                var lines = await connection.QueryAsync(@"SELECT QuotationDetailID, ItemID, UnitID, Quantity, UnitPrice FROM dbo.SalesQuotationDetails WHERE QuotationID=@QID AND QuotationDetailID IN @IDs", new { QID = quotationId, IDs = quotationDetailIds }, transaction);
+                var quotationColumns = (await connection.QueryAsync<string>(@"SELECT name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.SalesQuotationDetails', N'U')", transaction: transaction))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var discountPercentExpr = quotationColumns.Contains("DiscountPercent") ? "ISNULL(DiscountPercent,0)" : "CAST(0 AS DECIMAL(5,2))";
+                var taxRateExpr = quotationColumns.Contains("TaxRate") ? "ISNULL(TaxRate,14)" : "CAST(14 AS DECIMAL(5,2))";
+                var linesSql = $@"SELECT QuotationDetailID, ItemID, UnitID, Quantity, UnitPrice,
+                                         {discountPercentExpr} AS DiscountPercent,
+                                         {taxRateExpr} AS TaxRate
+                                  FROM dbo.SalesQuotationDetails
+                                  WHERE QuotationID=@QID AND QuotationDetailID IN @IDs";
+                var lines = await connection.QueryAsync<QuotationImportLineDto>(linesSql, new { QID = quotationId, IDs = quotationDetailIds }, transaction);
+
+                var remainingQtyIsWritable = await IsRemainingQtyWritableAsync(connection, transaction);
+                var remainingQtyColumn = remainingQtyIsWritable ? ", RemainingQty" : string.Empty;
+                var remainingQtyValue = remainingQtyIsWritable ? ", @OrderedQty" : string.Empty;
+                var insertOrderLineSql = $@"
+INSERT INTO dbo.SalesOrderDetails (SalesOrderID, LineNumber, ItemID, UnitID, OrderedQty{remainingQtyColumn}, UnitPrice, DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax, LineStatus)
+VALUES (@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty{remainingQtyValue}, @UnitPrice, @DiscountPercent, @DiscountAmount, @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax, 1)";
 
                 int inserted = 0;
                 foreach (var line in lines)
                 {
                     maxLine++;
-                    var discountAmt = 0m;
-                    var lineTotal = line.Quantity * line.UnitPrice;
-                    var taxAmt = lineTotal * 0.14m;
+                    var discountPercent = line.DiscountPercent;
+                    var taxRate = line.TaxRate;
+                    if (discountPercent is < 0 or > 100 || taxRate is < 0 or > 100)
+                        throw new Exception($"بيانات الخصم أو الضريبة غير صالحة في سطر العرض {line.QuotationDetailID}");
+                    var grossTotal = line.Quantity * line.UnitPrice;
+                    var discountAmt = Math.Round(grossTotal * discountPercent / 100m, 2, MidpointRounding.AwayFromZero);
+                    var lineTotal = Math.Round(grossTotal - discountAmt, 2, MidpointRounding.AwayFromZero);
+                    var taxAmt = Math.Round(lineTotal * taxRate / 100m, 2, MidpointRounding.AwayFromZero);
                     var lineWithTax = lineTotal + taxAmt;
 
-                    await connection.ExecuteAsync(@"
-INSERT INTO dbo.SalesOrderDetails (SalesOrderID, LineNumber, ItemID, UnitID, OrderedQty, RemainingQty, UnitPrice, DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax, LineStatus)
-VALUES (@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty, @OrderedQty, @UnitPrice, 0, @DiscountAmount, @LineTotal, 14, @TaxAmount, @LineTotalWithTax, 1)",
-                        new { SalesOrderID = salesOrderId, LineNumber = maxLine, ItemID = line.ItemID, UnitID = line.UnitID, OrderedQty = line.Quantity, UnitPrice = line.UnitPrice, DiscountAmount = discountAmt, LineTotal = lineTotal, TaxAmount = taxAmt, LineTotalWithTax = lineWithTax }, transaction);
+                    await connection.ExecuteAsync(insertOrderLineSql,
+                        new { SalesOrderID = salesOrderId, LineNumber = maxLine, ItemID = line.ItemID, UnitID = line.UnitID, OrderedQty = line.Quantity, UnitPrice = line.UnitPrice, DiscountPercent = discountPercent, DiscountAmount = discountAmt, LineTotal = lineTotal, TaxRate = taxRate, TaxAmount = taxAmt, LineTotalWithTax = lineWithTax }, transaction);
                     inserted++;
                 }
 
@@ -805,6 +863,32 @@ VALUES (@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty, @OrderedQty, 
                 return inserted;
             }
             catch { transaction.Rollback(); throw; }
+        }
+
+        private sealed class QuotationOrderState
+        {
+            public QuotationOrderState() { }
+            public int SOStatus { get; set; }
+            public int CustomerID { get; set; }
+        }
+
+        private sealed class QuotationImportState
+        {
+            public QuotationImportState() { }
+            public int QuotationStatus { get; set; }
+            public int CustomerID { get; set; }
+        }
+
+        private sealed class QuotationImportLineDto
+        {
+            public QuotationImportLineDto() { }
+            public int QuotationDetailID { get; set; }
+            public int ItemID { get; set; }
+            public int UnitID { get; set; }
+            public decimal Quantity { get; set; }
+            public decimal UnitPrice { get; set; }
+            public decimal DiscountPercent { get; set; }
+            public decimal TaxRate { get; set; } = 14m;
         }
     }
 }

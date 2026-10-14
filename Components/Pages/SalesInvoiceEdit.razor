@@ -49,9 +49,96 @@ else
             {
                 <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">مصدر الفاتورة - الجداول الموجودة فقط</h3><span class="sec-badge-luxury">الفاتورة هي الأساس</span></div>
                     <div class="source-cards-luxury" style="grid-template-columns:repeat(2,1fr)">
-                        <div class="source-card-luxury @(header.InvoiceSource == 2 ? "active" : "")" @onclick="SelectOrderSource"><div class="source-card-icon-luxury" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="source-card-title-luxury">من أمر بيع</div><div class="source-card-desc-luxury">اختياري - تحميل سطور من أمر بيع معتمد موجود 28 عمود</div><div class="source-check-luxury">@if(header.InvoiceSource==2){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
+                        <div class="source-card-luxury @(header.InvoiceSource == 2 ? "active" : "")" @onclick="SelectOrderSource"><div class="source-card-icon-luxury" style="background:#eff6ff;color:#2563eb;border:1px solid #dbeafe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="source-card-title-luxury">من أمر بيع</div><div class="source-card-desc-luxury">اختيار سطور الأمر المعتمد وربطها بتفاصيل الفاتورة</div><div class="source-check-luxury">@if(header.InvoiceSource==2){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
                         <div class="source-card-luxury @(header.InvoiceSource == 3 ? "active" : "")" @onclick="SelectDirectSource"><div class="source-card-icon-luxury" style="background:rgba(212,175,55,.1);color:#9C7C2E;border:1px solid rgba(212,175,55,.18)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg></div><div class="source-card-title-luxury">فاتورة مباشرة - الأساس</div><div class="source-card-desc-luxury">بدون أمر - مع/بدون ضريبة - نفس نظام المشتريات</div><div class="source-check-luxury">@if(header.InvoiceSource==3){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>}</div></div>
                     </div>
+                </div>
+            }
+
+            @if (isNewMode && header.InvoiceSource == 2)
+            {
+                <div class="doc-section-luxury order-source-panel">
+                    <div class="ml-gold-line"></div>
+                    <div class="sec-head-luxury">
+                        <div class="sec-icon-luxury blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></div>
+                        <h3 class="sec-title-luxury">اختيار أمر بيع معتمد</h3>
+                        <span class="sec-badge-luxury">ربط الرأس والسطور</span>
+                    </div>
+                    <div class="form-grid-luxury c2">
+                        <div class="f-field-luxury">
+                            <label class="f-label-luxury required">أمر البيع</label>
+                            <select class="f-input-luxury" value="@(header.SalesOrderID?.ToString() ?? "0")" @onchange="OnSalesOrderChanged" disabled="@(isReadOnly || isSaving || salesOrderLinesLoading || !string.IsNullOrEmpty(salesOrderLookupError))">
+                                <option value="0">-- اختر أمراً معتمداً --</option>
+                                @foreach (var order in approvedSalesOrders)
+                                {
+                                    <option value="@order.SalesOrderID">@order.OrderNumber — @order.CustomerNameAr — @order.OrderDate.ToString("dd/MM/yyyy")</option>
+                                }
+                            </select>
+                        </div>
+                        @if (selectedSalesOrder is { } selectedOrder)
+                        {
+                            <div class="order-selection-summary">
+                                <div><span>العميل</span><strong>@selectedOrder.CustomerNameAr</strong></div>
+                                <div><span>تاريخ الأمر</span><strong>@selectedOrder.OrderDate.ToString("dd/MM/yyyy")</strong></div>
+                                <div><span>حالة الأمر</span><strong>معتمد</strong></div>
+                            </div>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(salesOrderLookupError))
+                    {
+                        <div class="form-msg-luxury err order-lookup-error">@salesOrderLookupError</div>
+                    }
+                    else if (!approvedSalesOrders.Any())
+                    {
+                        <div class="order-source-empty">لا توجد أوامر بيع معتمدة متاحة للاختيار. يمكنك الرجوع واختيار فاتورة مباشرة.</div>
+                    }
+                    @if (header.SalesOrderID.GetValueOrDefault() > 0)
+                    {
+                        <div class="order-lines-note">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                            <span>تم تحميل سطور الأمر. حدّد الأصناف وأدخل كمية الفوترة يدوياً؛ الكميات المطلوبة والمسلّمة والمتبقية معروضة للمراجعة فقط.</span>
+                        </div>
+                        @if (salesOrderLinesLoading)
+                        {
+                            <div class="loading-luxury order-lines-loading"><div class="loader-luxury"></div><p>جاري تحميل أصناف أمر البيع...</p></div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(salesOrderLinesError))
+                        {
+                            <div class="form-msg-luxury err order-lookup-error">@salesOrderLinesError</div>
+                        }
+                        else if (!salesOrderLines.Any())
+                        {
+                            <div class="order-source-empty">لا توجد سطور في أمر البيع المحدد.</div>
+                        }
+                        else
+                        {
+                            <div class="tbl-card-luxury order-lines-table-wrap">
+                                <div class="table-responsive">
+                                    <table class="tbl-luxury order-lines-table">
+                                        <thead><tr><th class="tc">اختيار</th><th class="tc">سطر</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">المطلوب</th><th class="tc">المسلّم</th><th class="tc">المتبقي</th><th class="tl">سعر الأمر</th><th class="tc">خصم%</th><th class="tc">كمية الفوترة</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var orderLine in salesOrderLines)
+                                            {
+                                                <tr class="@(orderLine.IsSelected ? "order-line-selected" : null)">
+                                                    <td class="tc"><input type="checkbox" @bind="orderLine.IsSelected" disabled="@(isReadOnly || isSaving)" aria-label="اختيار @orderLine.ItemNameAr" /></td>
+                                                    <td class="tc td-n">@orderLine.LineNumber</td>
+                                                    <td><code class="code-tag-luxury">@orderLine.ItemCode</code></td>
+                                                    <td class="td-bold">@orderLine.ItemNameAr</td>
+                                                    <td class="td-muted">@orderLine.UnitName</td>
+                                                    <td class="tc num-cell">@orderLine.OrderedQty.ToString("#,##0.####")</td>
+                                                    <td class="tc num-cell">@orderLine.DeliveredQty.ToString("#,##0.####")</td>
+                                                    <td class="tc num-cell">@orderLine.RemainingQty.ToString("#,##0.####")</td>
+                                                    <td class="tl num-cell">@orderLine.UnitPrice.ToString("#,##0.00")</td>
+                                                    <td class="tc">@orderLine.DiscountPercent.ToString("#,##0.##")</td>
+                                                    <td class="tc"><input type="number" class="f-input-luxury order-invoice-qty" @bind="orderLine.InvoiceQty" @bind:event="oninput" min="0" step="0.0001" disabled="@(!orderLine.IsSelected || isReadOnly || isSaving)" aria-label="كمية فوترة @orderLine.ItemNameAr" /></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    }
                 </div>
             }
 
@@ -63,7 +150,11 @@ else
                     <div class="form-grid-luxury c4">
                         <div class="f-field-luxury"><label class="f-label-luxury">رقم الفاتورة</label><input type="text" class="f-input-luxury readonly" value="@(header.InvoiceNumber ?? "تلقائي")" disabled /></div>
                         <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.InvoiceDate" disabled="@isReadOnly" /></div>
-                        <div class="f-field-luxury"><label class="f-label-luxury required">العميل</label><SearchableSelect Items="@customersSearchable" @bind-SelectedId="header.CustomerID" Placeholder="اختر العميل..." IsDisabled="@isReadOnly" OnSelected="OnCustomerSelected" /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury required">العميل</label><SearchableSelect Items="@customersSearchable" @bind-SelectedId="header.CustomerID" Placeholder="اختر العميل..." IsDisabled="@(isReadOnly || header.InvoiceSource == 2)" OnSelected="OnCustomerSelected" />@if (header.InvoiceSource == 2 && header.SalesOrderID.GetValueOrDefault() <= 0){<small class="field-hint-luxury">اختر أمر البيع أولاً ليُحدد العميل تلقائياً.</small>}</div>
+                        @if (!isNewMode && header.SalesOrderID.GetValueOrDefault() > 0)
+                        {
+                            <div class="f-field-luxury"><label class="f-label-luxury">أمر البيع المرتبط</label><input type="text" class="f-input-luxury readonly" value="@linkedOrderDisplay" disabled /></div>
+                        }
                         <div class="f-field-luxury"><label class="f-label-luxury">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@isReadOnly"><option value="">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
                         <div class="f-field-luxury"><label class="f-label-luxury">شروط الدفع</label><select class="f-input-luxury" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (paymentTerms != null){@foreach (var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select></div>
                         <div class="f-field-luxury"><label class="f-label-luxury">العملة</label><select class="f-input-luxury" @bind="header.CurrencyID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (currencies != null){@foreach (var c in currencies){<option value="@c.Id">@c.Name</option>}}</select></div>
@@ -80,24 +171,57 @@ else
             @if ((header.InvoiceSource > 0 || !isNewMode) && (InvoiceId > 0 || isSourceLocked))
             {
                 <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">أصناف الفاتورة</h3><span class="sec-badge-luxury">@details.Count صنف</span><span class="total-mini-luxury">@details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00") ج.م</span>
-                    @if (!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury btn-sm-luxury" style="margin-right:auto;" @onclick="ShowAddLine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}
+                    @if (!isReadOnly && !isApprovalMode && canEditDraft){<button class="btn-luxury btn-primary-luxury btn-sm-luxury" style="margin-right:auto;" @onclick="ShowAddLine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}
                 </div>
+                    @if (header.SalesOrderID.GetValueOrDefault() > 0)
+                    {
+                        <div class="order-lines-note">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                            <span>اختر سطر أمر البيع عند إضافة أي تفصيل جديد؛ رقم السطر المرتبط ظاهر في الجدول أدناه.</span>
+                        </div>
+                    }
                     @if (!details.Any() && !showLineForm){<div class="empty-lines-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><p>لا توجد أصناف — أضف صنف للفاتورة @(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")</p></div>}
                     else
                     {
-                        <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">الكمية</th><th class="tl">السعر</th><th class="tc">خصم%</th><th class="tc">ضريبة%</th><th class="tl">الإجمالي</th>@if (!isReadOnly && !isApprovalMode){<th class="tc">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach (var line in details){n++;<tr><td class="td-n">@n</td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="tc">@line.Quantity.ToString("#,##0.##")</td><td class="tl num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="tc">@line.DiscountPercent.ToString("#,##0.##")</td><td class="tc">@(header.IsTaxable ? line.TaxRate.ToString("#,##0.##") : "—")</td><td class="tl num-cell"><strong>@line.LineTotalWithTax.ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td class="tc"><div class="line-actions-luxury">@if (permissions.CanDelete){<button class="act-btn-luxury del" @onclick="() => DeleteLine(line.InvoiceDetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="8" class="tl"><strong>الإجمالي @(header.IsTaxable ? "شامل الضريبة" : "بدون ضريبة")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalWithTax).ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td></td>}</tr></tfoot></table></div></div>
+                        <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th>@if (header.SalesOrderID.GetValueOrDefault() > 0){<th class="tc">سطر الأمر</th>}<th>الوحدة</th><th class="tc">الكمية</th><th class="tl">السعر</th><th class="tc">خصم%</th><th class="tc">ضريبة%</th><th class="tl">الإجمالي</th>@if (!isReadOnly && !isApprovalMode){<th class="tc">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach (var line in details){n++;<tr><td class="td-n">@n</td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td>@if (header.SalesOrderID.GetValueOrDefault() > 0){<td class="tc"><code class="code-tag-luxury">@(line.SalesOrderDetailID.HasValue ? $"#{line.SalesOrderDetailID.Value}" : "غير مرتبط")</code></td>}<td class="td-muted">@line.UnitName</td><td class="tc">@line.Quantity.ToString("#,##0.##")</td><td class="tl num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="tc">@line.DiscountPercent.ToString("#,##0.##")</td><td class="tc">@(header.IsTaxable ? line.TaxRate.ToString("#,##0.##") : "—")</td><td class="tl num-cell"><strong>@line.LineTotalWithTax.ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td class="tc"><div class="line-actions-luxury">@if (permissions.CanDelete){<button class="act-btn-luxury del" @onclick="() => DeleteLine(line.InvoiceDetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="@(header.SalesOrderID.GetValueOrDefault() > 0 ? 9 : 8)" class="tl"><strong>الإجمالي @(header.IsTaxable ? "شامل الضريبة" : "بدون ضريبة")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalWithTax).ToString("#,##0.00")</strong></td>@if (!isReadOnly && !isApprovalMode){<td></td>}</tr></tfoot></table></div></div>
                     }
 
                     @if (showLineForm)
                     {
                         <div class="line-form-luxury"><div class="ml-gold-line"></div><div class="line-form-head-luxury"><h4>إضافة صنف @(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")</h4><button class="btn-close-x-luxury" @onclick="CloseLineForm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
                             <div class="form-grid-luxury c3">
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@saleItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة</label><select class="f-input-luxury" @bind="editLine.UnitID"><option value="0">-- اختر --</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select></div>
+                                @if (header.SalesOrderID.GetValueOrDefault() > 0)
+                                {
+                                    <div class="f-field-luxury">
+                                        <label class="f-label-luxury required">سطر أمر البيع</label>
+                                        <select class="f-input-luxury" value="@selectedOrderInvoiceLineId" @onchange="OnInvoiceOrderLineChanged">
+                                            <option value="0">-- اختر سطر الأمر --</option>
+                                            @foreach (var orderLine in salesOrderLines)
+                                            {
+                                                <option value="@orderLine.SalesOrderDetailID">سطر @orderLine.LineNumber — @orderLine.ItemNameAr — متبقي الأمر @orderLine.RemainingQty.ToString("#,##0.####")</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="f-field-luxury"><label class="f-label-luxury">الصنف</label><input type="text" class="f-input-luxury readonly" value="@selectedOrderInvoiceLine?.ItemNameAr" disabled /></div>
+                                    <div class="f-field-luxury"><label class="f-label-luxury">الوحدة</label><input type="text" class="f-input-luxury readonly" value="@selectedOrderInvoiceLine?.UnitName" disabled /></div>
+                                }
+                                else
+                                {
+                                    <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@saleItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." /></div>
+                                    <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة</label><select class="f-input-luxury" @bind="editLine.UnitID"><option value="0">-- اختر --</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select></div>
+                                }
                                 <div class="f-field-luxury"><label class="f-label-luxury">المخزن</label><select class="f-input-luxury" @bind="editLine.WarehouseID"><option value="">--</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="editLine.Quantity" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury required">سعر الوحدة</label><input type="number" class="f-input-luxury" @bind="editLine.UnitPrice" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">خصم %</label><input type="number" class="f-input-luxury" @bind="editLine.DiscountPercent" step="0.01" /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="editLine.Quantity" step="0.0001" min="0" /></div>
+                                @if (header.SalesOrderID.GetValueOrDefault() > 0)
+                                {
+                                    <div class="f-field-luxury"><label class="f-label-luxury required">سعر الوحدة من الأمر</label><input type="number" class="f-input-luxury" value="@editLine.UnitPrice" disabled /></div>
+                                    <div class="f-field-luxury"><label class="f-label-luxury">خصم % من الأمر</label><input type="number" class="f-input-luxury" value="@editLine.DiscountPercent" disabled /></div>
+                                }
+                                else
+                                {
+                                    <div class="f-field-luxury"><label class="f-label-luxury required">سعر الوحدة</label><input type="number" class="f-input-luxury" @bind="editLine.UnitPrice" step="0.01" /></div>
+                                    <div class="f-field-luxury"><label class="f-label-luxury">خصم %</label><input type="number" class="f-input-luxury" @bind="editLine.DiscountPercent" step="0.01" /></div>
+                                }
                                 @if (header.IsTaxable)
                                 {
                                     <div class="f-field-luxury"><label class="f-label-luxury">ضريبة %</label><input type="number" class="f-input-luxury" @bind="editLine.TaxRate" step="0.01" /></div>
@@ -156,7 +280,7 @@ else
 .approval-bar-luxury{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:16px 20px;overflow:hidden;flex-wrap:wrap}.appr-left{display:flex;align-items:center;gap:12px}.appr-icon{width:44px;height:44px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.appr-icon svg{width:22px;height:22px}.appr-title{font-weight:800;color:#065f46;font-size:.9rem}.appr-sub{font-size:.76rem;color:#6b7280;margin-top:2px}.appr-actions{display:flex;gap:8px;flex-wrap:wrap}
 .doc-section-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:18px;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.04);overflow:hidden}.sec-head-luxury{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #f1efe8;flex-wrap:wrap}.sec-icon-luxury{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}.sec-icon-luxury.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.sec-icon-luxury.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.sec-icon-luxury.purple{background:#f5f3ff;color:#7c3aed;border:1px solid #e9d5ff}.sec-icon-luxury.orange{background:#fff7ed;color:#ea580c;border:1px solid #fed7aa}.sec-icon-luxury svg{width:18px;height:18px}.sec-title-luxury{font-weight:800;color:#0A0F1E;margin:0;font-size:.96rem}.sec-badge-luxury{background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:999px;font-size:.74rem;font-weight:700}.total-mini-luxury{margin-right:auto;background:#fcfaf6;border:1px solid #e8e2d0;padding:4px 10px;border-radius:8px;font-weight:800;font-size:.8rem;color:#0A0F1E}
 .source-cards-luxury{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.source-card-luxury{position:relative;padding:20px;border:2px solid #e8e2d0;border-radius:16px;cursor:pointer;transition:.2s;text-align:center;background:#fff}.source-card-luxury:hover{border-color:var(--gold);background:#fcfaf6;transform:translateY(-1px)}.source-card-luxury.active{border-color:var(--gold);background:linear-gradient(135deg,#fcfaf6,#fff);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.source-card-icon-luxury{width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}.source-card-icon-luxury svg{width:22px;height:22px}.source-card-title-luxury{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}.source-card-desc-luxury{font-size:.76rem;color:#8B95A5}.source-check-luxury{position:absolute;top:12px;left:12px;width:24px;height:24px;border-radius:50%;background:var(--gold);color:#fff;display:flex;align-items:center;justify-content:center}.source-check-luxury svg{width:14px;height:14px}
-.form-grid-luxury{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c2{grid-template-columns:repeat(2,1fr)}.f-field-luxury{display:flex;flex-direction:column;gap:5px}.f-label-luxury{font-size:.78rem;font-weight:700;color:#374151}.required::after{content:' *';color:#ef4444}.f-input-luxury{padding:9px 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;outline:none;transition:.2s;width:100%;font-family:'Tajawal'}.f-input-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.f-input-luxury.readonly,.f-input-luxury:disabled{background:#f8fafc;color:#9ca3af}
+.form-grid-luxury{display:grid;gap:14px}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c2{grid-template-columns:repeat(2,1fr)}.f-field-luxury{display:flex;flex-direction:column;gap:5px}.f-label-luxury{font-size:.78rem;font-weight:700;color:#374151}.required::after{content:' *';color:#ef4444}.f-input-luxury{padding:9px 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;outline:none;transition:.2s;width:100%;font-family:'Tajawal'}.f-input-luxury:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.f-input-luxury.readonly,.f-input-luxury:disabled{background:#f8fafc;color:#9ca3af}.field-hint-luxury{font-size:.72rem;color:#64748b}.order-selection-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;border:1px solid #dbeafe;background:#f8fbff;border-radius:12px}.order-selection-summary div{display:flex;flex-direction:column;gap:3px}.order-selection-summary span{font-size:.7rem;color:#64748b}.order-selection-summary strong{font-size:.82rem;color:#1e3a8a}.order-source-empty{margin-top:12px;padding:12px 14px;border:1px solid #e8e2d0;background:#fcfaf6;border-radius:10px;color:#64748b;font-size:.82rem}.order-lines-note{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:11px 13px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;color:#1e40af;font-size:.78rem;line-height:1.7}.order-lines-note svg{width:17px;height:17px;flex:0 0 17px;margin-top:2px}.order-lines-table{min-width:1180px}.order-lines-table .order-invoice-qty{min-width:112px;text-align:center;padding:7px 8px}.order-line-selected{background:#fffbeb}.order-lines-loading{padding:22px 16px}.order-lookup-error{margin-top:12px}
 .rejection-box-luxury{display:flex;align-items:center;gap:8px;margin-top:14px;padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;color:#dc2626;font-size:.84rem}.rejection-box-luxury svg{width:18px;height:18px;flex-shrink:0}
 .tbl-card-luxury{border:1px solid #e8e2d0;border-radius:14px;overflow:hidden}.tbl-luxury{width:100%;border-collapse:collapse;min-width:900px}.tbl-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.tbl-luxury th{padding:11px 12px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e2e2d0;white-space:nowrap}.tbl-luxury td{padding:10px 12px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6}.tbl-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.tc{text-align:center}.tl{text-align:left}.td-n{text-align:center;color:#9ca3af;font-size:.78rem}.td-bold{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}.num-cell{font-family:monospace;font-weight:600}.code-tag-luxury{background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.76rem;color:#2563eb;font-weight:600}.total-row-luxury{background:#fcfaf6 !important}.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px}
 .empty-lines-luxury{text-align:center;padding:36px 20px;color:#9ca3af}.empty-icon-luxury{width:52px;height:52px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:26px;height:26px}
@@ -173,7 +297,7 @@ else
 .delete-icon-luxury{width:64px;height:64px;border-radius:50%;background:#fef2f2;border:1px solid #fecaca;display:inline-flex;align-items:center;justify-content:center;color:#ef4444;margin-bottom:12px}.delete-icon-luxury svg{width:32px;height:32px}
 .ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);z-index:2}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}.ml-gold-line.green{background:linear-gradient(90deg,transparent,#10b981,#059669,transparent)}
 @@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@@media(max-width:768px){.c4,.c3{grid-template-columns:1fr}.f-field-luxury.c2{grid-column:span 1}.lh-content{flex-direction:column;align-items:flex-start}.source-cards-luxury{grid-template-columns:1fr}.doc-actions-luxury{flex-direction:column;gap:10px}.totals-bar-luxury{flex-direction:column;align-items:stretch}.total-item-luxury{flex-direction:row;justify-content:space-between}}
+@@media(max-width:768px){.c4,.c3,.c2{grid-template-columns:1fr}.f-field-luxury.c2{grid-column:span 1}.lh-content{flex-direction:column;align-items:flex-start}.source-cards-luxury{grid-template-columns:1fr}.doc-actions-luxury{flex-direction:column;gap:10px}.totals-bar-luxury{flex-direction:column;align-items:stretch}.total-item-luxury{flex-direction:row;justify-content:space-between}.order-selection-summary{align-items:flex-start}.order-selection-summary div{min-width:100px}}
 </style>
 
 @code {
@@ -185,6 +309,16 @@ else
 
     private List<LookupDto>? paymentTerms, currencies, units, warehouses;
     private List<SearchableItem>? customersSearchable, saleItems;
+    private List<SalesOrderHeaderDto> approvedSalesOrders = new();
+    private List<SalesOrderLineForInvoiceDto> salesOrderLines = new();
+    private string salesOrderLookupError = "";
+    private string salesOrderLinesError = "";
+    private bool salesOrderLinesLoading = false;
+    private int salesOrderLinesLoadToken = 0;
+    private int selectedOrderInvoiceLineId = 0;
+    private SalesOrderHeaderDto? selectedSalesOrder => approvedSalesOrders.FirstOrDefault(o => o.SalesOrderID == header.SalesOrderID);
+    private SalesOrderLineForInvoiceDto? selectedOrderInvoiceLine => salesOrderLines.FirstOrDefault(o => o.SalesOrderDetailID == selectedOrderInvoiceLineId);
+    private string linkedOrderDisplay => !string.IsNullOrWhiteSpace(header.LinkedSONumber) ? header.LinkedSONumber! : $"أمر بيع #{header.SalesOrderID}";
 
     private bool isLoading = true, isSaving = false;
     private string toast = ""; private bool toastOk = true;
@@ -201,13 +335,19 @@ else
     private bool isNewMode => InvoiceId == 0;
     private bool isApprovalMode => !isNewMode && !isViewMode && header.InvoiceStatus == 2 && (permissions?.CanApprove ?? false);
     private bool isSourceLocked = false;
+    private bool canEditDraft =>
+        permissions?.CanEdit == true ||
+        (permissions?.CanAdd == true &&
+         (isNewMode || (header.InvoiceID > 0 && header.CreatedBy == UserSession.UserID)));
+
     private bool isReadOnly
     {
         get
         {
             if (isViewMode) return true;
-            if (isNewMode) return false;
-            return header.InvoiceStatus != 1;
+            if (isNewMode) return permissions?.CanAdd != true;
+            if (header.InvoiceStatus != 1) return true;
+            return !canEditDraft;
         }
     }
     private string pageTitle => isNewMode ? "فاتورة مبيعات جديدة" : isViewMode ? "عرض فاتورة مبيعات" : isApprovalMode ? "اعتماد فاتورة مبيعات" : "تعديل فاتورة مبيعات";
@@ -227,7 +367,22 @@ else
                 var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
                 var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                 var source = query["source"];
-                if (source == "order") header.InvoiceSource = 2;
+                if (source == "order")
+                {
+                    header.InvoiceSource = 2;
+                    if (int.TryParse(query["orderId"], out var requestedOrderId) && requestedOrderId > 0)
+                    {
+                        if (!TrySetSalesOrderSelection(requestedOrderId))
+                        {
+                            toast = "أمر البيع المطلوب غير متاح أو ليس معتمداً؛ اختر أمراً معتمداً من القائمة.";
+                            toastOk = false;
+                        }
+                        else
+                        {
+                            await LoadSalesOrderLinesAsync(requestedOrderId);
+                        }
+                    }
+                }
                 else { header.InvoiceSource = 3; isSourceLocked = true; }
             }
         }
@@ -243,17 +398,178 @@ else
         warehouses = await LookupService.GetWarehousesAsync();
         customersSearchable = await LookupService.GetCustomersSearchableAsync();
         saleItems = await LookupService.GetItemsForSaleSearchableAsync();
+        if (InvoiceId == 0 && permissions?.CanAdd == true)
+        {
+            try
+            {
+                approvedSalesOrders = await InvService.GetApprovedSalesOrdersForInvoiceAsync(UserSession.UserID);
+            }
+            catch
+            {
+                salesOrderLookupError = "تعذر تحميل أوامر البيع المعتمدة. يمكنك اختيار مصدر الفاتورة المباشرة.";
+            }
+        }
     }
 
     private async Task LoadInvoiceData()
     {
-        var loaded = await InvService.GetInvoiceByIdAsync(InvoiceId);
-        if (loaded != null) { header = loaded; details = await InvService.GetInvoiceDetailsAsync(InvoiceId); isSourceLocked = true; }
+        var loaded = await InvService.GetInvoiceByIdAsync(InvoiceId, UserSession.UserID);
+        if (loaded != null)
+        {
+            header = loaded;
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId, UserSession.UserID);
+            isSourceLocked = true;
+            if (header.InvoiceStatus == 1 && canEditDraft && header.SalesOrderID.GetValueOrDefault() > 0)
+                await LoadSalesOrderLinesAsync(header.SalesOrderID.GetValueOrDefault());
+        }
         else { toast = "الفاتورة غير موجودة"; toastOk = false; }
     }
 
-    private void SelectOrderSource() { header.InvoiceSource = 2; isSourceLocked = false; }
-    private void SelectDirectSource() { header.InvoiceSource = 3; isSourceLocked = true; }
+    private void SelectOrderSource()
+    {
+        if (permissions?.CanAdd != true || isSaving) return;
+        if (header.InvoiceSource != 2) ClearSalesOrderSelection();
+        header.InvoiceSource = 2;
+        isSourceLocked = false;
+    }
+
+    private void SelectDirectSource()
+    {
+        if (permissions?.CanAdd != true || isSaving) return;
+        ClearSalesOrderSelection();
+        header.InvoiceSource = 3;
+        isSourceLocked = true;
+    }
+
+    private async Task OnSalesOrderChanged(ChangeEventArgs args)
+    {
+        if (permissions?.CanAdd != true || isSaving || !isNewMode || header.InvoiceSource != 2) return;
+        if (!int.TryParse(args.Value?.ToString(), out var orderId) || orderId <= 0)
+        {
+            ClearSalesOrderSelection();
+            return;
+        }
+
+        if (!TrySetSalesOrderSelection(orderId))
+        {
+            ClearSalesOrderSelection();
+            toast = "اختر أمراً معتمداً من القائمة.";
+            toastOk = false;
+            return;
+        }
+
+        await LoadSalesOrderLinesAsync(orderId);
+    }
+
+    private bool TrySetSalesOrderSelection(int orderId)
+    {
+        var order = approvedSalesOrders.FirstOrDefault(o => o.SalesOrderID == orderId && o.OrderStatus == 3);
+        if (order is null) return false;
+
+        header.SalesOrderID = order.SalesOrderID;
+        header.LinkedSONumber = order.OrderNumber;
+        header.CustomerID = order.CustomerID;
+        header.CustomerNameAr = order.CustomerNameAr;
+        header.CustomerCode = order.CustomerCode;
+        header.PaymentTermID = order.PaymentTermID;
+        header.CurrencyID = order.CurrencyID;
+        header.ExchangeRate = order.ExchangeRate > 0 ? order.ExchangeRate : 1;
+        header.WarehouseID = order.WarehouseID;
+        return true;
+    }
+
+    private void ClearSalesOrderSelection()
+    {
+        header.SalesOrderID = null;
+        header.LinkedSONumber = null;
+        header.CustomerID = 0;
+        header.CustomerNameAr = null;
+        header.CustomerCode = null;
+        header.PaymentTermID = null;
+        header.CurrencyID = null;
+        header.ExchangeRate = 1;
+        header.WarehouseID = null;
+        salesOrderLinesLoadToken++;
+        salesOrderLinesLoading = false;
+        salesOrderLines.Clear();
+        salesOrderLinesError = "";
+        selectedOrderInvoiceLineId = 0;
+    }
+
+    private async Task LoadSalesOrderLinesAsync(int orderId)
+    {
+        var loadToken = ++salesOrderLinesLoadToken;
+        salesOrderLines.Clear();
+        salesOrderLinesError = "";
+        selectedOrderInvoiceLineId = 0;
+        if (orderId <= 0)
+        {
+            salesOrderLinesLoading = false;
+            return;
+        }
+
+        salesOrderLinesLoading = true;
+        StateHasChanged();
+        try
+        {
+            var loadedLines = await InvService.GetSalesOrderLinesForInvoiceAsync(orderId, UserSession.UserID);
+            if (loadToken != salesOrderLinesLoadToken) return;
+            salesOrderLines = loadedLines;
+            foreach (var line in salesOrderLines)
+            {
+                line.InvoiceQty = 0;
+                line.IsSelected = false;
+                line.InvoiceUnitPrice = line.UnitPrice;
+                line.InvoiceTaxRate = header.IsTaxable ? header.TaxRate : 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (loadToken != salesOrderLinesLoadToken) return;
+            salesOrderLinesError = "تعذر تحميل سطور أمر البيع: " + ex.Message;
+        }
+        finally
+        {
+            if (loadToken == salesOrderLinesLoadToken)
+            {
+                salesOrderLinesLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void OnInvoiceOrderLineChanged(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var orderDetailId) || orderDetailId <= 0)
+        {
+            selectedOrderInvoiceLineId = 0;
+            editLine.SalesOrderDetailID = null;
+            editLine.ItemID = 0;
+            editLine.UnitID = 0;
+            editLine.Quantity = 0;
+            editLine.UnitPrice = 0;
+            editLine.DiscountPercent = 0;
+            return;
+        }
+
+        var orderLine = salesOrderLines.FirstOrDefault(line => line.SalesOrderDetailID == orderDetailId);
+        if (orderLine is null)
+        {
+            selectedOrderInvoiceLineId = 0;
+            return;
+        }
+
+        selectedOrderInvoiceLineId = orderDetailId;
+        editLine.SalesOrderDetailID = orderLine.SalesOrderDetailID;
+        editLine.ItemID = orderLine.ItemID;
+        editLine.UnitID = orderLine.UnitID;
+        editLine.WarehouseID = orderLine.WarehouseID ?? header.WarehouseID;
+        editLine.Quantity = 0;
+        editLine.UnitPrice = orderLine.UnitPrice;
+        editLine.DiscountPercent = orderLine.DiscountPercent;
+        editLine.IsTaxable = header.IsTaxable;
+        editLine.TaxRate = header.TaxRate;
+    }
 
     private async Task OnCustomerSelected(SearchableItem? item)
     {
@@ -293,27 +609,64 @@ else
 
     private async Task SaveInvoice()
     {
+        var isOrderInvoice = header.InvoiceSource == 2 || header.SalesOrderID.GetValueOrDefault() > 0;
+        List<SalesOrderLineForInvoiceDto>? selectedOrderLines = null;
+
+        if (isNewMode && isOrderInvoice)
+        {
+            if (!approvedSalesOrders.Any(o => o.SalesOrderID == header.SalesOrderID && o.OrderStatus == 3))
+            {
+                toast = "اختر أمر بيع معتمداً قبل حفظ الفاتورة."; toastOk = false; StateHasChanged(); return;
+            }
+            if (salesOrderLinesLoading)
+            {
+                toast = "انتظر حتى يكتمل تحميل سطور أمر البيع."; toastOk = false; StateHasChanged(); return;
+            }
+            if (!string.IsNullOrWhiteSpace(salesOrderLinesError))
+            {
+                toast = salesOrderLinesError; toastOk = false; StateHasChanged(); return;
+            }
+
+            selectedOrderLines = salesOrderLines.Where(line => line.IsSelected).ToList();
+            if (selectedOrderLines.Count == 0)
+            {
+                toast = "حدد سطراً واحداً على الأقل من أمر البيع."; toastOk = false; StateHasChanged(); return;
+            }
+            if (selectedOrderLines.Any(line => line.InvoiceQty <= 0))
+            {
+                toast = "أدخل كمية فوترة أكبر من صفر لكل سطر محدد."; toastOk = false; StateHasChanged(); return;
+            }
+        }
+
         if (header.CustomerID <= 0) { toast = "اختر العميل"; toastOk = false; StateHasChanged(); return; }
         isSaving = true; StateHasChanged();
         try
         {
             if (isNewMode)
             {
-                header.InvoiceNumber = await InvService.GenerateInvoiceNumberAsync();
+                header.InvoiceNumber = await InvService.GenerateInvoiceNumberAsync(UserSession.UserID);
                 header.InvoiceStatus = 1;
-                var newId = await InvService.InsertInvoiceAsync(header, UserSession.UserID);
+                var newId = isOrderInvoice
+                    ? await InvService.InsertInvoiceFromSalesOrderAsync(header, selectedOrderLines!, UserSession.UserID)
+                    : await InvService.InsertInvoiceAsync(header, UserSession.UserID);
                 InvoiceId = newId; header.InvoiceID = newId;
-                toast = $"تم الإنشاء: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")} ";
+                toast = isOrderInvoice
+                    ? $"تم إنشاء الفاتورة وربط {selectedOrderLines!.Count} سطر من أمر البيع: {header.InvoiceNumber}"
+                    : $"تم الإنشاء: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")} ";
                 toastOk = true; isSourceLocked = true;
-                details = await InvService.GetInvoiceDetailsAsync(newId);
-                header = await InvService.GetInvoiceByIdAsync(newId) ?? header;
+                details = await InvService.GetInvoiceDetailsAsync(newId, UserSession.UserID);
+                header = await InvService.GetInvoiceByIdAsync(newId, UserSession.UserID) ?? header;
+                if (header.SalesOrderID.GetValueOrDefault() > 0 && canEditDraft)
+                    await LoadSalesOrderLinesAsync(header.SalesOrderID.GetValueOrDefault());
                 Navigation.NavigateTo($"/sales-invoices/edit/{newId}", forceLoad: false);
             }
             else
             {
                 await InvService.UpdateInvoiceAsync(header, UserSession.UserID);
-                header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-                details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
+                header = await InvService.GetInvoiceByIdAsync(InvoiceId, UserSession.UserID) ?? header;
+                details = await InvService.GetInvoiceDetailsAsync(InvoiceId, UserSession.UserID);
+                if (header.SalesOrderID.GetValueOrDefault() > 0 && canEditDraft)
+                    await LoadSalesOrderLinesAsync(header.SalesOrderID.GetValueOrDefault());
                 toast = "تم الحفظ "; toastOk = true;
             }
         }
@@ -337,8 +690,8 @@ else
         try
         {
             await InvService.ApproveAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
-            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
+            header = await InvService.GetInvoiceByIdAsync(InvoiceId, UserSession.UserID) ?? header;
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId, UserSession.UserID);
             toast = "تم اعتماد الفاتورة + خصم مخزون + قيد أوتوماتيك "; toastOk = true; isSaving = false; StateHasChanged();
             await Task.Delay(2000); Navigation.NavigateTo("/sales-invoices");
         }
@@ -359,7 +712,13 @@ else
         catch (Exception ex) { rejectMsg = "خطأ: " + ex.Message; }
     }
 
-    private void ShowAddLine() { editLine = new() { InvoiceID = InvoiceId, IsTaxable = header.IsTaxable, TaxRate = header.TaxRate }; lineMsg = ""; showLineForm = true; }
+    private void ShowAddLine()
+    {
+        editLine = new() { InvoiceID = InvoiceId, IsTaxable = header.IsTaxable, TaxRate = header.TaxRate };
+        selectedOrderInvoiceLineId = 0;
+        lineMsg = "";
+        showLineForm = true;
+    }
     private void CloseLineForm() { showLineForm = false; lineMsg = ""; }
 
     private async Task SaveLine()
@@ -373,8 +732,10 @@ else
         try
         {
             await InvService.InsertDetailAsync(editLine, UserSession.UserID);
-            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
-            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId, UserSession.UserID);
+            header = await InvService.GetInvoiceByIdAsync(InvoiceId, UserSession.UserID) ?? header;
+            if (header.SalesOrderID.GetValueOrDefault() > 0)
+                await LoadSalesOrderLinesAsync(header.SalesOrderID.GetValueOrDefault());
             showLineForm = false; toast = "تم الإضافة "; toastOk = true;
         }
         catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
@@ -383,7 +744,15 @@ else
 
     private async Task DeleteLine(int detailId)
     {
-        try { await InvService.DeleteDetailAsync(detailId, UserSession.UserID); details = await InvService.GetInvoiceDetailsAsync(InvoiceId); header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header; toast = "تم الحذف "; toastOk = true; }
+        try
+        {
+            await InvService.DeleteDetailAsync(detailId, UserSession.UserID);
+            details = await InvService.GetInvoiceDetailsAsync(InvoiceId, UserSession.UserID);
+            header = await InvService.GetInvoiceByIdAsync(InvoiceId, UserSession.UserID) ?? header;
+            if (header.SalesOrderID.GetValueOrDefault() > 0)
+                await LoadSalesOrderLinesAsync(header.SalesOrderID.GetValueOrDefault());
+            toast = "تم الحذف "; toastOk = true;
+        }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
         StateHasChanged();
     }

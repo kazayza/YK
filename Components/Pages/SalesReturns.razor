@@ -1,0 +1,392 @@
+@page "/sales-returns"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesReturnService ReturnService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>مرتجعات المبيعات - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="access-state" dir="rtl">
+        <div class="access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h4>يجب تسجيل الدخول أولاً</h4>
+    </div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="access-state" dir="rtl">
+        <div class="access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div>
+        <h4>ليس لديك صلاحية عرض مرتجعات المبيعات</h4>
+        <button class="btn btn-ghost" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <main class="sales-return-page" dir="rtl">
+        <header class="hero">
+            <div class="gold-rule"></div>
+            <div class="brand-watermark"><img src="/images/yk-icon-gold.png" alt="" /></div>
+            <div class="hero-main">
+                <div class="hero-title-wrap">
+                    <div class="brand-mark"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+                    <div>
+                        <h1>مرتجعات المبيعات</h1>
+                        <p>إشعارات دائنة مرتبطة بفواتير مبيعات معتمدة</p>
+                    </div>
+                </div>
+                <div class="hero-actions">
+                    <span class="count-pill"><span class="live-dot"></span>@filtered.Count مرتجع</span>
+                    @if (permissions.CanExport)
+                    {
+                        <button class="btn btn-export" @onclick="ExportExcel" disabled="@isExporting">
+                            @if (isExporting) { <span class="spinner small"></span> }
+                            else { <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> }
+                            تصدير Excel
+                        </button>
+                    }
+                    @if (permissions.CanAdd)
+                    {
+                        <button class="btn btn-primary" @onclick="NewReturn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                            مرتجع جديد
+                        </button>
+                    }
+                </div>
+            </div>
+        </header>
+
+        <section class="workflow" aria-label="مسار البيع">
+            <div class="step done"><span>1</span><b>عرض سعر</b><i></i></div>
+            <div class="step done"><span>2</span><b>أمر بيع</b><i></i></div>
+            <div class="step done"><span>3</span><b>فاتورة معتمدة</b><i></i></div>
+            <div class="step active"><span>4</span><b>مرتجع</b></div>
+        </section>
+
+        @if (returns != null)
+        {
+            <section class="stats">
+                <article class="stat-card"><span class="stat-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span><span class="stat-text"><b>@returns.Count(x => x.ReturnStatus == 1)</b><small>مسودات</small></span><i></i></article>
+                <article class="stat-card"><span class="stat-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="stat-text"><b>@returns.Count(x => x.ReturnStatus == 2)</b><small>بانتظار الاعتماد</small></span><i></i></article>
+                <article class="stat-card"><span class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 9"/></svg></span><span class="stat-text"><b>@returns.Count(x => x.ReturnStatus == 3)</b><small>مرتجعات معتمدة</small></span><i></i></article>
+                <article class="stat-card"><span class="stat-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg></span><span class="stat-text"><b>@returns.Count(x => x.ReturnStatus == 4)</b><small>مرفوضة</small></span><i></i></article>
+                <article class="stat-card total-card"><span class="stat-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h4"/></svg></span><span class="stat-text"><b>@returns.Where(x => x.ReturnStatus == 3).Sum(x => x.TotalAmount).ToString("#,##0.00")</b><small>إجمالي المعتمد — ج.م</small></span><i></i></article>
+            </section>
+        }
+
+        <section class="filter-bar">
+            <label class="search-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="search" placeholder="ابحث برقم المرتجع أو الفاتورة أو العميل..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />
+                @if (!string.IsNullOrWhiteSpace(searchText))
+                {
+                    <button class="clear-search" title="مسح البحث" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+                }
+            </label>
+            <label class="select-box">
+                <span>الحالة</span>
+                <select @bind="filterStatus" @bind:after="Filter">
+                    <option value="0">كل الحالات</option>
+                    <option value="1">مسودة</option>
+                    <option value="2">بانتظار الاعتماد</option>
+                    <option value="3">معتمد</option>
+                    <option value="4">مرفوض</option>
+                </select>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 10 5 5 5-5"/></svg>
+            </label>
+            <button class="btn btn-outline" @onclick="LoadData" disabled="@isLoading">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6l2 1M4 17l2 1a7 7 0 0 0 12.4-3"/></svg>
+                تحديث
+            </button>
+        </section>
+
+        @if (isLoading)
+        {
+            <div class="loading-state"><span class="spinner"></span><p>جاري تحميل مرتجعات المبيعات...</p></div>
+        }
+        else if (!filtered.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a5 5 0 0 1 0 10h-2"/><path d="M14 3h4a2 2 0 0 1 2 2v2"/></svg></div>
+                <h3>لا توجد مرتجعات مطابقة</h3>
+                <p>لا تُنشأ المسودة إلا من فاتورة مبيعات معتمدة ذات حركة مخزون أصلية.</p>
+                @if (permissions.CanAdd) { <button class="btn btn-primary" @onclick="NewReturn">إنشاء مرتجع</button> }
+            </div>
+        }
+        else
+        {
+            <section class="table-card">
+                <div class="table-scroll">
+                    <table>
+                        <thead><tr><th class="center">م</th><th>رقم المرتجع</th><th>التاريخ</th><th>العميل</th><th>الفاتورة الأصلية</th><th>المخزن</th><th class="center">السطور</th><th class="number">قبل الضريبة</th><th class="number">الضريبة</th><th class="number">الإجمالي</th><th class="center">الحالة</th><th class="center">إجراءات</th></tr></thead>
+                        <tbody>
+                            @{ var row = 0; }
+                            @foreach (var item in filtered)
+                            {
+                                row++;
+                                var canEditRow = (permissions.CanEdit || (permissions.CanAdd && item.CreatedBy == UserSession.UserID)) && (item.ReturnStatus is 1 or 4);
+                                <tr class="@(item.ReturnStatus == 1 ? "draft-row" : "")">
+                                    <td class="center muted">@row</td>
+                                    <td><button class="doc-number" @onclick="() => OpenReturn(item)">@item.ReturnNumber</button></td>
+                                    <td class="muted">@item.ReturnDate.ToString("dd/MM/yyyy")</td>
+                                    <td class="customer-name">@item.CustomerNameAr</td>
+                                    <td><span class="invoice-chip">@(item.InvoiceNumber ?? "—")</span></td>
+                                    <td>@(item.WarehouseNameAr ?? "—")</td>
+                                    <td class="center"><span class="line-count">@item.ItemCount</span></td>
+                                    <td class="number">@item.SubTotal.ToString("#,##0.00")</td>
+                                    <td class="number">@item.TaxAmount.ToString("#,##0.00")</td>
+                                    <td class="number"><strong>@item.TotalAmount.ToString("#,##0.00")</strong></td>
+                                    <td class="center"><span class="status" style="--status-color:@SalesReturnService.GetReturnStatusColor(item.ReturnStatus)">@SalesReturnService.GetReturnStatusName(item.ReturnStatus)</span></td>
+                                    <td class="center"><div class="actions">
+                                        @if (canEditRow)
+                                        {
+                                            <button class="action edit" title="تعديل" @onclick="() => EditReturn(item.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m15 5 4 4M4 20l4-.8L19 8a2.8 2.8 0 0 0-4-4L4 15z"/></svg></button>
+                                        }
+                                        else
+                                        {
+                                            <button class="action view" title="عرض" @onclick="() => OpenReturn(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                                        }
+                                        @if (permissions.CanApprove && item.ReturnStatus == 2)
+                                        {
+                                            <button class="action approve" title="اعتماد أو رفض" @onclick="() => EditReturn(item.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3a9 9 0 1 0 9 9"/><path d="m16 5 2 2 4-4"/><path d="M8 12h8"/></svg></button>
+                                        }
+                                        @if (permissions.CanPrint)
+                                        {
+                                            <button class="action print" title="طباعة" @onclick="() => PrintReturn(item.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg></button>
+                                        }
+                                        @if (permissions.CanDelete && (item.ReturnStatus is 1 or 4))
+                                        {
+                                            <button class="action delete" title="حذف مسودة/مرفوض" @onclick="() => ShowDelete(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18M8 6V4h8v2m2 0-1 15H7L6 6"/><path d="M10 11v6m4-6v6"/></svg></button>
+                                        }
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="table-foot">عرض @filtered.Count من @(returns?.Count ?? 0) مستنداً — إجمالي النتائج المعروضة: <strong>@filtered.Sum(x => x.TotalAmount).ToString("#,##0.00") ج.م</strong></footer>
+            </section>
+        }
+
+        <aside class="policy-note">
+            <span class="note-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span>
+            <p><strong>سياسة الاعتماد:</strong> المرتجع المعتمد يُنشئ إشعاراً دائناً ويخفض رصيد العميل؛ لا يتم رد نقدي تلقائي. تعاد الأصناف السليمة فقط للمخزون، وتُعكس تكلفتها من طبقات FIFO للفاتورة الأصلية.</p>
+        </aside>
+    </main>
+
+    @if (showDeleteDialog)
+    {
+        <div class="modal-backdrop" @onclick="CloseDelete">
+            <section class="modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+                <div class="modal-rule danger"></div>
+                <div class="modal-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg></div>
+                <h3 id="delete-title">تأكيد حذف المرتجع</h3>
+                <p>سيُحذف المستند <strong>@deleteItem?.ReturnNumber</strong> وتفاصيله. لا يمكن حذف مستند مرسَل أو معتمد.</p>
+                @if (!string.IsNullOrWhiteSpace(deleteError)) { <div class="error-box">@deleteError</div> }
+                <div class="modal-actions"><button class="btn btn-danger" @onclick="ConfirmDelete" disabled="@isDeleting">@(isDeleting ? "جارٍ الحذف..." : "تأكيد الحذف")</button><button class="btn btn-outline" @onclick="CloseDelete">إلغاء</button></div>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(toast))
+    {
+        <div class="toast-wrap"><div class="toast @(toastOk ? "success" : "error")"><span>@toast</span><button title="إغلاق الإشعار" @onclick="() => toast = string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></div>
+    }
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--ink:#070B14;--ink2:#0A0F1E;--line:#e8e2d0;--cream:#fcfaf6}
+.sales-return-page{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;color:#111827}
+.hero{position:relative;overflow:hidden;border-radius:20px;padding:20px 24px;background:linear-gradient(135deg,var(--ink),var(--ink2) 55%,#121a2e);border:1px solid rgba(212,175,55,.2);box-shadow:0 8px 32px rgba(0,0,0,.2)}.gold-rule,.modal-rule{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}.brand-watermark{position:absolute;left:16px;top:50%;transform:translateY(-50%);opacity:.045;pointer-events:none}.brand-watermark img{width:108px;height:108px;object-fit:contain}.hero-main{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.hero-title-wrap{display:flex;align-items:center;gap:12px}.brand-mark{width:46px;height:46px;border:1px solid rgba(212,175,55,.22);border-radius:13px;background:rgba(212,175,55,.08);display:grid;place-items:center}.brand-mark img{width:28px;height:28px;object-fit:contain}.hero h1{margin:0;color:#f5e6c8;font-size:1.25rem;font-weight:900}.hero p{margin:4px 0 0;color:#8b95a5;font-size:.78rem}.hero-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.count-pill{display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;color:var(--gold);background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.2);font-size:.75rem;font-weight:800}.live-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.12)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:11px;padding:9px 15px;font-family:inherit;font-size:.82rem;font-weight:800;cursor:pointer;transition:transform .18s,box-shadow .18s,background .18s;border:1px solid transparent}.btn:hover:not(:disabled){transform:translateY(-1px)}.btn:disabled{opacity:.6;cursor:not-allowed}.btn svg{width:16px;height:16px}.btn-primary{color:#171307;background:linear-gradient(135deg,#e4c25d,var(--gold-dark));box-shadow:0 4px 14px rgba(212,175,55,.2)}.btn-export{color:#fff;background:linear-gradient(135deg,#059669,#10b981)}.btn-ghost,.btn-outline{color:#475569;background:#fff;border-color:var(--line)}.btn-outline:hover,.btn-ghost:hover{border-color:var(--gold);background:var(--cream)}.btn-danger{color:#fff;background:linear-gradient(135deg,#ef4444,#b91c1c)}
+.workflow{display:flex;align-items:center;gap:2px;overflow:auto;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:#fff}.step{display:flex;align-items:center;gap:7px;white-space:nowrap;color:#9ca3af;font-size:.75rem;font-weight:700}.step span{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#f3f4f6;border:1px solid #e5e7eb;font-size:.7rem}.step.done{color:#059669}.step.done span{background:#ecfdf5;border-color:#a7f3d0}.step.active{color:var(--gold-dark)}.step.active span{color:var(--gold-dark);background:rgba(212,175,55,.12);border-color:rgba(212,175,55,.35)}.step i{width:28px;height:2px;margin:0 8px;background:#e5e7eb}.step.done i{background:#a7f3d0}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(135px,1fr));gap:11px}.stat-card{position:relative;display:flex;align-items:center;gap:11px;min-height:76px;padding:14px;border-radius:15px;background:#fff;border:1px solid var(--line);box-shadow:0 3px 12px rgba(15,23,42,.025);overflow:hidden}.stat-card>i{position:absolute;bottom:0;left:12%;right:12%;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.65}.stat-icon{width:39px;height:39px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto}.stat-icon svg{width:19px;height:19px}.stat-icon.gray{color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0}.stat-icon.amber{color:#b77908;background:#fffbeb;border:1px solid #fde68a}.stat-icon.green{color:#059669;background:#ecfdf5;border:1px solid #a7f3d0}.stat-icon.red{color:#dc2626;background:#fef2f2;border:1px solid #fecaca}.stat-icon.gold{color:var(--gold-dark);background:#fcfaf2;border:1px solid #ead8a2}.stat-text{display:flex;min-width:0;flex-direction:column;gap:4px}.stat-text b{font-size:1.07rem;color:var(--ink2);font-weight:900;white-space:nowrap}.stat-text small{font-size:.69rem;color:#8b95a5;font-weight:700}.total-card .stat-text b{font-size:.9rem}
+.filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;border:1px solid var(--line);border-radius:15px;background:#fff}.search-box{position:relative;display:flex;align-items:center;flex:1;min-width:260px}.search-box>svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}.search-box input{width:100%;height:41px;padding:0 39px 0 36px;border:1px solid var(--line);border-radius:11px;outline:0;background:var(--cream);font:inherit;font-size:.82rem}.search-box input:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.09)}.clear-search{position:absolute;left:8px;width:25px;height:25px;display:grid;place-items:center;background:#f1f5f9;border:0;border-radius:50%;color:#64748b;cursor:pointer}.clear-search svg{width:12px;height:12px}.select-box{position:relative;display:flex;align-items:center;gap:8px;height:41px;padding:0 12px;border:1px solid var(--line);border-radius:11px;color:#64748b;font-size:.75rem;font-weight:700}.select-box select{border:0;outline:0;background:transparent;font:inherit;color:#1f2937;min-width:128px;appearance:none;padding-left:17px;cursor:pointer}.select-box>svg{position:absolute;left:10px;width:12px;height:12px;pointer-events:none}
+.table-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:17px;background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.035)}.table-card:before{position:absolute;content:'';top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.75}.table-scroll{overflow:auto}table{width:100%;min-width:1180px;border-collapse:collapse}thead{background:linear-gradient(135deg,#fcfaf6,#f6f3eb)}th{padding:12px 13px;color:#64748b;font-size:.72rem;font-weight:900;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}td{padding:11px 13px;color:#374151;font-size:.79rem;border-bottom:1px solid #f1f2f4;white-space:nowrap}tbody tr:hover{background:rgba(212,175,55,.035)}tbody tr.draft-row{background:#fdfcf9}.center{text-align:center}.number{text-align:left;font-variant-numeric:tabular-nums}.muted{color:#94a3b8}.customer-name{font-weight:800;color:#111827}.doc-number{padding:4px 8px;border:1px solid rgba(212,175,55,.24);border-radius:7px;background:rgba(212,175,55,.07);color:var(--gold-dark);font:inherit;font-weight:900;cursor:pointer}.doc-number:hover{background:rgba(212,175,55,.14)}.invoice-chip{padding:3px 8px;border-radius:7px;background:#f1f5f9;color:#475569;font-size:.72rem;font-weight:700}.line-count{display:inline-grid;min-width:26px;height:24px;place-items:center;border-radius:7px;background:#f1f5f9;color:#475569;font-weight:800}.status{display:inline-flex;padding:4px 10px;border-radius:999px;color:var(--status-color);background:color-mix(in srgb,var(--status-color) 10%,white);border:1px solid color-mix(in srgb,var(--status-color) 25%,white);font-size:.68rem;font-weight:900}.actions{display:flex;align-items:center;justify-content:center;gap:4px}.action{width:30px;height:30px;display:grid;place-items:center;border:1px solid;border-radius:9px;background:#fff;cursor:pointer;transition:background .15s,transform .15s}.action:hover{transform:translateY(-1px)}.action svg{width:14px;height:14px}.action.edit{color:var(--gold-dark);border-color:#ead8a2}.action.edit:hover{background:#fcfaf2}.action.view{color:#2563eb;border-color:#bfdbfe}.action.view:hover{background:#eff6ff}.action.approve{color:#059669;border-color:#a7f3d0}.action.approve:hover{background:#ecfdf5}.action.print{color:#0891b2;border-color:#a5f3fc}.action.print:hover{background:#ecfeff}.action.delete{color:#dc2626;border-color:#fecaca}.action.delete:hover{background:#fef2f2}.table-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:11px 14px;background:#fcfaf6;color:#7c8797;font-size:.72rem}.table-foot strong{color:#1f2937}
+.policy-note{display:flex;align-items:flex-start;gap:10px;padding:12px 15px;border:1px solid rgba(212,175,55,.23);border-radius:13px;background:linear-gradient(120deg,#fcfaf2,#fff)}.note-icon{width:25px;height:25px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;color:var(--gold-dark);background:rgba(212,175,55,.1)}.note-icon svg{width:16px;height:16px}.policy-note p{margin:0;color:#687385;font-size:.76rem;line-height:1.7}.policy-note strong{color:#3f3a2d}
+.loading-state,.empty-state,.access-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:55px 20px;border:1px solid var(--line);border-radius:17px;background:#fff;color:#6b7280}.loading-state p{margin:12px 0 0;font-size:.84rem}.spinner{width:37px;height:37px;border:3px solid #eee9dc;border-top-color:var(--gold);border-radius:50%;animation:spin .75s linear infinite}.spinner.small{width:15px;height:15px;border-width:2px}.empty-state h3{margin:12px 0 4px;color:#1f2937;font-size:1rem}.empty-state p{margin:0 0 14px;color:#8993a2;font-size:.79rem}.empty-icon,.access-icon,.modal-icon{width:56px;height:56px;display:grid;place-items:center;border:1px solid rgba(212,175,55,.19);border-radius:15px;background:rgba(212,175,55,.07);color:var(--gold-dark)}.empty-icon svg,.access-icon svg{width:28px;height:28px}.access-state h4{margin:14px 0;color:#334155}
+.modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;background:rgba(7,11,20,.55);backdrop-filter:blur(5px)}.modal{position:relative;width:min(100%,430px);overflow:hidden;padding:27px 24px 20px;border:1px solid var(--line);border-radius:18px;background:#fff;text-align:center;box-shadow:0 22px 60px rgba(0,0,0,.22)}.modal-rule.danger{background:linear-gradient(90deg,transparent,#ef4444,#b91c1c,transparent)}.modal-icon{margin:0 auto 12px}.modal-icon.danger{color:#dc2626;background:#fef2f2;border-color:#fecaca}.modal-icon svg{width:30px;height:30px}.modal h3{margin:0 0 8px;color:#111827;font-size:1.05rem}.modal p{margin:0;color:#6b7280;font-size:.82rem;line-height:1.7}.modal p strong{color:#111827}.error-box{margin-top:12px;padding:9px 12px;border:1px solid #fecaca;border-radius:9px;background:#fef2f2;color:#991b1b;font-size:.78rem}.modal-actions{display:flex;justify-content:center;gap:9px;margin-top:18px}.toast-wrap{position:fixed;left:20px;bottom:20px;z-index:1100;animation:toast-in .25s ease}.toast{display:flex;align-items:center;gap:14px;min-width:280px;max-width:min(560px,calc(100vw - 40px));padding:12px 14px;border:1px solid;border-radius:12px;box-shadow:0 12px 34px rgba(15,23,42,.17);font-size:.81rem;font-weight:700}.toast.success{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}.toast.error{color:#991b1b;background:#fef2f2;border-color:#fecaca}.toast button{display:grid;place-items:center;margin-right:auto;padding:4px;border:0;background:transparent;color:inherit;cursor:pointer}.toast button svg{width:14px;height:14px}
+@@keyframes spin{to{transform:rotate(360deg)}}@@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:900px){.stats{grid-template-columns:repeat(3,minmax(130px,1fr))}}
+@@media(max-width:600px){.hero{padding:17px}.hero-main{align-items:flex-start;flex-direction:column}.hero-actions{width:100%}.stats{grid-template-columns:repeat(2,minmax(130px,1fr))}.filter-bar{align-items:stretch}.search-box{min-width:100%}.select-box{flex:1;justify-content:space-between}.workflow{padding:10px}.step i{width:14px;margin:0 4px}}
+</style>
+
+@code {
+    private List<SalesReturnListDto>? returns;
+    private List<SalesReturnListDto> filtered = new();
+    private ModulePermissionDto? permissions;
+    private string searchText = string.Empty;
+    private int filterStatus;
+    private bool isLoading = true;
+    private bool isExporting;
+    private bool showDeleteDialog;
+    private bool isDeleting;
+    private SalesReturnListDto? deleteItem;
+    private string deleteError = string.Empty;
+    private string toast = string.Empty;
+    private bool toastOk = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_SRET");
+            if (permissions?.CanView == true)
+                await LoadData();
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر تحميل مرتجعات المبيعات: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            returns = await ReturnService.GetReturnsListAsync(UserSession.CurrentUserID);
+            Filter();
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر تحميل البيانات: " + ex.Message;
+            toastOk = false;
+            returns ??= new List<SalesReturnListDto>();
+            Filter();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void Filter()
+    {
+        if (returns == null) return;
+        filtered = returns.Where(x =>
+            (filterStatus == 0 || x.ReturnStatus == filterStatus) &&
+            (string.IsNullOrWhiteSpace(searchText) ||
+             ArabicSearchHelper.Contains(x.ReturnNumber, searchText) ||
+             ArabicSearchHelper.Contains(x.InvoiceNumber, searchText) ||
+             ArabicSearchHelper.Contains(x.CustomerNameAr, searchText)))
+            .ToList();
+    }
+
+    private void ClearSearch()
+    {
+        searchText = string.Empty;
+        Filter();
+    }
+
+    private void NewReturn() => Navigation.NavigateTo("/sales-returns/new");
+    private void EditReturn(int id) => Navigation.NavigateTo($"/sales-returns/edit/{id}");
+    private void ViewReturn(int id) => Navigation.NavigateTo($"/sales-returns/view/{id}");
+
+    private void OpenReturn(SalesReturnListDto item)
+    {
+        if (item.ReturnStatus == 2 && permissions?.CanApprove == true)
+        {
+            EditReturn(item.ReturnID);
+            return;
+        }
+
+        if (item.ReturnStatus is 1 or 4 &&
+            (permissions?.CanEdit == true || (permissions?.CanAdd == true && item.CreatedBy == UserSession.UserID)))
+        {
+            EditReturn(item.ReturnID);
+            return;
+        }
+
+        ViewReturn(item.ReturnID);
+    }
+
+    private async Task PrintReturn(int id)
+    {
+        try
+        {
+            var html = await ReturnService.GenerateReturnHtmlAsync(id, UserSession.CurrentUserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذرت الطباعة: " + ex.Message;
+            toastOk = false;
+        }
+    }
+
+    private async Task ExportExcel()
+    {
+        isExporting = true;
+        try
+        {
+            var bytes = await ReturnService.ExportReturnsToExcelAsync(UserSession.CurrentUserID);
+            await JS.InvokeVoidAsync("downloadFile",
+                $"SalesReturns_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            toast = "تعذر التصدير: " + ex.Message;
+            toastOk = false;
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private void ShowDelete(SalesReturnListDto item)
+    {
+        deleteItem = item;
+        deleteError = string.Empty;
+        showDeleteDialog = true;
+    }
+
+    private void CloseDelete()
+    {
+        showDeleteDialog = false;
+        deleteError = string.Empty;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteItem == null) return;
+        isDeleting = true;
+        try
+        {
+            await ReturnService.DeleteDraftAsync(deleteItem.ReturnID, UserSession.CurrentUserID);
+            toast = $"تم حذف المسودة {deleteItem.ReturnNumber}.";
+            toastOk = true;
+            showDeleteDialog = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            deleteError = ex.Message;
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+}

@@ -47,8 +47,15 @@ SELECT
         WHEN 3 THEN N'متوقف'
         WHEN 4 THEN N'ملغي'
     END AS StatusName,
-    ISNULL((SELECT COUNT(*) FROM dbo.BOMDetails bd WHERE bd.BOMID = b.BOMID AND bd.MaterialType = 1), 0) AS RawMaterialCount,
+    ISNULL((SELECT COUNT(*)
+            FROM dbo.BOMDetails bd
+            INNER JOIN dbo.Items ci ON ci.ItemID = bd.ItemID
+            WHERE bd.BOMID = b.BOMID AND bd.MaterialType = 1 AND ci.ItemType = 1), 0) AS RawMaterialCount,
     ISNULL((SELECT COUNT(*) FROM dbo.BOMDetails bd WHERE bd.BOMID = b.BOMID AND bd.MaterialType = 2), 0) AS PackagingMaterialCount,
+    ISNULL((SELECT COUNT(*)
+            FROM dbo.BOMDetails bd
+            INNER JOIN dbo.Items ci ON ci.ItemID = bd.ItemID
+            WHERE bd.BOMID = b.BOMID AND bd.MaterialType = 1 AND ci.ItemType = 4), 0) AS FinishedProductComponentCount,
     ISNULL((SELECT SUM(bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100) * ISNULL(bd.UnitCost, 0))
             FROM dbo.BOMDetails bd WHERE bd.BOMID = b.BOMID), 0) AS TotalMaterialCost,
     ISNULL(b.LaborCostPerBatch, 0) AS LaborCostPerBatch,
@@ -208,6 +215,8 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         public async Task UpdateBOMAsync(BOMEditDto bom, int userId)
         {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
             var oldBom = await connection.QueryFirstOrDefaultAsync<BOMEditDto>(
                 @"SELECT
@@ -219,7 +228,8 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                       BOMStatus, IsActive, EffectiveFrom, EffectiveTo
                   FROM dbo.BillOfMaterials
                   WHERE BOMID = @BOMID",
-                new { bom.BOMID });
+                new { bom.BOMID },
+                transaction);
 
             var sql = @"
 UPDATE dbo.BillOfMaterials SET
@@ -263,7 +273,23 @@ WHERE BOMID = @BOMID";
                 bom.EffectiveFrom,
                 bom.EffectiveTo,
                 UserID = userId
-            });
+            }, transaction);
+
+            var recalculatedPercentageLineCount = 0;
+            if (oldBom != null &&
+                (oldBom.OutputQty != bom.OutputQty || oldBom.OutputUnitID != bom.OutputUnitID))
+            {
+                recalculatedPercentageLineCount = await connection.ExecuteAsync(@"
+UPDATE bd
+SET Quantity = ROUND(@OutputQty * bd.InputPercentage / 100.0, 6)
+FROM dbo.BOMDetails bd
+WHERE bd.BOMID = @BOMID
+  AND bd.InputPercentage IS NOT NULL",
+                    new { bom.BOMID, bom.OutputQty },
+                    transaction);
+            }
+
+            transaction.Commit();
 
             var changes = new List<string>();
             if (oldBom != null)
@@ -285,6 +311,8 @@ WHERE BOMID = @BOMID";
                 if (oldBom.EffectiveFrom != bom.EffectiveFrom) changes.Add("EffectiveFrom");
                 if (oldBom.EffectiveTo != bom.EffectiveTo) changes.Add("EffectiveTo");
             }
+            if (recalculatedPercentageLineCount > 0)
+                changes.Add($"BOMDetails.Quantity (percentage lines: {recalculatedPercentageLineCount})");
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -630,12 +658,12 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 INSERT INTO dbo.BOMDetails
 (
     BOMID, LineNumber, ItemID, MaterialType, UnitID,
-    Quantity, WastePercent, UnitCost,
+    Quantity, InputPercentage, WastePercent, UnitCost,
     IsOptional, SubstituteItemID, Sequence, StageNumber, Notes
 )
 SELECT
     @NewBOMID, LineNumber, ItemID, MaterialType, UnitID,
-    Quantity, WastePercent, UnitCost,
+    Quantity, InputPercentage, WastePercent, UnitCost,
     ISNULL(IsOptional, 0), SubstituteItemID, ISNULL(Sequence, 0), ISNULL(StageNumber, 1), Notes
 FROM dbo.BOMDetails
 WHERE BOMID = @SourceBOMID",
@@ -701,15 +729,17 @@ SELECT
     bd.ItemID,
     i.ItemCode,
     i.ItemNameAr AS ItemName,
-    bd.MaterialType,
-    CASE bd.MaterialType
-        WHEN 1 THEN N'خام'
-        WHEN 2 THEN N'تعبئة'
-        ELSE N''
+    CASE WHEN bd.MaterialType = 1 AND i.ItemType = 4 THEN 3 ELSE bd.MaterialType END AS MaterialType,
+    CASE
+        WHEN bd.MaterialType = 1 AND i.ItemType = 4 THEN N'منتج نهائي'
+        WHEN bd.MaterialType = 1 THEN N'خام'
+        WHEN bd.MaterialType = 2 THEN N'تعبئة'
+        ELSE N'غير معروف'
     END AS MaterialTypeName,
     bd.UnitID,
     u.UnitNameAr AS UnitName,
     bd.Quantity,
+    bd.InputPercentage,
     ISNULL(bd.WastePercent, 0) AS WastePercent,
     (bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0)) AS NetQuantity,
     ISNULL(bd.UnitCost, 0) AS UnitCost,
@@ -743,17 +773,19 @@ ORDER BY bd.MaterialType, bd.LineNumber";
 
             var unitCost = await GetItemCostAsync(detail.ItemID);
 
+            // The audited database constraint permits stored MaterialType 1/2 only.
+            // Logical type 3 is identified by Items.ItemType=4 and stored as type 1.
             var sql = @"
 INSERT INTO dbo.BOMDetails
 (
     BOMID, LineNumber, ItemID, MaterialType, UnitID,
-    Quantity, WastePercent, UnitCost,
+    Quantity, InputPercentage, WastePercent, UnitCost,
     IsOptional, SubstituteItemID, Sequence, StageNumber, Notes
 )
 VALUES
 (
     @BOMID, @LineNumber, @ItemID, @MaterialType, @UnitID,
-    @Quantity, @WastePercent, @UnitCost,
+    @Quantity, @InputPercentage, @WastePercent, @UnitCost,
     @IsOptional, NULLIF(@SubstituteItemID, 0), @Sequence, @StageNumber, @Notes
 );
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
@@ -763,9 +795,10 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 detail.BOMID,
                 LineNumber = nextLine,
                 detail.ItemID,
-                detail.MaterialType,
+                MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
                 detail.UnitID,
                 detail.Quantity,
+                detail.InputPercentage,
                 detail.WastePercent,
                 UnitCost = unitCost,
                 detail.IsOptional,
@@ -793,12 +826,15 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var unitCost = await GetItemCostAsync(detail.ItemID);
 
+            // Keep the persisted value within the audited 1/2 constraint; ItemType=4
+            // carries the logical finished-product component identity on reads.
             await connection.ExecuteAsync(@"
 UPDATE dbo.BOMDetails SET
     ItemID = @ItemID,
     MaterialType = @MaterialType,
     UnitID = @UnitID,
     Quantity = @Quantity,
+    InputPercentage = @InputPercentage,
     WastePercent = @WastePercent,
     UnitCost = @UnitCost,
     IsOptional = @IsOptional,
@@ -811,9 +847,10 @@ WHERE BOMDetailID = @BOMDetailID",
                 {
                     detail.BOMDetailID,
                     detail.ItemID,
-                    detail.MaterialType,
+                    MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
                     detail.UnitID,
                     detail.Quantity,
+                    detail.InputPercentage,
                     detail.WastePercent,
                     UnitCost = unitCost,
                     detail.IsOptional,
@@ -836,10 +873,67 @@ WHERE BOMDetailID = @BOMDetailID",
         public async Task DeleteBOMDetailAsync(int bomDetailId, int userId)
         {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+
+            var bomId = await connection.QueryFirstOrDefaultAsync<int?>(
+                @"SELECT BOMID
+                  FROM dbo.BOMDetails WITH (UPDLOCK, HOLDLOCK)
+                  WHERE BOMDetailID = @ID",
+                new { ID = bomDetailId },
+                transaction);
+
+            if (!bomId.HasValue)
+            {
+                transaction.Commit();
+                return;
+            }
 
             await connection.ExecuteAsync(
                 @"DELETE FROM dbo.BOMDetails WHERE BOMDetailID = @ID",
-                new { ID = bomDetailId });
+                new { ID = bomDetailId },
+                transaction);
+
+            var remainingCount = await connection.ExecuteScalarAsync<int>(
+                @"SELECT COUNT(*) FROM dbo.BOMDetails WHERE BOMID = @BOMID",
+                new { BOMID = bomId.Value },
+                transaction);
+
+            if (remainingCount > 0)
+            {
+                var maxLineNumber = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT ISNULL(MAX(LineNumber), 0)
+                      FROM dbo.BOMDetails
+                      WHERE BOMID = @BOMID",
+                    new { BOMID = bomId.Value },
+                    transaction);
+
+                // Move lines above the current range first so the unique (BOMID, LineNumber)
+                // index cannot collide while the visible line numbers are compacted.
+                await connection.ExecuteAsync(
+                    @"UPDATE dbo.BOMDetails
+                      SET LineNumber = LineNumber + @Offset
+                      WHERE BOMID = @BOMID",
+                    new { BOMID = bomId.Value, Offset = maxLineNumber + 1 },
+                    transaction);
+
+                await connection.ExecuteAsync(@"
+;WITH OrderedLines AS
+(
+    SELECT BOMDetailID,
+           ROW_NUMBER() OVER (ORDER BY MaterialType, LineNumber) AS NewLineNumber
+    FROM dbo.BOMDetails
+    WHERE BOMID = @BOMID
+)
+UPDATE detail
+SET LineNumber = ordered.NewLineNumber
+FROM dbo.BOMDetails detail
+INNER JOIN OrderedLines ordered ON ordered.BOMDetailID = detail.BOMDetailID;",
+                    new { BOMID = bomId.Value },
+                    transaction);
+            }
+
+            transaction.Commit();
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -847,7 +941,7 @@ WHERE BOMDetailID = @BOMDetailID",
                 tableName: "BOMDetails",
                 recordId: bomDetailId.ToString(),
                 moduleName: "SCR_BOM",
-                description: $"حذف مكون من الوصفة رقم: {bomDetailId}"
+                description: $"حذف مكون من الوصفة رقم: {bomId.Value} مع إعادة ترقيم المكونات المتبقية"
             );
         }
 
@@ -869,6 +963,47 @@ WHERE BOMDetailID = @BOMDetailID",
                 });
 
             return count > 0;
+        }
+
+        public async Task<bool> WouldCreateCircularBOMAsync(
+            int parentProductItemId,
+            int childFinishedProductItemId,
+            int excludeDetailId = 0)
+        {
+            using var connection = CreateConnection();
+
+            const string sql = @"
+;WITH BOMGraph AS
+(
+    SELECT b.ProductItemID AS ParentItemID, bd.ItemID AS ChildItemID
+    FROM dbo.BillOfMaterials b
+    INNER JOIN dbo.BOMDetails bd ON bd.BOMID = b.BOMID
+    INNER JOIN dbo.Items childItem ON childItem.ItemID = bd.ItemID
+    WHERE bd.MaterialType = 1
+      AND childItem.ItemType = 4
+      AND bd.BOMDetailID <> @ExcludeDetailID
+), Reachable AS
+(
+    SELECT @ChildItemID AS ItemID,
+           CAST('/' + CONVERT(varchar(20), @ChildItemID) + '/' AS varchar(max)) AS ItemPath
+    UNION ALL
+    SELECT graph.ChildItemID,
+           CAST(reachable.ItemPath + CONVERT(varchar(20), graph.ChildItemID) + '/' AS varchar(max))
+    FROM Reachable reachable
+    INNER JOIN BOMGraph graph ON graph.ParentItemID = reachable.ItemID
+    WHERE CHARINDEX('/' + CONVERT(varchar(20), graph.ChildItemID) + '/', reachable.ItemPath) = 0
+)
+SELECT CAST(CASE WHEN EXISTS
+    (SELECT 1 FROM Reachable WHERE ItemID = @ParentItemID)
+    THEN 1 ELSE 0 END AS bit)
+OPTION (MAXRECURSION 32767);";
+
+            return await connection.ExecuteScalarAsync<bool>(sql, new
+            {
+                ParentItemID = parentProductItemId,
+                ChildItemID = childFinishedProductItemId,
+                ExcludeDetailID = excludeDetailId
+            });
         }
 
         // ==========================================
@@ -1109,12 +1244,17 @@ WHERE bd.BOMID = @BOMID",
 
             var sql = @"
 SELECT
-    ISNULL((SELECT SUM(Quantity * (1 + ISNULL(WastePercent, 0) / 100.0) * ISNULL(UnitCost, 0))
-            FROM dbo.BOMDetails
-            WHERE BOMID = @BOMID AND MaterialType = 1), 0) AS RawMaterialCost,
-    ISNULL((SELECT SUM(Quantity * (1 + ISNULL(WastePercent, 0) / 100.0) * ISNULL(UnitCost, 0))
-            FROM dbo.BOMDetails
-            WHERE BOMID = @BOMID AND MaterialType = 2), 0) AS PackagingCost,
+    ISNULL((SELECT SUM(bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0) * ISNULL(bd.UnitCost, 0))
+            FROM dbo.BOMDetails bd
+            INNER JOIN dbo.Items i ON i.ItemID = bd.ItemID
+            WHERE bd.BOMID = @BOMID AND bd.MaterialType = 1 AND i.ItemType = 1), 0) AS RawMaterialCost,
+    ISNULL((SELECT SUM(bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0) * ISNULL(bd.UnitCost, 0))
+            FROM dbo.BOMDetails bd
+            WHERE bd.BOMID = @BOMID AND bd.MaterialType = 2), 0) AS PackagingCost,
+    ISNULL((SELECT SUM(bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0) * ISNULL(bd.UnitCost, 0))
+            FROM dbo.BOMDetails bd
+            INNER JOIN dbo.Items i ON i.ItemID = bd.ItemID
+            WHERE bd.BOMID = @BOMID AND bd.MaterialType = 1 AND i.ItemType = 4), 0) AS FinishedProductComponentCost,
     ISNULL(LaborCostPerBatch, 0) AS LaborCost,
     ISNULL(OverheadCostPerBatch, 0) AS OverheadCost,
     ISNULL(OutputQty, 0) AS OutputQty
@@ -1128,11 +1268,12 @@ WHERE BOMID = @BOMID";
 
             decimal raw = data.RawMaterialCost;
             decimal pack = data.PackagingCost;
+            decimal finishedProductComponents = data.FinishedProductComponentCost;
             decimal labor = data.LaborCost;
             decimal overhead = data.OverheadCost;
             decimal output = data.OutputQty;
 
-            var totalMaterial = raw + pack;
+            var totalMaterial = raw + pack + finishedProductComponents;
             var totalBatch = totalMaterial + labor + overhead;
             var unitCost = output > 0 ? totalBatch / output : 0;
 
@@ -1140,6 +1281,7 @@ WHERE BOMID = @BOMID";
             {
                 RawMaterialCost = raw,
                 PackagingCost = pack,
+                FinishedProductComponentCost = finishedProductComponents,
                 TotalMaterialCost = totalMaterial,
                 LaborCost = labor,
                 OverheadCost = overhead,
@@ -1252,7 +1394,8 @@ ORDER BY ItemNameAr";
             var sql = @"
 SELECT
     UnitID AS Id,
-    UnitNameAr AS Name
+    UnitNameAr AS Name,
+    UnitType AS UnitType
 FROM dbo.Units
 WHERE IsActive = 1
 ORDER BY UnitNameAr";
@@ -1277,20 +1420,27 @@ ORDER BY StageOrder";
             return result.ToList();
         }
 
-        public async Task<List<BOMLookupDto>> GetMaterialItemsLookupAsync()
+        public async Task<List<SearchableItem>> GetMaterialItemsLookupAsync()
         {
             using var connection = CreateConnection();
 
             var sql = @"
 SELECT
-    ItemID AS Id,
-    (ItemCode + N' - ' + ItemNameAr) AS Name
-FROM dbo.Items
-WHERE ItemType IN (1, 2)
-  AND IsActive = 1
-ORDER BY ItemType, ItemNameAr";
+    i.ItemID AS Id,
+    i.ItemCode AS Code,
+    CASE
+        WHEN NULLIF(LTRIM(RTRIM(ISNULL(i.ItemNameEn, N''))), N'') IS NULL
+            THEN i.ItemNameAr
+        ELSE i.ItemNameAr + N' / ' + i.ItemNameEn
+    END AS Name,
+    i.PrimaryUnitID AS PrimaryUnitID,
+    i.ItemType AS ItemType
+FROM dbo.Items i
+WHERE i.ItemType IN (1, 2, 4)
+  AND i.IsActive = 1
+ORDER BY i.ItemType, i.ItemNameAr";
 
-            var result = await connection.QueryAsync<BOMLookupDto>(sql);
+            var result = await connection.QueryAsync<SearchableItem>(sql);
             return result.ToList();
         }
 
@@ -1307,14 +1457,14 @@ ORDER BY ItemType, ItemNameAr";
             ws.Style.Font.FontSize = 11;
 
             ws.Cell(1, 1).Value = "تقرير وصفات التصنيع — مصنع واي كي كوتينج";
-            ws.Range(1, 1, 1, 11).Merge().Style.Font.Bold = true;
-            ws.Range(1, 1, 1, 11).Style.Font.FontSize = 14;
-            ws.Range(1, 1, 1, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(1, 1, 1, 12).Merge().Style.Font.Bold = true;
+            ws.Range(1, 1, 1, 12).Style.Font.FontSize = 14;
+            ws.Range(1, 1, 1, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             ws.Cell(2, 1).Value = $"تاريخ التصدير: {DateTime.Now:dd/MM/yyyy hh:mm tt}";
-            ws.Range(2, 1, 2, 11).Merge().Style.Font.FontSize = 9;
-            ws.Range(2, 1, 2, 11).Style.Font.FontColor = XLColor.Gray;
-            ws.Range(2, 1, 2, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(2, 1, 2, 12).Merge().Style.Font.FontSize = 9;
+            ws.Range(2, 1, 2, 12).Style.Font.FontColor = XLColor.Gray;
+            ws.Range(2, 1, 2, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             int headerRow = 4;
             var headers = new[]
@@ -1328,6 +1478,7 @@ ORDER BY ItemType, ItemNameAr";
                 "الكمية الناتجة",
                 "خامات",
                 "تعبئة",
+                "منتجات تامة كمكونات",
                 "إجمالي التكلفة",
                 "الحالة"
             };
@@ -1337,8 +1488,8 @@ ORDER BY ItemType, ItemNameAr";
                 var cell = ws.Cell(headerRow, i + 1);
                 cell.Value = headers[i];
                 cell.Style.Font.Bold = true;
-                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1d143f");
-                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#0A0F1E");
+                cell.Style.Font.FontColor = XLColor.FromHtml("#F5E6C8");
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             }
@@ -1359,18 +1510,19 @@ ORDER BY ItemType, ItemNameAr";
                 ws.Cell(row, 7).Value = $"{item.OutputQty:#,##0.####} {item.OutputUnitName}";
                 ws.Cell(row, 8).Value = item.RawMaterialCount;
                 ws.Cell(row, 9).Value = item.PackagingMaterialCount;
-                ws.Cell(row, 10).Value = item.TotalBatchCost;
-                ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
-                ws.Cell(row, 11).Value = item.StatusName;
+                ws.Cell(row, 10).Value = item.FinishedProductComponentCount;
+                ws.Cell(row, 11).Value = item.TotalBatchCost;
+                ws.Cell(row, 11).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(row, 12).Value = item.StatusName;
 
-                for (int i = 1; i <= 11; i++)
+                for (int i = 1; i <= 12; i++)
                 {
                     ws.Cell(row, i).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                    ws.Cell(row, i).Style.Border.OutsideBorderColor = XLColor.FromHtml("#e5e7eb");
+                    ws.Cell(row, i).Style.Border.OutsideBorderColor = XLColor.FromHtml("#e8e2d0");
                 }
 
                 if (num % 2 == 0)
-                    ws.Range(row, 1, row, 11).Style.Fill.BackgroundColor = XLColor.FromHtml("#f8f7ff");
+                    ws.Range(row, 1, row, 12).Style.Fill.BackgroundColor = XLColor.FromHtml("#fcfaf6");
 
                 row++;
             }

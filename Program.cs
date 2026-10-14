@@ -30,6 +30,7 @@ builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<LookupService>();
 builder.Services.AddScoped<UserSessionService>();
 builder.Services.AddScoped<PermissionService>();
+builder.Services.AddScoped<ModuleAuthorizationService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<RoleService>();
 builder.Services.AddScoped<LoginHistoryService>();
@@ -54,7 +55,9 @@ builder.Services.AddScoped<MaterialIssueService>();
 builder.Services.AddScoped<ProductionBatchService>();
 builder.Services.AddScoped<ContractManufacturingService>();
 builder.Services.AddScoped<SalesInvoiceService>();
+builder.Services.AddScoped<SalesReturnService>();
 builder.Services.AddScoped<SalesOrderService>();
+builder.Services.AddScoped<SalesQuotationService>();
 builder.Services.AddScoped<TreasuryService>();
 builder.Services.AddScoped<AccountingService>();
 

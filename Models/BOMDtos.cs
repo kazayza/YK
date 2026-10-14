@@ -26,6 +26,7 @@
 
         public int RawMaterialCount { get; set; }
         public int PackagingMaterialCount { get; set; }
+        public int FinishedProductComponentCount { get; set; }
 
         public decimal TotalMaterialCost { get; set; }
         public decimal LaborCostPerBatch { get; set; }
@@ -95,6 +96,11 @@
         public string UnitName { get; set; } = "";
 
         public decimal Quantity { get; set; }
+        // Persisted nullable percentage: null means quantity-entry mode; a value means percentage-entry mode.
+        public decimal? InputPercentage { get; set; }
+        // UI-only selector (1 = quantity, 2 = percentage) and current editable/preview percentage.
+        public int InputMode { get; set; } = 1;
+        public decimal Percentage { get; set; }
         public decimal WastePercent { get; set; }
         public decimal NetQuantity { get; set; }
 
@@ -157,6 +163,7 @@
     {
         public decimal RawMaterialCost { get; set; }
         public decimal PackagingCost { get; set; }
+        public decimal FinishedProductComponentCost { get; set; }
         public decimal TotalMaterialCost { get; set; }
         public decimal LaborCost { get; set; }
         public decimal OverheadCost { get; set; }
@@ -171,6 +178,7 @@
     {
         public int Id { get; set; }
         public string Name { get; set; } = "";
+        public string? UnitType { get; set; }
     }
 
 }

@@ -29,7 +29,7 @@ else if (permissions == null || !permissions.CanView)
 }
 else
 {
-    <div class="po-page">
+    <div class="po-page yk-gold-page">
 
         <!-- ===== Header ===== -->
         <div class="page-header">
@@ -553,9 +553,9 @@ else
 <style>
     /* ===== Variables ===== */
     :root {
-        --c-primary:      #4f46e5;
-        --c-primary-lt:   #eef2ff;
-        --c-primary-dk:   #3730a3;
+        --c-primary:      #D4AF37;
+        --c-primary-lt:   rgba(212,175,55,.10);
+        --c-primary-dk:   #9C7C2E;
         --c-success:      #10b981;
         --c-success-lt:   #ecfdf5;
         --c-warning:      #f59e0b;
@@ -567,7 +567,7 @@ else
         --c-secondary:    #64748b;
         --c-secondary-lt: #f1f5f9;
         --c-surface:      #ffffff;
-        --c-bg:           #f8fafc;
+        --c-bg:           #f8f6f0;
         --c-border:       #e2e8f0;
         --c-text:         #0f172a;
         --c-text-2:       #64748b;
@@ -608,7 +608,7 @@ else
 
     /* ===== Header ===== */
     .page-header {
-        background: linear-gradient(135deg, #0f766e, #115e59);
+        background: linear-gradient(135deg, #9C7C2E, #070B14);
         border-radius: var(--r-xl); padding: 1.75rem 2rem;
         display: flex; justify-content: space-between; align-items: center;
         box-shadow: 0 8px 32px rgba(15,118,110,.25);
@@ -638,10 +638,10 @@ else
         padding: .6rem 1.25rem; font-size: .88rem; font-weight: 600;
         display: inline-flex; align-items: center; gap: .45rem;
         cursor: pointer; transition: all .2s;
-        box-shadow: 0 4px 12px rgba(79,70,229,.3); white-space: nowrap;
+        box-shadow: 0 4px 12px rgba(212,175,55,.3); white-space: nowrap;
     }
     .btn-primary-modern:hover:not(:disabled) {
-        transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.4);
+        transform: translateY(-1px); box-shadow: 0 6px 18px rgba(212,175,55,.4);
     }
     .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
 
@@ -705,7 +705,7 @@ else
     }
     .filter-input:focus, .filter-select:focus {
         border-color: var(--c-primary); background: #fff;
-        box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+        box-shadow: 0 0 0 3px rgba(212,175,55,.1);
     }
     .search-wrap { position: relative; }
     .search-ico {
@@ -727,9 +727,9 @@ else
         font-size: .9rem; font-weight: 700; color: var(--c-text);
         display: flex; align-items: center; gap: .5rem;
     }
-    .table-card-title i { color: #0f766e; }
+    .table-card-title i { color: #9C7C2E; }
     .count-badge {
-        background: #f0fdfa; color: #0f766e;
+        background: rgba(212,175,55,.10); color: #9C7C2E;
         font-size: .75rem; font-weight: 700;
         padding: .2rem .65rem; border-radius: 20px;
     }
@@ -737,7 +737,7 @@ else
     .table-scroll { overflow-x: auto; }
     .po-table { width: 100%; border-collapse: collapse; }
     .po-table thead th {
-        background: #f8fafc; padding: .85rem 1rem;
+        background: #f8f6f0; padding: .85rem 1rem;
         font-size: .76rem; font-weight: 700; color: var(--c-text-3);
         text-transform: uppercase; letter-spacing: .06em;
         border-bottom: 2px solid var(--c-border); white-space: nowrap;
@@ -750,7 +750,7 @@ else
         border-bottom: 1px solid #f1f5f9; transition: background .15s;
     }
     .po-table tbody tr:last-child { border-bottom: none; }
-    .po-table tbody tr:hover { background: #f0fdfa; }
+    .po-table tbody tr:hover { background: rgba(212,175,55,.10); }
     .po-table tbody tr.urgent-row { border-right: 3px solid var(--c-danger); }
 
     .po-table tbody td {
@@ -763,7 +763,7 @@ else
     /* ===== Cells ===== */
     .code-chip {
         font-family: 'Courier New', monospace; font-weight: 700;
-        color: #0f766e; background: #f0fdfa;
+        color: #9C7C2E; background: rgba(212,175,55,.10);
         padding: .2rem .55rem; border-radius: 6px;
         font-size: .82rem; white-space: nowrap;
     }
@@ -821,14 +821,14 @@ else
     }
     .s-draft     { background: #f1f5f9; color: #64748b; }
     .s-draft::before     { background: #94a3b8; }
-    .s-approved  { background: #dbeafe; color: #1d4ed8; }
-    .s-approved::before  { background: #2563eb; }
+    .s-approved  { background: var(--yk-gold-10); color: var(--yk-gold-dark); }
+    .s-approved::before  { background: #D4AF37; }
     .s-preparing { background: #fef3c7; color: #92400e; }
     .s-preparing::before { background: #f59e0b; }
     .s-inprogress { background: #fed7aa; color: #c2410c; }
     .s-inprogress::before { background: #f97316; animation: pulse-dot 1.5s infinite; }
-    .s-qc        { background: #e0e7ff; color: #4338ca; }
-    .s-qc::before        { background: #6366f1; }
+    .s-qc        { background: var(--yk-info-soft); color: var(--yk-info); }
+    .s-qc::before        { background: var(--yk-info); }
     .s-completed { background: var(--c-success-lt); color: #059669; }
     .s-completed::before { background: var(--c-success); }
     .s-cancelled { background: var(--c-danger-lt); color: #dc2626; }
@@ -868,8 +868,8 @@ else
     .approve-btn:hover { background: var(--c-success-lt); }
     .cancel-btn  { color: var(--c-danger); }
     .cancel-btn:hover  { background: var(--c-danger-lt); }
-    .print-btn   { color: #0f766e; }
-    .print-btn:hover   { background: #f0fdfa; }
+    .print-btn   { color: #9C7C2E; }
+    .print-btn:hover   { background: rgba(212,175,55,.10); }
 
     /* ===== States ===== */
     .state-box {
@@ -878,7 +878,7 @@ else
     }
     .spinner-md {
         width: 44px; height: 44px; border: 3px solid var(--c-border);
-        border-top-color: #0f766e; border-radius: 50%;
+        border-top-color: #9C7C2E; border-radius: 50%;
         animation: spin .7s linear infinite;
     }
     .spinner-tiny {
@@ -889,9 +889,9 @@ else
     @@keyframes spin { to { transform: rotate(360deg); } }
     .state-text { color: var(--c-text-3); font-size: .9rem; font-weight: 500; }
     .empty-icon-circle {
-        width: 80px; height: 80px; background: #f0fdfa; border-radius: 50%;
+        width: 80px; height: 80px; background: rgba(212,175,55,.10); border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 2rem; color: #0f766e;
+        font-size: 2rem; color: #9C7C2E;
     }
     .empty-title { font-size: 1.05rem; font-weight: 700; color: var(--c-text); margin: 0; }
     .empty-sub   { font-size: .85rem; color: var(--c-text-3); margin: 0; }
@@ -917,8 +917,8 @@ else
     .modal-body { padding: 1.5rem; text-align: center; }
     .modal-body p { margin: 0 0 .5rem; color: var(--c-text-2); }
     .modal-highlight {
-        font-size: 1.2rem; font-weight: 800; color: #0f766e;
-        background: #f0fdfa; padding: .6rem; border-radius: var(--r-sm);
+        font-size: 1.2rem; font-weight: 800; color: #9C7C2E;
+        background: rgba(212,175,55,.10); padding: .6rem; border-radius: var(--r-sm);
         margin: .8rem 0;
     }
     .modal-highlight.danger { color: var(--c-danger); background: var(--c-danger-lt); }
@@ -981,8 +981,8 @@ else
     .btn-track {
         width: 32px; height: 32px;
         border: none;
-        background: #f0fdfa;
-        color: #0f766e;
+        background: rgba(212,175,55,.10);
+        color: #9C7C2E;
         border-radius: 8px;
         cursor: pointer;
         display: inline-flex;
@@ -993,7 +993,7 @@ else
     }
 
     .btn-track:hover {
-        background: #0f766e;
+        background: #9C7C2E;
         color: #fff;
         transform: scale(1.1);
     }
@@ -1024,7 +1024,7 @@ else
     }
 
     .modal-track-header {
-        background: linear-gradient(135deg, #0f766e, #115e59);
+        background: linear-gradient(135deg, #9C7C2E, #070B14);
         color: #fff;
         padding: 1rem 1.25rem;
         display: flex;
@@ -1106,7 +1106,7 @@ else
     }
 
     .track-batch-card {
-        border: 1px solid #e5e7eb;
+        border: 1px solid #e8e2d0;
         border-radius: 14px;
         padding: 1rem;
         margin-bottom: 1rem;
@@ -1140,7 +1140,7 @@ else
 
     .tbs-running { background: #fff7ed; color: #c2410c; }
     .tbs-complete { background: #ecfdf5; color: #059669; }
-    .tbs-qc { background: #eef2ff; color: #4338ca; }
+    .tbs-qc { background: var(--yk-info-soft); color: var(--yk-info); }
 
     .track-batch-meta {
         display: flex;
@@ -1193,21 +1193,21 @@ else
         height: 7px;
         border-radius: 999px;
         overflow: hidden;
-        background: #e5e7eb;
+        background: #e8e2d0;
     }
 
     .track-progress-fill {
         height: 100%;
         border-radius: 999px;
-        background: linear-gradient(90deg, #0f766e, #10b981);
+        background: linear-gradient(90deg, #9C7C2E, #10b981);
         transition: width .3s ease;
     }
 
     .spinner-md {
         width: 38px; height: 38px;
         border-radius: 50%;
-        border: 3px solid #dbeafe;
-        border-top-color: #0f766e;
+        border: 3px solid var(--yk-border);
+        border-top-color: #9C7C2E;
         animation: spin-md .8s linear infinite;
     }
 
@@ -1387,8 +1387,9 @@ private bool trackingLoading = false;
         var materials = await OrderService.GetOrderMaterialsAsync(orderId);
         var rawMaterials = materials.Where(m => m.MaterialType == 1).ToList();
         var packMaterials = materials.Where(m => m.MaterialType == 2).ToList();
+        var finishedProductComponents = materials.Where(m => m.MaterialType == 3).ToList();
 
-        var html = BuildPrintHtml(order, rawMaterials, packMaterials);
+        var html = BuildPrintHtml(order, rawMaterials, packMaterials, finishedProductComponents);
         await JS.InvokeVoidAsync("printHtml", html);
     }
 
@@ -1511,10 +1512,11 @@ private bool trackingLoading = false;
     private string BuildPrintHtml(
         ProductionOrderEditDto order,
         List<ProductionOrderMaterialDto> rawMaterials,
-        List<ProductionOrderMaterialDto> packMaterials)
+        List<ProductionOrderMaterialDto> packMaterials,
+        List<ProductionOrderMaterialDto> finishedProductComponents)
     {
         var thStyle = "padding:11px 14px;text-align:right;font-weight:700;" +
-                      "color:#374151;border-bottom:2px solid #e5e7eb;font-size:13px;";
+                      "color:#374151;border-bottom:2px solid #e8e2d0;font-size:13px;";
         var tdStyle = "padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;";
 
         var rawRows = new System.Text.StringBuilder();
@@ -1524,7 +1526,7 @@ private bool trackingLoading = false;
             rawRows.Append($@"
             <tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{i++}</td>
-                <td style='{tdStyle}font-family:monospace;color:#0f766e;font-weight:700;'>{m.ItemCode}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{m.ItemCode}</td>
                 <td style='{tdStyle}font-weight:600;'>{m.ItemName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{m.RequiredQty:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{m.UnitName}</td>
@@ -1540,7 +1542,23 @@ private bool trackingLoading = false;
             pkgRows.Append($@"
             <tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{j++}</td>
-                <td style='{tdStyle}font-family:monospace;color:#0f766e;font-weight:700;'>{m.ItemCode}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{m.ItemCode}</td>
+                <td style='{tdStyle}font-weight:600;'>{m.ItemName}</td>
+                <td style='{tdStyle}text-align:center;font-weight:600;'>{m.RequiredQty:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{m.UnitName}</td>
+                <td style='{tdStyle}text-align:center;'>{m.IssuedQty:N3}</td>
+                <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{m.LineCost:N2}</td>
+            </tr>");
+        }
+
+        var finishedRows = new System.Text.StringBuilder();
+        int k = 1;
+        foreach (var m in finishedProductComponents)
+        {
+            finishedRows.Append($@"
+            <tr>
+                <td style='{tdStyle}text-align:center;color:#94a3b8;'>{k++}</td>
+                <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{m.ItemCode}</td>
                 <td style='{tdStyle}font-weight:600;'>{m.ItemName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{m.RequiredQty:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{m.UnitName}</td>
@@ -1551,7 +1569,7 @@ private bool trackingLoading = false;
 
         var tHead = $@"
         <thead>
-            <tr style='background:#f8fafc;'>
+            <tr style='background:#f8f6f0;'>
                 <th style='{thStyle}text-align:center;width:40px;'>#</th>
                 <th style='{thStyle}'>كود الصنف</th>
                 <th style='{thStyle}'>اسم الصنف</th>
@@ -1563,11 +1581,11 @@ private bool trackingLoading = false;
         </thead>";
 
         var rawSection = rawMaterials.Any() ? $@"
-        <h3 style='border-right:4px solid #0f766e;padding-right:12px;
-                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+        <h3 style='border-right:4px solid #9C7C2E;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
             📦 المواد الخام ({rawMaterials.Count} صنف)
         </h3>
-        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
             {tHead}
             <tbody>{rawRows}</tbody>
@@ -1575,13 +1593,24 @@ private bool trackingLoading = false;
 
         var pkgSection = packMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #10b981;padding-right:12px;
-                   margin:28px 0 14px;font-size:.95rem;color:#1f2937;'>
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
             🎁 مواد التعبئة ({packMaterials.Count} صنف)
         </h3>
-        <table style='width:100%;border-collapse:collapse;border:1px solid #e5e7eb;
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
             {tHead}
             <tbody>{pkgRows}</tbody>
+        </table>" : "";
+
+        var finishedSection = finishedProductComponents.Any() ? $@"
+        <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
+                   margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
+            🏭 المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
+        </h3>
+        <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
+                      border-radius:10px;overflow:hidden;margin-bottom:8px;'>
+            {tHead}
+            <tbody>{finishedRows}</tbody>
         </table>" : "";
 
         var statusName = order.OrderStatus switch
@@ -1605,7 +1634,7 @@ private bool trackingLoading = false;
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{
         font-family:'Segoe UI',Tahoma,sans-serif;
-        direction:rtl; background:#fff; color:#1f2937;
+        direction:rtl; background:#fff; color:#0A0F1E;
         padding:30px; font-size:14px; line-height:1.6;
     }}
     .no-print {{ }}
@@ -1615,7 +1644,7 @@ private bool trackingLoading = false;
 <body>
 <div class='no-print' style='margin-bottom:24px;display:flex;gap:10px;justify-content:flex-end;'>
     <button onclick='window.print()'
-        style='background:#0f766e;color:#fff;border:none;padding:10px 24px;
+        style='background:#D4AF37;color:#0A0F1E;border:none;padding:10px 24px;
                border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
         🖨️ طباعة
     </button>
@@ -1626,18 +1655,18 @@ private bool trackingLoading = false;
     </button>
 </div>
 
-<div style='text-align:center;border-bottom:3px solid #0f766e;padding-bottom:20px;margin-bottom:28px;'>
+<div style='text-align:center;border-bottom:3px solid #9C7C2E;padding-bottom:20px;margin-bottom:28px;'>
     <div style='font-size:2.2rem;margin-bottom:8px;'>🏭</div>
-    <h1 style='font-size:1.7rem;font-weight:800;color:#1f2937;margin:0;'>واي كي كوتينج ERP</h1>
+    <h1 style='font-size:1.7rem;font-weight:800;color:#0A0F1E;margin:0;'>واي كي كوتينج ERP</h1>
     <p style='color:#6b7280;margin:6px 0 0;'>أمر تصنيع (Production Order)</p>
 </div>
 
 <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;
-            background:#f9fafb;padding:20px;border-radius:12px;
-            margin-bottom:28px;border:1px solid #e5e7eb;'>
+            background:#fcfaf6;padding:20px;border-radius:12px;
+            margin-bottom:28px;border:1px solid #e8e2d0;'>
     <div style='display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>رقم الأمر:</span>
-        <span style='font-weight:800;color:#0f766e;font-size:13px;'>{order.OrderNumber}</span>
+        <span style='font-weight:800;color:#9C7C2E;font-size:13px;'>{order.OrderNumber}</span>
     </div>
     <div style='display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>التاريخ:</span>
@@ -1659,7 +1688,7 @@ private bool trackingLoading = false;
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>الأولوية:</span>
         <span style='font-size:13px;'>{priorityName}</span>
     </div>
-    <div style='grid-column:span 2;border-top:2px solid #e5e7eb;padding-top:14px;margin-top:6px;display:flex;gap:10px;'>
+    <div style='grid-column:span 2;border-top:2px solid #e8e2d0;padding-top:14px;margin-top:6px;display:flex;gap:10px;'>
         <span style='font-weight:700;min-width:130px;color:#64748b;font-size:13px;'>التكلفة التقديرية:</span>
         <span style='font-weight:800;color:#10b981;font-size:1.1rem;'>{order.EstimatedTotalCost:N2} ج.م</span>
     </div>
@@ -1667,8 +1696,9 @@ private bool trackingLoading = false;
 
 {rawSection}
 {pkgSection}
+{finishedSection}
 
-<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e5e7eb;
+<div style='margin-top:40px;padding-top:18px;border-top:2px solid #e8e2d0;
             text-align:center;color:#94a3b8;font-size:12px;'>
     <p>تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd - hh:mm tt}</p>
     <p style='margin-top:4px;'>واي كي كوتينج ERP — نظام تخطيط موارد المؤسسات</p>

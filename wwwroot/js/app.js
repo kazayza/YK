@@ -71,6 +71,19 @@ window.getClientInfo = function () {
     };
 };
 
+// ==========================================
+// 👇 أضف دالة التمرير الآمن هنا (بديل eval) 👇
+// ==========================================
+window.scrollToElement = function (element) {
+    if (element) {
+        element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start',
+            inline: 'nearest'
+        });
+    }
+};
+
 // ===== APEX CHARTS - DASHBOARD LUXURY GOLD =====
 window.dashboardCharts = {
     monthlyChart: null,

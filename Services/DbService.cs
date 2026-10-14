@@ -401,6 +401,8 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
         public string Name { get; set; } = "";
         public string? Code { get; set; }
         public string? Extra { get; set; }
+        public int PrimaryUnitID { get; set; }
+        public int ItemType { get; set; }
     }
         public class ItemQuickInfoDto
     {

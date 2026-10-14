@@ -202,6 +202,8 @@ namespace YKCoatings.Models
         public decimal RemainingToOrder { get; set; }
 
         public decimal UnitPrice { get; set; }
+        public decimal DiscountPercent { get; set; }
+        public decimal TaxRate { get; set; } = 14m;
 
         public decimal CurrentStock { get; set; }
 

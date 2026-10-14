@@ -16,7 +16,7 @@
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
-else if (permissions == null || !permissions.CanView)
+else if (permissions == null || !permissions.CanView || (OrderId == 0 && !permissions.CanAdd))
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
 {
@@ -40,6 +40,13 @@ else
                         <span class="status-badge-luxury" style="--sc:@SalesOrderService.GetStatusColor(header.OrderStatus)">@SalesOrderService.GetStatusName(header.OrderStatus)</span>
                         @if (header.OrderSource > 0){<span class="source-badge-luxury" style="--sc:@SalesOrderService.GetSourceColor(header.OrderSource)">@SalesOrderService.GetSourceName(header.OrderSource)</span>}
                     }
+                    @if (OrderId > 0 && header.OrderStatus == 3 && invoicePermissions?.CanAdd == true)
+                    {
+                        <button class="btn-luxury btn-success-luxury" @onclick="CreateInvoice" title="إنشاء فاتورة من أمر البيع المعتمد">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+                            إنشاء فاتورة
+                        </button>
+                    }
                     <span class="lh-badge"><span class="lh-dot"></span>@(isNewMode?"جديد":isViewMode?"عرض":isApprovalMode?"اعتماد":"تعديل")</span>
                     @if (permissions.CanPrint && OrderId > 0){<button class="btn-luxury btn-ghost-dark" @onclick="PrintDoc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>طباعة</button>}
                 </div>
@@ -48,7 +55,15 @@ else
 
         @if (isApprovalMode)
         {
-            <div class="approval-bar-luxury approve"><div class="ab-gold-line"></div><div class="ab-content"><div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><strong>بانتظار اعتمادك</strong><span>راجع البيانات والأصناف ثم اعتمد أو ارفض</span></div></div><div class="ab-actions"><button class="btn-luxury btn-success-luxury" @onclick="ExecuteApprove" disabled="@isSaving">اعتماد</button><button class="btn-luxury btn-danger-luxury" @onclick="DoShowReject" disabled="@isSaving">رفض</button></div></div>
+            <div class="approval-bar-luxury approve"><div class="ab-gold-line"></div><div class="ab-content"><div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><strong>الخطوة التالية: اعتماد أمر البيع</strong><span>راجع بيانات العميل والأصناف والإجماليات، ثم اختر اعتماد أو رفض.</span></div></div><div class="ab-actions"><button class="btn-luxury btn-success-luxury" @onclick="ExecuteApprove" disabled="@isSaving">اعتماد</button><button class="btn-luxury btn-danger-luxury" @onclick="DoShowReject" disabled="@isSaving">رفض</button></div></div>
+        }
+        else if (!isLoading && !isNewMode && header.OrderStatus == 2)
+        {
+            <div class="approval-bar-luxury pending"><div class="ab-gold-line"></div><div class="ab-content"><div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><strong>أُرسل أمر البيع للاعتماد</strong><span>بانتظار إجراء مستخدم لديه صلاحية اعتماد أوامر البيع.</span></div></div></div>
+        }
+        else if (!isLoading && !isNewMode && header.OrderStatus == 3)
+        {
+            <div class="approval-bar-luxury approved"><div class="ab-gold-line"></div><div class="ab-content"><div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m5 12 4 4L19 6"/><circle cx="12" cy="12" r="10"/></svg></div><div><strong>أمر البيع معتمد</strong><span>@(invoicePermissions?.CanAdd == true ? "الخطوة التالية: إنشاء فاتورة من الزر أعلى الصفحة." : "إنشاء الفاتورة يتطلب صلاحية الإضافة في شاشة فواتير المبيعات.")</span></div></div></div>
         }
 
         @if (isLoading)
@@ -67,7 +82,7 @@ else
                 <div class="mudtabs-header">
                     <button class="mudtab-btn @(activeTab==0?"active":"")" @onclick="() => activeTab=0"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>البيانات الأساسية</button>
                     <button class="mudtab-btn @(activeTab==1?"active":"")" @onclick="() => activeTab=1"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>العميل والمالية</button>
-                    <button class="mudtab-btn @(activeTab==2?"active":"")" @onclick="() => activeTab=2"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>الأصناف <span class="mt-count gold">@details.Count</span></button>
+                    <button class="mudtab-btn @(activeTab==2?"active":"")" @onclick="() => activeTab=2"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>الأصناف <span class="mt-count gold">@DisplayedLineCount</span></button>
                     <button class="mudtab-btn @(activeTab==3?"active":"")" @onclick="() => activeTab=3"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>التكاليف والإجماليات</button>
                     <button class="mudtab-btn @(activeTab==4?"active":"")" @onclick="() => activeTab=4"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></span>الاعتماد والسجل</button>
                     <button class="mudtab-btn @(activeTab==5?"active":"")" @onclick="() => activeTab=5"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>ملاحظات</button>
@@ -77,16 +92,20 @@ else
                     @if (activeTab == 0)
                     {
                         <div class="tab-panel luxury-fade">
-                            @if (header.OrderSource == 2 && isNewMode && !isQuotationLoaded)
+                            @if (header.OrderSource == 2 && ((isNewMode && !isQuotationLoaded) || quotationImportFailed))
                             {
+                                @if (quotationImportFailed)
+                                {
+                                    <div class="msg-luxury msg-error" style="margin-bottom:12px">لم تُحمّل أصناف العرض إلى الأمر. الاختيارات محفوظة؛ يمكنك مراجعتها ثم إعادة المحاولة من زر الحفظ.@if (!string.IsNullOrWhiteSpace(quotationImportError)){<span style="display:block;margin-top:4px">سبب الخطأ: @quotationImportError</span>}</div>
+                                }
                                 <div class="tab-header"><div class="tab-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><h3>اختيار عرض السعر المعتمد</h3><p>ابحث واختر عرض السعر لتحميل الأصناف</p></div></div>
                                 <div class="form-grid cols-2">
-                                    <div class="form-field"><label class="field-label required">عرض السعر</label><SearchableSelect Items="@approvedQuotations" @bind-SelectedId="selectedQuotationId" OnSelected="OnQuotationSelected" Placeholder="ابحث برقم عرض السعر..." /></div>
+                                    <div class="form-field"><label class="field-label required">عرض السعر</label><SearchableSelect Items="@approvedQuotations" @bind-SelectedId="selectedQuotationId" OnSelected="OnQuotationSelected" Placeholder="ابحث برقم عرض السعر..." IsDisabled="@(!isNewMode)" /></div>
                                     @if (quotationLines != null && quotationLines.Any()){<div class="form-field"><label class="field-label">المختار</label><div class="field-input disabled"><span>@quotationLines.Count(l=>l.IsSelected) من @quotationLines.Count صنف</span></div></div>}
                                 </div>
                                 @if (quotationLines != null && quotationLines.Any())
                                 {
-                                    <div class="table-card-luxury" style="margin-top:12px"><div class="table-responsive"><table class="table-luxury"><thead><tr><th class="th-center" style="width:40px"><input type="checkbox" checked="@quotationLines.All(l=>l.IsSelected)" @onchange="ToggleAllQuotationLines" /></th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th class="th-center">تم طلبه</th><th class="th-center">المتبقي</th><th>السعر</th></tr></thead><tbody>@foreach(var line in quotationLines){<tr class="@(!line.IsSelected?"row-dim":"")"><td class="td-center"><input type="checkbox" @bind="line.IsSelected" /></td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.QuotedQty.ToString("#,##0.##")</td><td class="td-center">@line.TotalOrderedQty.ToString("#,##0.##")</td><td class="td-center"><strong style="color:var(--gold-dark)">@line.RemainingToOrder.ToString("#,##0.##")</strong></td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td></tr>}</tbody></table></div></div>
+                                    <div class="table-card-luxury" style="margin-top:12px"><div class="table-responsive"><table class="table-luxury"><thead><tr><th class="th-center" style="width:40px"><input type="checkbox" checked="@quotationLines.All(l=>l.IsSelected)" @onchange="ToggleAllQuotationLines" /></th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th class="th-center">تم طلبه</th><th class="th-center">المتبقي</th><th>السعر</th><th class="th-center">خصم %</th><th class="th-center">ضريبة %</th></tr></thead><tbody>@foreach(var line in quotationLines){<tr class="@(!line.IsSelected?"row-dim":"")"><td class="td-center"><input type="checkbox" @bind="line.IsSelected" /></td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.QuotedQty.ToString("#,##0.##")</td><td class="td-center">@line.TotalOrderedQty.ToString("#,##0.##")</td><td class="td-center"><strong style="color:var(--gold-dark)">@line.RemainingToOrder.ToString("#,##0.##")</strong></td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="td-center">@line.DiscountPercent.ToString("0.##")%</td><td class="td-center">@line.TaxRate.ToString("0.##")%</td></tr>}</tbody></table></div></div>
                                 }
                             }
 
@@ -99,7 +118,7 @@ else
                                     <div class="form-field"><label class="field-label">التسليم المتوقع</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><input type="date" class="field-input" @bind="header.ExpectedDeliveryDate" disabled="@isReadOnly" /></div></div>
                                     <div class="form-field"><label class="field-label required">المخزن</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select class="field-select" @bind="header.WarehouseID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(warehouses!=null){@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                                 </div>
-                                @if (header.OrderStatus==4 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="msg-luxury msg-error"> <strong>سبب الرفض:</strong> @header.RejectionReason</div>}
+                                @if ((header.OrderStatus == 1 || header.OrderStatus == 4) && !string.IsNullOrWhiteSpace(header.RejectionReason)){<div class="msg-luxury msg-error"><strong>ملاحظات الرفض:</strong> @header.RejectionReason</div>}
                             }
                             else if (isNewMode && header.OrderSource==0)
                             {<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>اختر مصدر أمر البيع أولاً</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">يدوي أو من عرض سعر معتمد</p></div>}
@@ -127,8 +146,31 @@ else
                     @if (activeTab == 2)
                     {
                         <div class="tab-panel luxury-fade">
-                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف أمر البيع</h3><p>@details.Count صنف - الإجمالي: @details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00")</p></div>@if(!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddLine" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
-                            @if (!details.Any() && !showLineForm){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أصناف</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">اضغط إضافة صنف للبدء</p></div>}
+                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف أمر البيع</h3><p>@DisplayedLineCount صنف - الإجمالي: @DisplayedOrderTotal.ToString("#,##0.00")</p></div>@if(!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddLine" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
+                            @if (((isNewMode && header.OrderSource == 2) || quotationImportFailed) && quotationLines is { Count: > 0 })
+                            {
+                                @if (quotationLines.Any(line => line.IsSelected))
+                                {
+                                    @if (quotationImportFailed)
+                                    {
+                                        <div class="msg-luxury msg-error" style="margin-bottom:12px">تعذر تحميل الأصناف في المحاولة السابقة. هذه المعاينة تحتفظ بالاختيارات؛ راجع رسالة الخطأ ثم أعد المحاولة.@if (!string.IsNullOrWhiteSpace(quotationImportError)){<span style="display:block;margin-top:4px">سبب الخطأ: @quotationImportError</span>}</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="msg-luxury msg-info" style="margin-bottom:12px">هذه معاينة فقط؛ عند إنشاء أمر البيع تُحمّل تلقائياً كل الأصناف المحددة من العرض. لا تُحفظ السطور فعلياً إلا مع إنشاء الأمر.</div>
+                                    }
+                                    <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury">
+                                        <thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th>السعر</th><th class="th-center">خصم %</th><th class="th-center">ضريبة %</th><th>الإجمالي المتوقع</th></tr></thead>
+                                        <tbody>@foreach (var line in quotationLines.Where(line => line.IsSelected)){<tr><td class="td-num">@line.LineNumber</td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.QuotedQty.ToString("#,##0.##")</td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="td-center">@line.DiscountPercent.ToString("0.##")</td><td class="td-center">@line.TaxRate.ToString("0.##")</td><td class="num-cell"><strong>@GetQuotationLineTotal(line).ToString("#,##0.00")</strong></td></tr>}</tbody>
+                                    </table></div></div>
+                                    <button class="btn-luxury btn-ghost-luxury" style="margin-top:10px" @onclick="() => activeTab = 0">تعديل اختيار أصناف العرض</button>
+                                }
+                                else
+                                {
+                                    <div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لم يتم اختيار أصناف من العرض</h4><button class="btn-luxury btn-ghost-luxury" @onclick="() => activeTab = 0">العودة لاختيار الأصناف</button></div>
+                                }
+                            }
+                            else if (!details.Any() && !showLineForm){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أصناف</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">اضغط إضافة صنف للبدء</p></div>}
                             else
                             {
                                 <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="th-center">الكمية</th><th>السعر</th><th class="th-center">خصم %</th><th class="th-center">ضريبة %</th><th>الإجمالي</th>@if(!isNewMode){<th class="th-center">مسلم</th><th class="th-center">متبقي</th>}@if(!isReadOnly && !isApprovalMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach(var line in details){n++;<tr><td class="td-num">@n</td><td><span class="code-luxury">@line.ItemCode</span></td><td class="td-name">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-center">@line.OrderedQty.ToString("#,##0.##")</td><td class="num-cell">@line.UnitPrice.ToString("#,##0.00")</td><td class="td-center">@line.DiscountPercent.ToString("#,##0.##")</td><td class="td-center">@line.TaxRate.ToString("#,##0.##")</td><td class="num-cell"><strong>@line.LineTotalWithTax.ToString("#,##0.00")</strong></td>@if(!isNewMode){<td class="td-center">@line.DeliveredQty.ToString("#,##0.##")</td><td class="td-center"><strong class="@(line.RemainingQty>0?"bal-danger":"")">@line.RemainingQty.ToString("#,##0.##")</strong></td>}@if(!isReadOnly && !isApprovalMode){<td class="td-center"><div class="actions-wrap-luxury">@if(permissions.CanEdit){<button class="act-btn edit" @onclick="() => ShowEditLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}@if(permissions.CanDelete){<button class="act-btn delete" @onclick="() => DeleteLine(line.SODetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="8" class="td-name">الإجمالي</td><td class="num-cell"><strong>@details.Sum(d=>d.LineTotalWithTax).ToString("#,##0.00")</strong></td>@if(!isNewMode){<td colspan="2"></td>}@if(!isReadOnly && !isApprovalMode){<td></td>}</tr></tfoot></table></div></div>
@@ -179,13 +221,11 @@ else
                         <div class="tab-panel luxury-fade">
                             <div class="tab-header"><div class="tab-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><h3>الاعتماد والسجل</h3><p>حالة الاعتماد والتتبع</p></div></div>
                             <div class="status-timeline-luxury">
-                                <div class="st-step @(header.OrderStatus>=1?"done":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>مسودة</strong><span>تم الإنشاء @header.OrderDate.ToString("dd/MM/yyyy")</span></div></div>
-                                <div class="st-step @(header.OrderStatus>=2?"done":"") @(header.OrderStatus==2?"current":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>انتظار اعتماد</strong><span>@(header.OrderStatus>=2?"تم الإرسال للاعتماد":"لم يرسل بعد")</span></div></div>
-                                <div class="st-step @(header.OrderStatus>=3?"done":"") @(header.OrderStatus==3?"current":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>معتمد</strong><span>@(header.OrderStatus>=3?"تم الاعتماد - جاهز للفوترة":"بانتظار الاعتماد")</span></div></div>
-                                <div class="st-step @(header.OrderStatus>=5?"done":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>قيد التجهيز</strong><span>@(header.OrderStatus>=5?"جاري تجهيز الطلب":"لم يبدأ")</span></div></div>
-                                <div class="st-step @(header.OrderStatus>=6?"done":"")"><div class="st-dot"></div><div class="st-content"><strong>فاتورة</strong><span>إنشاء فاتورة مباشرة - الأساس (بدون جدول تسليم)</span></div></div>
+                                <div class="st-step @(OrderId > 0 ? "done" : "current")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>مسودة أمر البيع</strong><span>@(OrderId > 0 ? $"تم الإنشاء {header.OrderDate:dd/MM/yyyy}" : "احفظ الأمر أولاً")</span></div></div>
+                                <div class="st-step @(header.OrderStatus == 2 ? "current" : header.OrderStatus == 3 ? "done" : "")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>مراجعة واعتماد</strong><span>@(header.OrderStatus == 2 ? "بانتظار الاعتماد" : header.OrderStatus == 3 ? "تم الاعتماد" : "تُرسل المسودة للاعتماد")</span></div></div>
+                                <div class="st-step @(header.OrderStatus == 3 ? "current" : "")"><div class="st-dot"></div><div class="st-content"><strong>إنشاء الفاتورة</strong><span>@(header.OrderStatus == 3 ? "متاح الآن من زر إنشاء فاتورة أعلى الصفحة" : "يصبح متاحاً بعد اعتماد الأمر")</span></div></div>
                             </div>
-                            @if (header.OrderStatus==4){<div class="msg-luxury msg-error" style="margin-top:16px"> مرفوض - السبب: @header.RejectionReason</div>}
+                            @if (header.OrderStatus == 4){<div class="msg-luxury msg-error" style="margin-top:16px">مرفوض - السبب: @(!string.IsNullOrWhiteSpace(header.RejectionReason) ? header.RejectionReason : "راجع ملاحظات الأمر")</div>}
                         </div>
                     }
 
@@ -223,11 +263,10 @@ else
             {
                 <div class="actions-bar-luxury">
                     <div class="actions-right-luxury">
-                        @if (!isReadOnly)
+                        @if (canSaveOrder)
                         {
-                            <button class="btn-luxury btn-primary-luxury" @onclick="SaveOrder" disabled="@isSaving">@if(isSaving){<div class="btn-spinner"></div><span>جاري الحفظ...</span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg><span>@(isNewMode?"حفظ أمر البيع":"حفظ التعديلات")</span>}</button>
-                            @if (OrderId>0 && header.OrderStatus==1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"> إرسال للاعتماد</button>}
-                            @if (OrderId>0 && header.OrderStatus==3){<button class="btn-luxury btn-success-luxury" @onclick="CreateInvoice" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg>إنشاء فاتورة</button>}
+                            <button class="btn-luxury btn-primary-luxury" @onclick="SaveOrder" disabled="@isSaving">@if(isSaving){<div class="btn-spinner"></div><span>جاري الحفظ...</span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg><span>@(isNewMode ? (header.OrderSource == 2 ? "إنشاء الأمر وتحميل الأصناف" : "حفظ أمر البيع") : quotationImportFailed ? "إعادة محاولة تحميل الأصناف" : "حفظ التعديلات")</span>}</button>
+                            @if (canSubmitOrder){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7Z"/></svg>إرسال للاعتماد</button>}
                         }
                     </div>
                     <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع للقائمة</button>
@@ -238,7 +277,7 @@ else
 
     @if (showRejectDialog)
     {
-        <div class="modal-overlay-luxury" @onclick="() => showRejectDialog=false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="modal-header-luxury"><h3>رفض أمر البيع</h3><button class="btn-close-x" @onclick="() => showRejectDialog=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div><div class="modal-body-luxury"><div class="form-field"><label class="field-label required">سبب الرفض</label><textarea class="field-textarea" rows="3" @bind="rejectReason" placeholder="أدخل سبب الرفض..."></textarea></div>@if(!string.IsNullOrEmpty(rejectMsg)){<div class="msg-luxury msg-error" style="margin-top:10px">@rejectMsg</div>}</div><div class="ml-footer"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog=false">إلغاء</button></div></div></div>
+        <div class="modal-overlay-luxury" @onclick="() => showRejectDialog=false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="modal-header-luxury"><h3>رفض أمر البيع وإعادته للمسودة</h3><button class="btn-close-x" @onclick="() => showRejectDialog=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div><div class="modal-body-luxury"><div class="form-field"><label class="field-label required">سبب الرفض</label><textarea class="field-textarea" rows="3" @bind="rejectReason" placeholder="أدخل سبب الرفض..."></textarea></div>@if(!string.IsNullOrEmpty(rejectMsg)){<div class="msg-luxury msg-error" style="margin-top:10px">@rejectMsg</div>}</div><div class="ml-footer"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض وإرجاع للمسودة</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog=false">إلغاء</button></div></div></div>
     }
 
     @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'></button></div></div>}
@@ -257,7 +296,7 @@ else
 .status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 20%,white)}
 .btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
 .btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-success-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-warning-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
-.approval-bar-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-radius:16px;flex-wrap:wrap;overflow:hidden}.approval-bar-luxury.approve{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #a7f3d0}.ab-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#10b981,transparent)}.ab-content{display:flex;align-items:center;gap:12px}.ab-icon{width:40px;height:40px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.ab-icon svg{width:20px;height:20px}.ab-content div{display:flex;flex-direction:column}.ab-content strong{font-size:.9rem;color:#0A0F1E}.ab-content span{font-size:.74rem;color:#6b7280}.ab-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.approval-bar-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-radius:16px;flex-wrap:wrap;overflow:hidden}.approval-bar-luxury.approve,.approval-bar-luxury.approved{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #a7f3d0}.approval-bar-luxury.pending{background:linear-gradient(135deg,#eff6ff,#f8fbff);border:1px solid #bfdbfe}.approval-bar-luxury.pending .ab-gold-line{background:linear-gradient(90deg,transparent,#3b82f6,transparent)}.approval-bar-luxury.pending .ab-icon{background:#eff6ff;border-color:#bfdbfe;color:#2563eb}.approval-bar-luxury.approved .ab-gold-line{background:linear-gradient(90deg,transparent,#10b981,transparent)}.ab-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#10b981,transparent)}.ab-content{display:flex;align-items:center;gap:12px}.ab-icon{width:40px;height:40px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.ab-icon svg{width:20px;height:20px}.ab-content div{display:flex;flex-direction:column}.ab-content strong{font-size:.9rem;color:#0A0F1E}.ab-content span{font-size:.74rem;color:#6b7280}.ab-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .source-cards-luxury{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.source-card-luxury{position:relative;background:#fff;border:2px solid #e8e2d0;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:.2s;overflow:hidden}.source-card-luxury:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}.source-card-luxury.active{border-color:var(--gold);background:rgba(212,175,55,.04);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.sc-icon{width:52px;height:52px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}.sc-icon svg{width:24px;height:24px}.sc-title{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}.sc-desc{font-size:.76rem;color:#8B95A5}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);opacity:.8}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
 .mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
 .mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header::-webkit-scrollbar{display:none}
@@ -292,7 +331,7 @@ else
 .timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}.tl-item:last-child{border:none}.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}.tl-content{display:flex;flex-direction:column;gap:2px}.tl-content strong{font-size:.84rem;color:#0A0F1E}.tl-content span{font-size:.72rem;color:#8B95A5}
 .audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}.audit-item-luxury strong{color:#0A0F1E}.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
 .actions-bar-luxury{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0;box-shadow:0 2px 12px rgba(0,0,0,.04)}.actions-right-luxury{display:flex;gap:8px;align-items:center}
-.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-info{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
 .modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
 .modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}.modal-body-luxury{padding:18px 22px}.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
@@ -308,6 +347,7 @@ else
     private SalesOrderHeaderDto header = new() { OrderDate = DateTime.Today, ExchangeRate = 1 };
     private List<SalesOrderDetailDto> details = new();
     private ModulePermissionDto? permissions;
+    private ModulePermissionDto? invoicePermissions;
     private SalesCustomerExtendedDto? customerInfo;
     private YKCoatings.Services.CustomerQuickInfoDto? customerBaseInfo;
     private List<LookupDto>? warehouses;
@@ -322,9 +362,11 @@ else
     private List<QuotationLineForOrderDto>? quotationLines;
     private int selectedQuotationId;
     private bool isQuotationLoaded = false;
+    private bool quotationImportFailed = false;
     private bool isLoading = true;
     private bool isSaving = false;
     private string toast = ""; private bool toastOk = true;
+    private string quotationImportError = "";
     private bool isSourceLocked = false;
     private bool showLineForm = false;
     private bool isEditLine = false;
@@ -338,7 +380,36 @@ else
     private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
     private bool isNewMode => OrderId == 0;
     private bool isApprovalMode => !isNewMode && !isViewMode && header.OrderStatus == 2 && (permissions?.CanApprove ?? false);
-    private bool isReadOnly{get{if(isViewMode)return true;if(isNewMode)return false;if(isApprovalMode)return true;return header.OrderStatus!=1;}}
+    private bool isReadOnly{get{if(isViewMode)return true;if(isNewMode)return permissions?.CanAdd!=true;if(isApprovalMode)return true;return header.OrderStatus!=1||permissions?.CanEdit!=true;}}
+    private bool canSaveOrder
+    {
+        get
+        {
+            if (permissions is null) return false;
+            if (isNewMode) return permissions.CanAdd;
+            if (quotationImportFailed) return header.OrderStatus == 1 && (permissions.CanAdd || permissions.CanEdit);
+            return header.OrderStatus == 1 && permissions.CanEdit;
+        }
+    }
+    private int DisplayedLineCount
+    {
+        get
+        {
+            if ((isNewMode && header.OrderSource == 2) || quotationImportFailed)
+                return quotationLines?.Count(line => line.IsSelected) ?? 0;
+            return details.Count;
+        }
+    }
+    private decimal DisplayedOrderTotal
+    {
+        get
+        {
+            if ((isNewMode && header.OrderSource == 2) || quotationImportFailed)
+                return quotationLines?.Where(line => line.IsSelected).Sum(GetQuotationLineTotal) ?? 0m;
+            return details.Sum(line => line.LineTotalWithTax);
+        }
+    }
+    private bool canSubmitOrder => permissions is not null && !isNewMode && header.OrderStatus == 1 && details.Any() && (permissions.CanAdd || permissions.CanEdit);
     private string pageTitle{get{if(isNewMode)return "أمر بيع جديد";if(isViewMode)return "عرض أمر بيع";if(isApprovalMode)return "اعتماد أمر بيع";return "تعديل أمر بيع";}}
 
     protected override async Task OnInitializedAsync()
@@ -347,7 +418,8 @@ else
             if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
             if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
             permissions = PermissionService.GetModule("SCR_SO");
-            if (permissions == null || !permissions.CanView) return;
+            invoicePermissions = PermissionService.GetModule("SCR_SINV");
+            if (permissions == null || !permissions.CanView || (OrderId == 0 && !permissions.CanAdd)) return;
             await LoadLookups();
             if (OrderId > 0){await LoadOrderData();}
             else{
@@ -361,39 +433,283 @@ else
         finally{isLoading=false;StateHasChanged();}
     }
     private async Task LoadLookups(){warehouses=await LookupService.GetWarehousesAsync();paymentTerms=await LookupService.GetPaymentTermsAsync();currencies=await LookupService.GetCurrenciesAsync();priceLists=await LookupService.GetPriceListsAsync();salesReps=await LookupService.GetSalesRepsAsync();units=await LookupService.GetUnitsAsync();customersSearchable=await LookupService.GetCustomersSearchableAsync();saleItems=await LookupService.GetItemsForSaleSearchableAsync();}
-    private async Task LoadOrderData(){var loaded=await SoService.GetOrderByIdAsync(OrderId);if(loaded!=null){header=loaded;details=await SoService.GetOrderDetailsAsync(OrderId);isSourceLocked=true;isQuotationLoaded=true;if(header.CustomerID>0){try{var full=await LookupService.GetCustomerQuickInfoAsync(header.CustomerID);if(full!=null)customerInfo=new SalesCustomerExtendedDto{CustomerID=full.CustomerID,CustomerNameAr=full.CustomerNameAr,CustomerCode=full.CustomerCode,CreditLimit=full.CreditLimit,CurrentBalance=full.CurrentBalance};}catch{}}await LoadAuditInfo();}else{await ShowToastAsync("أمر البيع غير موجود",false);}}
+    private async Task LoadOrderData()
+    {
+        var loaded = await SoService.GetOrderByIdAsync(OrderId);
+        if (loaded is null)
+        {
+            await ShowToastAsync("أمر البيع غير موجود", false);
+            return;
+        }
+
+        header = loaded;
+        details = await SoService.GetOrderDetailsAsync(OrderId);
+        isSourceLocked = true;
+        isQuotationLoaded = true;
+
+        // If importing a quotation failed before, restore its selected lines so they can be retried.
+        if (header.OrderStatus == 1 && header.OrderSource == 2 && details.Count == 0 && header.QuotationID is > 0)
+        {
+            selectedQuotationId = header.QuotationID.Value;
+            approvedQuotations = await SoService.GetApprovedQuotationsSearchableAsync();
+            quotationLines = await SoService.GetQuotationLinesForOrderAsync(selectedQuotationId);
+            foreach (var line in quotationLines) line.IsSelected = true;
+            quotationImportFailed = quotationLines.Count > 0;
+            if (quotationImportFailed)
+            {
+                quotationImportError = "تمت استعادة أصناف العرض للمراجعة؛ رسالة الخطأ السابقة غير متاحة بعد إعادة فتح الصفحة.";
+                activeTab = 2;
+            }
+        }
+
+        if (header.CustomerID > 0)
+        {
+            try
+            {
+                var full = await LookupService.GetCustomerQuickInfoAsync(header.CustomerID);
+                if (full != null)
+                    customerInfo = new SalesCustomerExtendedDto { CustomerID = full.CustomerID, CustomerNameAr = full.CustomerNameAr, CustomerCode = full.CustomerCode, CreditLimit = full.CreditLimit, CurrentBalance = full.CurrentBalance };
+            }
+            catch { }
+        }
+        await LoadAuditInfo();
+    }
     private async Task LoadAuditInfo(){try{if(OrderId<=0)return;var audit=await SoService.GetOrderAuditAsync(OrderId);if(audit!=null){createdByName=audit.CreatedByName??"غير محدد";createdDate=audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";modifiedByName=audit.ModifiedByName??"";modifiedDate=audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";}}catch{}}
-    private void SelectManualSource(){header.OrderSource=1;isSourceLocked=true;quotationLines=null;selectedQuotationId=0;isQuotationLoaded=false;header.QuotationID=null;}
+    private void SelectManualSource(){header.OrderSource=1;isSourceLocked=true;quotationLines=null;selectedQuotationId=0;isQuotationLoaded=false;quotationImportFailed=false;quotationImportError="";header.QuotationID=null;}
     private async Task SelectQuotationSource(){header.OrderSource=2;if(approvedQuotations==null)approvedQuotations=await SoService.GetApprovedQuotationsSearchableAsync();}
-    private async Task OnQuotationSelected(SearchableItem? item){if(item==null||item.Id==0){quotationLines=null;selectedQuotationId=0;return;}selectedQuotationId=item.Id;header.QuotationID=item.Id;try{quotationLines=await SoService.GetQuotationLinesForOrderAsync(item.Id);foreach(var line in quotationLines){line.IsSelected=true;}}catch(Exception ex){await ShowToastAsync("خطأ في تحميل سطور عرض السعر: "+ex.Message,false);}}
+    private async Task OnQuotationSelected(SearchableItem? item)
+    {
+        if(item==null||item.Id==0){quotationLines=null;selectedQuotationId=0;header.QuotationID=null;isQuotationLoaded=false;quotationImportFailed=false;quotationImportError="";activeTab=0;return;}
+        selectedQuotationId=item.Id;header.QuotationID=item.Id;quotationImportFailed=false;quotationImportError="";
+        try
+        {
+            if(int.TryParse(item.Extra,out var quotationCustomerId)&&quotationCustomerId>0)
+            {
+                var customer=customersSearchable?.FirstOrDefault(x=>x.Id==quotationCustomerId);
+                if(customer==null)
+                {
+                    var full=await LookupService.GetCustomerQuickInfoAsync(quotationCustomerId);
+                    if(full!=null) customer=new SearchableItem{Id=full.CustomerID,Name=full.CustomerNameAr??string.Empty,Code=full.CustomerCode};
+                }
+                if(customer!=null) await OnCustomerSelected(customer);
+            }
+            quotationLines=await SoService.GetQuotationLinesForOrderAsync(item.Id);
+            foreach(var line in quotationLines){line.IsSelected=true;}
+            activeTab=2;
+        }
+        catch(Exception ex){await ShowToastAsync("خطأ في تحميل بيانات عرض السعر: "+ex.Message,false);}
+    }
     private void ToggleAllQuotationLines(ChangeEventArgs e){if(quotationLines==null)return;var val=(bool)(e.Value??false);foreach(var line in quotationLines)line.IsSelected=val;}
+    private static decimal GetQuotationLineTotal(QuotationLineForOrderDto line)
+    {
+        var gross = line.QuotedQty * line.UnitPrice;
+        var discount = Math.Round(gross * line.DiscountPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var net = Math.Round(gross - discount, 2, MidpointRounding.AwayFromZero);
+        var tax = Math.Round(net * line.TaxRate / 100m, 2, MidpointRounding.AwayFromZero);
+        return net + tax;
+    }
     private async Task OnCustomerSelected(SearchableItem? item){if(item==null||item.Id==0){customerInfo=null;header.CustomerID=0;return;}header.CustomerID=item.Id;try{var full=await LookupService.GetCustomerQuickInfoAsync(item.Id);if(full!=null){customerBaseInfo=full; customerInfo=new SalesCustomerExtendedDto{CustomerID=full.CustomerID, CustomerNameAr=full.CustomerNameAr, CustomerCode=full.CustomerCode, CreditLimit=full.CreditLimit, CurrentBalance=full.CurrentBalance};if(full.PaymentTermID.HasValue)header.PaymentTermID=full.PaymentTermID;if(full.CurrencyID.HasValue){header.CurrencyID=full.CurrencyID;header.ExchangeRate=full.ExchangeRate;}} }catch(Exception ex){await ShowToastAsync("خطأ في تحميل بيانات العميل: "+ex.Message,false);}}
     private async Task OnCurrencyChanged(){if(header.CurrencyID.HasValue&&header.CurrencyID.Value>0){header.ExchangeRate=await LookupService.GetExchangeRateAsync(header.CurrencyID.Value);StateHasChanged();}}
     private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;editLine.UnitPrice=info.SalesPrice>0?info.SalesPrice:info.EstimatedPrice;}StateHasChanged();}
     private async Task SaveOrder()
     {
-        if(header.OrderDate==default){await ShowToastAsync("حدد تاريخ أمر البيع",false);activeTab=0;return;}
-        if(header.CustomerID<=0){await ShowToastAsync("اختر العميل",false);activeTab=1;return;}
-        isSaving=true;StateHasChanged();
-        try{
-            if(isNewMode){
-                header.OrderNumber=await SoService.GenerateOrderNumberAsync();header.OrderStatus=1;
-                var newId=await SoService.InsertOrderAsync(header, UserSession.UserID);
-                OrderId=newId;header.SalesOrderID=newId;
-                if(header.OrderSource==2&&quotationLines!=null){
-                    var selectedIds=quotationLines.Where(l=>l.IsSelected).Select(l=>l.QuotationDetailID).ToList();
-                    if(selectedIds.Any()){var imported=await SoService.ImportLinesFromQuotationAsync(newId,header.QuotationID??0,selectedIds,UserSession.UserID);await ShowToastAsync($"تم إنشاء الأمر وتحميل {imported} صنف ");}
-                    else{await ShowToastAsync($"تم إنشاء أمر البيع: {header.OrderNumber} ");}
-                }else{await ShowToastAsync($"تم إنشاء أمر البيع: {header.OrderNumber} ");}
-                isSourceLocked=true;isQuotationLoaded=true;details=await SoService.GetOrderDetailsAsync(newId);header=await SoService.GetOrderByIdAsync(newId)??header;Navigation.NavigateTo($"/sales-orders/edit/{newId}", forceLoad:false);
-            }else{await SoService.UpdateOrderAsync(header, UserSession.UserID);header=await SoService.GetOrderByIdAsync(OrderId)??header;details=await SoService.GetOrderDetailsAsync(OrderId);await ShowToastAsync("تم حفظ التعديلات ");}
-        }catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}
-        finally{isSaving=false;}
+        if (!canSaveOrder) { await ShowToastAsync("لا تملك صلاحية حفظ هذا الأمر", false); return; }
+        if (header.OrderDate == default) { await ShowToastAsync("حدد تاريخ أمر البيع", false); activeTab = 0; return; }
+        if (header.CustomerID <= 0) { await ShowToastAsync("اختر العميل", false); activeTab = 1; return; }
+
+        var needsQuotationImport = header.OrderSource == 2 && (isNewMode || quotationImportFailed);
+        var selectedQuotationIds = new List<int>();
+        if (needsQuotationImport)
+        {
+            if (selectedQuotationId <= 0 || quotationLines is null)
+            {
+                await ShowToastAsync("اختر عرض السعر أولاً", false);
+                activeTab = 0;
+                return;
+            }
+
+            if (quotationLines.Count == 0)
+            {
+                await ShowToastAsync("عرض السعر المحدد لا يحتوي على أصناف قابلة للتحميل", false);
+                activeTab = 0;
+                return;
+            }
+
+            // The quotation flow is intended to import all lines by default. If the UI
+            // selection state is empty, restore the default rather than blocking creation.
+            selectedQuotationIds = quotationLines.Where(line => line.IsSelected)
+                .Select(line => line.QuotationDetailID).ToList();
+            if (selectedQuotationIds.Count == 0)
+            {
+                foreach (var line in quotationLines) line.IsSelected = true;
+                selectedQuotationIds = quotationLines.Select(line => line.QuotationDetailID).ToList();
+            }
+
+            var selectedQuotation = approvedQuotations?.FirstOrDefault(q => q.Id == selectedQuotationId);
+            if (int.TryParse(selectedQuotation?.Extra, out var quotationCustomerId)
+                && quotationCustomerId > 0 && quotationCustomerId != header.CustomerID)
+            {
+                await ShowToastAsync("يجب أن يطابق العميل عميل عرض السعر", false);
+                activeTab = 1;
+                return;
+            }
+        }
+
+        isSaving = true;
+        StateHasChanged();
+        var isCreating = isNewMode;
+        var importWasAttempted = false;
+        var importCompleted = false;
+        var importedCount = 0;
+
+        try
+        {
+            if (isCreating)
+            {
+                header.OrderNumber = await SoService.GenerateOrderNumberAsync();
+                header.OrderStatus = 1;
+                var newId = await SoService.InsertOrderAsync(header, UserSession.UserID);
+                if (newId <= 0) throw new InvalidOperationException("لم يتم إنشاء أمر البيع");
+                OrderId = newId;
+                header.SalesOrderID = newId;
+            }
+            else if (!quotationImportFailed || permissions?.CanEdit == true)
+            {
+                await SoService.UpdateOrderAsync(header, UserSession.UserID);
+            }
+
+            if (needsQuotationImport)
+            {
+                importWasAttempted = true;
+                importedCount = await SoService.ImportLinesFromQuotationAsync(
+                    OrderId, header.QuotationID ?? selectedQuotationId, selectedQuotationIds, UserSession.UserID);
+                importCompleted = importedCount > 0;
+                if (importedCount == 0)
+                    throw new InvalidOperationException("لم يتم تحميل أي صنف من عرض السعر");
+            }
+
+            isSourceLocked = true;
+            isQuotationLoaded = true;
+            details = await SoService.GetOrderDetailsAsync(OrderId);
+            header = await SoService.GetOrderByIdAsync(OrderId) ?? header;
+            quotationImportFailed = false;
+            quotationImportError = "";
+
+            if (isCreating)
+            {
+                var message = header.OrderSource == 2
+                    ? $"تم إنشاء الأمر وتحميل {details.Count} صنف من عرض السعر"
+                    : $"تم إنشاء أمر البيع: {header.OrderNumber}";
+                await ShowToastAsync(message);
+                Navigation.NavigateTo($"/sales-orders/edit/{OrderId}", forceLoad: false);
+            }
+            else if (needsQuotationImport)
+            {
+                await ShowToastAsync($"تم تحميل {details.Count} صنف من عرض السعر");
+            }
+            else
+            {
+                await ShowToastAsync("تم حفظ التعديلات");
+            }
+        }
+        catch (Exception ex)
+        {
+            // The service commits the line import transaction before returning. If an error
+            // occurs after commit, checking the persisted lines avoids offering a duplicate retry.
+            if (importWasAttempted && !importCompleted && OrderId > 0)
+            {
+                try
+                {
+                    details = await SoService.GetOrderDetailsAsync(OrderId);
+                    header = await SoService.GetOrderByIdAsync(OrderId) ?? header;
+                    importCompleted = details.Count > 0;
+                }
+                catch { }
+            }
+
+            if (importWasAttempted && OrderId > 0 && !importCompleted)
+            {
+                quotationImportFailed = true;
+                quotationImportError = ex.Message;
+                isSourceLocked = true;
+                activeTab = 2;
+                var failureMessage = isCreating
+                    ? $"تم إنشاء أمر البيع {header.OrderNumber} لكن تعذر تحميل أصناف العرض. الاختيارات محفوظة ويمكن إعادة المحاولة. التفاصيل: {ex.Message}"
+                    : $"تعذر تحميل أصناف العرض إلى الأمر {header.OrderNumber}. الاختيارات محفوظة ويمكن إعادة المحاولة. التفاصيل: {ex.Message}";
+                await ShowToastAsync(failureMessage, false);
+            }
+            else if (importCompleted)
+            {
+                quotationImportFailed = false;
+                quotationImportError = "";
+                isSourceLocked = true;
+                isQuotationLoaded = true;
+                var message = details.Count > 0
+                    ? $"تم تحميل {details.Count} صنف من عرض السعر"
+                    : "اكتمل تحميل الأصناف؛ أعد فتح الأمر لتحديث التفاصيل";
+                await ShowToastAsync(message, details.Count > 0);
+                if (isCreating && details.Count > 0)
+                    Navigation.NavigateTo($"/sales-orders/edit/{OrderId}", forceLoad: false);
+            }
+            else
+            {
+                await ShowToastAsync("خطأ: " + ex.Message, false);
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
     }
-    private async Task SubmitForApproval(){if(!details.Any()){await ShowToastAsync("أضف أصناف أولاً",false);activeTab=2;return;}isSaving=true;StateHasChanged();try{await SoService.SubmitForApprovalAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=2;await ShowToastAsync("تم الإرسال للاعتماد ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
-    private async Task ExecuteApprove(){var confirmed=await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد أمر البيع؟");if(!confirmed)return;isSaving=true;StateHasChanged();try{await SoService.ApproveAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=3;await ShowToastAsync("تم الاعتماد ");await Task.Delay(1200);Navigation.NavigateTo("/sales-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private async Task SubmitForApproval()
+    {
+        if (!canSubmitOrder || isSaving) return;
+        isSaving = true;
+        StateHasChanged();
+        try
+        {
+            await SoService.UpdateOrderAsync(header, UserSession.CurrentUserID);
+            await SoService.SubmitForApprovalAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header.OrderStatus = 2;
+            await ShowToastAsync("تم حفظ الأمر وإرساله للاعتماد");
+        }
+        catch (Exception ex) { await ShowToastAsync("تعذر إرسال الأمر للاعتماد: " + ex.Message, false); }
+        finally { isSaving = false; }
+    }
+    private async Task ExecuteApprove()
+    {
+        if (permissions?.CanApprove != true || OrderId <= 0 || header.OrderStatus != 2 || isSaving) return;
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "هل تريد اعتماد أمر البيع؟");
+        if (!confirmed) return;
+        isSaving = true;
+        try
+        {
+            await SoService.ApproveAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header.OrderStatus = 3;
+            await ShowToastAsync("تم اعتماد أمر البيع؛ يمكنك الآن إنشاء الفاتورة");
+            await Task.Delay(900);
+            Navigation.NavigateTo("/sales-orders");
+        }
+        catch (Exception ex) { await ShowToastAsync("تعذر اعتماد الأمر: " + ex.Message, false); }
+        finally { isSaving = false; }
+    }
     private void DoShowReject(){rejectReason="";rejectMsg="";showRejectDialog=true;}
-    private async Task ConfirmReject(){if(string.IsNullOrWhiteSpace(rejectReason)){rejectMsg="أدخل سبب الرفض";return;}try{await SoService.RejectAsync(OrderId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.OrderStatus=4;header.RejectionReason=rejectReason;showRejectDialog=false;await ShowToastAsync("تم رفض أمر البيع",false);await Task.Delay(1200);Navigation.NavigateTo("/sales-orders");}catch(Exception ex){rejectMsg="خطأ: "+ex.Message;}}
+    private async Task ConfirmReject()
+    {
+        if (permissions?.CanApprove != true || header.OrderStatus != 2 || OrderId <= 0) return;
+        if (string.IsNullOrWhiteSpace(rejectReason)) { rejectMsg = "أدخل سبب الرفض"; return; }
+        try
+        {
+            await SoService.RejectAsync(OrderId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header.OrderStatus = 1;
+            header.RejectionReason = rejectReason.Trim();
+            showRejectDialog = false;
+            await ShowToastAsync("تم رفض الأمر وإعادته إلى المسودة للتعديل", false);
+            await Task.Delay(900);
+            Navigation.NavigateTo("/sales-orders");
+        }
+        catch (Exception ex) { rejectMsg = "تعذر رفض الأمر: " + ex.Message; }
+    }
     private void ShowAddLine(){isEditLine=false;editLine=new(){SalesOrderID=OrderId,TaxRate=14};lineMsg="";showLineForm=true;}
     private void ShowEditLine(SalesOrderDetailDto line){isEditLine=true;editLine=new(){SODetailID=line.SODetailID,SalesOrderID=line.SalesOrderID,ItemID=line.ItemID,ItemCode=line.ItemCode,ItemNameAr=line.ItemNameAr,UnitID=line.UnitID,UnitName=line.UnitName,OrderedQty=line.OrderedQty,UnitPrice=line.UnitPrice,DiscountPercent=line.DiscountPercent,TaxRate=line.TaxRate,ExpectedDate=line.ExpectedDate,Notes=line.Notes,QuotationDetailID=line.QuotationDetailID,QuotationQty=line.QuotationQty,QuotationRemaining=line.QuotationRemaining};lineMsg="";showLineForm=true;}
     private void CloseLineForm(){showLineForm=false;lineMsg="";}
@@ -410,7 +726,11 @@ else
     }
     private async Task DeleteLine(int detailId){try{await SoService.DeleteDetailAsync(detailId, UserSession.UserID);details=await SoService.GetOrderDetailsAsync(OrderId);header=await SoService.GetOrderByIdAsync(OrderId)??header;await ShowToastAsync("تم الحذف ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
     private async Task PrintDoc(){try{var html=await SoService.GenerateReportHtmlAsync(OrderId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
-    private void CreateInvoice(){Navigation.NavigateTo($"/sales-invoices/new?source=order&orderId={OrderId}");}
+    private void CreateInvoice()
+    {
+        if (OrderId <= 0 || header.OrderStatus != 3 || invoicePermissions?.CanAdd != true) return;
+        Navigation.NavigateTo($"/sales-invoices/new?source=order&orderId={OrderId}");
+    }
     private void GoBack()=>Navigation.NavigateTo("/sales-orders");
     private async Task ShowToastAsync(string message, bool ok=true){toast=message;toastOk=ok;StateHasChanged();await Task.Delay(4000);toast="";StateHasChanged();}
 }

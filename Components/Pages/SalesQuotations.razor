@@ -1,0 +1,389 @@
+@page "/quotations"
+
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject SalesQuotationService QuotationService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>عروض الأسعار - واي كي كوتينج Gold Edition</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="quote-no-access" dir="rtl">
+        <div class="quote-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>يجب تسجيل الدخول أولاً</h3>
+    </div>
+}
+else if (permissions is null || !permissions.CanView)
+{
+    <div class="quote-no-access" dir="rtl">
+        <div class="quote-access-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></div>
+        <h3>ليس لديك صلاحية لعرض عروض الأسعار</h3>
+        <button class="quote-btn quote-btn-muted" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <main class="quote-page" dir="rtl">
+        <header class="quote-hero">
+            <div class="quote-hero-mark"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
+            <div class="quote-hero-content">
+                
+                <h1>عروض الأسعار</h1>
+                <p>إدارة عروض العملاء ومتابعة الاعتماد والإرسال</p>
+            </div>
+            <div class="quote-hero-actions">
+                <span class="quote-count-badge"><span class="quote-live-dot"></span>@Filtered.Count عرض</span>
+                @if (permissions.CanExport)
+                {
+                    <button class="quote-btn quote-btn-outline" @onclick="ExportExcel" disabled="@isExporting || !Filtered.Any()">
+                        @if (isExporting)
+                        {
+                            <span class="quote-spinner-small"></span>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>
+                        }
+                        تصدير Excel
+                    </button>
+                }
+                @if (permissions.CanAdd)
+                {
+                    <button class="quote-btn quote-btn-primary" @onclick='() => Navigation.NavigateTo("/quotations/new")'>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        عرض سعر جديد
+                    </button>
+                }
+            </div>
+        </header>
+
+        <section class="quote-workflow" aria-label="مسار عرض السعر">
+            <div class="quote-work-step active"><span class="quote-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span><span>عرض سعر</span></div>
+            <span class="quote-flow-line"></span>
+            <div class="quote-work-step"><span class="quote-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><span>اعتماد</span></div>
+            <span class="quote-flow-line"></span>
+            <div class="quote-work-step"><span class="quote-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/></svg></span><span>إرسال للعميل</span></div>
+            <span class="quote-flow-line"></span>
+            <div class="quote-work-step"><span class="quote-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h18v18H3z"/><path d="M7 8h10M7 12h10M7 16h6"/></svg></span><span>أمر بيع</span></div>
+        </section>
+
+        @if (quotations is not null)
+        {
+            <section class="quote-stats">
+                <article class="quote-stat-card"><span class="quote-stat-icon slate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span><div><strong>@quotations.Count(x => x.QuotationStatus == 1)</strong><span>مسودة</span></div></article>
+                <article class="quote-stat-card"><span class="quote-stat-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><div><strong>@quotations.Count(x => x.QuotationStatus == 2)</strong><span>بانتظار الاعتماد</span></div></article>
+                <article class="quote-stat-card"><span class="quote-stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/></svg></span><div><strong>@quotations.Count(x => x.QuotationStatus == 3)</strong><span>معتمد</span></div></article>
+                <article class="quote-stat-card"><span class="quote-stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg></span><div><strong>@quotations.Count(x => x.QuotationStatus == 5)</strong><span>مُرسل للعميل</span></div></article>
+                <article class="quote-stat-card"><span class="quote-stat-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></span><div><strong>@quotations.Count(x => x.QuotationStatus == 4)</strong><span>مرفوض</span></div></article>
+            </section>
+        }
+
+        <section class="quote-filter-panel">
+            <div class="quote-search-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="search" @bind="searchText" @bind:event="oninput" placeholder="ابحث برقم العرض أو اسم العميل أو كوده..." aria-label="بحث" />
+                @if (!string.IsNullOrWhiteSpace(searchText))
+                {
+                    <button class="quote-clear-search" @onclick="ClearSearch" aria-label="مسح البحث"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+                }
+            </div>
+            <label class="quote-status-filter">
+                <span>الحالة</span>
+                <select @bind="filterStatus" aria-label="تصفية حسب الحالة">
+                    <option value="0">كل الحالات</option>
+                    <option value="1">مسودة</option>
+                    <option value="2">بانتظار الاعتماد</option>
+                    <option value="3">معتمد</option>
+                    <option value="4">مرفوض</option>
+                    <option value="5">مُرسل للعميل</option>
+                </select>
+            </label>
+            <span class="quote-result-count">النتائج <strong>@Filtered.Count</strong></span>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="quote-load-error" role="alert">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div><strong>تعذر تحميل عروض الأسعار</strong><span>@loadError</span></div>
+                <button class="quote-btn quote-btn-muted" @onclick="LoadData">إعادة المحاولة</button>
+            </div>
+        }
+        else if (isLoading)
+        {
+            <div class="quote-loading"><span class="quote-spinner"></span><p>جاري تحميل عروض الأسعار...</p></div>
+        }
+        else if (!Filtered.Any())
+        {
+            <section class="quote-empty">
+                <div class="quote-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div>
+                <h2>@(quotations?.Any() == true ? "لا توجد نتائج مطابقة" : "لا توجد عروض أسعار بعد")</h2>
+                <p>@(quotations?.Any() == true ? "غيّر كلمات البحث أو مرشح الحالة لعرض نتائج أخرى." : "ابدأ بإنشاء عرض سعر للعميل، ثم أرسله للاعتماد.")</p>
+                @if (quotations is { Count: 0 } && permissions.CanAdd)
+                {
+                    <button class="quote-btn quote-btn-primary" @onclick='() => Navigation.NavigateTo("/quotations/new")'>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        إنشاء أول عرض سعر
+                    </button>
+                }
+            </section>
+        }
+        else
+        {
+            <section class="quote-table-shell">
+                <div class="quote-table-scroll">
+                    <table class="quote-table">
+                        <thead><tr><th>رقم العرض</th><th>العميل</th><th>التاريخ / الصلاحية</th><th class="center">الأصناف</th><th>الإجمالي</th><th>الحالة</th><th class="center">الإجراءات</th></tr></thead>
+                        <tbody>
+                            @foreach (var quote in Filtered)
+                            {
+                                <tr>
+                                    <td><button class="quote-number-link" @onclick="() => OpenQuotation(quote)">@quote.QuotationNumber</button><span class="quote-code-sub">@(string.IsNullOrWhiteSpace(quote.CustomerCode) ? "عرض تجاري" : $"عميل {quote.CustomerCode}")</span></td>
+                                    <td><strong class="quote-customer">@quote.CustomerNameAr</strong><span class="quote-code-sub">@quote.TotalQuantity.ToString("#,##0.##") وحدة إجمالية</span></td>
+                                    <td><span class="quote-date">@quote.QuotationDate.ToString("dd/MM/yyyy")</span><span class="quote-code-sub">صالح حتى @(quote.ValidUntilDate?.ToString("dd/MM/yyyy") ?? "غير محدد")</span></td>
+                                    <td class="center"><span class="quote-item-count">@quote.ItemCount</span></td>
+                                    <td><strong class="quote-money">@quote.TotalAmount.ToString("#,##0.00") <small>ج.م</small></strong><span class="quote-code-sub">شامل الضريبة</span></td>
+                                    <td><span class="quote-status" style="--status-color:@SalesQuotationService.GetStatusColor(quote.QuotationStatus)"><i></i>@SalesQuotationService.GetStatusName(quote.QuotationStatus)</span></td>
+                                    <td class="center">
+                                        <div class="quote-row-actions">
+                                            <button class="quote-icon-btn view" title="عرض" aria-label="عرض" @onclick="() => ViewQuotation(quote.QuotationID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                                            @if (quote.QuotationStatus == 1 && permissions.CanEdit)
+                                            {
+                                                <button class="quote-icon-btn edit" title="تعديل" aria-label="تعديل" @onclick="() => EditQuotation(quote.QuotationID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
+                                            }
+                                            @if (quote.QuotationStatus == 2 && permissions.CanApprove)
+                                            {
+                                                <button class="quote-icon-btn approve" title="مراجعة للاعتماد" aria-label="مراجعة للاعتماد" @onclick="() => EditQuotation(quote.QuotationID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></button>
+                                            }
+                                            @if (permissions.CanPrint)
+                                            {
+                                                <button class="quote-icon-btn print" title="طباعة" aria-label="طباعة" @onclick="() => PrintQuotation(quote.QuotationID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>
+                                            }
+                                            @if (quote.QuotationStatus == 1 && permissions.CanDelete)
+                                            {
+                                                <button class="quote-icon-btn delete" title="حذف المسودة" aria-label="حذف المسودة" @onclick="() => AskDelete(quote)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg></button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="quote-table-footer"><span>إجمالي المعروض: <strong>@Filtered.Count</strong></span><span>العملة الافتراضية للعرض: <strong>جنيه مصري</strong></span></footer>
+            </section>
+        }
+    </main>
+
+    @if (showDeleteDialog && quotationToDelete is not null)
+    {
+        <div class="quote-modal-overlay" role="presentation" @onclick="CloseDelete">
+            <section class="quote-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title" @onclick:stopPropagation="true">
+                <div class="quote-delete-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg></div>
+                <h2 id="delete-title">حذف مسودة عرض السعر</h2>
+                <p>هل تريد حذف العرض <strong>@quotationToDelete.QuotationNumber</strong>؟ لا يمكن التراجع عن هذا الإجراء.</p>
+                @if (!string.IsNullOrWhiteSpace(deleteError)){<div class="quote-inline-error">@deleteError</div>}
+                <div class="quote-modal-actions">
+                    <button class="quote-btn quote-btn-muted" @onclick="CloseDelete" disabled="@isDeleting">إلغاء</button>
+                    <button class="quote-btn quote-btn-danger" @onclick="ConfirmDelete" disabled="@isDeleting">
+                        @if (isDeleting){<span class="quote-spinner-small"></span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6"/></svg>}
+                        حذف العرض
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(toastMessage))
+    {
+        <div class="quote-toast" role="status">
+            <span class="quote-toast-icon @(toastSuccess ? "success" : "error")">
+                @if (toastSuccess){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>}
+                else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg>}
+            </span>
+            <span>@toastMessage</span>
+            <button class="quote-toast-close" aria-label="إغلاق الإشعار" @onclick="() => toastMessage = string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+        </div>
+    }
+}
+
+<style>
+.quote-page{--q-gold:#d4af37;--q-gold-dark:#9c7c2e;--q-ink:#111318;--q-muted:#778091;--q-line:#ece8dd;max-width:1600px;margin:0 auto;padding:26px 24px 44px;color:#17191e}
+.quote-hero{position:relative;display:flex;align-items:center;gap:20px;min-height:142px;padding:25px 30px;border-radius:22px;overflow:hidden;color:#f7f0db;background:radial-gradient(circle at 8% 12%,rgba(212,175,55,.15),transparent 34%),linear-gradient(115deg,#101113,#20201d 62%,#171817);box-shadow:0 16px 40px rgba(17,19,24,.15);border:1px solid rgba(212,175,55,.18)}
+.quote-hero:before{content:'';position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,#d4af37,#f2de94,#9c7c2e,transparent)}
+.quote-hero-mark{width:58px;height:58px;flex:0 0 58px;border:1px solid rgba(212,175,55,.3);border-radius:17px;display:grid;place-items:center;background:rgba(255,255,255,.035);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.quote-hero-mark img{width:36px;height:36px;object-fit:contain}
+.quote-hero-content{min-width:0}.quote-eyebrow{font-size:.68rem;letter-spacing:1.6px;color:#c8b879;font-weight:800}.quote-eyebrow span{display:inline-block;width:4px;height:4px;border-radius:50%;background:#d4af37;margin:0 7px 2px}.quote-hero h1{font-size:1.75rem;line-height:1.2;margin:8px 0 5px;color:#fff9e9;font-weight:800}.quote-hero p{margin:0;font-size:.85rem;color:#aca897}.quote-hero-actions{display:flex;align-items:center;gap:9px;margin-right:auto;flex-wrap:wrap;justify-content:flex-end}
+.quote-count-badge{display:inline-flex;align-items:center;gap:8px;color:#e7dbb6;border:1px solid rgba(212,175,55,.23);background:rgba(212,175,55,.07);border-radius:999px;padding:9px 13px;font-size:.78rem;font-weight:700;white-space:nowrap}.quote-live-dot{width:7px;height:7px;background:#d4af37;border-radius:50%;box-shadow:0 0 10px rgba(212,175,55,.8)}
+.quote-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 15px;border-radius:11px;font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;transition:transform .18s,box-shadow .18s,background .18s,border-color .18s;white-space:nowrap}.quote-btn:hover:not(:disabled){transform:translateY(-1px)}.quote-btn:disabled{opacity:.6;cursor:not-allowed}.quote-btn svg{width:17px;height:17px;flex:0 0 auto}.quote-btn-primary{color:#16140c;background:linear-gradient(135deg,#f0d989,#d4af37 62%,#b89020);border:1px solid #e4c96d;box-shadow:0 7px 17px rgba(212,175,55,.17)}.quote-btn-primary:hover:not(:disabled){box-shadow:0 10px 22px rgba(212,175,55,.24)}.quote-btn-outline{color:#f3e8c5;background:rgba(255,255,255,.035);border:1px solid rgba(212,175,55,.28)}.quote-btn-outline:hover:not(:disabled){background:rgba(212,175,55,.1)}.quote-btn-muted{color:#5f6672;background:#f8f7f3;border:1px solid #e8e4d9}.quote-btn-danger{color:#fff;background:#b4232c;border:1px solid #a91923}.quote-btn-danger:hover:not(:disabled){background:#991b24}
+.quote-workflow{display:flex;align-items:center;justify-content:center;gap:12px;margin:17px 0 18px;padding:15px 18px;background:#fff;border:1px solid var(--q-line);border-radius:16px;box-shadow:0 5px 18px rgba(20,21,25,.035)}.quote-work-step{display:flex;align-items:center;gap:9px;color:#9297a1;font-size:.76rem;font-weight:700;white-space:nowrap}.quote-work-step.active{color:#8b6c19}.quote-step-icon{width:31px;height:31px;border-radius:10px;display:grid;place-items:center;background:#f8f7f2;border:1px solid #ece8dc;color:#7d8490}.quote-step-icon svg{width:16px;height:16px}.quote-work-step.active .quote-step-icon{color:#92721e;background:#fbf6e5;border-color:#e7d593}.quote-flow-line{height:1px;width:min(11vw,104px);background:linear-gradient(90deg,#e9e4d6,#d7c990,#e9e4d6)}
+.quote-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:15px}.quote-stat-card{min-height:82px;background:#fff;border:1px solid var(--q-line);border-radius:15px;padding:14px 15px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 15px rgba(20,21,25,.025)}.quote-stat-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:0 0 40px}.quote-stat-icon svg{width:20px;height:20px}.quote-stat-icon.slate{color:#64748b;background:#f1f3f6}.quote-stat-icon.amber{color:#b7791f;background:#fff5df}.quote-stat-icon.green{color:#12815a;background:#e7f7ef}.quote-stat-icon.blue{color:#2463a5;background:#eaf3ff}.quote-stat-icon.red{color:#c4343c;background:#fff0ef}.quote-stat-card strong{display:block;color:#17191e;font-size:1.2rem;line-height:1.1;font-weight:800}.quote-stat-card span:not(.quote-stat-icon){display:block;margin-top:4px;color:#858b97;font-size:.72rem;font-weight:600}
+.quote-filter-panel{display:flex;align-items:center;gap:12px;padding:12px;background:#fff;border:1px solid var(--q-line);border-radius:15px;margin-bottom:13px;box-shadow:0 4px 15px rgba(20,21,25,.025)}.quote-search-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:180px;padding:0 12px;height:42px;border:1px solid #e8e5dd;border-radius:10px;background:#fcfbf8;transition:border-color .18s,box-shadow .18s}.quote-search-wrap:focus-within{border-color:#d1b34d;box-shadow:0 0 0 3px rgba(212,175,55,.1)}.quote-search-wrap>svg{width:17px;height:17px;flex:0 0 auto;color:#9d8a4d}.quote-search-wrap input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#252831;font:inherit;font-size:.81rem}.quote-search-wrap input::placeholder{color:#a5a9b0}.quote-clear-search{border:0;background:transparent;color:#848995;display:grid;place-items:center;padding:3px;cursor:pointer}.quote-clear-search svg{width:15px;height:15px}.quote-status-filter{display:flex;align-items:center;gap:8px;color:#757b86;font-size:.76rem;font-weight:700;white-space:nowrap}.quote-status-filter select{height:42px;min-width:145px;padding:0 10px;border:1px solid #e8e5dd;border-radius:10px;background:#fcfbf8;color:#262a32;font:inherit;font-size:.8rem;outline:0}.quote-status-filter select:focus{border-color:#d1b34d;box-shadow:0 0 0 3px rgba(212,175,55,.1)}.quote-result-count{color:#8b9099;font-size:.75rem;white-space:nowrap}.quote-result-count strong{color:#8c6d16;margin-right:4px}
+.quote-table-shell{background:#fff;border:1px solid var(--q-line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px rgba(20,21,25,.035)}.quote-table-scroll{overflow:auto}.quote-table{width:100%;border-collapse:separate;border-spacing:0;min-width:920px}.quote-table thead th{background:linear-gradient(180deg,#fbfaf7,#f7f5ef);padding:13px 15px;text-align:right;color:#777d87;font-size:.69rem;font-weight:800;border-bottom:1px solid #ece8dc;white-space:nowrap}.quote-table th.center,.quote-table td.center{text-align:center}.quote-table tbody td{padding:13px 15px;border-bottom:1px solid #f0eee8;vertical-align:middle;font-size:.8rem}.quote-table tbody tr:last-child td{border-bottom:0}.quote-table tbody tr{transition:background .16s}.quote-table tbody tr:hover{background:#fffdf7}.quote-number-link{border:0;padding:0;background:transparent;color:#866814;font:inherit;font-weight:800;font-size:.84rem;cursor:pointer;text-align:right}.quote-number-link:hover{text-decoration:underline}.quote-code-sub{display:block;margin-top:4px;color:#969ba4;font-size:.68rem}.quote-customer{display:block;color:#272a30;font-size:.81rem}.quote-date{display:block;color:#3d4149;font-weight:700;font-size:.77rem}.quote-item-count{display:inline-grid;place-items:center;min-width:28px;height:26px;padding:0 8px;border-radius:8px;background:#f5f3eb;border:1px solid #ebe6d5;color:#74601f;font-size:.76rem;font-weight:800}.quote-money{color:#202126;font-variant-numeric:tabular-nums;white-space:nowrap}.quote-money small{color:#8e929a;font-size:.65rem;font-weight:700}.quote-status{--status-color:#64748b;display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--status-color) 18%,white);background:color-mix(in srgb,var(--status-color) 8%,white);color:var(--status-color);font-size:.69rem;font-weight:800;white-space:nowrap}.quote-status i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px color-mix(in srgb,var(--status-color) 12%,white)}.quote-row-actions{display:flex;align-items:center;justify-content:center;gap:5px}.quote-icon-btn{width:31px;height:31px;border:1px solid #e8e5dd;border-radius:9px;background:#fff;display:grid;place-items:center;color:#777e89;cursor:pointer;transition:.16s}.quote-icon-btn svg{width:15px;height:15px}.quote-icon-btn.view{color:#3567a5;border-color:#dce8f6}.quote-icon-btn.view:hover{background:#eef5ff}.quote-icon-btn.edit{color:#92731e;border-color:#eee3bd}.quote-icon-btn.edit:hover{background:#fbf6e6}.quote-icon-btn.approve{color:#11845d;border-color:#ccebdc}.quote-icon-btn.approve:hover{background:#edf9f2}.quote-icon-btn.print{color:#0e8091;border-color:#cce9ed}.quote-icon-btn.print:hover{background:#effafb}.quote-icon-btn.delete{color:#c93a43;border-color:#f4dada}.quote-icon-btn.delete:hover{background:#fff2f1}
+.quote-table-footer{display:flex;justify-content:space-between;align-items:center;padding:11px 15px;background:#fcfbf8;border-top:1px solid #f0eee8;color:#8a9098;font-size:.7rem}.quote-table-footer strong{color:#4e535c}.quote-loading,.quote-empty,.quote-no-access{background:#fff;border:1px solid var(--q-line);border-radius:18px;text-align:center;padding:54px 20px}.quote-loading{color:#8a9099}.quote-loading p{margin:12px 0 0;font-size:.82rem}.quote-spinner{display:inline-block;width:38px;height:38px;border:3px solid #efe9d7;border-top-color:#c5a22e;border-radius:50%;animation:quoteSpin .8s linear infinite}.quote-spinner-small{display:inline-block;width:16px;height:16px;border:2px solid rgba(130,103,24,.22);border-top-color:currentColor;border-radius:50%;animation:quoteSpin .7s linear infinite}.quote-empty{padding:60px 20px}.quote-empty-icon,.quote-access-icon{width:60px;height:60px;display:grid;place-items:center;margin:0 auto 14px;border-radius:17px;background:#fbf7e8;border:1px solid #f0e5bb;color:#9a791c}.quote-empty-icon svg,.quote-access-icon svg{width:30px;height:30px}.quote-empty h2,.quote-no-access h3{margin:0;color:#262830;font-size:1rem;font-weight:800}.quote-empty p{margin:8px 0 18px;color:#8b909a;font-size:.8rem}.quote-no-access{max-width:720px;margin:40px auto}.quote-no-access .quote-access-icon{background:#f9f7f0}.quote-no-access .quote-btn{margin-top:16px}.quote-load-error{display:flex;align-items:center;gap:12px;padding:15px 17px;background:#fff6f4;border:1px solid #f3d3ce;border-radius:13px;color:#a73532}.quote-load-error>svg{width:23px;height:23px;flex:0 0 auto}.quote-load-error div{flex:1;min-width:0}.quote-load-error strong,.quote-load-error span{display:block}.quote-load-error strong{font-size:.82rem}.quote-load-error span{font-size:.73rem;margin-top:3px;color:#985856;overflow-wrap:anywhere}.quote-load-error .quote-btn{min-height:35px;padding:6px 10px;font-size:.73rem}
+.quote-modal-overlay{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:18px;background:rgba(10,12,16,.56);backdrop-filter:blur(5px)}.quote-delete-modal{width:min(100%,430px);padding:28px 24px 22px;text-align:center;background:#fff;border:1px solid #e7e1d2;border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.25);animation:quoteModalIn .18s ease}.quote-delete-icon{width:57px;height:57px;margin:0 auto 12px;border-radius:17px;display:grid;place-items:center;background:#fff0ee;border:1px solid #f2d3cf;color:#c3363e}.quote-delete-icon svg{width:27px;height:27px}.quote-delete-modal h2{margin:0;color:#202229;font-size:1.05rem}.quote-delete-modal p{margin:9px 0 0;color:#777e88;font-size:.81rem;line-height:1.7}.quote-delete-modal p strong{color:#92731e}.quote-modal-actions{display:flex;justify-content:center;gap:9px;margin-top:21px}.quote-inline-error{margin-top:12px;padding:8px 10px;border-radius:9px;color:#a12e30;background:#fff2f1;border:1px solid #f2d1ce;font-size:.76rem}.quote-toast{position:fixed;left:20px;bottom:20px;z-index:1300;max-width:min(500px,calc(100vw - 40px));display:flex;align-items:center;gap:10px;padding:12px 14px;background:#fff;border:1px solid #e9e4d8;border-radius:14px;box-shadow:0 15px 40px rgba(18,20,24,.16);color:#31353d;font-size:.8rem;font-weight:700;animation:quoteToastIn .2s ease}.quote-toast-icon{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}.quote-toast-icon svg{width:15px;height:15px}.quote-toast-icon.success{color:#09734f;background:#e7f7ef}.quote-toast-icon.error{color:#b22d36;background:#fff0ef}.quote-toast-close{margin-right:auto;width:24px;height:24px;border:0;background:transparent;color:#838995;display:grid;place-items:center;cursor:pointer}.quote-toast-close svg{width:14px;height:14px}
+@@keyframes quoteSpin{to{transform:rotate(360deg)}}@@keyframes quoteModalIn{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@@keyframes quoteToastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@@media(max-width:1000px){.quote-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.quote-hero{align-items:flex-start;flex-wrap:wrap}.quote-hero-actions{margin-right:0;margin-left:auto}}
+@@media(max-width:700px){.quote-page{padding:16px 12px 30px}.quote-hero{padding:20px 17px;gap:12px;border-radius:17px}.quote-hero-mark{width:46px;height:46px;flex-basis:46px;border-radius:13px}.quote-hero-mark img{width:29px;height:29px}.quote-hero h1{font-size:1.35rem}.quote-hero p{font-size:.75rem}.quote-hero-actions{width:100%;justify-content:flex-start}.quote-count-badge{margin-left:auto}.quote-workflow{justify-content:flex-start;overflow:auto;gap:8px;padding:12px}.quote-work-step{font-size:.68rem}.quote-step-icon{width:28px;height:28px}.quote-flow-line{width:28px;flex:0 0 28px}.quote-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.quote-stat-card{padding:11px;min-height:72px;gap:9px}.quote-stat-icon{width:35px;height:35px;flex-basis:35px}.quote-stat-icon svg{width:18px;height:18px}.quote-stat-card strong{font-size:1.05rem}.quote-stat-card span:not(.quote-stat-icon){font-size:.66rem}.quote-filter-panel{align-items:stretch;flex-direction:column;padding:10px;gap:9px}.quote-search-wrap{flex:auto}.quote-status-filter{justify-content:space-between}.quote-status-filter select{flex:1}.quote-result-count{align-self:flex-start}.quote-table-footer{align-items:flex-start;gap:8px;flex-direction:column}.quote-load-error{align-items:flex-start;flex-wrap:wrap}.quote-load-error .quote-btn{margin-right:34px}}
+</style>
+
+@code {
+    private List<SalesQuotationListDto>? quotations;
+    private ModulePermissionDto? permissions;
+    private bool isLoading;
+    private bool isExporting;
+    private bool isDeleting;
+    private string searchText = string.Empty;
+    private int filterStatus;
+    private string loadError = string.Empty;
+    private string toastMessage = string.Empty;
+    private bool toastSuccess = true;
+    private bool showDeleteDialog;
+    private SalesQuotationListDto? quotationToDelete;
+    private string deleteError = string.Empty;
+
+    private List<SalesQuotationListDto> Filtered
+    {
+        get
+        {
+            if (quotations is null) return new List<SalesQuotationListDto>();
+            return quotations.Where(quotation =>
+                (filterStatus == 0 || quotation.QuotationStatus == filterStatus) &&
+                (string.IsNullOrWhiteSpace(searchText) ||
+                 ArabicSearchHelper.Contains(quotation.QuotationNumber, searchText) ||
+                 ArabicSearchHelper.Contains(quotation.CustomerNameAr, searchText) ||
+                 ArabicSearchHelper.Contains(quotation.CustomerCode, searchText)))
+                .ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_QUOT");
+        if (permissions?.CanView == true) await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        loadError = string.Empty;
+        try
+        {
+            quotations = await QuotationService.GetQuotationsListAsync();
+        }
+        catch (Exception ex)
+        {
+            quotations = new List<SalesQuotationListDto>();
+            loadError = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ClearSearch() => searchText = string.Empty;
+    private void ViewQuotation(int id) => Navigation.NavigateTo($"/quotations/view/{id}");
+    private void EditQuotation(int id) => Navigation.NavigateTo($"/quotations/edit/{id}");
+
+    private void OpenQuotation(SalesQuotationListDto quote)
+    {
+        if (quote.QuotationStatus == 1 && permissions?.CanEdit == true) EditQuotation(quote.QuotationID);
+        else if (quote.QuotationStatus == 2 && permissions?.CanApprove == true) EditQuotation(quote.QuotationID);
+        else ViewQuotation(quote.QuotationID);
+    }
+
+    private async Task PrintQuotation(int id)
+    {
+        try
+        {
+            var html = await QuotationService.GenerateReportHtmlAsync(id, UserSession.UserID);
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذرت الطباعة: " + ex.Message, false);
+        }
+    }
+
+    private async Task ExportExcel()
+    {
+        var rows = Filtered;
+        if (rows.Count == 0) return;
+        isExporting = true;
+        try
+        {
+            var bytes = await QuotationService.ExportToExcelAsync(rows, UserSession.UserID);
+            await JS.InvokeVoidAsync(
+                "downloadFile",
+                $"SalesQuotations_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Convert.ToBase64String(bytes));
+            await ShowToastAsync("تم تصدير عروض الأسعار");
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("تعذر التصدير: " + ex.Message, false);
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private void AskDelete(SalesQuotationListDto quote)
+    {
+        quotationToDelete = quote;
+        deleteError = string.Empty;
+        showDeleteDialog = true;
+    }
+
+    private void CloseDelete()
+    {
+        if (isDeleting) return;
+        showDeleteDialog = false;
+        quotationToDelete = null;
+        deleteError = string.Empty;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (quotationToDelete is null) return;
+        isDeleting = true;
+        deleteError = string.Empty;
+        try
+        {
+            await QuotationService.DeleteQuotationAsync(quotationToDelete.QuotationID, UserSession.UserID);
+            showDeleteDialog = false;
+            await LoadData();
+            await ShowToastAsync("تم حذف المسودة");
+        }
+        catch (Exception ex)
+        {
+            deleteError = ex.Message;
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private async Task ShowToastAsync(string message, bool success = true)
+    {
+        toastMessage = message;
+        toastSuccess = success;
+        await Task.Delay(3500);
+        if (toastMessage == message) toastMessage = string.Empty;
+    }
+}

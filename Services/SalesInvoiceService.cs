@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using ClosedXML.Excel;
 using YKCoatings.Models;
@@ -5,100 +6,111 @@ using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 
 namespace YKCoatings.Services
 {
-    public class SalesInvoiceService : BaseDbService
+    public partial class SalesInvoiceService : BaseDbService
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly PermissionService _permissionService;
+        private readonly UserSessionService _userSession;
 
-        public SalesInvoiceService(IConfiguration configuration, AuditService audit, NotificationService notif) : base(configuration)
+        public SalesInvoiceService(
+            IConfiguration configuration,
+            AuditService audit,
+            NotificationService notif,
+            PermissionService permissionService,
+            UserSessionService userSession) : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _permissionService = permissionService;
+            _userSession = userSession;
         }
 
         // ==========================================
         // قائمة الفواتير
         // ==========================================
-        public async Task<List<SalesInvoiceListDto>> GetInvoicesListAsync()
+        public async Task<List<SalesInvoiceListDto>> GetInvoicesListAsync(int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanView,
+                "لا تملك صلاحية عرض فواتير المبيعات.");
+
             using var connection = CreateConnection();
-            try
-            {
-                var sql = @"SELECT
-                            InvoiceID, InvoiceNumber, InvoiceDate,
-                            InvoiceStatus, InvoiceSource, InvoiceSourceName,
-                            PaymentStatus, PaymentStatusName,
-                            CustomerID, CustomerCode, CustomerNameAr,
-                            SalesOrderID, LinkedSONumber,
-                            DeliveryID, LinkedDeliveryNumber,
-                            IsTaxable, TaxRate,
-                            SubTotal, DiscountAmount, TaxAmount, TotalAmount, PaidAmount, RemainingAmount,
-                            DueDate, IsOverdue, DaysOverdue,
-                            PaymentTermName, CurrencyCode,
-                            ItemCount, RejectionReason, CreatedDate
-                        FROM dbo.vw_SalesInvoiceSummary
-                        ORDER BY InvoiceDate DESC, InvoiceID DESC";
-                var result = await connection.QueryAsync<SalesInvoiceListDto>(sql);
-                return result.ToList();
-            }
-            catch
-            {
-                // Fallback إذا الـ View غير موجود — جدول مباشر — ملتزم بالجداول الموجودة فقط (لا DeliveryNotes)
-                var sql2 = @"SELECT
+            var sql = @"SELECT
                             si.InvoiceID, si.InvoiceNumber, si.InvoiceDate,
-                            si.InvoiceStatus, ISNULL(si.InvoiceSource,3) as InvoiceSource,
-                            CASE WHEN ISNULL(si.InvoiceSource,3)=2 THEN N'من أمر بيع' ELSE N'فاتورة مباشرة' END as InvoiceSourceName,
-                            si.PaymentStatus,
-                            CASE si.PaymentStatus WHEN 1 THEN N'غير مدفوعة' WHEN 2 THEN N'مدفوعة جزئياً' WHEN 3 THEN N'مدفوعة بالكامل' ELSE N'غير محدد' END as PaymentStatusName,
+                            si.InvoiceStatus, ISNULL(si.InvoiceSource,3) AS InvoiceSource,
+                            CASE ISNULL(si.InvoiceSource,3)
+                                WHEN 1 THEN N'من إذن تسليم'
+                                WHEN 2 THEN N'من أمر بيع'
+                                ELSE N'فاتورة مباشرة' END AS InvoiceSourceName,
+                            ISNULL(si.PaymentStatus,1) AS PaymentStatus,
+                            CASE ISNULL(si.PaymentStatus,1)
+                                WHEN 1 THEN N'غير مدفوعة'
+                                WHEN 2 THEN N'مدفوعة جزئياً'
+                                WHEN 3 THEN N'مدفوعة بالكامل'
+                                ELSE N'غير محدد' END AS PaymentStatusName,
                             si.CustomerID, c.CustomerCode, c.CustomerNameAr,
-                            si.SalesOrderID, so.OrderNumber as LinkedSONumber,
-                            CAST(NULL AS INT) as DeliveryID, CAST(NULL AS NVARCHAR(50)) as LinkedDeliveryNumber,
-                            ISNULL(si.IsTaxable,1) as IsTaxable, ISNULL(si.TaxRate,14) as TaxRate,
-                            ISNULL(si.SubTotal,0) as SubTotal, ISNULL(si.DiscountAmount,0) as DiscountAmount, ISNULL(si.TaxAmount,0) as TaxAmount, ISNULL(si.TotalAmount,0) as TotalAmount, ISNULL(si.PaidAmount,0) as PaidAmount, ISNULL(si.TotalAmount,0)-ISNULL(si.PaidAmount,0) as RemainingAmount,
-                            si.DueDate, 0 as IsOverdue, 0 as DaysOverdue,
-                            pt.TermNameAr as PaymentTermName, cur.CurrencyCode,
-                            ISNULL((SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID),0) as ItemCount,
-                            si.RejectionReason, si.CreatedDate
+                            si.SalesOrderID, so.SONumber AS LinkedSONumber,
+                            si.DeliveryID, CAST(NULL AS NVARCHAR(50)) AS LinkedDeliveryNumber,
+                            ISNULL(si.IsTaxable,1) AS IsTaxable, ISNULL(si.TaxRate,14) AS TaxRate,
+                            ISNULL(si.SubTotal,0) AS SubTotal, ISNULL(si.DiscountAmount,0) AS DiscountAmount,
+                            ISNULL(si.TaxAmount,0) AS TaxAmount, ISNULL(si.TotalAmount,0) AS TotalAmount,
+                            ISNULL(si.PaidAmount,0) AS PaidAmount,
+                            ISNULL(si.TotalAmount,0)-ISNULL(si.PaidAmount,0) AS RemainingAmount,
+                            si.DueDate,
+                            CAST(CASE WHEN si.InvoiceStatus NOT IN (1,2,6)
+                                      AND ISNULL(si.PaymentStatus,1) <> 3
+                                      AND si.DueDate < CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END AS BIT) AS IsOverdue,
+                            CASE WHEN si.InvoiceStatus NOT IN (1,2,6)
+                                      AND ISNULL(si.PaymentStatus,1) <> 3
+                                      AND si.DueDate < CAST(GETDATE() AS DATE)
+                                 THEN DATEDIFF(DAY, si.DueDate, CAST(GETDATE() AS DATE)) ELSE 0 END AS DaysOverdue,
+                            pt.TermNameAr AS PaymentTermName, cur.CurrencyCode,
+                            (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID) AS ItemCount,
+                            CAST(NULL AS NVARCHAR(500)) AS RejectionReason, si.CreatedBy, si.CreatedDate
                         FROM dbo.SalesInvoices si
                         INNER JOIN dbo.Customers c ON si.CustomerID=c.CustomerID
                         LEFT JOIN dbo.SalesOrders so ON si.SalesOrderID=so.SalesOrderID
                         LEFT JOIN dbo.PaymentTerms pt ON si.PaymentTermID=pt.PaymentTermID
                         LEFT JOIN dbo.Currencies cur ON si.CurrencyID=cur.CurrencyID
                         ORDER BY si.InvoiceDate DESC, si.InvoiceID DESC";
-                var result = await connection.QueryAsync<SalesInvoiceListDto>(sql2);
-                return result.ToList();
-            }
+
+            return (await connection.QueryAsync<SalesInvoiceListDto>(sql)).ToList();
         }
 
         // ==========================================
         // جلب فاتورة واحدة
         // ==========================================
-        public async Task<SalesInvoiceHeaderDto?> GetInvoiceByIdAsync(int invoiceId)
+        public async Task<SalesInvoiceHeaderDto?> GetInvoiceByIdAsync(int invoiceId, int userId)
+        {
+            await RequireInvoicePermissionAsync(userId, p => p.CanView,
+                "لا تملك صلاحية عرض فواتير المبيعات.");
+            return await GetInvoiceByIdCoreAsync(invoiceId);
+        }
+
+        private async Task<SalesInvoiceHeaderDto?> GetInvoiceByIdCoreAsync(int invoiceId)
         {
             using var connection = CreateConnection();
             var sql = @"SELECT
                             si.InvoiceID, si.InvoiceNumber, si.InvoiceDate,
                             si.InvoiceStatus, ISNULL(si.InvoiceSource,3) AS InvoiceSource,
-                            si.PaymentStatus,
+                            ISNULL(si.PaymentStatus,1) AS PaymentStatus,
                             si.CustomerID, c.CustomerNameAr, c.CustomerCode,
-                            si.SalesOrderID, so.OrderNumber AS LinkedSONumber,
-                            CAST(NULL AS INT) AS DeliveryID, CAST(NULL AS NVARCHAR(50)) AS LinkedDeliveryNumber,
+                            si.SalesOrderID, so.SONumber AS LinkedSONumber,
+                            si.DeliveryID, CAST(NULL AS NVARCHAR(50)) AS LinkedDeliveryNumber,
                             ISNULL(si.IsTaxable,1) AS IsTaxable, ISNULL(si.TaxRate,14) AS TaxRate,
                             si.PaymentTermID, pt.TermNameAr AS PaymentTermName,
                             si.DueDate,
                             si.CurrencyID, cur.CurrencyCode, cur.Symbol AS CurrencySymbol,
                             ISNULL(si.ExchangeRate,1) AS ExchangeRate,
                             si.WarehouseID, w.WarehouseNameAr,
-                            ISNULL(si.SubTotal,0) AS SubTotal, ISNULL(si.DiscountPercent,0) AS DiscountPercent, ISNULL(si.DiscountAmount,0) AS DiscountAmount,
+                            ISNULL(si.SubTotal,0) AS SubTotal, ISNULL(si.DiscountPercent,0) AS DiscountPercent,
+                            ISNULL(si.DiscountAmount,0) AS DiscountAmount,
                             ISNULL(si.TaxableAmount,0) AS TaxableAmount, ISNULL(si.TaxAmount,0) AS TaxAmount,
                             ISNULL(si.ShippingCost,0) AS ShippingCost, ISNULL(si.OtherCosts,0) AS OtherCosts,
                             ISNULL(si.TotalAmount,0) AS TotalAmount, ISNULL(si.PaidAmount,0) AS PaidAmount,
-                            si.SubmittedBy, si.SubmittedDate,
                             si.ApprovedBy, si.ApprovedDate,
                             app.FullNameAr AS ApprovedByName,
-                            si.RejectedBy, si.RejectedDate, si.RejectionReason,
-                            si.Notes,
-                            si.CreatedBy, si.CreatedDate, si.ModifiedDate
+                            si.Notes, si.CreatedBy, si.CreatedDate, si.ModifiedDate
                         FROM dbo.SalesInvoices si
                         INNER JOIN dbo.Customers c ON si.CustomerID = c.CustomerID
                         LEFT JOIN dbo.SalesOrders so ON si.SalesOrderID = so.SalesOrderID
@@ -107,13 +119,28 @@ namespace YKCoatings.Services
                         LEFT JOIN dbo.Warehouses w ON si.WarehouseID = w.WarehouseID
                         LEFT JOIN dbo.Employees app ON si.ApprovedBy = app.EmployeeID
                         WHERE si.InvoiceID = @ID";
-            return await connection.QueryFirstOrDefaultAsync<SalesInvoiceHeaderDto>(sql, new { ID = invoiceId });
+
+            var header = await connection.QueryFirstOrDefaultAsync<SalesInvoiceHeaderDto>(sql, new { ID = invoiceId });
+            if (header != null)
+            {
+                var (notes, rejectionReason) = SplitRejectionNote(header.Notes);
+                header.Notes = notes;
+                header.RejectionReason = rejectionReason;
+            }
+            return header;
         }
 
         // ==========================================
         // تفاصيل الفاتورة
         // ==========================================
-        public async Task<List<SalesInvoiceDetailDto>> GetInvoiceDetailsAsync(int invoiceId)
+        public async Task<List<SalesInvoiceDetailDto>> GetInvoiceDetailsAsync(int invoiceId, int userId)
+        {
+            await RequireInvoicePermissionAsync(userId, p => p.CanView,
+                "لا تملك صلاحية عرض تفاصيل فواتير المبيعات.");
+            return await GetInvoiceDetailsCoreAsync(invoiceId);
+        }
+
+        private async Task<List<SalesInvoiceDetailDto>> GetInvoiceDetailsCoreAsync(int invoiceId)
         {
             using var connection = CreateConnection();
             var sql = @"SELECT
@@ -122,18 +149,26 @@ namespace YKCoatings.Services
                             sid.UnitID, u.UnitNameAr AS UnitName,
                             sid.WarehouseID, w.WarehouseNameAr,
                             sid.Quantity, sid.UnitPrice,
-                            ISNULL(sid.DiscountPercent,0) AS DiscountPercent, ISNULL(sid.DiscountAmount,0) AS DiscountAmount,
-                            ISNULL(sid.LineTotal,0) AS LineTotal, ISNULL(sid.TaxRate,0) AS TaxRate, ISNULL(sid.TaxAmount,0) AS TaxAmount, ISNULL(sid.LineTotalWithTax, sid.LineTotal) AS LineTotalWithTax,
+                            ISNULL(sid.DiscountPercent,0) AS DiscountPercent,
+                            ISNULL(sid.DiscountAmount,0) AS DiscountAmount,
+                            ISNULL(sid.LineTotal,0) AS LineTotal,
+                            ISNULL(sid.TaxRate,0) AS TaxRate, ISNULL(sid.TaxAmount,0) AS TaxAmount,
+                            ISNULL(sid.LineTotalWithTax,sid.LineTotal) AS LineTotalWithTax,
                             sid.BatchNumber, sid.ExpiryDate,
-                            sid.DeliveryDetailID, sid.SalesOrderDetailID,
+                            CAST(NULL AS INT) AS DeliveryDetailID,
+                            sid.SODetailID AS SalesOrderDetailID,
                             sid.Notes,
-                            ISNULL((SELECT SUM(Quantity) FROM dbo.StockBalances WHERE ItemID=sid.ItemID AND WarehouseID=sid.WarehouseID),0) AS AvailableQty
+                            ISNULL((SELECT ib.AvailableQty
+                                    FROM dbo.InventoryBalance ib
+                                    WHERE ib.ItemID=sid.ItemID
+                                      AND ib.WarehouseID=COALESCE(sid.WarehouseID,si.WarehouseID)),0) AS AvailableQty
                         FROM dbo.SalesInvoiceDetails sid
+                        INNER JOIN dbo.SalesInvoices si ON si.InvoiceID=sid.InvoiceID
                         INNER JOIN dbo.Items i ON sid.ItemID = i.ItemID
                         INNER JOIN dbo.Units u ON sid.UnitID = u.UnitID
-                        LEFT JOIN dbo.Warehouses w ON sid.WarehouseID = w.WarehouseID
+                        LEFT JOIN dbo.Warehouses w ON w.WarehouseID=COALESCE(sid.WarehouseID,si.WarehouseID)
                         WHERE sid.InvoiceID = @ID
-                        ORDER BY sid.LineNumber";
+                        ORDER BY sid.LineNumber, sid.InvoiceDetailID";
             var result = await connection.QueryAsync<SalesInvoiceDetailDto>(sql, new { ID = invoiceId });
             return result.ToList();
         }
@@ -141,74 +176,289 @@ namespace YKCoatings.Services
         // ==========================================
         // توليد رقم الفاتورة
         // ==========================================
-        public async Task<string> GenerateInvoiceNumberAsync()
+        public async Task<string> GenerateInvoiceNumberAsync(int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanAdd,
+                "لا تملك صلاحية إنشاء فاتورة مبيعات.");
+
             using var connection = CreateConnection();
-            try
-            {
-                var sql = @"DECLARE @NextNum NVARCHAR(50);
-                            EXEC sp_GetNextNumber N'SI', @NextNum OUTPUT;
-                            SELECT @NextNum;";
-                var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"SI-{DateTime.Now:yyMMddHHmmss}";
-            }
-            catch { return $"SI-{DateTime.Now:yyMMddHHmmss}"; }
+            var sql = @"DECLARE @NextNum NVARCHAR(50);
+                        EXEC dbo.sp_GetNextNumber N'SI', @NextNum OUTPUT;
+                        SELECT @NextNum;";
+            var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
+            if (string.IsNullOrWhiteSpace(result))
+                throw new InvalidOperationException("تعذر توليد رقم فاتورة مبيعات فريد.");
+            return result;
         }
 
         // ==========================================
-        // إضافة فاتورة جديدة — مباشرة أو من أمر/تسليم
+        // أوامر البيع المعتمدة المتاحة لربط فاتورة جديدة
         // ==========================================
-        public async Task<int> InsertInvoiceAsync(SalesInvoiceHeaderDto header, int userId)
+        public async Task<List<SalesOrderHeaderDto>> GetApprovedSalesOrdersForInvoiceAsync(int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanAdd,
+                "لا تملك صلاحية إنشاء فاتورة مبيعات.");
+
             using var connection = CreateConnection();
-            var sql = @"INSERT INTO dbo.SalesInvoices
-                        (
-                            InvoiceNumber, InvoiceDate, CustomerID,
-                            SalesOrderID, DeliveryID,
-                            IsTaxable, TaxRate,
-                            PaymentTermID, CurrencyID, ExchangeRate, WarehouseID,
-                            DiscountPercent, ShippingCost, OtherCosts,
-                            InvoiceStatus, InvoiceSource, PaymentStatus,
-                            Notes, CreatedBy, CreatedDate
-                        )
-                        VALUES
-                        (
-                            @InvoiceNumber, @InvoiceDate, @CustomerID,
-                            NULLIF(@SalesOrderID, 0), NULL,
-                            @IsTaxable, @TaxRate,
-                            NULLIF(@PaymentTermID, 0), NULLIF(@CurrencyID, 0), @ExchangeRate, NULLIF(@WarehouseID,0),
-                            @DiscountPercent, @ShippingCost, @OtherCosts,
-                            1, @InvoiceSource, 1,
-                            @Notes, @UserID, GETDATE()
-                        );
-                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
+            const string sql = @"
+SELECT
+    so.SalesOrderID,
+    so.SONumber AS OrderNumber,
+    so.SODate AS OrderDate,
+    so.SOStatus AS OrderStatus,
+    CASE WHEN so.QuotationID IS NOT NULL THEN 2 ELSE 1 END AS OrderSource,
+    so.CustomerID,
+    c.CustomerNameAr,
+    c.CustomerCode,
+    so.PaymentTermID,
+    so.CurrencyID,
+    ISNULL(so.ExchangeRate,1) AS ExchangeRate,
+    so.WarehouseID
+FROM dbo.SalesOrders so
+INNER JOIN dbo.Customers c ON c.CustomerID=so.CustomerID
+WHERE so.SOStatus=3
+ORDER BY so.SODate DESC, so.SalesOrderID DESC;";
 
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+            var orders = await connection.QueryAsync<SalesOrderHeaderDto>(sql);
+            return orders.ToList();
+        }
+
+        // ==========================================
+        // سطور أمر البيع المعتمد المتاحة للتحميل إلى الفاتورة
+        // ==========================================
+        public async Task<List<SalesOrderLineForInvoiceDto>> GetSalesOrderLinesForInvoiceAsync(int salesOrderId, int userId)
+        {
+            await RequireInvoicePermissionAsync(userId, p => p.CanView && (p.CanAdd || p.CanEdit),
+                "لا تملك صلاحية تحميل سطور أمر البيع إلى فاتورة المبيعات.");
+            if (salesOrderId <= 0) throw new ArgumentOutOfRangeException(nameof(salesOrderId));
+
+            using var connection = CreateConnection();
+            const string sql = @"
+SELECT
+    sod.SODetailID AS SalesOrderDetailID,
+    sod.SalesOrderID,
+    so.SONumber,
+    sod.LineNumber,
+    sod.ItemID,
+    i.ItemCode,
+    i.ItemNameAr,
+    sod.UnitID,
+    u.UnitNameAr AS UnitName,
+    so.WarehouseID,
+    sod.OrderedQty,
+    ISNULL(sod.DeliveredQty,0) AS DeliveredQty,
+    ISNULL(sod.RemainingQty, sod.OrderedQty-ISNULL(sod.DeliveredQty,0)) AS RemainingQty,
+    ISNULL(sod.UnitPrice,0) AS UnitPrice,
+    ISNULL(sod.DiscountPercent,0) AS DiscountPercent
+FROM dbo.SalesOrders so
+INNER JOIN dbo.SalesOrderDetails sod ON sod.SalesOrderID=so.SalesOrderID
+INNER JOIN dbo.Items i ON i.ItemID=sod.ItemID
+INNER JOIN dbo.Units u ON u.UnitID=sod.UnitID
+WHERE so.SalesOrderID=@SalesOrderID AND so.SOStatus=3
+ORDER BY sod.LineNumber, sod.SODetailID;";
+
+            var lines = (await connection.QueryAsync<SalesOrderLineForInvoiceDto>(sql,
+                new { SalesOrderID = salesOrderId })).ToList();
+            foreach (var line in lines)
             {
-                header.InvoiceNumber,
-                header.InvoiceDate,
-                header.CustomerID,
-                header.SalesOrderID,
-                header.IsTaxable,
-                TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0,
-                header.PaymentTermID,
-                header.CurrencyID,
-                ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
-                header.WarehouseID,
-                header.DiscountPercent,
-                header.ShippingCost,
-                header.OtherCosts,
-                InvoiceSource = header.InvoiceSource == 0 ? (header.SalesOrderID.HasValue && header.SalesOrderID > 0 ? 2 : 3) : (header.InvoiceSource==1?3:header.InvoiceSource),
-                header.Notes,
-                UserID = userId
-            });
+                // لا نفترض أن كامل المتبقي أو كامل المطلوب هو كمية الفوترة.
+                line.IsSelected = false;
+                line.InvoiceQty = 0;
+                line.InvoiceUnitPrice = line.UnitPrice;
+            }
+            return lines;
+        }
 
-            try { await connection.ExecuteAsync("EXEC dbo.sp_CalcSalesInvoiceDueDate @InvoiceID", new { InvoiceID = newId }); } catch { }
+        // ==========================================
+        // إضافة فاتورة جديدة — أمر البيع يحفظ الرأس والسطور في معاملة واحدة
+        // ==========================================
+        public Task<int> InsertInvoiceAsync(SalesInvoiceHeaderDto header, int userId)
+            => InsertInvoiceCoreAsync(header, null, userId);
+
+        public Task<int> InsertInvoiceFromSalesOrderAsync(
+            SalesInvoiceHeaderDto header,
+            IReadOnlyCollection<SalesOrderLineForInvoiceDto> orderLines,
+            int userId)
+            => InsertInvoiceCoreAsync(header, orderLines, userId);
+
+        private async Task<int> InsertInvoiceCoreAsync(
+            SalesInvoiceHeaderDto header,
+            IReadOnlyCollection<SalesOrderLineForInvoiceDto>? orderLines,
+            int userId)
+        {
+            await RequireInvoicePermissionAsync(userId, p => p.CanAdd,
+                "لا تملك صلاحية إنشاء فاتورة مبيعات.");
+            if (header.CustomerID <= 0) throw new ArgumentException("اختر العميل.", nameof(header));
+            if (string.IsNullOrWhiteSpace(header.InvoiceNumber)) throw new ArgumentException("رقم الفاتورة مطلوب.", nameof(header));
+            if (header.DiscountPercent < 0 || header.DiscountPercent > 100)
+                throw new ArgumentOutOfRangeException(nameof(header), "نسبة الخصم يجب أن تكون بين صفر و100.");
+            if (header.TaxRate < 0 || header.TaxRate > 100)
+                throw new ArgumentOutOfRangeException(nameof(header), "نسبة الضريبة يجب أن تكون بين صفر و100.");
+            if (header.InvoiceSource == 1 || header.DeliveryID.GetValueOrDefault() > 0)
+                throw new InvalidOperationException("إنشاء فاتورة من إذن تسليم غير مدعوم بالمخطط ومسار الترحيل الحالي؛ استخدم الفاتورة المباشرة.");
+
+            var invoiceSource = header.SalesOrderID.GetValueOrDefault() > 0 ? 2 : header.InvoiceSource;
+            if (invoiceSource == 0) invoiceSource = 3;
+            if (invoiceSource is not (2 or 3))
+                throw new InvalidOperationException("مصدر الفاتورة غير مدعوم؛ اختر فاتورة مباشرة أو أمراً معتمداً.");
+            if (invoiceSource == 2 && header.SalesOrderID.GetValueOrDefault() <= 0)
+                throw new InvalidOperationException("الفاتورة من أمر بيع تتطلب اختيار أمر بيع معتمداً؛ استخدم الفاتورة المباشرة إذا لم يوجد أمر.");
+
+            var selectedLines = orderLines?.Where(line => line.IsSelected).ToList();
+            if (invoiceSource == 2)
+            {
+                if (orderLines is null)
+                    throw new InvalidOperationException("حمّل سطور أمر البيع وحدد الأصناف وكميات الفوترة قبل إنشاء الفاتورة.");
+                if (selectedLines is null || selectedLines.Count == 0)
+                    throw new InvalidOperationException("حدد سطراً واحداً على الأقل من أمر البيع.");
+                if (selectedLines.Any(line => line.SalesOrderDetailID <= 0 || line.InvoiceQty <= 0))
+                    throw new InvalidOperationException("أدخل كمية فوترة أكبر من صفر لكل سطر محدد.");
+                if (selectedLines.Select(line => line.SalesOrderDetailID).Distinct().Count() != selectedLines.Count)
+                    throw new InvalidOperationException("لا يمكن اختيار سطر أمر البيع نفسه أكثر من مرة في عملية الإنشاء.");
+            }
+            else if (selectedLines?.Count > 0)
+            {
+                throw new InvalidOperationException("لا يمكن ربط سطور أمر بيع بفاتورة مباشرة.");
+            }
+
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            var insertedDetailIds = new List<int>();
+            int newId;
+            try
+            {
+                List<SalesOrderLineForInvoiceDto> storedOrderLines = new();
+                if (invoiceSource == 2)
+                {
+                    var orderId = header.SalesOrderID!.Value;
+                    var order = await connection.QueryFirstOrDefaultAsync<(int CustomerID, int SOStatus)>(
+                        @"SELECT CustomerID, SOStatus
+                          FROM dbo.SalesOrders WITH (UPDLOCK, HOLDLOCK)
+                          WHERE SalesOrderID=@SalesOrderID",
+                        new { SalesOrderID = orderId }, transaction);
+                    if (order.CustomerID <= 0)
+                        throw new KeyNotFoundException("أمر البيع المرتبط غير موجود.");
+                    if (order.SOStatus != 3)
+                        throw new InvalidOperationException("لا يمكن إنشاء الفاتورة من أمر بيع غير معتمد.");
+                    if (order.CustomerID != header.CustomerID)
+                        throw new InvalidOperationException("العميل المحدد لا يطابق عميل أمر البيع.");
+
+                    var orderDetailIds = selectedLines!.Select(line => line.SalesOrderDetailID).ToArray();
+                    storedOrderLines = (await connection.QueryAsync<SalesOrderLineForInvoiceDto>(
+                        @"SELECT
+                              sod.SODetailID AS SalesOrderDetailID,
+                              sod.SalesOrderID,
+                              sod.LineNumber,
+                              sod.ItemID,
+                              i.ItemCode,
+                              i.ItemNameAr,
+                              sod.UnitID,
+                              u.UnitNameAr AS UnitName,
+                              so.WarehouseID,
+                              sod.OrderedQty,
+                              ISNULL(sod.DeliveredQty,0) AS DeliveredQty,
+                              ISNULL(sod.RemainingQty, sod.OrderedQty-ISNULL(sod.DeliveredQty,0)) AS RemainingQty,
+                              ISNULL(sod.UnitPrice,0) AS UnitPrice,
+                              ISNULL(sod.DiscountPercent,0) AS DiscountPercent
+                          FROM dbo.SalesOrderDetails sod WITH (UPDLOCK, HOLDLOCK)
+                          INNER JOIN dbo.SalesOrders so WITH (UPDLOCK, HOLDLOCK) ON so.SalesOrderID=sod.SalesOrderID
+                          INNER JOIN dbo.Items i ON i.ItemID=sod.ItemID
+                          INNER JOIN dbo.Units u ON u.UnitID=sod.UnitID
+                          WHERE sod.SalesOrderID=@SalesOrderID AND so.SOStatus=3
+                            AND sod.SODetailID IN @OrderDetailIDs
+                          ORDER BY sod.LineNumber, sod.SODetailID",
+                        new { SalesOrderID = orderId, OrderDetailIDs = orderDetailIds }, transaction)).ToList();
+
+                    if (storedOrderLines.Count != selectedLines.Count)
+                        throw new InvalidOperationException("تغيرت سطور أمر البيع أو لم تعد تتبع الأمر المحدد؛ أعد تحميل الأمر.");
+                }
+
+                var sql = @"INSERT INTO dbo.SalesInvoices
+                            (InvoiceNumber, InvoiceDate, CustomerID, SalesOrderID, DeliveryID,
+                             IsTaxable, TaxRate, PaymentTermID, CurrencyID, ExchangeRate, WarehouseID,
+                             DiscountPercent, ShippingCost, OtherCosts, InvoiceStatus, InvoiceSource,
+                             PaymentStatus, Notes, CreatedBy, CreatedDate)
+                            VALUES
+                            (@InvoiceNumber, @InvoiceDate, @CustomerID, NULLIF(@SalesOrderID,0), NULL,
+                             @IsTaxable, @TaxRate, NULLIF(@PaymentTermID,0), NULLIF(@CurrencyID,0),
+                             @ExchangeRate, NULLIF(@WarehouseID,0), @DiscountPercent, @ShippingCost,
+                             @OtherCosts, 1, @InvoiceSource, 1, @Notes, @UserID, GETDATE());
+                            SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    header.InvoiceNumber,
+                    header.InvoiceDate,
+                    header.CustomerID,
+                    header.SalesOrderID,
+                    header.IsTaxable,
+                    TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0,
+                    header.PaymentTermID,
+                    header.CurrencyID,
+                    ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
+                    header.WarehouseID,
+                    header.DiscountPercent,
+                    header.ShippingCost,
+                    header.OtherCosts,
+                    InvoiceSource = invoiceSource,
+                    header.Notes,
+                    UserID = userId
+                }, transaction);
+
+                if (invoiceSource == 2)
+                {
+                    var requestedById = selectedLines!.ToDictionary(line => line.SalesOrderDetailID);
+                    var taxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0;
+                    var lineNumber = 0;
+                    foreach (var orderLine in storedOrderLines)
+                    {
+                        var request = requestedById[orderLine.SalesOrderDetailID];
+                        if (orderLine.UnitPrice < 0 || orderLine.DiscountPercent < 0 || orderLine.DiscountPercent > 100)
+                            throw new InvalidOperationException($"سعر أو خصم سطر أمر البيع {orderLine.SalesOrderDetailID} غير صالح.");
+
+                        await ResolveToPrimaryUnitFactorAsync(connection, transaction, orderLine.ItemID, orderLine.UnitID);
+                        var invoiceLine = new SalesInvoiceDetailEditDto
+                        {
+                            InvoiceID = newId,
+                            LineNumber = ++lineNumber,
+                            ItemID = orderLine.ItemID,
+                            UnitID = orderLine.UnitID,
+                            WarehouseID = header.WarehouseID ?? orderLine.WarehouseID,
+                            Quantity = request.InvoiceQty,
+                            UnitPrice = orderLine.UnitPrice,
+                            DiscountPercent = orderLine.DiscountPercent,
+                            TaxRate = taxRate,
+                            IsTaxable = header.IsTaxable,
+                            SalesOrderDetailID = orderLine.SalesOrderDetailID
+                        };
+                        insertedDetailIds.Add(await InsertInvoiceDetailCoreAsync(
+                            connection, transaction, invoiceLine, newId, lineNumber, header.IsTaxable, taxRate));
+                    }
+                }
+
+                if (insertedDetailIds.Count > 0)
+                    await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID",
+                        new { InvoiceID = newId }, transaction);
+                await RecalculateSalesInvoiceDueDateAsync(connection, transaction, newId);
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 1, "SalesInvoices", newId.ToString(),
                 moduleName: "SCR_SINV",
-                description: $"إنشاء فاتورة مبيعات: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")}");
-
+                description: invoiceSource == 2
+                    ? $"إنشاء فاتورة مبيعات من أمر بيع: {header.InvoiceNumber}، عدد السطور {insertedDetailIds.Count}"
+                    : $"إنشاء فاتورة مبيعات: {header.InvoiceNumber} {(header.IsTaxable ? "مع ضريبة" : "بدون ضريبة")}");
+            foreach (var detailId in insertedDetailIds)
+            {
+                await _audit.WriteAuditLogAsync(userId, 1, "SalesInvoiceDetails", detailId.ToString(),
+                    moduleName: "SCR_SINV", description: $"ربط سطر أمر بيع بتفاصيل فاتورة المبيعات رقم {newId}");
+            }
             return newId;
         }
 
@@ -217,136 +467,252 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateInvoiceAsync(SalesInvoiceHeaderDto header, int userId)
         {
+            if (header.InvoiceID <= 0) throw new ArgumentException("رقم الفاتورة غير صالح.", nameof(header));
+            if (header.CustomerID <= 0) throw new ArgumentException("اختر العميل.", nameof(header));
+            if (header.DiscountPercent < 0 || header.DiscountPercent > 100)
+                throw new ArgumentOutOfRangeException(nameof(header), "نسبة الخصم يجب أن تكون بين صفر و100.");
+            if (header.TaxRate < 0 || header.TaxRate > 100)
+                throw new ArgumentOutOfRangeException(nameof(header), "نسبة الضريبة يجب أن تكون بين صفر و100.");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT InvoiceStatus FROM dbo.SalesInvoices WHERE InvoiceID = @ID",
-                new { ID = header.InvoiceID });
-
-            if (status != 1)
-                throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
-
-            var sql = @"UPDATE dbo.SalesInvoices SET
-                            InvoiceDate = @InvoiceDate,
-                            CustomerID = @CustomerID,
-                            IsTaxable = @IsTaxable,
-                            TaxRate = @TaxRate,
-                            PaymentTermID = NULLIF(@PaymentTermID, 0),
-                            CurrencyID = NULLIF(@CurrencyID, 0),
-                            ExchangeRate = @ExchangeRate,
-                            WarehouseID = NULLIF(@WarehouseID,0),
-                            DiscountPercent = @DiscountPercent,
-                            ShippingCost = @ShippingCost,
-                            OtherCosts = @OtherCosts,
-                            Notes = @Notes,
-                            ModifiedBy = @UserID,
-                            ModifiedDate = GETDATE()
-                        WHERE InvoiceID = @InvoiceID";
-
-            await connection.ExecuteAsync(sql, new
-            {
-                header.InvoiceID,
-                header.InvoiceDate,
-                header.CustomerID,
-                header.IsTaxable,
-                TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0,
-                header.PaymentTermID,
-                header.CurrencyID,
-                ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
-                header.WarehouseID,
-                header.DiscountPercent,
-                header.ShippingCost,
-                header.OtherCosts,
-                header.Notes,
-                UserID = userId
-            });
-
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
             try
             {
-                await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID", new { InvoiceID = header.InvoiceID });
-                await connection.ExecuteAsync("EXEC dbo.sp_CalcSalesInvoiceDueDate @InvoiceID", new { InvoiceID = header.InvoiceID });
+                var permissions = await GetCurrentInvoicePermissionsAsync(userId);
+                await EnsureCanEditDraftAsync(connection, transaction, header.InvoiceID, userId, permissions);
+
+                var current = await connection.QueryFirstOrDefaultAsync<(int InvoiceStatus, string? Notes, int? SalesOrderID, int InvoiceSource)>(
+                    @"SELECT InvoiceStatus, Notes, SalesOrderID, ISNULL(InvoiceSource,3) AS InvoiceSource
+                      FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
+                      WHERE InvoiceID=@ID",
+                    new { ID = header.InvoiceID }, transaction);
+                if (current.InvoiceStatus != 1)
+                    throw new InvalidOperationException("لا يمكن تعديل فاتورة ليست في حالة مسودة.");
+                if (current.InvoiceSource == 1)
+                    throw new InvalidOperationException("فاتورة إذن التسليم غير مدعومة بمسار الترحيل الحالي؛ لا يمكن تعديلها.");
+                if (current.InvoiceSource == 2 && current.SalesOrderID.GetValueOrDefault() <= 0)
+                    throw new InvalidOperationException("الفاتورة المرتبطة بأمر بيع لا تحتوي رقم الأمر.");
+                if (current.SalesOrderID.GetValueOrDefault() > 0)
+                {
+                    var orderCustomerId = await connection.QueryFirstOrDefaultAsync<int?>(
+                        "SELECT CustomerID FROM dbo.SalesOrders WHERE SalesOrderID=@SalesOrderID",
+                        new { current.SalesOrderID }, transaction);
+                    var orderCustomerIdValue = orderCustomerId.GetValueOrDefault();
+                    if (orderCustomerIdValue <= 0 || orderCustomerIdValue != header.CustomerID)
+                        throw new InvalidOperationException("لا يمكن تغيير عميل الفاتورة بما يخالف عميل أمر البيع المرتبط.");
+                }
+
+                var previousRejection = SplitRejectionNote(current.Notes).RejectionReason;
+                var storedNotes = CombineNotesAndRejection(header.Notes, previousRejection);
+                var affected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices SET
+                          InvoiceDate=@InvoiceDate,
+                          CustomerID=@CustomerID,
+                          IsTaxable=@IsTaxable,
+                          TaxRate=@TaxRate,
+                          PaymentTermID=NULLIF(@PaymentTermID,0),
+                          CurrencyID=NULLIF(@CurrencyID,0),
+                          ExchangeRate=@ExchangeRate,
+                          WarehouseID=NULLIF(@WarehouseID,0),
+                          DiscountPercent=@DiscountPercent,
+                          ShippingCost=@ShippingCost,
+                          OtherCosts=@OtherCosts,
+                          Notes=@Notes,
+                          ModifiedBy=@UserID,
+                          ModifiedDate=GETDATE()
+                      WHERE InvoiceID=@InvoiceID AND InvoiceStatus=1",
+                    new
+                    {
+                        header.InvoiceID,
+                        header.InvoiceDate,
+                        header.CustomerID,
+                        header.IsTaxable,
+                        TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0,
+                        header.PaymentTermID,
+                        header.CurrencyID,
+                        ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
+                        header.WarehouseID,
+                        header.DiscountPercent,
+                        header.ShippingCost,
+                        header.OtherCosts,
+                        Notes = storedNotes,
+                        UserID = userId
+                    }, transaction);
+
+                if (affected != 1) throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الحفظ.");
+
+                await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoiceDetails
+                      SET TaxRate=@TaxRate
+                      WHERE InvoiceID=@InvoiceID",
+                    new
+                    {
+                        InvoiceID = header.InvoiceID,
+                        TaxRate = header.IsTaxable ? (header.TaxRate <= 0 ? 14 : header.TaxRate) : 0
+                    }, transaction);
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID",
+                    new { InvoiceID = header.InvoiceID }, transaction);
+                await RecalculateSalesInvoiceDueDateAsync(connection, transaction, header.InvoiceID);
+
+                transaction.Commit();
             }
-            catch { }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", header.InvoiceID.ToString(),
-                moduleName: "SCR_SINV",
-                description: $"تعديل فاتورة مبيعات: {header.InvoiceNumber}");
+                moduleName: "SCR_SINV", description: $"تعديل فاتورة مبيعات: {header.InvoiceNumber}");
         }
 
         // ==========================================
-        // إضافة سطر — مع التحقق من الرصيد
+        // إدراج تفصيل فاتورة ضمن المعاملة الحالية
+        // ==========================================
+        private async Task<int> InsertInvoiceDetailCoreAsync(
+            SqlConnection connection,
+            IDbTransaction transaction,
+            SalesInvoiceDetailEditDto detail,
+            int invoiceId,
+            int lineNumber,
+            bool isTaxable,
+            decimal invoiceTaxRate)
+        {
+            if (detail.Quantity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(detail), "أدخل كمية أكبر من صفر.");
+            if (decimal.Round(detail.Quantity, 4) != detail.Quantity)
+                throw new ArgumentOutOfRangeException(nameof(detail), "دقة الكمية لا تتجاوز أربع خانات عشرية حسب مخطط الفاتورة.");
+            if (detail.UnitPrice < 0)
+                throw new ArgumentOutOfRangeException(nameof(detail), "سعر الوحدة لا يمكن أن يكون سالباً.");
+            if (detail.DiscountPercent < 0 || detail.DiscountPercent > 100)
+                throw new ArgumentOutOfRangeException(nameof(detail), "نسبة الخصم يجب أن تكون بين صفر و100.");
+
+            var discountAmount = detail.UnitPrice * detail.Quantity * detail.DiscountPercent / 100m;
+            var lineTotal = detail.UnitPrice * detail.Quantity - discountAmount;
+            var taxRate = isTaxable ? Math.Max(0, invoiceTaxRate) : 0;
+            var taxAmount = isTaxable ? lineTotal * taxRate / 100m : 0;
+            var lineTotalWithTax = lineTotal + taxAmount;
+
+            return await connection.ExecuteScalarAsync<int>(
+                @"INSERT INTO dbo.SalesInvoiceDetails
+                  (InvoiceID, LineNumber, ItemID, UnitID, WarehouseID, Quantity, UnitPrice,
+                   DiscountPercent, DiscountAmount, LineTotal, TaxRate, TaxAmount, LineTotalWithTax,
+                   BatchNumber, ExpiryDate, SODetailID, Notes)
+                  VALUES
+                  (@InvoiceID, @LineNumber, @ItemID, @UnitID, NULLIF(@WarehouseID,0), @Quantity, @UnitPrice,
+                   @DiscountPercent, @DiscountAmount, @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax,
+                   @BatchNumber, @ExpiryDate, NULLIF(@SODetailID,0), @Notes);
+                  SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                new
+                {
+                    InvoiceID = invoiceId,
+                    LineNumber = lineNumber,
+                    detail.ItemID,
+                    detail.UnitID,
+                    detail.WarehouseID,
+                    detail.Quantity,
+                    detail.UnitPrice,
+                    detail.DiscountPercent,
+                    DiscountAmount = discountAmount,
+                    LineTotal = lineTotal,
+                    TaxRate = taxRate,
+                    TaxAmount = taxAmount,
+                    LineTotalWithTax = lineTotalWithTax,
+                    detail.BatchNumber,
+                    detail.ExpiryDate,
+                    SODetailID = detail.SalesOrderDetailID,
+                    detail.Notes
+                }, transaction);
+        }
+
+        // ==========================================
+        // إضافة سطر — مع صلاحيات الخدمة وربطه بسطر الأمر عند الاقتضاء
         // ==========================================
         public async Task<int> InsertDetailAsync(SalesInvoiceDetailEditDto detail, int userId)
         {
+            if (detail.InvoiceID <= 0) throw new ArgumentException("رقم الفاتورة غير صالح.", nameof(detail));
+            if (detail.ItemID <= 0) throw new ArgumentException("اختر الصنف.", nameof(detail));
+            if (detail.UnitID <= 0) throw new ArgumentException("اختر الوحدة.", nameof(detail));
+            if (detail.Quantity <= 0) throw new ArgumentOutOfRangeException(nameof(detail), "أدخل كمية أكبر من صفر.");
+            if (detail.DeliveryDetailID.GetValueOrDefault() > 0)
+                throw new InvalidOperationException("ربط سطر إذن التسليم غير مدعوم في المخطط الحالي.");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT InvoiceStatus FROM dbo.SalesInvoices WHERE InvoiceID = @ID",
-                new { ID = detail.InvoiceID });
-
-            if (status != 1)
-                throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
-
-            if (detail.ItemID <= 0) throw new Exception("اختر الصنف");
-            if (detail.UnitID <= 0) throw new Exception("اختر الوحدة");
-            if (detail.Quantity <= 0) throw new Exception("أدخل الكمية");
-
-            var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
-                "SELECT ISNULL(MAX(LineNumber), 0) FROM dbo.SalesInvoiceDetails WHERE InvoiceID = @ID",
-                new { ID = detail.InvoiceID });
-
-            detail.LineNumber = maxLine + 1;
-
-            // حساب المبالغ حسب IsTaxable
-            var discountAmt = detail.UnitPrice * detail.Quantity * detail.DiscountPercent / 100;
-            var lineTotal = detail.UnitPrice * detail.Quantity - discountAmt;
-            var taxAmt = detail.IsTaxable ? lineTotal * detail.TaxRate / 100 : 0;
-            var lineWithTax = lineTotal + taxAmt;
-
-            var sql = @"INSERT INTO dbo.SalesInvoiceDetails
-                        (
-                            InvoiceID, LineNumber, ItemID, UnitID, WarehouseID,
-                            Quantity, UnitPrice, DiscountPercent, DiscountAmount,
-                            LineTotal, TaxRate, TaxAmount, LineTotalWithTax,
-                            BatchNumber, ExpiryDate,
-                            DeliveryDetailID, SalesOrderDetailID, Notes
-                        )
-                        VALUES
-                        (
-                            @InvoiceID, @LineNumber, @ItemID, @UnitID, NULLIF(@WarehouseID, 0),
-                            @Quantity, @UnitPrice, @DiscountPercent, @DiscountAmount,
-                            @LineTotal, @TaxRate, @TaxAmount, @LineTotalWithTax,
-                            @BatchNumber, @ExpiryDate,
-                            @DeliveryDetailID, @SalesOrderDetailID, @Notes
-                        );
-                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            int newId;
+            try
             {
-                detail.InvoiceID,
-                detail.LineNumber,
-                detail.ItemID,
-                detail.UnitID,
-                detail.WarehouseID,
-                detail.Quantity,
-                detail.UnitPrice,
-                detail.DiscountPercent,
-                DiscountAmount = discountAmt,
-                LineTotal = lineTotal,
-                TaxRate = detail.IsTaxable ? detail.TaxRate : 0,
-                TaxAmount = taxAmt,
-                LineTotalWithTax = lineWithTax,
-                detail.BatchNumber,
-                detail.ExpiryDate,
-                detail.DeliveryDetailID,
-                detail.SalesOrderDetailID,
-                detail.Notes
-            });
+                var permissions = await GetCurrentInvoicePermissionsAsync(userId);
+                await EnsureCanEditDraftAsync(connection, transaction, detail.InvoiceID, userId, permissions);
 
-            try { await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID", new { InvoiceID = detail.InvoiceID }); } catch { }
+                var invoice = await connection.QueryFirstOrDefaultAsync<(
+                    int InvoiceStatus, int? SalesOrderID, int InvoiceSource, bool IsTaxable, decimal TaxRate)>(
+                    @"SELECT InvoiceStatus, SalesOrderID, ISNULL(InvoiceSource,3) AS InvoiceSource,
+                             ISNULL(IsTaxable,1) AS IsTaxable, ISNULL(TaxRate,14) AS TaxRate
+                      FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
+                      WHERE InvoiceID=@ID",
+                    new { ID = detail.InvoiceID }, transaction);
+                if (invoice.InvoiceStatus != 1)
+                    throw new InvalidOperationException("لا يمكن تعديل فاتورة ليست في حالة مسودة.");
+                if (invoice.InvoiceSource == 2 && invoice.SalesOrderID.GetValueOrDefault() <= 0)
+                    throw new InvalidOperationException("الفاتورة من أمر بيع بلا أمر مرتبط؛ لا يمكن إضافة سطر غير مربوط.");
+
+                var isOrderInvoice = invoice.SalesOrderID.GetValueOrDefault() > 0;
+                if (isOrderInvoice)
+                {
+                    if (detail.SalesOrderDetailID.GetValueOrDefault() <= 0)
+                        throw new InvalidOperationException("اختر سطر أمر البيع لربط تفصيل الفاتورة به.");
+
+                    var orderLine = await connection.QueryFirstOrDefaultAsync<(
+                        int SODetailID, int ItemID, int UnitID, decimal UnitPrice, decimal DiscountPercent)>(
+                        @"SELECT sod.SODetailID, sod.ItemID, sod.UnitID,
+                                 ISNULL(sod.UnitPrice,0) AS UnitPrice,
+                                 ISNULL(sod.DiscountPercent,0) AS DiscountPercent
+                          FROM dbo.SalesOrderDetails sod WITH (UPDLOCK, HOLDLOCK)
+                          INNER JOIN dbo.SalesOrders so WITH (UPDLOCK, HOLDLOCK)
+                              ON so.SalesOrderID=sod.SalesOrderID AND so.SOStatus=3
+                          WHERE sod.SODetailID=@SODetailID AND sod.SalesOrderID=@SalesOrderID",
+                        new { SODetailID = detail.SalesOrderDetailID, SalesOrderID = invoice.SalesOrderID }, transaction);
+
+                    if (orderLine.SODetailID <= 0)
+                        throw new InvalidOperationException("سطر أمر البيع لا يتبع أمر البيع المرتبط بهذه الفاتورة.");
+                    if (orderLine.ItemID != detail.ItemID || orderLine.UnitID != detail.UnitID)
+                        throw new InvalidOperationException("الصنف والوحدة يجب أن يطابقا سطر أمر البيع المرتبط.");
+
+                    // السعر والخصم من السطر الأصلي؛ لا يقبل تعديل صامت لقيم الأمر من واجهة الفاتورة.
+                    detail.UnitPrice = orderLine.UnitPrice;
+                    detail.DiscountPercent = orderLine.DiscountPercent;
+                }
+                else if (detail.SalesOrderDetailID.HasValue)
+                {
+                    throw new InvalidOperationException("لا يمكن ربط سطر أمر بيع بفاتورة مباشرة.");
+                }
+
+                await ResolveToPrimaryUnitFactorAsync(connection, transaction, detail.ItemID, detail.UnitID);
+                var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
+                    "SELECT ISNULL(MAX(LineNumber),0) FROM dbo.SalesInvoiceDetails WHERE InvoiceID=@ID",
+                    new { ID = detail.InvoiceID }, transaction);
+                detail.LineNumber = maxLine + 1;
+
+                newId = await InsertInvoiceDetailCoreAsync(
+                    connection, transaction, detail, detail.InvoiceID, detail.LineNumber,
+                    invoice.IsTaxable, invoice.TaxRate);
+                await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID",
+                    new { InvoiceID = detail.InvoiceID }, transaction);
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 1, "SalesInvoiceDetails", newId.ToString(),
-                moduleName: "SCR_SINV",
-                description: $"إضافة سطر في فاتورة مبيعات رقم {detail.InvoiceID}");
-
+                moduleName: "SCR_SINV", description: $"إضافة سطر في فاتورة مبيعات رقم {detail.InvoiceID}");
             return newId;
         }
 
@@ -355,25 +721,45 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanDelete,
+                "لا تملك صلاحية حذف سطر من فاتورة المبيعات.");
+
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(int InvoiceID, int InvoiceStatus)>(
-                @"SELECT sid.InvoiceID, si.InvoiceStatus
-                  FROM dbo.SalesInvoiceDetails sid
-                  INNER JOIN dbo.SalesInvoices si ON sid.InvoiceID = si.InvoiceID
-                  WHERE sid.InvoiceDetailID = @ID",
-                new { ID = detailId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            int invoiceId;
+            try
+            {
+                var info = await connection.QueryFirstOrDefaultAsync<(int InvoiceID, int InvoiceStatus)>(
+                    @"SELECT sid.InvoiceID, si.InvoiceStatus
+                      FROM dbo.SalesInvoiceDetails sid WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.SalesInvoices si WITH (UPDLOCK, HOLDLOCK) ON si.InvoiceID=sid.InvoiceID
+                      WHERE sid.InvoiceDetailID=@ID",
+                    new { ID = detailId }, transaction);
 
-            if (info.InvoiceID == 0) throw new Exception("السطر غير موجود");
-            if (info.InvoiceStatus != 1) throw new Exception("لا يمكن حذف سطر من فاتورة ليست مسودة");
+                if (info.InvoiceID == 0) throw new KeyNotFoundException("سطر الفاتورة غير موجود.");
+                if (info.InvoiceStatus != 1)
+                    throw new InvalidOperationException("لا يمكن حذف سطر من فاتورة ليست في حالة مسودة.");
 
-            await connection.ExecuteAsync(
-                "DELETE FROM dbo.SalesInvoiceDetails WHERE InvoiceDetailID = @ID",
-                new { ID = detailId });
+                var affected = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.SalesInvoiceDetails WHERE InvoiceDetailID=@ID AND InvoiceID=@InvoiceID",
+                    new { ID = detailId, InvoiceID = info.InvoiceID }, transaction);
+                if (affected != 1) throw new InvalidOperationException("تعذر حذف سطر الفاتورة.");
 
-            try { await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID", new { InvoiceID = info.InvoiceID }); } catch { }
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID",
+                    new { InvoiceID = info.InvoiceID }, transaction);
+                invoiceId = info.InvoiceID;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 3, "SalesInvoiceDetails", detailId.ToString(),
-                moduleName: "SCR_SINV", description: "حذف سطر من فاتورة مبيعات");
+                moduleName: "SCR_SINV", description: $"حذف سطر من فاتورة مبيعات رقم {invoiceId}");
         }
 
         // ==========================================
@@ -390,45 +776,78 @@ namespace YKCoatings.Services
         public async Task SubmitForApprovalAsync(int invoiceId, int userId, int? employeeId = null)
         {
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, int DetailCount)>(
-                @"SELECT si.InvoiceNumber, si.InvoiceStatus,
-                    (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID = si.InvoiceID)
-                  FROM dbo.SalesInvoices si WHERE si.InvoiceID = @ID",
-                new { ID = invoiceId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            string invoiceNumber;
+            try
+            {
+                var permissions = await GetCurrentInvoicePermissionsAsync(userId);
+                await EnsureCanEditDraftAsync(connection, transaction, invoiceId, userId, permissions);
 
-            if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
-            if (info.InvoiceStatus != 1) throw new Exception("لا يمكن إرسال فاتورة غير مسودة");
-            if (info.DetailCount == 0) throw new Exception("لا يمكن إرسال فاتورة بدون أصناف");
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string? InvoiceNumber, int InvoiceStatus, int InvoiceSource, int? SalesOrderID,
+                    int DetailCount, int MissingWarehouseCount, int InvalidOrderLineCount)>(
+                    @"SELECT si.InvoiceNumber, si.InvoiceStatus,
+                             ISNULL(si.InvoiceSource,3) AS InvoiceSource, si.SalesOrderID,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID) AS DetailCount,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d
+                              WHERE d.InvoiceID=si.InvoiceID AND COALESCE(d.WarehouseID,si.WarehouseID) IS NULL) AS MissingWarehouseCount,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d
+                              WHERE d.InvoiceID=si.InvoiceID
+                                AND (d.SODetailID IS NULL OR NOT EXISTS
+                                     (SELECT 1 FROM dbo.SalesOrderDetails sod
+                                      WHERE sod.SODetailID=d.SODetailID
+                                        AND sod.SalesOrderID=si.SalesOrderID
+                                        AND sod.ItemID=d.ItemID AND sod.UnitID=d.UnitID))) AS InvalidOrderLineCount
+                      FROM dbo.SalesInvoices si WITH (UPDLOCK, HOLDLOCK)
+                      WHERE si.InvoiceID=@ID",
+                    new { ID = invoiceId }, transaction);
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.SalesInvoices SET
-                    InvoiceStatus = 2,
-                    SubmittedBy = @EmployeeID,
-                    SubmittedDate = GETDATE(),
-                    ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                  WHERE InvoiceID = @ID",
-                new { ID = invoiceId, EmployeeID = employeeId, UserID = userId });
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
+                if (info.InvoiceStatus != 1) throw new InvalidOperationException("لا يمكن إرسال فاتورة ليست في حالة مسودة.");
+                if (info.DetailCount == 0) throw new InvalidOperationException("لا يمكن إرسال فاتورة بدون أصناف.");
+                if (info.MissingWarehouseCount > 0)
+                    throw new InvalidOperationException("اختر مخزناً للفواتير أو لسطورها قبل إرسالها للاعتماد.");
+                if (info.InvoiceSource == 2 && info.SalesOrderID.GetValueOrDefault() <= 0)
+                    throw new InvalidOperationException("الفاتورة من أمر بيع بلا أمر مرتبط؛ لا يمكن إرسالها للاعتماد.");
+                if (info.SalesOrderID.GetValueOrDefault() > 0 && info.InvalidOrderLineCount > 0)
+                    throw new InvalidOperationException("يوجد سطر في فاتورة أمر البيع غير مرتبط بسطر مطابق من الأمر؛ أصلح الربط قبل الإرسال.");
+
+                var affected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices
+                      SET InvoiceStatus=2, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE InvoiceID=@ID AND InvoiceStatus=1",
+                    new { ID = invoiceId, UserID = userId }, transaction);
+                if (affected != 1) throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الإرسال.");
+
+                invoiceNumber = info.InvoiceNumber;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             try
             {
                 var approverRoles = await connection.QueryAsync<int>(
                     @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                      WHERE sm.ModuleCode = N'SCR_SINV' AND rp.CanApprove = 1");
+                      INNER JOIN dbo.RolePermissions rp ON r.RoleID=rp.RoleID
+                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID=sm.ModuleID
+                      WHERE sm.ModuleCode=N'SCR_SINV' AND rp.CanApprove=1");
                 foreach (var roleId in approverRoles)
                 {
                     await _notif.CreateNotificationAsync(3,
-                        "فاتورة مبيعات بانتظار الاعتماد 📄",
-                        $"فاتورة المبيعات رقم {info.InvoiceNumber} بانتظار الاعتماد",
+                        "فاتورة مبيعات بانتظار الاعتماد",
+                        $"فاتورة المبيعات رقم {invoiceNumber} بانتظار الاعتماد",
                         1, null, roleId, "SCR_SINV", invoiceId, userId);
                 }
             }
             catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
-                moduleName: "SCR_SINV",
-                description: $"إرسال فاتورة مبيعات للاعتماد: {info.InvoiceNumber}");
+                moduleName: "SCR_SINV", description: $"إرسال فاتورة مبيعات للاعتماد: {invoiceNumber}");
         }
 
         // ==========================================
@@ -436,85 +855,149 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task ApproveAsync(int invoiceId, int userId, int? employeeId = null)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanApprove,
+                "لا تملك صلاحية اعتماد فواتير المبيعات.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
 
-            string invoiceNumber = "";
-            int? deliveryId = null;
-            int? createdBy = null;
-            int customerId = 0;
-            bool isTaxable = true;
-
+            string invoiceNumber;
+            int? createdBy;
+            int customerId;
+            bool isTaxable;
             try
             {
-                var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, int? DeliveryID, int? CreatedBy, int CustomerID, bool IsTaxable, int DetailCount)>(
-                    @"SELECT InvoiceNumber, InvoiceStatus, DeliveryID, CreatedBy, CustomerID, ISNULL(IsTaxable,1) as IsTaxable,
-                        (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID = si.InvoiceID)
-                      FROM dbo.SalesInvoices si WHERE si.InvoiceID = @ID",
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string? InvoiceNumber, int InvoiceStatus, int InvoiceSource, int? SalesOrderID,
+                    int? DeliveryID, int? CreatedBy, int CustomerID, bool IsTaxable, decimal ExchangeRate,
+                    bool IsDefaultCurrency, decimal PaidAmount, int DetailCount, int MissingWarehouseCount,
+                    int InvalidOrderLineCount)>(
+                    @"SELECT si.InvoiceNumber, si.InvoiceStatus, ISNULL(si.InvoiceSource,3) AS InvoiceSource,
+                             si.SalesOrderID, si.DeliveryID, si.CreatedBy, si.CustomerID,
+                             ISNULL(si.IsTaxable,1) AS IsTaxable,
+                             ISNULL(si.ExchangeRate,1) AS ExchangeRate,
+                             ISNULL(cur.IsDefault,1) AS IsDefaultCurrency,
+                             ISNULL(si.PaidAmount,0) AS PaidAmount,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID) AS DetailCount,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d
+                              WHERE d.InvoiceID=si.InvoiceID AND COALESCE(d.WarehouseID,si.WarehouseID) IS NULL) AS MissingWarehouseCount,
+                             (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d
+                              WHERE d.InvoiceID=si.InvoiceID
+                                AND (d.SODetailID IS NULL OR NOT EXISTS
+                                     (SELECT 1 FROM dbo.SalesOrderDetails sod
+                                      WHERE sod.SODetailID=d.SODetailID
+                                        AND sod.SalesOrderID=si.SalesOrderID
+                                        AND sod.ItemID=d.ItemID AND sod.UnitID=d.UnitID))) AS InvalidOrderLineCount
+                      FROM dbo.SalesInvoices si WITH (UPDLOCK, HOLDLOCK)
+                      LEFT JOIN dbo.Currencies cur ON cur.CurrencyID=si.CurrencyID
+                      WHERE si.InvoiceID=@ID",
                     new { ID = invoiceId }, transaction);
 
-                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
-                if (info.InvoiceStatus != 2) throw new Exception("لا يمكن اعتماد فاتورة ليست في انتظار الاعتماد");
-                if (info.DetailCount == 0) throw new Exception("لا يمكن اعتماد فاتورة بدون أصناف");
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
+                if (info.InvoiceStatus != 2) throw new InvalidOperationException("لا يمكن اعتماد فاتورة ليست في انتظار الاعتماد.");
+                if (!info.IsDefaultCurrency || Math.Abs(info.ExchangeRate - 1m) > 0.000001m)
+                    throw new InvalidOperationException("القيد المحاسبي الحالي لا يدعم العملات غير الافتراضية أو سعر صرف مختلف عن 1؛ لم يتم اعتماد الفاتورة.");
+                if (info.PaidAmount > 0)
+                    throw new InvalidOperationException("يوجد مبلغ مدفوع مسبقاً لكن مسار ترحيل الدفعات غير متاح لهذه الفاتورة؛ لم يتم اعتمادها.");
+                if (info.DetailCount == 0) throw new InvalidOperationException("لا يمكن اعتماد فاتورة بدون أصناف.");
+                if (info.MissingWarehouseCount > 0)
+                    throw new InvalidOperationException("يوجد سطر بلا مخزن؛ لم يتم اعتماد الفاتورة.");
+                if (info.InvoiceSource == 2 && info.SalesOrderID.GetValueOrDefault() <= 0)
+                    throw new InvalidOperationException("الفاتورة موسومة بأنها من أمر بيع لكن رقم الأمر غير مرتبط بها؛ لم يتم اعتمادها.");
+                if (info.SalesOrderID.GetValueOrDefault() > 0 && info.InvalidOrderLineCount > 0)
+                    throw new InvalidOperationException("يوجد سطر فاتورة غير مرتبط بسطر مطابق من أمر البيع؛ لم يتم اعتمادها.");
+                if (info.DeliveryID.GetValueOrDefault() > 0 || info.InvoiceSource == 1)
+                    throw new InvalidOperationException("لا يمكن ترحيل فاتورة من إذن تسليم قبل ربط مصدر خصم المخزون الخاص بذلك الإذن.");
+
+                var alreadyPosted = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.InventoryTransactions WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocType IN (N'SINV',N'SI') AND TransactionType=4
+                        AND (SourceDocID=@InvoiceID OR SourceDocNumber=@InvoiceNumber)",
+                    new { InvoiceID = invoiceId, InvoiceNumber = info.InvoiceNumber }, transaction);
+                if (alreadyPosted > 0)
+                    throw new InvalidOperationException("توجد حركات مخزون سابقة لهذه الفاتورة؛ أوقفنا الاعتماد لمنع الخصم المكرر.");
+
+                var existingJournal = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocType=N'SI'
+                        AND (SourceDocID=@InvoiceID OR SourceDocNumber=@InvoiceNumber)",
+                    new { InvoiceID = invoiceId, InvoiceNumber = info.InvoiceNumber }, transaction);
+                if (existingJournal > 0)
+                    throw new InvalidOperationException("يوجد قيد محاسبي سابق لهذه الفاتورة؛ راجعها قبل إعادة الاعتماد.");
 
                 invoiceNumber = info.InvoiceNumber;
-                deliveryId = info.DeliveryID;
                 createdBy = info.CreatedBy;
                 customerId = info.CustomerID;
                 isTaxable = info.IsTaxable;
 
-                try { await connection.ExecuteAsync("EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID", new { InvoiceID = invoiceId }, transaction); } catch { }
+                var statusUpdated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices
+                      SET InvoiceStatus=3, PaymentStatus=1,
+                          ApprovedBy=@EmployeeID, ApprovedDate=GETDATE(),
+                          ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE InvoiceID=@ID AND InvoiceStatus=2",
+                    new { ID = invoiceId, EmployeeID = employeeId, UserID = userId }, transaction);
+                if (statusUpdated != 1)
+                    throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الاعتماد.");
 
                 await connection.ExecuteAsync(
-                    @"UPDATE dbo.SalesInvoices SET
-                        InvoiceStatus = 3,
-                        ApprovedBy = @EmployeeID,
-                        ApprovedDate = GETDATE(),
-                        ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                      WHERE InvoiceID = @ID",
-                    new { ID = invoiceId, EmployeeID = employeeId, UserID = userId }, transaction);
+                    "EXEC dbo.sp_RecalcSalesInvoiceTotals @InvoiceID",
+                    new { InvoiceID = invoiceId }, transaction);
 
-                // خصم مخزون إذا فاتورة مباشرة (لا يوجد تسليم مسبق)
-                if (!deliveryId.HasValue || deliveryId.Value == 0)
-                {
-                    try
-                    {
-                        await connection.ExecuteAsync(
-                            "EXEC dbo.sp_DeductStockForSalesInvoice @InvoiceID, @UserID",
-                            new { InvoiceID = invoiceId, UserID = userId }, transaction);
-                    }
-                    catch { /* قد لا يوجد SP بعد — نتجاهل مؤقتاً */ }
-                }
+                await PostInvoiceStockFifoAsync(connection, transaction, invoiceId, invoiceNumber, userId);
 
-                // تحديث رصيد العميل
-                try
-                {
-                    await connection.ExecuteAsync(
-                        "EXEC dbo.sp_UpdateCustomerBalanceAfterInvoice @CustomerID",
-                        new { CustomerID = customerId }, transaction);
-                }
-                catch { }
+                var totalCost = await connection.ExecuteScalarAsync<decimal>(
+                    "SELECT ISNULL(SUM(LineCost),0) FROM dbo.SalesInvoiceDetails WHERE InvoiceID=@InvoiceID",
+                    new { InvoiceID = invoiceId }, transaction);
+                await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices
+                      SET TotalCost=@TotalCost,
+                          GrossProfit=ISNULL(TaxableAmount,0)-@TotalCost,
+                          GrossProfitPercent=CASE WHEN ISNULL(TaxableAmount,0)=0 THEN 0
+                                                  ELSE ((ISNULL(TaxableAmount,0)-@TotalCost)*100.0/TaxableAmount) END
+                      WHERE InvoiceID=@InvoiceID",
+                    new { InvoiceID = invoiceId, TotalCost = totalCost }, transaction);
 
-                // إنشاء القيد المحاسبي — مع/بدون ضريبة
-                try
-                {
-                    await connection.ExecuteAsync(
-                        "EXEC dbo.sp_CreateSalesInvoiceJournal @InvoiceID, @UserID",
-                        new { InvoiceID = invoiceId, UserID = userId }, transaction);
-                }
-                catch (Exception jex)
-                {
-                    await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
-                        moduleName: "SCR_SINV",
-                        description: $"تحذير: فشل إنشاء القيد المحاسبي للفاتورة {invoiceNumber} (IsTaxable={isTaxable}): {jex.Message}");
-                }
+                var receivableChange = await connection.ExecuteScalarAsync<decimal>(
+                    @"SELECT ISNULL(TotalAmount,0)-ISNULL(PaidAmount,0)
+                      FROM dbo.SalesInvoices WHERE InvoiceID=@InvoiceID",
+                    new { InvoiceID = invoiceId }, transaction);
+                if (receivableChange < 0)
+                    throw new InvalidOperationException("المدفوع على الفاتورة أكبر من إجماليها؛ راجع الرصيد قبل الاعتماد.");
+
+                var customerBalanceUpdated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.Customers
+                      SET CurrentBalance=ISNULL(CurrentBalance,0)+@BalanceChange,
+                          ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE CustomerID=@CustomerID",
+                    new { CustomerID = customerId, BalanceChange = receivableChange, UserID = userId }, transaction);
+                if (customerBalanceUpdated != 1)
+                    throw new InvalidOperationException("تعذر تحديث رصيد العميل؛ لم يتم اعتماد الفاتورة.");
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_CreateSalesInvoiceJournal @InvoiceID, @UserID",
+                    new { InvoiceID = invoiceId, UserID = userId }, transaction);
+
+                var journalBalance = await connection.QueryFirstOrDefaultAsync<(int JournalCount, decimal DebitTotal, decimal CreditTotal)>(
+                    @"SELECT COUNT(DISTINCT je.JournalID) AS JournalCount,
+                             ISNULL(SUM(jed.DebitAmount),0) AS DebitTotal,
+                             ISNULL(SUM(jed.CreditAmount),0) AS CreditTotal
+                      FROM dbo.JournalEntries je
+                      LEFT JOIN dbo.JournalEntryDetails jed ON jed.JournalID=je.JournalID
+                      WHERE je.SourceDocType=N'SI' AND je.SourceDocID=@InvoiceID",
+                    new { InvoiceID = invoiceId }, transaction);
+                if (journalBalance.JournalCount != 1 ||
+                    Math.Abs(journalBalance.DebitTotal - journalBalance.CreditTotal) > 0.01m)
+                    throw new InvalidOperationException(
+                        $"قيد الفاتورة المحاسبي غير متوازن (مدين {journalBalance.DebitTotal:#,##0.00} / دائن {journalBalance.CreditTotal:#,##0.00}). " +
+                        "لم يتم اعتماد الفاتورة؛ راجع حسابات الشحن والتكاليف الأخرى وإعدادات الحسابات.");
 
                 transaction.Commit();
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); } catch { }
                 throw;
             }
 
@@ -523,7 +1006,7 @@ namespace YKCoatings.Services
                 if (createdBy.HasValue)
                 {
                     await _notif.CreateNotificationAsync(3,
-                        "تم اعتماد فاتورة المبيعات ✅",
+                        "تم اعتماد فاتورة المبيعات",
                         $"تم اعتماد فاتورة المبيعات رقم {invoiceNumber} {(isTaxable ? "مع ضريبة" : "بدون ضريبة")}",
                         2, createdBy.Value, null, "SCR_SINV", invoiceId, userId);
                 }
@@ -541,87 +1024,152 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task RejectAsync(int invoiceId, string rejectionReason, int userId, int? employeeId = null)
         {
-            if (string.IsNullOrWhiteSpace(rejectionReason)) throw new Exception("أدخل سبب الرفض");
+            await RequireInvoicePermissionAsync(userId, p => p.CanApprove,
+                "لا تملك صلاحية رفض فواتير المبيعات.");
+            if (string.IsNullOrWhiteSpace(rejectionReason)) throw new ArgumentException("أدخل سبب الرفض.", nameof(rejectionReason));
+
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, int? CreatedBy)>(
-                "SELECT InvoiceNumber, InvoiceStatus, CreatedBy FROM dbo.SalesInvoices WHERE InvoiceID = @ID",
-                new { ID = invoiceId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            string invoiceNumber;
+            int? createdBy;
+            try
+            {
+                var info = await connection.QueryFirstOrDefaultAsync<(string? InvoiceNumber, int InvoiceStatus, int? CreatedBy, string? Notes)>(
+                    @"SELECT InvoiceNumber, InvoiceStatus, CreatedBy, Notes
+                      FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
+                      WHERE InvoiceID=@ID",
+                    new { ID = invoiceId }, transaction);
 
-            if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
-            if (info.InvoiceStatus != 2) throw new Exception("لا يمكن رفض فاتورة ليست في انتظار الاعتماد");
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
+                if (info.InvoiceStatus != 2)
+                    throw new InvalidOperationException("لا يمكن رفض فاتورة ليست في انتظار الاعتماد.");
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.SalesInvoices SET
-                    InvoiceStatus = 1,
-                    RejectedBy = @EmployeeID,
-                    RejectedDate = GETDATE(),
-                    RejectionReason = @Reason,
-                    ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                  WHERE InvoiceID = @ID",
-                new { ID = invoiceId, EmployeeID = employeeId, Reason = rejectionReason, UserID = userId });
+                var storedNotes = CombineNotesAndRejection(info.Notes, rejectionReason);
+                var affected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices
+                      SET InvoiceStatus=1, Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE InvoiceID=@ID AND InvoiceStatus=2",
+                    new { ID = invoiceId, Notes = storedNotes, UserID = userId }, transaction);
+                if (affected != 1) throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الرفض.");
+
+                invoiceNumber = info.InvoiceNumber;
+                createdBy = info.CreatedBy;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             try
             {
-                if (info.CreatedBy.HasValue)
+                if (createdBy.HasValue)
                 {
                     await _notif.CreateNotificationAsync(3,
-                        "تم رفض فاتورة المبيعات ❌",
-                        $"تم رفض فاتورة المبيعات رقم {info.InvoiceNumber}. السبب: {rejectionReason}",
-                        1, info.CreatedBy.Value, null, "SCR_SINV", invoiceId, userId);
+                        "تم رفض فاتورة المبيعات",
+                        $"تم رفض فاتورة المبيعات رقم {invoiceNumber}. السبب: {rejectionReason}",
+                        1, createdBy.Value, null, "SCR_SINV", invoiceId, userId);
                 }
                 await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
             }
             catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
-                moduleName: "SCR_SINV",
-                description: $"رفض فاتورة مبيعات: {info.InvoiceNumber} — {rejectionReason}");
+                moduleName: "SCR_SINV", description: $"رفض فاتورة مبيعات: {invoiceNumber} — {rejectionReason}");
         }
 
         public async Task CancelAsync(int invoiceId, int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanCancel,
+                "لا تملك صلاحية إلغاء فواتير المبيعات.");
+
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, decimal PaidAmount)>(
-                "SELECT InvoiceNumber, InvoiceStatus, ISNULL(PaidAmount, 0) FROM dbo.SalesInvoices WHERE InvoiceID = @ID",
-                new { ID = invoiceId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            string invoiceNumber;
+            try
+            {
+                var info = await connection.QueryFirstOrDefaultAsync<(string? InvoiceNumber, int InvoiceStatus, decimal PaidAmount)>(
+                    @"SELECT InvoiceNumber, InvoiceStatus, ISNULL(PaidAmount,0) AS PaidAmount
+                      FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
+                      WHERE InvoiceID=@ID",
+                    new { ID = invoiceId }, transaction);
 
-            if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
-            if (info.InvoiceStatus == 7) throw new Exception("الفاتورة ملغية بالفعل");
-            if (info.PaidAmount > 0) throw new Exception("لا يمكن إلغاء فاتورة تم الدفع عليها");
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
+                if (info.InvoiceStatus == 6) throw new InvalidOperationException("الفاتورة ملغاة بالفعل.");
+                if (info.InvoiceStatus is not (1 or 2))
+                    throw new InvalidOperationException("لا يمكن إلغاء فاتورة تم اعتمادها؛ استخدم مسار مرتجع/عكس معتمد.");
+                if (info.PaidAmount > 0) throw new InvalidOperationException("لا يمكن إلغاء فاتورة عليها دفعة.");
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.SalesInvoices SET InvoiceStatus = 7, ModifiedBy = @UserID, ModifiedDate = GETDATE() WHERE InvoiceID = @ID",
-                new { ID = invoiceId, UserID = userId });
+                var affected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.SalesInvoices SET InvoiceStatus=6, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE InvoiceID=@ID AND InvoiceStatus IN (1,2)",
+                    new { ID = invoiceId, UserID = userId }, transaction);
+                if (affected != 1) throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الإلغاء.");
+
+                invoiceNumber = info.InvoiceNumber;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
-                moduleName: "SCR_SINV",
-                description: $"إلغاء فاتورة مبيعات: {info.InvoiceNumber}");
+                moduleName: "SCR_SINV", description: $"إلغاء فاتورة مبيعات: {invoiceNumber}");
         }
 
         public async Task<(bool Success, string Message)> DeleteInvoiceAsync(int invoiceId, int userId)
         {
+            await RequireInvoicePermissionAsync(userId, p => p.CanDelete,
+                "لا تملك صلاحية حذف فواتير المبيعات.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            string? invoiceNumber;
             try
             {
-                var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus)>(
-                    "SELECT InvoiceNumber, InvoiceStatus FROM dbo.SalesInvoices WHERE InvoiceID = @ID",
+                var info = await connection.QueryFirstOrDefaultAsync<(string? InvoiceNumber, int InvoiceStatus)>(
+                    @"SELECT InvoiceNumber, InvoiceStatus
+                      FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
+                      WHERE InvoiceID=@ID",
                     new { ID = invoiceId }, transaction);
 
-                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) return (false, "الفاتورة غير موجودة");
-                if (info.InvoiceStatus != 1) return (false, "لا يمكن حذف فاتورة غير مسودة");
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber))
+                {
+                    transaction.Rollback();
+                    return (false, "الفاتورة غير موجودة.");
+                }
+                if (info.InvoiceStatus != 1)
+                {
+                    transaction.Rollback();
+                    return (false, "لا يمكن حذف فاتورة ليست في حالة مسودة.");
+                }
 
-                await connection.ExecuteAsync("DELETE FROM dbo.SalesInvoiceDetails WHERE InvoiceID = @ID", new { ID = invoiceId }, transaction);
-                await connection.ExecuteAsync("DELETE FROM dbo.SalesInvoices WHERE InvoiceID = @ID", new { ID = invoiceId }, transaction);
+                invoiceNumber = info.InvoiceNumber;
+                await connection.ExecuteAsync(
+                    "DELETE FROM dbo.SalesInvoiceDetails WHERE InvoiceID=@ID",
+                    new { ID = invoiceId }, transaction);
+                var affected = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.SalesInvoices WHERE InvoiceID=@ID AND InvoiceStatus=1",
+                    new { ID = invoiceId }, transaction);
+                if (affected != 1) throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أعد تحميلها قبل الحذف.");
+
                 transaction.Commit();
-
-                await _audit.WriteAuditLogAsync(userId, 3, "SalesInvoices", invoiceId.ToString(),
-                    moduleName: "SCR_SINV", description: $"حذف فاتورة مبيعات: {info.InvoiceNumber}");
-
-                return (true, "تم حذف الفاتورة بنجاح");
             }
-            catch (Exception ex) { transaction.Rollback(); return (false, ex.Message); }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
+
+            await _audit.WriteAuditLogAsync(userId, 3, "SalesInvoices", invoiceId.ToString(),
+                moduleName: "SCR_SINV", description: $"حذف فاتورة مبيعات: {invoiceNumber}");
+            return (true, "تم حذف الفاتورة بنجاح.");
         }
 
         // ==========================================
@@ -629,6 +1177,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<SalesInvoiceListDto> invoices, int userId)
         {
+            await RequireViewAndExportAsync(userId);
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("فواتير المبيعات");
             ws.RightToLeft = true;
@@ -689,9 +1238,10 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateReportHtmlAsync(int invoiceId, int userId)
         {
-            var header = await GetInvoiceByIdAsync(invoiceId);
+            await RequireViewAndPrintAsync(userId);
+            var header = await GetInvoiceByIdCoreAsync(invoiceId);
             if (header == null) return "<h3>الفاتورة غير موجودة</h3>";
-            var details = await GetInvoiceDetailsAsync(invoiceId);
+            var details = await GetInvoiceDetailsCoreAsync(invoiceId);
 
             var detailsHtml = "";
             int n = 0;
@@ -784,16 +1334,24 @@ tr:nth-child(even){{background:#fcfaf6}}
         // Helpers
         public static string GetStatusName(int status) => status switch
         {
-            1 => "مسودة", 2 => "بانتظار الاعتماد", 3 => "معتمدة",
-            4 => "مدفوعة جزئياً", 5 => "مدفوعة بالكامل",
-            6 => "متأخرة", 7 => "ملغية", _ => "غير محدد"
+            1 => "مسودة",
+            2 => "بانتظار الاعتماد",
+            3 => "معتمدة",
+            4 => "مدفوعة بالكامل",
+            5 => "متأخرة",
+            6 => "ملغية",
+            _ => "غير محدد"
         };
 
         public static string GetStatusColor(int status) => status switch
         {
-            1 => "#6b7280", 2 => "#f59e0b", 3 => "#10b981",
-            4 => "#6366f1", 5 => "#14b8a6",
-            6 => "#ef4444", 7 => "#dc2626", _ => "#6b7280"
+            1 => "#6b7280",
+            2 => "#f59e0b",
+            3 => "#10b981",
+            4 => "#14b8a6",
+            5 => "#ef4444",
+            6 => "#dc2626",
+            _ => "#6b7280"
         };
 
         public static string GetPaymentStatusName(int status) => status switch
@@ -809,13 +1367,13 @@ tr:nth-child(even){{background:#fcfaf6}}
 
         public static string GetSourceName(int source) => source switch
         {
-            2 => "من أمر بيع", 3 => "فاتورة مباشرة",
+            1 => "من إذن تسليم", 2 => "من أمر بيع", 3 => "فاتورة مباشرة",
             _ => "فاتورة مباشرة"
         };
 
         public static string GetSourceColor(int source) => source switch
         {
-            2 => "#1d4ed8", 3 => "#D4AF37", _ => "#D4AF37"
+            1 => "#8b5cf6", 2 => "#1d4ed8", 3 => "#D4AF37", _ => "#D4AF37"
         };
     }
 }

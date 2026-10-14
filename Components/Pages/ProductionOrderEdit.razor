@@ -36,7 +36,7 @@ else if (isLoading)
 }
 else
 {
-    <div class="po-edit-page">
+    <div class="po-edit-page yk-gold-page">
 
         <!-- ===== Header ===== -->
         <div class="page-header">
@@ -364,6 +364,10 @@ else
                             <span>تعبئة: <strong>@materials.Count(m => m.MaterialType == 2)</strong></span>
                         </div>
                         <div class="mat-summary-item">
+                            <i class="bi bi-box-seam-fill" style="color:var(--yk-gold-dark);"></i>
+                            <span>منتجات تامة: <strong>@materials.Count(m => m.MaterialType == 3)</strong></span>
+                        </div>
+                        <div class="mat-summary-item">
                             <i class="bi bi-cash-stack" style="color:#10b981;"></i>
                             <span>إجمالي التكلفة: <strong>@materials.Sum(m => m.RequiredQty * m.UnitCost).ToString("N2") ج.م</strong></span>
                         </div>
@@ -508,6 +512,57 @@ else
                             </table>
                         </div>
                     }
+
+                    @if (FinishedProductComponents.Any())
+                    {
+                        <div class="mat-section-title finished-title">
+                            <i class="bi bi-box-seam-fill"></i>
+                            المنتجات التامة المستخدمة كمكونات (@FinishedProductComponents.Count صنف)
+                        </div>
+                        <div class="table-scroll">
+                            <table class="mat-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40px;">#</th>
+                                        <th>كود الصنف</th>
+                                        <th>اسم الصنف</th>
+                                        <th class="tc">الكمية المطلوبة</th>
+                                        <th class="tc">الوحدة</th>
+                                        <th class="tc">المصروف</th>
+                                        <th class="tc">المتبقي</th>
+                                        <th class="tc">التوفر</th>
+                                        <th class="tr">تكلفة الوحدة</th>
+                                        <th class="tr">الإجمالي</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ int fi = 1; }
+                                    @foreach (var m in FinishedProductComponents)
+                                    {
+                                        var remainingFinished = m.RequiredQty - m.IssuedQty;
+                                        <tr>
+                                            <td class="tc row-num">@(fi++)</td>
+                                            <td><span class="code-chip">@m.ItemCode</span></td>
+                                            <td class="item-name-cell">@m.ItemName</td>
+                                            <td class="tc fw600">@m.RequiredQty.ToString("N3")</td>
+                                            <td class="tc text-muted">@m.UnitName</td>
+                                            <td class="tc"><span class="@(m.IssuedQty > 0 ? "issued-val" : "zero-val")">@m.IssuedQty.ToString("N3")</span></td>
+                                            <td class="tc"><span class="@(remainingFinished > 0 ? "remaining-val" : "zero-val")">@remainingFinished.ToString("N3")</span></td>
+                                            <td class="tc"><span class="avail-chip @m.AvailabilityClass">@m.AvailabilityStatus</span></td>
+                                            <td class="tr">@m.UnitCost.ToString("N2")</td>
+                                            <td class="tr fw700 cost-col">@((m.RequiredQty * m.UnitCost).ToString("N2"))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="total-row">
+                                        <td colspan="9" class="tr fw700">إجمالي المنتجات التامة كمكونات</td>
+                                        <td class="tr fw800 cost-col">@FinishedProductComponents.Sum(m => m.RequiredQty * m.UnitCost).ToString("N2")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
                 }
             </div>
         }
@@ -636,7 +691,7 @@ else
                     {
                         <div class="audit-grid">
                             <div class="audit-item">
-                                <i class="bi bi-person-plus-fill" style="color:#4f46e5;"></i>
+                                <i class="bi bi-person-plus-fill" style="color:#D4AF37;"></i>
                                 <div>
                                     <div class="audit-label">أنشأ بواسطة</div>
                                     <div class="audit-value">@auditInfo.CreatedByName</div>
@@ -678,7 +733,7 @@ else
                             @if (!string.IsNullOrEmpty(auditInfo.SupervisorName))
                             {
                                 <div class="audit-item">
-                                    <i class="bi bi-shield-fill-check" style="color:#2563eb;"></i>
+                                    <i class="bi bi-shield-fill-check" style="color:#9C7C2E;"></i>
                                     <div>
                                         <div class="audit-label">المشرف</div>
                                         <div class="audit-value">@auditInfo.SupervisorName</div>
@@ -773,13 +828,13 @@ else
 <style>
     /* ===== Variables ===== */
     :root {
-        --c-primary: #4f46e5; --c-primary-lt: #eef2ff; --c-primary-dk: #3730a3;
+        --c-primary: #D4AF37; --c-primary-lt: rgba(212,175,55,.10); --c-primary-dk: #9C7C2E;
         --c-success: #10b981; --c-success-lt: #ecfdf5;
         --c-warning: #f59e0b; --c-warning-lt: #fffbeb;
         --c-danger: #ef4444;  --c-danger-lt: #fef2f2;
         --c-info: #0ea5e9;    --c-info-lt: #f0f9ff;
         --c-secondary: #64748b; --c-secondary-lt: #f1f5f9;
-        --c-teal: #0f766e;    --c-teal-lt: #f0fdfa;
+        --c-teal: #9C7C2E;    --c-teal-lt: rgba(212,175,55,.10);
         --c-surface: #fff;    --c-bg: #f8fafc;
         --c-border: #e2e8f0;  --c-text: #0f172a;
         --c-text-2: #64748b;  --c-text-3: #94a3b8;
@@ -819,7 +874,7 @@ else
 
     /* Header */
     .page-header {
-        background: linear-gradient(135deg, #0f766e, #115e59);
+        background: linear-gradient(135deg, #070B14, #0A0F1E);
         border-radius: var(--r-xl); padding: 1.5rem 2rem;
         display: flex; justify-content: space-between; align-items: center;
         box-shadow: 0 8px 32px rgba(15,118,110,.25);
@@ -965,6 +1020,7 @@ else
     }
     .raw-title { color: #0284c7; background: #f0f9ff; border-right: 3px solid #0ea5e9; }
     .pkg-title { color: #b45309; background: #fffbeb; border-right: 3px solid #f59e0b; }
+    .finished-title { color: var(--yk-gold-dark); background: var(--yk-gold-10); border-right: 3px solid var(--yk-gold); }
 
     .mat-table { width: 100%; border-collapse: collapse; }
     .mat-table thead th {
@@ -981,7 +1037,7 @@ else
     }
     .mat-table tbody td.tc { text-align: center; }
     .mat-table tbody td.tr { text-align: left; }
-    .mat-table tbody tr:hover { background: #f0fdfa; }
+    .mat-table tbody tr:hover { background: rgba(212,175,55,.06); }
 
     .row-num { color: var(--c-text-3); font-size: .78rem; }
     .code-chip {
@@ -1028,9 +1084,9 @@ else
         display: flex; align-items: center; gap: .4rem;
         border-bottom: 1px solid var(--c-border);
     }
-    .estimated-title { color: #4f46e5; background: #eef2ff; }
-    .actual-title    { color: #0f766e; background: #f0fdfa; }
-    .variance-title  { color: #1d4ed8; background: #f5f3ff; }
+    .estimated-title { color: #D4AF37; background: rgba(212,175,55,.10); }
+    .actual-title    { color: #059669; background: #ecfdf5; }
+    .variance-title  { color: #9C7C2E; background: rgba(212,175,55,.10); }
 
     .cost-item {
         display: flex; justify-content: space-between; align-items: center;
@@ -1040,8 +1096,8 @@ else
     .cost-label { font-size: .84rem; color: var(--c-text-2); }
     .cost-value { font-size: .88rem; font-weight: 700; color: var(--c-text); direction: ltr; }
     .total-item { background: #f1f5f9; }
-    .estimated-total .cost-value { color: #4f46e5; font-size: 1rem; }
-    .actual-total .cost-value { color: #0f766e; font-size: 1rem; }
+    .estimated-total .cost-value { color: #D4AF37; font-size: 1rem; }
+    .actual-total .cost-value { color: #059669; font-size: 1rem; }
     .negative-var { color: var(--c-danger) !important; }
     .positive-var { color: var(--c-success) !important; }
     .variance-section { border-color: #ddd6fe; }
@@ -1088,12 +1144,12 @@ else
     .btn-action.approve  { background: #059669; }
     .btn-action.prepare  { background: #d97706; }
     .btn-action.start    { background: #ea580c; }
-    .btn-action.qc       { background: #4f46e5; }
-    .btn-action.complete { background: #0f766e; }
+    .btn-action.qc       { background: #D4AF37; }
+    .btn-action.complete { background: #059669; }
     .btn-action:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 
     .btn-save {
-        background: linear-gradient(135deg, var(--c-teal), #115e59); color: #fff;
+        background: linear-gradient(135deg, var(--c-teal), #9C7C2E); color: #fff;
         border: none; border-radius: var(--r-sm); padding: .6rem 1.5rem;
         font-size: .88rem; font-weight: 700; cursor: pointer;
         display: flex; align-items: center; gap: .45rem; transition: all .2s;
@@ -1136,10 +1192,10 @@ else
 
     /* Status classes (shared) */
     .s-draft      { background: #f1f5f9; color: #64748b; }
-    .s-approved   { background: #dbeafe; color: #1d4ed8; }
+    .s-approved   { background: var(--yk-gold-10); color: var(--yk-gold-dark); }
     .s-preparing  { background: #fef3c7; color: #92400e; }
     .s-inprogress { background: #fed7aa; color: #c2410c; }
-    .s-qc         { background: #e0e7ff; color: #4338ca; }
+    .s-qc         { background: var(--yk-info-soft); color: var(--yk-info); }
     .s-completed  { background: var(--c-success-lt); color: #059669; }
     .s-cancelled  { background: var(--c-danger-lt);  color: #dc2626; }
 
@@ -1178,10 +1234,13 @@ else
     private ProductionOrderEditDto order = new();
     private List<ProductionOrderMaterialDto> materials = new();
     private List<ProductionOrderMaterialDto> RawMaterials =>
-    materials.Where(m => m.MaterialType == 1).ToList();
+        materials.Where(m => m.MaterialType == 1).ToList();
 
-private List<ProductionOrderMaterialDto> PackagingMaterials =>
-    materials.Where(m => m.MaterialType == 2).ToList();
+    private List<ProductionOrderMaterialDto> PackagingMaterials =>
+        materials.Where(m => m.MaterialType == 2).ToList();
+
+    private List<ProductionOrderMaterialDto> FinishedProductComponents =>
+        materials.Where(m => m.MaterialType == 3).ToList();
 
     private ProductionOrderAuditDto? auditInfo;
     private ModulePermissionDto? permissions;
@@ -1349,9 +1408,9 @@ private List<ProductionOrderMaterialDto> PackagingMaterials =>
 
     private void CalcBatches()
     {
-        if (bomBatchSize > 0 && order.PlannedQty > 0)
+        if (bomOutputQty > 0 && order.PlannedQty > 0)
         {
-            order.NumberOfBatches = (int)Math.Ceiling((double)(order.PlannedQty / bomBatchSize));
+            order.NumberOfBatches = (int)Math.Ceiling((double)(order.PlannedQty / bomOutputQty));
         }
     }
 
