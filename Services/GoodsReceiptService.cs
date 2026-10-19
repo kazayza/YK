@@ -133,9 +133,16 @@ namespace YKCoatings.Services
                             EXEC sp_GetNextNumber N'GRN', @NextNum OUTPUT;
                             SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"GRN-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لإذن الاستلام.");
+
+                return result;
             }
-            catch { return $"GRN-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم إذن الاستلام (GRN). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل GRN والإجراء المخزن.", ex);
+            }
         }
 
         // ==========================================
@@ -604,7 +611,9 @@ namespace YKCoatings.Services
                 throw;
             }
 
-            // إشعار
+            // Complete pending QC/approval notifications before creating the unread result message.
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
+
             try
             {
                 var createdBy = await connection.QueryFirstOrDefaultAsync<int?>(
@@ -613,12 +622,13 @@ namespace YKCoatings.Services
 
                 if (createdBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(
+                    await _notif.CreateForAuthorizedUserAsync(
                         notificationType: 1,
-                        title: "تم اعتماد إذن الاستلام ✅",
+                        title: "تم اعتماد إذن الاستلام",
                         message: $"تم اعتماد إذن الاستلام رقم {grnNumber}",
                         priority: 2,
                         targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_GRN",
                         relatedModule: "SCR_GRN",
                         relatedRecordId: grnId,
                         createdBy: userId);
@@ -658,6 +668,8 @@ namespace YKCoatings.Services
                     ModifiedDate = GETDATE()
                   WHERE GRNID = @ID",
                 new { ID = grnId, UserID = userId });
+
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "GoodsReceiptNotes", grnId.ToString(),
                 moduleName: "SCR_GRN",
@@ -953,55 +965,35 @@ public async Task RequestInspectionAsync(int grnId, int userId)
         "SELECT GRNNumber, GRNStatus FROM dbo.GoodsReceiptNotes WHERE GRNID = @ID",
         new { ID = grnId });
 
-    if (string.IsNullOrWhiteSpace(info.GRNNumber)) return;
+    if (string.IsNullOrWhiteSpace(info.GRNNumber) || info.GRNStatus != 1) return;
 
     try
     {
-        // إشعار لمسؤولي الجودة
-        var qcRoles = await connection.QueryAsync<int>(
-            @"SELECT DISTINCT r.RoleID
-              FROM dbo.UserRoles r
-              INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-              INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-              WHERE sm.ModuleCode = N'SCR_QC' AND rp.CanView = 1");
+        // The quality team must be able to view both the QC permission and the linked GRN.
+        var qcRecipientCount = await _notif.CreateForPermissionHoldersAsync(
+            notificationType: 1,
+            title: "إذن استلام بانتظار الفحص",
+            message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار فحص الجودة",
+            priority: 1,
+            permissionModuleCode: "SCR_QC",
+            requiredPermission: ModulePermissionRequirement.View,
+            relatedModule: "SCR_GRN",
+            relatedRecordId: grnId,
+            createdBy: userId);
 
-        foreach (var roleId in qcRoles)
+        // If no eligible QC recipient has access, notify GRN approvers as the existing fallback.
+        if (qcRecipientCount == 0)
         {
-            await _notif.CreateNotificationAsync(
+            await _notif.CreateForPermissionHoldersAsync(
                 notificationType: 1,
-                title: "إذن استلام بانتظار الفحص 🔍",
-                message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار فحص الجودة",
+                title: "إذن استلام بانتظار الفحص",
+                message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار الفحص والاعتماد",
                 priority: 1,
-                targetUserId: null,
-                targetRoleId: roleId,
+                permissionModuleCode: "SCR_GRN",
+                requiredPermission: ModulePermissionRequirement.Approve,
                 relatedModule: "SCR_GRN",
                 relatedRecordId: grnId,
                 createdBy: userId);
-        }
-
-        // لو مافيش QC Role، نبعت لأمناء المخازن
-        if (!qcRoles.Any())
-        {
-            var whRoles = await connection.QueryAsync<int>(
-                @"SELECT DISTINCT r.RoleID
-                  FROM dbo.UserRoles r
-                  INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                  INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                  WHERE sm.ModuleCode = N'SCR_GRN' AND rp.CanApprove = 1");
-
-            foreach (var roleId in whRoles)
-            {
-                await _notif.CreateNotificationAsync(
-                    notificationType: 1,
-                    title: "إذن استلام بانتظار الفحص 🔍",
-                    message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار الفحص والاعتماد",
-                    priority: 1,
-                    targetUserId: null,
-                    targetRoleId: roleId,
-                    relatedModule: "SCR_GRN",
-                    relatedRecordId: grnId,
-                    createdBy: userId);
-            }
         }
     }
     catch { }
@@ -1025,35 +1017,28 @@ public async Task RequestApprovalAsync(int grnId, int userId)
     if (string.IsNullOrWhiteSpace(info.GRNNumber)) return;
     if (info.GRNStatus != 1) return;
 
+    // QC-stage notifications are complete once the receipt is routed for approval.
+    try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
+
     try
     {
-        var approverRoles = await connection.QueryAsync<int>(
-            @"SELECT DISTINCT r.RoleID
-              FROM dbo.UserRoles r
-              INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-              INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-              WHERE sm.ModuleCode = N'SCR_GRN' AND rp.CanApprove = 1");
-
         var inspectionText = info.InspectionStatus switch
         {
-            2 => "✅ الفحص: مقبول",
-            3 => "❌ الفحص: مرفوض",
-            _ => "⏳ الفحص: لم يتم"
+            2 => "نتيجة الفحص: مقبول",
+            3 => "نتيجة الفحص: مرفوض",
+            _ => "نتيجة الفحص: لم يتم"
         };
 
-        foreach (var roleId in approverRoles)
-        {
-            await _notif.CreateNotificationAsync(
-                notificationType: 3,
-                title: "إذن استلام بانتظار الاعتماد 📦",
-                message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار الاعتماد\n{inspectionText}",
-                priority: 1,
-                targetUserId: null,
-                targetRoleId: roleId,
-                relatedModule: "SCR_GRN",
-                relatedRecordId: grnId,
-                createdBy: userId);
-        }
+        await _notif.CreateForPermissionHoldersAsync(
+            notificationType: 3,
+            title: "إذن استلام بانتظار الاعتماد",
+            message: $"إذن الاستلام رقم {info.GRNNumber} بانتظار الاعتماد\n{inspectionText}",
+            priority: 1,
+            permissionModuleCode: "SCR_GRN",
+            requiredPermission: ModulePermissionRequirement.Approve,
+            relatedModule: "SCR_GRN",
+            relatedRecordId: grnId,
+            createdBy: userId);
     }
     catch { }
 

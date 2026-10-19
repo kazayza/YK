@@ -60,6 +60,12 @@ else
                             else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg><span>تصدير</span>}
                         </button>
                     }
+                    @if (permissions.CanAdd || permissions.CanEdit)
+                    {
+                        <button class="btn-modern btn-export-hybrid" @onclick='() => Navigation.NavigateTo("/items/import")'>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>استيراد Excel</span>
+                        </button>
+                    }
                     @if (permissions.CanAdd)
                     {
                         <button class="btn-modern btn-primary-hybrid" @onclick="AddNewItem">

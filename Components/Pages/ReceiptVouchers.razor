@@ -156,14 +156,14 @@ else
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_RECV") ?? new ModulePermissionDto{CanView=true, CanAdd=true, CanEdit=true, CanDelete=true, CanApprove=true, CanExport=true};
-        if (permissions.CanView) await LoadData();
+        permissions = PermissionService.GetModule("SCR_RECV");
+        if (permissions?.CanView == true) await LoadData();
     }
 
     private async Task LoadData()
     {
         vouchers = await TreasuryService.GetReceiptVouchersAsync();
-        try { cashBoxes = (await TreasuryService.GetCashBoxesAsync()).Select(b => new LookupDto{Id=b.CashBoxID, Name=b.CashBoxNameAr, Code=b.CashBoxCode}).ToList(); } catch { cashBoxes = new(); }
+        try { cashBoxes = (await TreasuryService.GetCashBoxLookupsAsync()).Select(b => new LookupDto{Id=b.CashBoxID, Name=b.CashBoxNameAr, Code=b.CashBoxCode}).ToList(); } catch { cashBoxes = new(); }
         Filter();
     }
 

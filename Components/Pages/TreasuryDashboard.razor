@@ -20,8 +20,14 @@ else
             <div class="lh-gold-line"></div>
             <div class="lh-bg-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
             <div class="lh-content">
-                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">خزينة واي كي </h2><p class="lh-subtitle">أرصدة لحظية • سندات قبض/صرف • تحويلات • قيد أوتوماتيك — على الجداول الفعلية</p></div></div>
-                <div class="lh-actions"><span class="lh-badge"><span class="lh-dot"></span>@(dashboard?.CashBoxesCount ?? 0) خزينة</span><button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/cash-boxes")'>إدارة الخزائن</button></div>
+                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">خزينة واي كي — Gold Edition</h2><p class="lh-subtitle">أرصدة لحظية • سندات قبض/صرف • تحويلات • قيد أوتوماتيك — على الجداول الفعلية</p></div></div>
+                <div class="lh-actions">
+                    <span class="lh-badge"><span class="lh-dot"></span>@(dashboard?.CashBoxesCount ?? 0) خزينة</span>
+                    @if (PermissionService.CanView("SCR_BANKS") || PermissionService.CanView("SCR_CASHBOX") || PermissionService.CanView("SCR_CASHBOXES"))
+                    {
+                        <button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/cash-boxes")'>إدارة الخزائن</button>
+                    }
+                </div>
             </div>
         </div>
 
@@ -80,10 +86,22 @@ else
                     </div>
 
                     <div class="quick-actions-luxury">
-                        <button class="qact green" @onclick='() => Navigation.NavigateTo("/receipt-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>
-                        <button class="qact red" @onclick='() => Navigation.NavigateTo("/payment-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>
-                        <button class="qact gold" @onclick='() => Navigation.NavigateTo("/cash-transfers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3v6H3"/><path d="M7 21v-6h14"/></svg>تحويل بين خزائن</button>
-                        <button class="qact blue" @onclick='() => Navigation.NavigateTo("/cash-box-statement")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>كشف حساب خزينة</button>
+                        @if (PermissionService.CanAdd("SCR_RECV"))
+                        {
+                            <button class="qact green" @onclick='() => Navigation.NavigateTo("/receipt-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>
+                        }
+                        @if (PermissionService.CanAdd("SCR_PAYV"))
+                        {
+                            <button class="qact red" @onclick='() => Navigation.NavigateTo("/payment-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>
+                        }
+                        @if (PermissionService.CanAdd("SCR_CASHTRANS"))
+                        {
+                            <button class="qact gold" @onclick='() => Navigation.NavigateTo("/cash-transfers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3v6H3"/><path d="M7 21v-6h14"/></svg>تحويل بين خزائن</button>
+                        }
+                        @if (PermissionService.CanViewCashBoxStatement)
+                        {
+                            <button class="qact blue" @onclick='() => Navigation.NavigateTo("/cash-box-statement")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>كشف حساب خزينة</button>
+                        }
                     </div>
                 </div>
             </div>
@@ -131,9 +149,9 @@ else
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_BANKS") ?? PermissionService.GetModule("SCR_RECV") ?? PermissionService.GetModule("SCR_TREASURY");
-        if (permissions == null) permissions = new ModulePermissionDto { CanView = true };
-        dashboard = await TreasuryService.GetDashboardAsync();
+        permissions = PermissionService.GetModule("SCR_TREASURY");
+        if (permissions?.CanView == true)
+            dashboard = await TreasuryService.GetDashboardAsync();
     }
 
     private string GetBoxTypeColor(int type) => type switch { 1 => "#D4AF37", 2 => "#2563eb", 3 => "#059669", 4 => "#7c3aed", _ => "#6b7280" };

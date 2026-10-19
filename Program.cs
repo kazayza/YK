@@ -12,6 +12,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ItemService>();
+builder.Services.AddScoped<ItemImportService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<WarehouseService>();
@@ -50,6 +51,7 @@ builder.Services.AddScoped<SequenceService>();
 builder.Services.AddScoped<CurrencyService>();
 builder.Services.AddScoped<PaymentTermService>();
 builder.Services.AddScoped<BOMService>();
+builder.Services.AddScoped<ProductionTreeService>();
 builder.Services.AddScoped<ProductionOrderService>();
 builder.Services.AddScoped<MaterialIssueService>();
 builder.Services.AddScoped<ProductionBatchService>();

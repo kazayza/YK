@@ -186,7 +186,7 @@ else
             }
             else
             {
-                journalDto.JournalNumber = await AccountingService.GenerateJournalNoAsync();
+                journalDto.JournalNumber = await AccountingService.GenerateJournalNoAsync(UserSession.UserID);
             }
         }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }

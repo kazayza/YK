@@ -249,15 +249,17 @@ namespace YKCoatings.Services
                 "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
                 new { ID = item.EmployeeID });
 
-            await _notif.CreateNotificationAsync(
-                notificationType: 4,
-                title: "طلب إجازة جديد بانتظار الاعتماد",
-                message: $"طلب إجازة من {empName} - {leaveType.LeaveTypeNameAr} - {item.NumberOfDays} يوم ({item.StartDate:dd/MM/yyyy} إلى {item.EndDate:dd/MM/yyyy})",
-                priority: 2,
-                targetRoleId: 2,
-                relatedModule: "SCR_LEAVE",
-                relatedRecordId: newId,
-                createdBy: userId);
+            await _notif.CreateForPermissionHoldersAsync(
+    notificationType: 4,
+    title: "طلب إجازة جديد بانتظار الاعتماد",
+    message: $"طلب إجازة من {empName} - {leaveType.LeaveTypeNameAr} - {item.NumberOfDays} يوم ({item.StartDate:dd/MM/yyyy} إلى {item.EndDate:dd/MM/yyyy})",
+    priority: 2,
+    permissionModuleCode: "SCR_LEAVE",
+    requiredPermission: ModulePermissionRequirement.Approve,
+    relatedModule: "SCR_LEAVE",
+    relatedRecordId: newId,
+    createdBy: userId,
+    targetRoleId: 2);
 
             return newId;
         }
@@ -307,15 +309,17 @@ namespace YKCoatings.Services
                 "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
                 new { ID = request.EmployeeID });
 
-            await _notif.CreateNotificationAsync(
-                notificationType: 4,
-                title: "طلب إجازة بانتظار اعتماد HR",
-                message: $"طلب إجازة {request.RequestNumber} من {empName} - {request.NumberOfDays} يوم - تم اعتماده من المدير وبانتظار اعتماد HR",
-                priority: 2,
-                targetRoleId: 2,
-                relatedModule: "SCR_LEAVE",
-                relatedRecordId: id,
-                createdBy: userId);
+            await _notif.CreateForPermissionHoldersAsync(
+    notificationType: 4,
+    title: "طلب إجازة بانتظار اعتماد HR",
+    message: $"طلب إجازة {request.RequestNumber} من {empName} - {request.NumberOfDays} يوم - تم اعتماده من المدير وبانتظار اعتماد HR",
+    priority: 2,
+    permissionModuleCode: "SCR_LEAVE",
+    requiredPermission: ModulePermissionRequirement.Approve,
+    relatedModule: "SCR_LEAVE",
+    relatedRecordId: id,
+    createdBy: userId,
+    targetRoleId: 2);
         }
 
         // ========================================
@@ -406,15 +410,16 @@ namespace YKCoatings.Services
                     "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
                     new { ID = request.EmployeeID });
 
-                await _notif.CreateNotificationAsync(
-                    notificationType: 3,
-                    title: "تم اعتماد طلب الإجازة",
-                    message: $"تم اعتماد طلب الإجازة {request.RequestNumber} للموظف {empName} - {request.NumberOfDays} يوم",
-                    priority: 2,
-                    targetUserId: request.CreatedBy,
-                    relatedModule: "SCR_LEAVE",
-                    relatedRecordId: id,
-                    createdBy: userId);
+                await _notif.CreateForAuthorizedUserAsync(
+    notificationType: 3,
+    title: "تم اعتماد طلب الإجازة",
+    message: $"تم اعتماد طلب الإجازة {request.RequestNumber} للموظف {empName} - {request.NumberOfDays} يوم",
+    priority: 2,
+    targetUserId: request.CreatedBy,
+    permissionModuleCode: "SCR_LEAVE",
+    relatedModule: "SCR_LEAVE",
+    relatedRecordId: id,
+    createdBy: userId);
             }
         }
 
@@ -470,15 +475,16 @@ namespace YKCoatings.Services
                     "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
                     new { ID = request.EmployeeID });
 
-                await _notif.CreateNotificationAsync(
-                    notificationType: 4,
-                    title: "تم رفض طلب الإجازة",
-                    message: $"تم رفض طلب الإجازة {request.RequestNumber} للموظف {empName} - السبب: {reason}",
-                    priority: 2,
-                    targetUserId: request.CreatedBy,
-                    relatedModule: "SCR_LEAVE",
-                    relatedRecordId: id,
-                    createdBy: userId);
+                await _notif.CreateForAuthorizedUserAsync(
+    notificationType: 4,
+    title: "تم رفض طلب الإجازة",
+    message: $"تم رفض طلب الإجازة {request.RequestNumber} للموظف {empName} - السبب: {reason}",
+    priority: 2,
+    targetUserId: request.CreatedBy,
+    permissionModuleCode: "SCR_LEAVE",
+    relatedModule: "SCR_LEAVE",
+    relatedRecordId: id,
+    createdBy: userId);
             }
         }
 

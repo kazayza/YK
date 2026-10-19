@@ -6,11 +6,13 @@ namespace YKCoatings.Services
     public class BOMService : BaseDbService
     {
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public BOMService(IConfiguration configuration, AuditService audit)
+        public BOMService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization)
             : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
 
         // ==========================================
@@ -21,6 +23,8 @@ namespace YKCoatings.Services
             int? statusFilter = null,
             bool activeOnly = true)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -96,6 +100,8 @@ ORDER BY b.BOMStatus, b.BOMCode";
         // ==========================================
         public async Task<BOMEditDto?> GetBOMByIdAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -134,6 +140,8 @@ WHERE BOMID = @BOMID";
         // ==========================================
         public async Task<int> InsertBOMAsync(BOMEditDto bom, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanAdd, "لا تملك صلاحية إضافة الوصفات.");
+
             using var connection = CreateConnection();
 
             var bomCode = await GenerateBOMCodeAsync();
@@ -214,6 +222,8 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         // ==========================================
         public async Task UpdateBOMAsync(BOMEditDto bom, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل الوصفات.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -346,6 +356,8 @@ WHERE bd.BOMID = @BOMID
         // ==========================================
         public async Task<(bool Success, string Message)> SoftDeleteBOMAsync(int bomId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanDelete, "لا تملك صلاحية حذف الوصفات.");
+
             using var connection = CreateConnection();
 
             var current = await connection.QueryFirstOrDefaultAsync<dynamic>(
@@ -395,6 +407,14 @@ WHERE bd.BOMID = @BOMID
             int userId,
             int? employeeId = null)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM",
+                p => newStatus switch
+                {
+                    2 => p.CanApprove,
+                    3 => p.CanEdit,
+                    4 => p.CanDelete,
+                    _ => false
+                }, "لا تملك صلاحية تغيير حالة الوصفة.");
             using var connection = CreateConnection();
 
             var current = await connection.QueryFirstOrDefaultAsync<dynamic>(
@@ -486,6 +506,8 @@ WHERE bd.BOMID = @BOMID
             int productItemId,
             int excludeBomId = 0)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض الوصفات.");
+
             using var connection = CreateConnection();
 
             var existing = await connection.QueryFirstOrDefaultAsync<dynamic>(
@@ -517,6 +539,8 @@ WHERE bd.BOMID = @BOMID
             int userId,
             int? employeeId = null)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanApprove, "لا تملك صلاحية اعتماد إصدار الوصفة.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -577,6 +601,8 @@ WHERE bd.BOMID = @BOMID
         // ==========================================
         public async Task<(bool Success, int NewBOMID, string Message)> CopyBOMAsync(int sourceBomId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanAdd, "لا تملك صلاحية نسخ الوصفات.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -719,6 +745,8 @@ WHERE BOMID = @SourceBOMID",
         // ==========================================
         public async Task<List<BOMDetailDto>> GetBOMDetailsAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض تفاصيل الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -763,6 +791,8 @@ ORDER BY bd.MaterialType, bd.LineNumber";
 
         public async Task<int> InsertBOMDetailAsync(BOMDetailDto detail, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مكونات الوصفة.");
+
             using var connection = CreateConnection();
 
             var nextLine = await connection.ExecuteScalarAsync<int>(
@@ -822,6 +852,8 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
         public async Task UpdateBOMDetailAsync(BOMDetailDto detail, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مكونات الوصفة.");
+
             using var connection = CreateConnection();
 
             var unitCost = await GetItemCostAsync(detail.ItemID);
@@ -872,6 +904,8 @@ WHERE BOMDetailID = @BOMDetailID",
 
         public async Task DeleteBOMDetailAsync(int bomDetailId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanDelete, "لا تملك صلاحية حذف مكونات الوصفة.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -947,6 +981,8 @@ INNER JOIN OrderedLines ordered ON ordered.BOMDetailID = detail.BOMDetailID;",
 
         public async Task<bool> IsDuplicateItemAsync(int bomId, int itemId, int excludeDetailId = 0)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية فحص مكونات الوصفة.");
+
             using var connection = CreateConnection();
 
             var count = await connection.ExecuteScalarAsync<int>(
@@ -970,6 +1006,8 @@ INNER JOIN OrderedLines ordered ON ordered.BOMDetailID = detail.BOMDetailID;",
             int childFinishedProductItemId,
             int excludeDetailId = 0)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية فحص الوصفة.");
+
             using var connection = CreateConnection();
 
             const string sql = @"
@@ -1011,6 +1049,8 @@ OPTION (MAXRECURSION 32767);";
         // ==========================================
         public async Task<List<BOMStageDto>> GetBOMStagesAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1038,6 +1078,8 @@ ORDER BY bs.StageOrder";
 
         public async Task<int> InsertBOMStageAsync(BOMStageDto stage, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1083,6 +1125,8 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
         public async Task UpdateBOMStageAsync(BOMStageDto stage, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             await connection.ExecuteAsync(@"
@@ -1123,6 +1167,8 @@ WHERE BOMStageID = @BOMStageID",
 
         public async Task DeleteBOMStageAsync(int bomStageId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanDelete, "لا تملك صلاحية حذف مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             await connection.ExecuteAsync(
@@ -1141,6 +1187,8 @@ WHERE BOMStageID = @BOMStageID",
 
         public async Task<bool> IsDuplicateStageAsync(int bomId, int stageId, int excludeStageId = 0)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية فحص مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             var count = await connection.ExecuteScalarAsync<int>(
@@ -1161,6 +1209,8 @@ WHERE BOMStageID = @BOMStageID",
 
         public async Task<bool> IsDuplicateStageOrderAsync(int bomId, int stageOrder, int excludeStageId = 0)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية فحص مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             var count = await connection.ExecuteScalarAsync<int>(
@@ -1181,6 +1231,8 @@ WHERE BOMStageID = @BOMStageID",
 
         public async Task SwapStageOrderAsync(int bomId, int stageId1, int order1, int stageId2, int order2)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanEdit, "لا تملك صلاحية ترتيب مراحل الوصفة.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -1216,6 +1268,8 @@ WHERE BOMStageID = @BOMStageID",
         // ==========================================
         public async Task UpdateBOMCostsAsync(int bomId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تحديث تكلفة الوصفة.");
+
             using var connection = CreateConnection();
 
             await connection.ExecuteAsync(@"
@@ -1240,6 +1294,8 @@ WHERE bd.BOMID = @BOMID",
 
         public async Task<BOMCostSummaryDto> GetBOMCostSummaryAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض تكلفة الوصفة.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1312,6 +1368,7 @@ WHERE BOMID = @BOMID";
         // ==========================================
         public async Task<string> GenerateBOMCodeAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView || p.CanAdd, "لا تملك صلاحية إنشاء رقم وصفة.");
             using var connection = CreateConnection();
 
             try
@@ -1322,11 +1379,15 @@ EXEC dbo.sp_GetNextNumber 'BOM', @NextNum OUTPUT;
 SELECT @NextNum;";
 
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"BOM-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber كوداً للوصفة.");
+
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
-                return $"BOM-{DateTime.Now:yyMMddHHmmss}";
+                throw new InvalidOperationException(
+                    "تعذر توليد كود الوصفة (BOM). لم يُنشأ كود بديل؛ راجع إعداد التسلسل BOM والإجراء المخزن.", ex);
             }
         }
 
@@ -1335,6 +1396,8 @@ SELECT @NextNum;";
         // ==========================================
         public async Task<BOMAuditDto?> GetBOMAuditAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض سجل الوصفة.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1356,6 +1419,8 @@ WHERE b.BOMID = @BOMID";
 
         public async Task<decimal> GetTotalStagesDurationAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض مراحل الوصفة.");
+
             using var connection = CreateConnection();
 
             var total = await connection.ExecuteScalarAsync<decimal?>(
@@ -1372,6 +1437,8 @@ WHERE b.BOMID = @BOMID";
         // ==========================================
         public async Task<List<BOMLookupDto>> GetProductItemsLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض بيانات الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1389,6 +1456,8 @@ ORDER BY ItemNameAr";
 
         public async Task<List<BOMLookupDto>> GetUnitsLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض بيانات الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1406,6 +1475,8 @@ ORDER BY UnitNameAr";
 
         public async Task<List<BOMLookupDto>> GetStagesLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض بيانات الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1422,6 +1493,8 @@ ORDER BY StageOrder";
 
         public async Task<List<SearchableItem>> GetMaterialItemsLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض بيانات الوصفات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -1449,6 +1522,8 @@ ORDER BY i.ItemType, i.ItemNameAr";
         // ==========================================
         public async Task<byte[]> ExportBOMListToExcelAsync(List<BOMListDto> items, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanExport, "لا تملك صلاحية تصدير الوصفات.");
+
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("الوصفات");
 

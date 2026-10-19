@@ -121,15 +121,17 @@ var empName = await connection.QueryFirstOrDefaultAsync<string>(
     "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
     new { ID = item.EmployeeID });
 
-await _notif.CreateNotificationAsync(
+await _notif.CreateForPermissionHoldersAsync(
     notificationType: 2,
     title: "سلفة جديدة بانتظار الاعتماد",
     message: $"سلفة جديدة للموظف {empName} بمبلغ {item.LoanAmount:#,##0} جنيه - {item.LoanNumber}",
     priority: 2,
-    targetRoleId: 1,
+    permissionModuleCode: "SCR_LOANS",
+    requiredPermission: ModulePermissionRequirement.Approve,
     relatedModule: "SCR_LOANS",
     relatedRecordId: newId,
-    createdBy: userId);
+    createdBy: userId,
+    targetRoleId: 1);
 
             return newId;
         }
@@ -240,15 +242,16 @@ await _notif.CreateNotificationAsync(
 
     if (createdByUserId.HasValue)
     {
-        await _notif.CreateNotificationAsync(
-            notificationType: 3,
-            title: "تم اعتماد السلفة",
-            message: $"تم اعتماد السلفة {loan.LoanNumber} للموظف {empName} بمبلغ {loan.LoanAmount:#,##0} جنيه - {loan.NumberOfInstallments} قسط",
-            priority: 2,
-            targetUserId: createdByUserId.Value,
-            relatedModule: "SCR_LOANS",
-            relatedRecordId: loanId,
-            createdBy: userId);
+        await _notif.CreateForAuthorizedUserAsync(
+    notificationType: 3,
+    title: "تم اعتماد السلفة",
+    message: $"تم اعتماد السلفة {loan.LoanNumber} للموظف {empName} بمبلغ {loan.LoanAmount:#,##0} جنيه - {loan.NumberOfInstallments} قسط",
+    priority: 2,
+    targetUserId: createdByUserId.Value,
+    permissionModuleCode: "SCR_LOANS",
+    relatedModule: "SCR_LOANS",
+    relatedRecordId: loanId,
+    createdBy: userId);
     }
 }
 public async Task RejectLoanAsync(int loanId, int userId)
@@ -288,15 +291,16 @@ public async Task RejectLoanAsync(int loanId, int userId)
 
     if (createdByUserId.HasValue)
     {
-        await _notif.CreateNotificationAsync(
-            notificationType: 4,
-            title: "تم رفض السلفة",
-            message: $"تم رفض السلفة {loan.LoanNumber} للموظف {empName} بمبلغ {loan.LoanAmount:#,##0} جنيه",
-            priority: 2,
-            targetUserId: createdByUserId.Value,
-            relatedModule: "SCR_LOANS",
-            relatedRecordId: loanId,
-            createdBy: userId);
+        await _notif.CreateForAuthorizedUserAsync(
+    notificationType: 4,
+    title: "تم رفض السلفة",
+    message: $"تم رفض السلفة {loan.LoanNumber} للموظف {empName} بمبلغ {loan.LoanAmount:#,##0} جنيه",
+    priority: 2,
+    targetUserId: createdByUserId.Value,
+    permissionModuleCode: "SCR_LOANS",
+    relatedModule: "SCR_LOANS",
+    relatedRecordId: loanId,
+    createdBy: userId);
     }
 }
 

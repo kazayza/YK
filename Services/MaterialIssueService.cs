@@ -584,6 +584,9 @@ WHERE IssueID = @IssueID AND IssueStatus=1",
                 if (issueUpdated != 1)
                     throw new InvalidOperationException("تغيرت حالة إذن الصرف أثناء الاعتماد؛ أُلغيت العملية كاملة.");
 
+                await _notification.MarkRelatedAsActionedAsync(
+                    connection, transaction, "SCR_MATISS", issueId);
+
                 // The order has exact FIFO issue costs, but the schema has no link from an issue
                 // line to a production batch. Store the order-level issued cost only when no
                 // returned quantity exists; never spread it over batches or load it onto rejects.
@@ -693,6 +696,9 @@ WHERE IssueID = @IssueID AND IssueStatus=1",
                     new { ID = issueId, UserID = userId }, transaction);
                 if (changed != 1) throw new InvalidOperationException("تغيرت حالة الإذن؛ أعد تحميله قبل الإلغاء.");
 
+                await _notification.MarkRelatedAsActionedAsync(
+                    connection, transaction, "SCR_MATISS", issueId);
+
                 if (issue.CreatedBy.HasValue)
                 {
                     await _notification.CreateForAuthorizedUserAsync(
@@ -794,12 +800,15 @@ SELECT @NextNum;";
 
                 var result = await connection.QueryFirstOrDefaultAsync<string>(
                     sql, transaction: transaction);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لإذن صرف الخامات.");
 
-                return result ?? $"MI-{DateTime.Now:yyMMddHHmmss}";
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
-                return $"MI-{DateTime.Now:yyMMddHHmmss}";
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم إذن صرف الخامات (MI). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل MI والإجراء المخزن.", ex);
             }
         }
 

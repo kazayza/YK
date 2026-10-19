@@ -5,12 +5,17 @@
 @inject AccountingService AccountingService
 @inject TreasuryService TreasuryService
 @inject UserSessionService UserSession
+@inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
 <PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف") - Gold Edition Pro</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (!permissionsLoaded)
+{<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات المصروفات...</p></div>}
+else if (!CanUseExpenseEditor)
+{<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية تنفيذ هذه العملية على المصروفات</h4></div>}
 else
 {
 <div class="luxury-page" dir="rtl">
@@ -46,7 +51,7 @@ else
                             <option value="0">— تلقائي من التاريخ —</option>
                             @foreach(var fy in fiscalYears){<option value="@fy.FiscalYearID">@fy.YearName (@fy.StartDate.ToString("yyyy") ) - @fy.StatusName</option>}
                         </select>
-                        @if(!fiscalYears.Any()){<small style="color:#dc2626;font-weight:700">⚠️ لا توجد سنة مالية - سيتم إنشاؤها تلقائياً عند الحفظ</small>}
+                        @if(!fiscalYears.Any()){<small style="color:#dc2626;font-weight:700">لا توجد سنة مالية. أنشئها من شاشة إدارة السنوات المالية ثم أعد تحميل الصفحة.</small>}
                     </div>
                     <div class="fg"><label>الفترة المحاسبية *</label>
                         <select @bind="dto.PeriodID">
@@ -90,9 +95,10 @@ else
                     <div class="fg"><label>الخزينة * (يخصم منها الرصيد)</label>
                         <select @bind="cashBoxSelected" style="border-color:@(cashBoxSelected==0 && dto.PaymentMethod==1 ? "#ef4444" : "#e8e2d0")">
                             <option value="0">— اختر الخزينة —</option>
-                            @foreach(var cb in cashBoxes){<option value="@cb.CashBoxID">@cb.CashBoxNameAr - رصيد: @cb.CurrentBalance.ToString("#,##0.00")</option>}
+                            @foreach(var cb in cashBoxes){<option value="@cb.CashBoxID">@GetCashBoxOptionLabel(cb)</option>}
                         </select>
-                        <small style="color:#059669">سيتم خصم المبلغ من رصيد الخزينة المختارة + تحديث شجرة الحسابات</small>
+                        <small style="color:@(canViewCashBoxBalances ? "#059669" : "#8B95A5")">@(canViewCashBoxBalances ? "الرصيد الحالي معروض؛ سيُعكس المبلغ القديم ويُطبّق الجديد عند التعديل." : "الرصيد غير متاح لهذا المستخدم؛ لن يُعرض الصفر على أنه رصيد فعلي.")</small>
+                        @if(!string.IsNullOrWhiteSpace(cashBalanceLoadMessage)){<small style="display:block;color:#b45309;margin-top:4px">@cashBalanceLoadMessage</small>}
                     </div>
 
                     <div class="fg full"><label>البيان *</label><textarea @bind="dto.Description" rows="2" placeholder="مصاريف صيانة..."></textarea></div>
@@ -171,6 +177,28 @@ else
     private bool isSaving = false;
     private string msg = "";
     private bool isError = true;
+    private ModulePermissionDto? permissions;
+    private bool permissionsLoaded;
+    private bool canViewCashBoxBalances;
+    private string cashBalanceLoadMessage = "";
+
+    private bool CanReadCashBoxBalances => PermissionService.CanView("SCR_CASHSTAT")
+        || PermissionService.CanView("SCR_TREASURY")
+        || PermissionService.CanView("SCR_BANKS")
+        || PermissionService.CanView("SCR_CASHBOX")
+        || PermissionService.CanView("SCR_CASHBOXES");
+
+    private bool CanUseExpenseEditor
+    {
+        get
+        {
+            if (permissions is null || !permissions.CanView) return false;
+            if (Id == 0) return permissions.CanAdd;
+            if (!permissions.CanEdit || dto.ExpenseStatus != 1) return false;
+            if (dto.JournalID.HasValue) return permissions.CanApprove;
+            return !dto.IsPosted;
+        }
+    }
 
     private int fiscalYearSelected = 0;
     private int creditSelected = 0;
@@ -179,10 +207,45 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionsLoaded = true;
+            isLoading = false;
+            return;
+        }
+
         isLoading = true;
         try
         {
-            allAccounts = await AccountingService.GetFlatAccountsAsync();
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            var expensePermissions = PermissionService.Permissions
+                .Where(p => p.ModuleCode.Equals("SCR_EXPENSES", StringComparison.OrdinalIgnoreCase)
+                         || p.ModuleCode.Equals("SCR_EXPENSE", StringComparison.OrdinalIgnoreCase)
+                         || p.ModuleCode.Equals("SCR_OVERHEAD", StringComparison.OrdinalIgnoreCase)
+                         || p.ModuleCode.Equals("SCR_OVERHEAD_EXPENSES", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            permissions = expensePermissions.Count == 0 ? null : new ModulePermissionDto
+            {
+                CanView = expensePermissions.Any(p => p.CanView),
+                CanAdd = expensePermissions.Any(p => p.CanAdd),
+                CanEdit = expensePermissions.Any(p => p.CanEdit),
+                CanDelete = expensePermissions.Any(p => p.CanDelete),
+                CanPrint = expensePermissions.Any(p => p.CanPrint),
+                CanExport = expensePermissions.Any(p => p.CanExport),
+                CanApprove = expensePermissions.Any(p => p.CanApprove),
+                CanPost = expensePermissions.Any(p => p.CanPost),
+                CanCancel = expensePermissions.Any(p => p.CanCancel)
+            };
+            permissionsLoaded = true;
+            if (!CanUseExpenseEditor)
+            {
+                isLoading = false;
+                return;
+            }
+
+            allAccounts = await AccountingService.GetExpenseAccountLookupsAsync();
             // مصروفات: نوع 6 أو 5 أو كود يبدأ بـ 5 أو 4x أو اسم يحتوي مصروف
             expenseAccounts = allAccounts.Where(a => a.AccountType == 6 || a.AccountType == 5 || (a.AccountCode != null && (a.AccountCode.StartsWith("5") || a.AccountCode.StartsWith("4"))) || (a.AccountNameAr != null && (a.AccountNameAr.Contains("مصروف") || a.AccountNameAr.Contains("تكلفة")))).ToList();
             if (!expenseAccounts.Any()) expenseAccounts = allAccounts.Where(a => a.IsDetailAccount).ToList();
@@ -195,32 +258,28 @@ else
             costCenters = await TreasuryService.GetCostCentersFlatAsync();
             fiscalYears = await AccountingService.GetFiscalYearsAsync();
             allPeriods = await AccountingService.GetAccountingPeriodsAsync();
-            cashBoxes = await TreasuryService.GetCashBoxesAsync();
-
-            // إنشاء سنة مالية تلقائياً لو مفيش
-            if (!fiscalYears.Any())
+            cashBoxes = await TreasuryService.GetCashBoxLookupsAsync();
+            if (CanReadCashBoxBalances)
             {
                 try
                 {
-                    var currentYear = DateTime.Now.Year;
-                    var newFY = new FiscalYearDto
-                    {
-                        YearCode = currentYear.ToString(),
-                        YearName = $"السنة المالية {currentYear}",
-                        StartDate = new DateTime(currentYear, 1, 1),
-                        EndDate = new DateTime(currentYear, 12, 31),
-                        YearStatus = 1,
-                        IsCurrent = true,
-                        Notes = "إنشاء تلقائي من شاشة المصروفات"
-                    };
-                    await AccountingService.InsertFiscalYearAsync(newFY, UserSession.UserID);
-                    fiscalYears = await AccountingService.GetFiscalYearsAsync();
-                    allPeriods = await AccountingService.GetAccountingPeriodsAsync();
+                    var boxesWithBalances = await TreasuryService.GetCashBoxBalanceLookupsAsync();
+                    var balancesById = boxesWithBalances.ToDictionary(x => x.CashBoxID, x => x.CurrentBalance);
+                    foreach (var box in cashBoxes)
+                        if (balancesById.TryGetValue(box.CashBoxID, out var balance)) box.CurrentBalance = balance;
+                    canViewCashBoxBalances = true;
                 }
-                catch (Exception ex)
+                catch
                 {
-                    msg = $"تنبيه: لا توجد سنة مالية - {ex.Message}"; isError = true;
+                    cashBalanceLoadMessage = "تعذر تحميل الرصيد الفعلي؛ لم يُعرض صفر افتراضي بدلاً منه.";
                 }
+            }
+
+            // لا تنشئ سنة مالية أو فتراتها كأثر جانبي لفتح شاشة المصروفات.
+            if (!fiscalYears.Any())
+            {
+                msg = "لا توجد سنة مالية أو فترات محاسبية. أنشئها صراحةً من شاشة إدارة السنوات المالية قبل تسجيل المصروف.";
+                isError = true;
             }
 
             if (Id != 0)
@@ -237,7 +296,9 @@ else
             }
             else
             {
-                dto.ExpenseNumber = await AccountingService.GenerateExpenseNoAsync();
+                dto.ExpenseNumber = fiscalYears.Any()
+                    ? await AccountingService.GenerateExpenseNoAsync()
+                    : string.Empty;
                 dto.ExpenseDate = DateTime.Today;
                 // اختر أول سنة مالية حالية تلقائياً
                 var currentFY = fiscalYears.FirstOrDefault(f => f.IsCurrent) ?? fiscalYears.FirstOrDefault();
@@ -255,7 +316,13 @@ else
                 cashBoxSelected = def.CashBoxID;
             }
         }
-        catch (Exception ex) { msg = $"خطأ تحميل: {ex.Message}"; isError = true; }
+        catch (Exception ex)
+        {
+            permissions = null;
+            permissionsLoaded = true;
+            msg = $"خطأ تحميل: {ex.Message}";
+            isError = true;
+        }
         finally { isLoading = false; }
     }
 
@@ -298,6 +365,8 @@ else
 
     private async Task Save()
     {
+        if (!CanUseExpenseEditor) return;
+
         dto.FiscalYearID = fiscalYearSelected == 0 ? null : fiscalYearSelected;
         dto.CreditAccountID = creditSelected == 0 ? null : creditSelected;
         dto.CostCenterID = costCenterSelected == 0 ? null : costCenterSelected;
@@ -338,4 +407,7 @@ else
     private string GetCreditAccountName(int id) => allAccounts.FirstOrDefault(a => a.AccountID == id)?.AccountNameAr ?? "";
     private string GetCostCenterName(int id) => costCenters.FirstOrDefault(c => c.CostCenterID == id)?.CostCenterNameAr ?? "";
     private string GetPeriodName(int id) => allPeriods.FirstOrDefault(p => p.PeriodID == id)?.PeriodName ?? "—";
+    private string GetCashBoxOptionLabel(CashBoxListDto box) => canViewCashBoxBalances
+        ? $"{box.CashBoxNameAr} - رصيد: {box.CurrentBalance:#,##0.00}"
+        : $"{box.CashBoxNameAr} - الرصيد غير متاح";
 }

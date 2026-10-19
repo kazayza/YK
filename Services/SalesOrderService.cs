@@ -202,9 +202,16 @@ ORDER BY sod.LineNumber";
             {
                 var sql = @"DECLARE @NextNum NVARCHAR(50); EXEC sp_GetNextNumber N'SO', @NextNum OUTPUT; SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"SO-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لأمر البيع.");
+
+                return result;
             }
-            catch { return $"SO-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم أمر البيع (SO). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل SO والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertOrderAsync(SalesOrderHeaderDto header, int userId)
@@ -474,11 +481,16 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             try
             {
-                var approverRoles = await connection.QueryAsync<int>(@"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r INNER JOIN dbo.RolePermissions rp ON r.RoleID=rp.RoleID INNER JOIN dbo.SystemModules sm ON rp.ModuleID=sm.ModuleID WHERE sm.ModuleCode=N'SCR_SO' AND rp.CanApprove=1");
-                foreach (var roleId in approverRoles)
-                {
-                    await _notif.CreateNotificationAsync(3, "أمر بيع بانتظار الاعتماد", $"أمر البيع رقم {info.SONumber} بانتظار الاعتماد", 1, null, roleId, "SCR_SO", salesOrderId, userId);
-                }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "أمر بيع بانتظار الاعتماد",
+                    message: $"أمر البيع رقم {info.SONumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: "SCR_SO",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_SO",
+                    relatedRecordId: salesOrderId,
+                    createdBy: userId);
             }
             catch { }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"إرسال أمر بيع للاعتماد: {info.SONumber}");
@@ -504,10 +516,22 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             }
             catch { transaction.Rollback(); throw; }
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
             try
             {
-                if (createdBy.HasValue) await _notif.CreateNotificationAsync(3, "تم اعتماد أمر البيع", $"تم اعتماد أمر البيع رقم {orderNumber}", 2, createdBy.Value, null, "SCR_SO", salesOrderId, userId);
-                await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId);
+                if (createdBy.HasValue)
+                {
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم اعتماد أمر البيع",
+                        message: $"تم اعتماد أمر البيع رقم {orderNumber}",
+                        priority: 2,
+                        targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_SO",
+                        relatedModule: "SCR_SO",
+                        relatedRecordId: salesOrderId,
+                        createdBy: userId);
+                }
             }
             catch { }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"اعتماد أمر بيع: {orderNumber}");
@@ -523,10 +547,22 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=1, ModifiedBy=@UserID, ModifiedDate=GETDATE(), Notes=ISNULL(Notes,'') + @Reason WHERE SalesOrderID=@ID", new { ID = salesOrderId, Reason = " - رفض: " + rejectionReason, UserID = userId });
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
             try
             {
-                if (info.CreatedBy.HasValue) await _notif.CreateNotificationAsync(3, "تم رفض أمر البيع", $"تم رفض أمر البيع رقم {info.SONumber}. السبب: {rejectionReason}", 1, info.CreatedBy.Value, null, "SCR_SO", salesOrderId, userId);
-                await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId);
+                if (info.CreatedBy.HasValue)
+                {
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم رفض أمر البيع",
+                        message: $"تم رفض أمر البيع رقم {info.SONumber}. السبب: {rejectionReason}",
+                        priority: 1,
+                        targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: "SCR_SO",
+                        relatedModule: "SCR_SO",
+                        relatedRecordId: salesOrderId,
+                        createdBy: userId);
+                }
             }
             catch { }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"رفض أمر بيع: {info.SONumber} - {rejectionReason}");
@@ -540,6 +576,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             if (info.SOStatus == 7) throw new Exception("أمر البيع ملغي بالفعل");
 
             await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=7, ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE SalesOrderID=@ID", new { ID = salesOrderId, UserID = userId });
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"إلغاء أمر بيع: {info.SONumber}");
         }
 

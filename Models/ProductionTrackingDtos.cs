@@ -104,6 +104,19 @@
     }
 
     // ==========================================
+    // ملخص مؤشرات لوحة التصنيع
+    // ==========================================
+    public class ManufacturingDashboardSummaryDto
+    {
+        public int ActiveOrderCount { get; set; }
+        public int InProductionBatchCount { get; set; }
+        public int ProductionCompleteBatchCount { get; set; }
+        public int QualityInspectionBatchCount { get; set; }
+        public int ProblemStageCount { get; set; }
+        public int RejectedBatchCount { get; set; }
+    }
+
+    // ==========================================
     // عنصر مرحلة في الخط الزمني
     // ==========================================
     public class StageTimelineItemDto

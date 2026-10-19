@@ -135,8 +135,8 @@ else
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_PAYV") ?? new ModulePermissionDto{CanView=true, CanAdd=true, CanEdit=true, CanDelete=true, CanApprove=true};
-        if (permissions.CanView) await LoadData();
+        permissions = PermissionService.GetModule("SCR_PAYV");
+        if (permissions?.CanView == true) await LoadData();
     }
 
     private async Task LoadData()

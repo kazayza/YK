@@ -55,6 +55,12 @@ namespace YKCoatings.Models
         public DateTime? SentDate { get; set; }
     }
 
+    public sealed class SalesQuotationCustomerContactDto
+    {
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+    }
+
     public sealed class SalesQuotationDetailDto
     {
         public int QuotationDetailID { get; set; }

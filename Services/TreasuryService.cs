@@ -8,18 +8,96 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public TreasuryService(IConfiguration configuration, AuditService audit, NotificationService notif) : base(configuration)
+        public TreasuryService(
+            IConfiguration configuration,
+            AuditService audit,
+            NotificationService notif,
+            ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
         }
+
+        private async Task RequireCurrentAnyModulePermissionAsync(
+            string deniedMessage,
+            Func<ModulePermissionDto, bool> predicate,
+            params string[] moduleCodes)
+        {
+            if (moduleCodes.Length == 0)
+                throw new ArgumentException("يجب تحديد وحدة واحدة على الأقل.", nameof(moduleCodes));
+
+            foreach (var moduleCode in moduleCodes)
+            {
+                try
+                {
+                    await _authorization.RequireCurrentUserPermissionAsync(moduleCode, predicate, deniedMessage);
+                    return;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // جرّب رمزاً بديلاً معروفاً لهذه الشاشة؛ تبقى النتيجة رفضاً إن لم ينجح أي رمز.
+                }
+            }
+
+            throw new UnauthorizedAccessException(deniedMessage);
+        }
+
+        private async Task RequireAnyModulePermissionAsync(
+            int userId,
+            string deniedMessage,
+            Func<ModulePermissionDto, bool> predicate,
+            params string[] moduleCodes)
+        {
+            if (moduleCodes.Length == 0)
+                throw new ArgumentException("يجب تحديد وحدة واحدة على الأقل.", nameof(moduleCodes));
+
+            foreach (var moduleCode in moduleCodes)
+            {
+                try
+                {
+                    await _authorization.RequireUserPermissionAsync(userId, moduleCode, predicate, deniedMessage);
+                    return;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // جرّب رمزاً بديلاً معروفاً لهذه الشاشة؛ تبقى النتيجة رفضاً إن لم ينجح أي رمز.
+                }
+            }
+
+            throw new UnauthorizedAccessException(deniedMessage);
+        }
+
+        private Task RequireCashBoxPermissionAsync(
+            int userId,
+            Func<ModulePermissionDto, bool> predicate,
+            string deniedMessage) =>
+            RequireAnyModulePermissionAsync(userId, deniedMessage, predicate, "SCR_BANKS", "SCR_CASHBOX", "SCR_CASHBOXES");
+
+        private Task RequireChequeApprovalPermissionAsync(int userId, string deniedMessage) =>
+            RequireAnyModulePermissionAsync(
+                userId, deniedMessage, p => p.CanApprove, "SCR_CHEQUES", "SCR_CHEQUE");
+
+        private static bool HasNonInitialChequeApprovalState(ChequeDto cheque) =>
+            cheque.ChequeStatus != 1 || cheque.CollectionDate.HasValue || cheque.BounceDate.HasValue ||
+            !string.IsNullOrWhiteSpace(cheque.BounceReason);
+
+        private static bool HasChequeApprovalStateChanged(ChequeDto current, ChequeDto proposed) =>
+            current.ChequeStatus != proposed.ChequeStatus ||
+            current.CollectionDate != proposed.CollectionDate ||
+            current.BounceDate != proposed.BounceDate ||
+            !string.Equals(current.BounceReason, proposed.BounceReason, StringComparison.Ordinal);
 
         // ==========================================
         // لوحة تحكم الخزينة - على الجداول الحقيقية
         // ==========================================
         public async Task<TreasuryDashboardDto> GetDashboardAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_TREASURY", p => p.CanView, "ليس لديك صلاحية عرض لوحة الخزينة.");
+
             using var connection = CreateConnection();
             var dto = new TreasuryDashboardDto();
             try
@@ -145,6 +223,9 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<CashBoxListDto>> GetCashBoxesAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض بيانات الخزائن.", p => p.CanView, "SCR_BANKS", "SCR_CASHBOX", "SCR_CASHBOXES");
+
             using var connection = CreateConnection();
             try
             {
@@ -196,8 +277,63 @@ namespace YKCoatings.Services
             }
         }
 
+        public async Task<List<CashBoxListDto>> GetCashBoxLookupsAsync()
+        {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية استخدام الخزائن في هذا المسار.",
+                p => p.CanView || p.CanAdd || p.CanEdit,
+                "SCR_RECV", "SCR_PAYV", "SCR_EXPENSES", "SCR_EXPENSE", "SCR_OVERHEAD", "SCR_OVERHEAD_EXPENSES", "SCR_CASHTRANS", "SCR_CASHSTAT");
+
+            return await GetActiveCashBoxLookupsAsync();
+        }
+
+        public async Task<List<CashBoxListDto>> GetCashBoxStatementLookupsAsync()
+        {
+            await _authorization.RequireCurrentCashBoxStatementViewAsync(
+                "ليس لديك صلاحية استخدام الخزائن في كشف الحركات.");
+
+            return await GetActiveCashBoxLookupsAsync();
+        }
+
+        private async Task<List<CashBoxListDto>> GetActiveCashBoxLookupsAsync()
+        {
+            using var connection = CreateConnection();
+            var sql = @"SELECT CashBoxID, CashBoxCode, CashBoxNameAr, CashBoxNameEn,
+                               ISNULL(CashBoxType,1) AS CashBoxType,
+                               ISNULL(IsDefault,0) AS IsDefault,
+                               ISNULL(IsActive,1) AS IsActive
+                        FROM dbo.CashBoxes
+                        WHERE ISNULL(IsActive,1)=1
+                        ORDER BY CashBoxNameAr";
+            var result = await connection.QueryAsync<CashBoxListDto>(sql);
+            return result.ToList();
+        }
+
+        // أرصدة الخزائن تعرض فقط لصلاحيات العرض الخاصة بالخزينة/الكشف؛ لا توسّع بيانات lookup المشترك.
+        public async Task<List<CashBoxListDto>> GetCashBoxBalanceLookupsAsync()
+        {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض أرصدة الخزائن.", p => p.CanView,
+                "SCR_CASHSTAT", "SCR_TREASURY", "SCR_BANKS", "SCR_CASHBOX", "SCR_CASHBOXES");
+
+            using var connection = CreateConnection();
+            const string sql = @"SELECT CashBoxID, CashBoxCode, CashBoxNameAr, CashBoxNameEn,
+                                        ISNULL(CashBoxType,1) AS CashBoxType,
+                                        ISNULL(IsDefault,0) AS IsDefault,
+                                        ISNULL(IsActive,1) AS IsActive,
+                                        ISNULL(CurrentBalance,0) AS CurrentBalance
+                                 FROM dbo.CashBoxes
+                                 WHERE ISNULL(IsActive,1)=1
+                                 ORDER BY CashBoxNameAr";
+            var rows = await connection.QueryAsync<CashBoxListDto>(sql);
+            return rows.ToList();
+        }
+
         public async Task<CashBoxDto?> GetCashBoxByIdAsync(int id)
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض تفاصيل الخزائن.", p => p.CanView, "SCR_BANKS", "SCR_CASHBOX", "SCR_CASHBOXES");
+
             using var connection = CreateConnection();
             var sql = @"SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr, cb.CashBoxNameEn, ISNULL(cb.CashBoxType,1) AS CashBoxType,
                                cb.AccountID, coa.AccountNameAr, ISNULL(cb.OpeningBalance,0) AS OpeningBalance, cb.CurrentBalance,
@@ -213,6 +349,9 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateCashBoxCodeAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية إنشاء خزينة.", p => p.CanAdd, "SCR_BANKS", "SCR_CASHBOX", "SCR_CASHBOXES");
+
             using var connection = CreateConnection();
             var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*)+1 FROM dbo.CashBoxes");
             return $"CB-{count:000}";
@@ -220,6 +359,9 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertCashBoxAsync(CashBoxDto dto, int userId)
         {
+            await RequireCashBoxPermissionAsync(
+                userId, p => p.CanAdd, "ليس لديك صلاحية إضافة خزينة.");
+
             using var connection = CreateConnection();
             if (string.IsNullOrWhiteSpace(dto.CashBoxCode))
                 dto.CashBoxCode = await GenerateCashBoxCodeAsync();
@@ -254,6 +396,9 @@ namespace YKCoatings.Services
 
         public async Task UpdateCashBoxAsync(CashBoxDto dto, int userId)
         {
+            await RequireCashBoxPermissionAsync(
+                userId, p => p.CanEdit, "ليس لديك صلاحية تعديل الخزائن.");
+
             using var connection = CreateConnection();
             // كان الخطأ هنا: لا يتم تحديث OpeningBalance نهائياً عند التعديل!
             // تم الإصلاح: إضافة OpeningBalance + تحديث CurrentBalance إذا لم تكن هناك حركات
@@ -293,6 +438,9 @@ namespace YKCoatings.Services
 
         public async Task DeleteCashBoxAsync(int id, int userId)
         {
+            await RequireCashBoxPermissionAsync(
+                userId, p => p.CanDelete, "ليس لديك صلاحية حذف الخزائن.");
+
             using var connection = CreateConnection();
             var hasTrans = await connection.ExecuteScalarAsync<int>(
                 "SELECT COUNT(*) FROM (SELECT CashBoxID FROM dbo.ReceiptVouchers WHERE CashBoxID=@ID UNION ALL SELECT CashBoxID FROM dbo.PaymentVouchers WHERE CashBoxID=@ID) t",
@@ -308,6 +456,9 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<ReceiptVoucherListDto>> GetReceiptVouchersAsync(DateTime? from = null, DateTime? to = null, int? cashBoxId = null)
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_RECV", p => p.CanView, "ليس لديك صلاحية عرض سندات القبض.");
+
             using var connection = CreateConnection();
             var sql = @"SELECT rv.ReceiptID, rv.ReceiptNumber, rv.ReceiptDate, rv.ReceivedFrom, rv.EntityType, rv.EntityID,
                                CASE WHEN rv.EntityType=1 THEN c.CustomerNameAr WHEN rv.EntityType=2 THEN s.SupplierNameAr ELSE rv.ReceivedFrom END AS EntityName,
@@ -338,6 +489,9 @@ namespace YKCoatings.Services
 
         public async Task<ReceiptVoucherDto?> GetReceiptByIdAsync(int id)
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_RECV", p => p.CanView, "ليس لديك صلاحية عرض سندات القبض.");
+
             using var connection = CreateConnection();
             var sql = @"SELECT rv.ReceiptID, rv.ReceiptNumber, rv.ReceiptDate, rv.ReceivedFrom, rv.EntityType, rv.EntityID,
                                CASE WHEN rv.EntityType=1 THEN c.CustomerNameAr WHEN rv.EntityType=2 THEN s.SupplierNameAr ELSE rv.ReceivedFrom END AS EntityName,
@@ -359,18 +513,31 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateReceiptNoAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_RECV", p => p.CanAdd, "ليس لديك صلاحية إنشاء سند قبض.");
+
             using var connection = CreateConnection();
             try
             {
                 var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'RV', @Next OUTPUT; SELECT @Next;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"RV-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لسند القبض.");
+
+                return result;
             }
-            catch { return $"RV-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم سند القبض. لم يتم إنشاء رقم بديل؛ راجع إعداد تسلسل RV والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertReceiptAsync(ReceiptVoucherDto dto, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_RECV", p => p.CanAdd, "ليس لديك صلاحية إنشاء سند قبض.");
+
             using var connection = CreateConnection();
             if (string.IsNullOrWhiteSpace(dto.ReceiptNumber))
                 dto.ReceiptNumber = await GenerateReceiptNoAsync();
@@ -421,54 +588,73 @@ namespace YKCoatings.Services
 
         public async Task UpdateReceiptAsync(ReceiptVoucherDto dto, int userId)
         {
-            using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT ReceiptStatus FROM dbo.ReceiptVouchers WHERE ReceiptID=@ID", new { ID = dto.ReceiptID });
-            if (status != 1) throw new Exception("لا يمكن تعديل سند معتمد");
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_RECV", p => p.CanEdit, "ليس لديك صلاحية تعديل سندات القبض.");
 
             dto.AmountLocal = dto.Amount * (dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate);
-
-            var sql = @"UPDATE dbo.ReceiptVouchers SET ReceiptDate=@ReceiptDate, ReceivedFrom=@ReceivedFrom, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
-                        PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
-                        ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
-                        TransferRef=@TransferRef, Description=@Description, RevenueAccountID=NULLIF(@RevenueAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
-                        Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
-                        WHERE ReceiptID=@ReceiptID";
-            await connection.ExecuteAsync(sql, new
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
             {
-                dto.ReceiptID,
-                dto.ReceiptDate,
-                dto.ReceivedFrom,
-                dto.EntityType,
-                dto.EntityID,
-                dto.PaymentMethod,
-                dto.CashBoxID,
-                dto.BankAccountID,
-                dto.Amount,
-                dto.CurrencyID,
-                ExchangeRate = dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate,
-                dto.AmountLocal,
-                dto.ChequeNumber,
-                dto.ChequeDate,
-                dto.ChequeBankName,
-                dto.TransferRef,
-                dto.Description,
-                dto.RevenueAccountID,
-                dto.CostCenterID,
-                dto.Notes,
-                UserID = userId
-            });
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT ReceiptStatus FROM dbo.ReceiptVouchers WITH (UPDLOCK, HOLDLOCK) WHERE ReceiptID=@ID",
+                    new { ID = dto.ReceiptID }, trans);
+                if (status != 1) throw new Exception("لا يمكن تعديل سند معتمد أو غير موجود");
+
+                var sql = @"UPDATE dbo.ReceiptVouchers SET ReceiptDate=@ReceiptDate, ReceivedFrom=@ReceivedFrom, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
+                            PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
+                            ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
+                            TransferRef=@TransferRef, Description=@Description, RevenueAccountID=NULLIF(@RevenueAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
+                            Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                            WHERE ReceiptID=@ReceiptID";
+                await connection.ExecuteAsync(sql, new
+                {
+                    dto.ReceiptID,
+                    dto.ReceiptDate,
+                    dto.ReceivedFrom,
+                    dto.EntityType,
+                    dto.EntityID,
+                    dto.PaymentMethod,
+                    dto.CashBoxID,
+                    dto.BankAccountID,
+                    dto.Amount,
+                    dto.CurrencyID,
+                    ExchangeRate = dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate,
+                    dto.AmountLocal,
+                    dto.ChequeNumber,
+                    dto.ChequeDate,
+                    dto.ChequeBankName,
+                    dto.TransferRef,
+                    dto.Description,
+                    dto.RevenueAccountID,
+                    dto.CostCenterID,
+                    dto.Notes,
+                    UserID = userId
+                }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "ReceiptVouchers", dto.ReceiptID.ToString(), moduleName: "SCR_RECV", description: $"تعديل سند قبض: {dto.ReceiptNumber}");
         }
 
         public async Task ApproveReceiptAsync(int id, int userId, int? empId = null)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_RECV", p => p.CanApprove, "ليس لديك صلاحية اعتماد سندات القبض.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var trans = connection.BeginTransaction();
             try
             {
                 var rv = await connection.QueryFirstOrDefaultAsync<(string ReceiptNumber, int ReceiptStatus, decimal Amount, int CashBoxID)>(
-                    "SELECT ReceiptNumber, ReceiptStatus, Amount, CashBoxID FROM dbo.ReceiptVouchers WHERE ReceiptID=@ID", new { ID = id }, trans);
+                    "SELECT ReceiptNumber, ReceiptStatus, Amount, CashBoxID FROM dbo.ReceiptVouchers WITH (UPDLOCK, HOLDLOCK) WHERE ReceiptID=@ID", new { ID = id }, trans);
                 if (rv.ReceiptNumber == null) throw new Exception("السند غير موجود");
                 if (rv.ReceiptStatus != 1) throw new Exception("السند ليس مسودة");
 
@@ -517,18 +703,36 @@ namespace YKCoatings.Services
 
         public async Task DeleteReceiptAsync(int id, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_RECV", p => p.CanDelete, "ليس لديك صلاحية حذف سندات القبض.");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT ReceiptStatus FROM dbo.ReceiptVouchers WHERE ReceiptID=@ID", new { ID = id });
-            if (status != 1) throw new Exception("لا يمكن حذف سند معتمد");
-            await connection.ExecuteAsync("DELETE FROM dbo.ReceiptVouchers WHERE ReceiptID=@ID", new { ID = id });
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
+            {
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT ReceiptStatus FROM dbo.ReceiptVouchers WITH (UPDLOCK, HOLDLOCK) WHERE ReceiptID=@ID",
+                    new { ID = id }, trans);
+                if (status != 1) throw new Exception("لا يمكن حذف سند معتمد أو غير موجود");
+
+                await connection.ExecuteAsync("DELETE FROM dbo.ReceiptVouchers WHERE ReceiptID=@ID", new { ID = id }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 3, "ReceiptVouchers", id.ToString(), moduleName: "SCR_RECV", description: "حذف سند قبض");
         }
 
-        // ==========================================
-        // سندات الصرف - على الجدول الحقيقي PaymentVouchers
-        // ==========================================
         public async Task<List<PaymentVoucherListDto>> GetPaymentVouchersAsync(DateTime? from = null, DateTime? to = null, int? cashBoxId = null)
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_PAYV", p => p.CanView, "ليس لديك صلاحية عرض سندات الصرف.");
+
             using var connection = CreateConnection();
             var sql = @"SELECT pv.PaymentID, pv.PaymentNumber, pv.PaymentDate, pv.PaidTo, pv.EntityType, pv.EntityID,
                                CASE WHEN pv.EntityType=1 THEN s.SupplierNameAr WHEN pv.EntityType=2 THEN c.CustomerNameAr ELSE pv.PaidTo END AS EntityName,
@@ -551,6 +755,9 @@ namespace YKCoatings.Services
 
         public async Task<PaymentVoucherDto?> GetPaymentByIdAsync(int id)
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_PAYV", p => p.CanView, "ليس لديك صلاحية عرض سندات الصرف.");
+
             using var connection = CreateConnection();
             var sql = @"SELECT pv.PaymentID, pv.PaymentNumber, pv.PaymentDate, pv.PaidTo, pv.EntityType, pv.EntityID,
                                CASE WHEN pv.EntityType=1 THEN s.SupplierNameAr WHEN pv.EntityType=2 THEN c.CustomerNameAr ELSE pv.PaidTo END AS EntityName,
@@ -572,18 +779,31 @@ namespace YKCoatings.Services
 
         public async Task<string> GeneratePaymentNoAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                "SCR_PAYV", p => p.CanAdd, "ليس لديك صلاحية إنشاء سند صرف.");
+
             using var connection = CreateConnection();
             try
             {
                 var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'PV', @Next OUTPUT; SELECT @Next;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"PV-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لسند الصرف.");
+
+                return result;
             }
-            catch { return $"PV-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم سند الصرف. لم يتم إنشاء رقم بديل؛ راجع إعداد تسلسل PV والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertPaymentAsync(PaymentVoucherDto dto, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_PAYV", p => p.CanAdd, "ليس لديك صلاحية إنشاء سند صرف.");
+
             using var connection = CreateConnection();
             if (string.IsNullOrWhiteSpace(dto.PaymentNumber))
                 dto.PaymentNumber = await GeneratePaymentNoAsync();
@@ -633,53 +853,73 @@ namespace YKCoatings.Services
 
         public async Task UpdatePaymentAsync(PaymentVoucherDto dto, int userId)
         {
-            using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT PaymentStatus FROM dbo.PaymentVouchers WHERE PaymentID=@ID", new { ID = dto.PaymentID });
-            if (status != 1) throw new Exception("لا يمكن تعديل سند معتمد");
-            dto.AmountLocal = dto.Amount * (dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate);
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_PAYV", p => p.CanEdit, "ليس لديك صلاحية تعديل سندات الصرف.");
 
-            var sql = @"UPDATE dbo.PaymentVouchers SET PaymentDate=@PaymentDate, PaidTo=@PaidTo, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
-                        PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
-                        ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
-                        TransferRef=@TransferRef, Description=@Description, ExpenseAccountID=NULLIF(@ExpenseAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
-                        Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
-                        WHERE PaymentID=@PaymentID";
-            await connection.ExecuteAsync(sql, new
+            dto.AmountLocal = dto.Amount * (dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate);
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
             {
-                dto.PaymentID,
-                dto.PaymentDate,
-                dto.PaidTo,
-                dto.EntityType,
-                dto.EntityID,
-                dto.PaymentMethod,
-                dto.CashBoxID,
-                dto.BankAccountID,
-                dto.Amount,
-                dto.CurrencyID,
-                ExchangeRate = dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate,
-                dto.AmountLocal,
-                dto.ChequeNumber,
-                dto.ChequeDate,
-                dto.ChequeBankName,
-                dto.TransferRef,
-                dto.Description,
-                dto.ExpenseAccountID,
-                dto.CostCenterID,
-                dto.Notes,
-                UserID = userId
-            });
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT PaymentStatus FROM dbo.PaymentVouchers WITH (UPDLOCK, HOLDLOCK) WHERE PaymentID=@ID",
+                    new { ID = dto.PaymentID }, trans);
+                if (status != 1) throw new Exception("لا يمكن تعديل سند معتمد أو غير موجود");
+
+                var sql = @"UPDATE dbo.PaymentVouchers SET PaymentDate=@PaymentDate, PaidTo=@PaidTo, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
+                            PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
+                            ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
+                            TransferRef=@TransferRef, Description=@Description, ExpenseAccountID=NULLIF(@ExpenseAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
+                            Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                            WHERE PaymentID=@PaymentID";
+                await connection.ExecuteAsync(sql, new
+                {
+                    dto.PaymentID,
+                    dto.PaymentDate,
+                    dto.PaidTo,
+                    dto.EntityType,
+                    dto.EntityID,
+                    dto.PaymentMethod,
+                    dto.CashBoxID,
+                    dto.BankAccountID,
+                    dto.Amount,
+                    dto.CurrencyID,
+                    ExchangeRate = dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate,
+                    dto.AmountLocal,
+                    dto.ChequeNumber,
+                    dto.ChequeDate,
+                    dto.ChequeBankName,
+                    dto.TransferRef,
+                    dto.Description,
+                    dto.ExpenseAccountID,
+                    dto.CostCenterID,
+                    dto.Notes,
+                    UserID = userId
+                }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "PaymentVouchers", dto.PaymentID.ToString(), moduleName: "SCR_PAYV", description: $"تعديل سند صرف: {dto.PaymentNumber}");
         }
 
         public async Task ApprovePaymentAsync(int id, int userId, int? empId = null)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_PAYV", p => p.CanApprove, "ليس لديك صلاحية اعتماد سندات الصرف.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var trans = connection.BeginTransaction();
             try
             {
                 var pv = await connection.QueryFirstOrDefaultAsync<(string PaymentNumber, int PaymentStatus)>(
-                    "SELECT PaymentNumber, PaymentStatus FROM dbo.PaymentVouchers WHERE PaymentID=@ID", new { ID = id }, trans);
+                    "SELECT PaymentNumber, PaymentStatus FROM dbo.PaymentVouchers WITH (UPDLOCK, HOLDLOCK) WHERE PaymentID=@ID", new { ID = id }, trans);
                 if (pv.PaymentNumber == null) throw new Exception("السند غير موجود");
                 if (pv.PaymentStatus != 1) throw new Exception("السند ليس مسودة");
 
@@ -725,18 +965,36 @@ namespace YKCoatings.Services
 
         public async Task DeletePaymentAsync(int id, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_PAYV", p => p.CanDelete, "ليس لديك صلاحية حذف سندات الصرف.");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT PaymentStatus FROM dbo.PaymentVouchers WHERE PaymentID=@ID", new { ID = id });
-            if (status != 1) throw new Exception("لا يمكن حذف سند معتمد");
-            await connection.ExecuteAsync("DELETE FROM dbo.PaymentVouchers WHERE PaymentID=@ID", new { ID = id });
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
+            {
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT PaymentStatus FROM dbo.PaymentVouchers WITH (UPDLOCK, HOLDLOCK) WHERE PaymentID=@ID",
+                    new { ID = id }, trans);
+                if (status != 1) throw new Exception("لا يمكن حذف سند معتمد أو غير موجود");
+
+                await connection.ExecuteAsync("DELETE FROM dbo.PaymentVouchers WHERE PaymentID=@ID", new { ID = id }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 3, "PaymentVouchers", id.ToString(), moduleName: "SCR_PAYV", description: "حذف سند صرف");
         }
 
-        // ==========================================
-        // تحويلات
-        // ==========================================
         public async Task<List<CashTransferListDto>> GetTransfersAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض تحويلات الخزينة.", p => p.CanView, "SCR_CASHTRANS");
+
             using var connection = CreateConnection();
             var sql = @"SELECT ct.TransferID, ct.TransferNo, ct.TransferDate, ct.FromCashBoxID, fcb.CashBoxNameAr AS FromCashBoxNameAr,
                         ct.ToCashBoxID, tcb.CashBoxNameAr AS ToCashBoxNameAr, ct.Amount, ct.Description, ct.Status,
@@ -755,18 +1013,31 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateTransferNoAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية إنشاء تحويل خزينة.", p => p.CanAdd, "SCR_CASHTRANS");
+
             using var connection = CreateConnection();
             try
             {
                 var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'CT', @Next OUTPUT; SELECT @Next;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"CT-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً للتحويل.");
+
+                return result;
             }
-            catch { return $"CT-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم التحويل. لم يتم إنشاء رقم بديل؛ راجع إعداد تسلسل CT والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertTransferAsync(CashTransferDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية إنشاء تحويل خزينة.", p => p.CanAdd, "SCR_CASHTRANS");
+
             using var connection = CreateConnection();
             if (string.IsNullOrWhiteSpace(dto.TransferNo))
                 dto.TransferNo = await GenerateTransferNoAsync();
@@ -795,15 +1066,31 @@ namespace YKCoatings.Services
 
         public async Task ApproveTransferAsync(int id, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية اعتماد تحويل الخزينة.", p => p.CanApprove, "SCR_CASHTRANS");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var trans = connection.BeginTransaction();
             try
             {
                 var tr = await connection.QueryFirstOrDefaultAsync<(string TransferNo, int Status, int FromID, int ToID, decimal AmountLocal)>(
-                    "SELECT TransferNo, Status, FromCashBoxID, ToCashBoxID, AmountLocal FROM dbo.CashTransfers WHERE TransferID=@ID", new { ID = id }, trans);
+                    "SELECT TransferNo, Status, FromCashBoxID, ToCashBoxID, AmountLocal FROM dbo.CashTransfers WITH (UPDLOCK, HOLDLOCK) WHERE TransferID=@ID", new { ID = id }, trans);
                 if (tr.TransferNo == null) throw new Exception("التحويل غير موجود");
                 if (tr.Status != 1) throw new Exception("التحويل ليس مسودة");
+
+                var journalDate = DateTime.Today;
+                var accountingPeriod = await connection.QueryFirstOrDefaultAsync<(int FiscalYearID, int PeriodID)>(
+                    @"SELECT TOP 1 fy.FiscalYearID, ap.PeriodID
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK, HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND @JournalDate BETWEEN fy.StartDate AND fy.EndDate
+                        AND @JournalDate BETWEEN ap.StartDate AND ap.EndDate
+                      ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+                    new { JournalDate = journalDate }, trans);
+                if (accountingPeriod.FiscalYearID <= 0 || accountingPeriod.PeriodID <= 0)
+                    throw new InvalidOperationException("لا يمكن اعتماد التحويل دون سنة وفترة مالية مفتوحتين تغطيان تاريخ القيد.");
 
                 await connection.ExecuteAsync("UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)-@Amt WHERE CashBoxID=@ID", new { Amt = tr.AmountLocal, ID = tr.FromID }, trans);
                 await connection.ExecuteAsync("UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)+@Amt WHERE CashBoxID=@ID", new { Amt = tr.AmountLocal, ID = tr.ToID }, trans);
@@ -813,17 +1100,14 @@ namespace YKCoatings.Services
 
                 if (fromAcc.HasValue && toAcc.HasValue)
                 {
-                    string jNo;
-                    try
-                    {
-                        var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;";
-                        jNo = await connection.QueryFirstOrDefaultAsync<string>(sql, transaction: trans) ?? $"JV-{DateTime.Now:yyMMddHHmmss}";
-                    }
-                    catch { jNo = $"JV-{DateTime.Now:yyMMddHHmmss}"; }
+                    var journalNumberSql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;";
+                    var jNo = await connection.QueryFirstOrDefaultAsync<string>(journalNumberSql, transaction: trans);
+                    if (string.IsNullOrWhiteSpace(jNo))
+                        throw new InvalidOperationException("تعذر توليد رقم القيد؛ سيُلغى ترحيل التحويل بالكامل.");
 
                     var jId = await connection.ExecuteScalarAsync<int>(
-                        "INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate) VALUES(@No, @Date, @Desc, 'CashTransfer', @RefID, @RefNo, @Amt, @Amt, 2, 1, @UserID, GETDATE()); SELECT CAST(SCOPE_IDENTITY() AS INT);",
-                        new { No = jNo, Date = DateTime.Today, Desc = $"تحويل خزينة {tr.TransferNo}", RefID = id, RefNo = tr.TransferNo, Amt = tr.AmountLocal, UserID = userId }, trans);
+                        "INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, FiscalYearID, PeriodID, Description, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate) VALUES(@No, @Date, @FiscalYearID, @PeriodID, @Desc, 'CashTransfer', @RefID, @RefNo, @Amt, @Amt, 2, 1, @UserID, GETDATE()); SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                        new { No = jNo, Date = journalDate, accountingPeriod.FiscalYearID, accountingPeriod.PeriodID, Desc = $"تحويل خزينة {tr.TransferNo}", RefID = id, RefNo = tr.TransferNo, Amt = tr.AmountLocal, UserID = userId }, trans);
 
                     await connection.ExecuteAsync("INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description) VALUES(@JID, 1, @Acc, @Amt, 0, @Desc)",
                         new { JID = jId, Acc = toAcc.Value, Amt = tr.AmountLocal, Desc = $"تحويل وارد {tr.TransferNo}" }, trans);
@@ -846,139 +1130,133 @@ namespace YKCoatings.Services
 
         public async Task DeleteTransferAsync(int id, int userId)
         {
-            using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT Status FROM dbo.CashTransfers WHERE TransferID=@ID", new { ID = id });
-            if (status != 1) throw new Exception("لا يمكن حذف تحويل معتمد");
-            await connection.ExecuteAsync("DELETE FROM dbo.CashTransfers WHERE TransferID=@ID", new { ID = id });
-            await _audit.WriteAuditLogAsync(userId, 3, "CashTransfers", id.ToString(), moduleName: "SCR_BANKS", description: "حذف تحويل خزينة");
-        }
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية حذف تحويلات الخزينة.", p => p.CanDelete, "SCR_CASHTRANS");
 
-        // ==========================================
-        // كشف حساب خزينة - Gold Edition شامل المصروفات
-        // ==========================================
-        public async Task<List<CashBoxStatementDto>> GetCashBoxStatementAsync(int cashBoxId, DateTime? from, DateTime? to)
-        {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
             try
             {
-                // محاولة قراءة من View أولاً لو موجود - لكن نضيف المصروفات يدوياً بعدها
-                var sqlView = @"SELECT * FROM dbo.vw_CashBoxStatement WHERE CashBoxID=@CBID
-                            AND (@From IS NULL OR TransactionDate >= @From)
-                            AND (@To IS NULL OR TransactionDate <= @To)
-                            ORDER BY TransactionDate, TransactionNo";
-                var viewResult = await connection.QueryAsync<CashBoxStatementDto>(sqlView, new { CBID = cashBoxId, From = from, To = to });
-                var viewList = viewResult.ToList();
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT Status FROM dbo.CashTransfers WITH (UPDLOCK, HOLDLOCK) WHERE TransferID=@ID",
+                    new { ID = id }, trans);
+                if (status != 1) throw new Exception("لا يمكن حذف تحويل معتمد أو غير موجود");
 
-                // جلب المصروفات المرتبطة بالخزينة (OverheadExpenses) - حتى لو View لا يشملها
-                List<CashBoxStatementDto> expenseList = new();
-                try
-                {
-                    var sqlExp = @"SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
-                                          oe.ExpenseDate AS TransactionDate, oe.ExpenseNumber AS TransactionNo,
-                                          'Expense' AS TransactionType, N'مصروف' AS TransactionTypeAr,
-                                          0 AS DebitAmount, oe.Amount AS CreditAmount,
-                                          oe.Description, ISNULL(oe.ExpenseStatus,1) AS Status, coa.AccountNameAr AS EntityName, 0 AS Balance
-                                   FROM dbo.CashBoxes cb
-                                   JOIN dbo.OverheadExpenses oe ON cb.CashBoxID=oe.CashBoxID
-                                   LEFT JOIN dbo.ChartOfAccounts coa ON oe.AccountID=coa.AccountID
-                                   WHERE cb.CashBoxID=@CBID AND ISNULL(oe.ExpenseStatus,1)!=3
-                                   AND (@From IS NULL OR oe.ExpenseDate >= @From)
-                                   AND (@To IS NULL OR oe.ExpenseDate <= @To)";
-                    var expRes = await connection.QueryAsync<CashBoxStatementDto>(sqlExp, new { CBID = cashBoxId, From = from, To = to });
-                    expenseList = expRes.ToList();
-                }
-                catch { }
-
-                // جلب تحويلات الخزينة أيضاً لو View لا يشملها
-                List<CashBoxStatementDto> transferList = new();
-                try
-                {
-                    var sqlTr = @"SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
-                                         ct.TransferDate AS TransactionDate, ct.TransferNo AS TransactionNo,
-                                         'Transfer' AS TransactionType,
-                                         CASE WHEN ct.FromCashBoxID=@CBID THEN N'تحويل صادر' ELSE N'تحويل وارد' END AS TransactionTypeAr,
-                                         CASE WHEN ct.ToCashBoxID=@CBID THEN ct.Amount ELSE 0 END AS DebitAmount,
-                                         CASE WHEN ct.FromCashBoxID=@CBID THEN ct.Amount ELSE 0 END AS CreditAmount,
-                                         ct.Description, ct.Status, 
-                                         CASE WHEN ct.FromCashBoxID=@CBID THEN tcb.CashBoxNameAr ELSE fcb.CashBoxNameAr END AS EntityName, 0 AS Balance
-                                  FROM dbo.CashBoxes cb
-                                  JOIN dbo.CashTransfers ct ON (ct.FromCashBoxID=cb.CashBoxID OR ct.ToCashBoxID=cb.CashBoxID)
-                                  LEFT JOIN dbo.CashBoxes fcb ON ct.FromCashBoxID=fcb.CashBoxID
-                                  LEFT JOIN dbo.CashBoxes tcb ON ct.ToCashBoxID=tcb.CashBoxID
-                                  WHERE cb.CashBoxID=@CBID AND ct.Status=2
-                                  AND (@From IS NULL OR ct.TransferDate >= @From)
-                                  AND (@To IS NULL OR ct.TransferDate <= @To)";
-                    var trRes = await connection.QueryAsync<CashBoxStatementDto>(sqlTr, new { CBID = cashBoxId, From = from, To = to });
-                    transferList = trRes.ToList();
-                }
-                catch { }
-
-                // دمج الكل
-                var all = viewList.Concat(expenseList).Concat(transferList)
-                          .GroupBy(x => new { x.TransactionDate, x.TransactionNo, x.TransactionType }) // منع التكرار
-                          .Select(g => g.First())
-                          .OrderBy(x => x.TransactionDate).ThenBy(x => x.TransactionNo).ToList();
-
-                // حساب الرصيد التراكمي
-                var opening = await connection.ExecuteScalarAsync<decimal>("SELECT ISNULL(OpeningBalance,0) FROM dbo.CashBoxes WHERE CashBoxID=@ID", new { ID = cashBoxId });
-                decimal balance = opening;
-                foreach (var item in all.OrderBy(x => x.TransactionDate).ThenBy(x => x.TransactionNo))
-                {
-                    balance += item.DebitAmount - item.CreditAmount;
-                    item.Balance = balance;
-                }
-                return all.OrderByDescending(x => x.TransactionDate).ThenByDescending(x => x.TransactionNo).ToList();
+                await connection.ExecuteAsync("DELETE FROM dbo.CashTransfers WHERE TransferID=@ID", new { ID = id }, trans);
+                trans.Commit();
             }
             catch
             {
-                // Fallback شامل بدون View - يشمل كل الحركات
-                var sql2 = @"
-                    SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
-                           rv.ReceiptDate AS TransactionDate, rv.ReceiptNumber AS TransactionNo, 'Receipt' AS TransactionType, N'سند قبض' AS TransactionTypeAr,
-                           rv.Amount AS DebitAmount, 0 AS CreditAmount, rv.Description, rv.ReceiptStatus AS Status, rv.ReceivedFrom AS EntityName, 0 AS Balance
-                    FROM dbo.CashBoxes cb JOIN dbo.ReceiptVouchers rv ON cb.CashBoxID=rv.CashBoxID AND rv.ReceiptStatus=2 WHERE cb.CashBoxID=@CBID AND (@From IS NULL OR rv.ReceiptDate >= @From) AND (@To IS NULL OR rv.ReceiptDate <= @To)
-                    UNION ALL
-                    SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr, pv.PaymentDate, pv.PaymentNumber, 'Payment', N'سند صرف', 0, pv.Amount, pv.Description, pv.PaymentStatus, pv.PaidTo, 0
-                    FROM dbo.CashBoxes cb JOIN dbo.PaymentVouchers pv ON cb.CashBoxID=pv.CashBoxID AND pv.PaymentStatus=2 WHERE cb.CashBoxID=@CBID AND (@From IS NULL OR pv.PaymentDate >= @From) AND (@To IS NULL OR pv.PaymentDate <= @To)
-                    UNION ALL
-                    SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr, oe.ExpenseDate, oe.ExpenseNumber, 'Expense', N'مصروف', 0, oe.Amount, oe.Description, ISNULL(oe.ExpenseStatus,1), coa.AccountNameAr, 0
-                    FROM dbo.CashBoxes cb JOIN dbo.OverheadExpenses oe ON cb.CashBoxID=oe.CashBoxID LEFT JOIN dbo.ChartOfAccounts coa ON oe.AccountID=coa.AccountID
-                    WHERE cb.CashBoxID=@CBID AND ISNULL(oe.ExpenseStatus,1)!=3 AND (@From IS NULL OR oe.ExpenseDate >= @From) AND (@To IS NULL OR oe.ExpenseDate <= @To)
-                    UNION ALL
-                    SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr, ct.TransferDate, ct.TransferNo, 'Transfer',
-                           CASE WHEN ct.FromCashBoxID=@CBID THEN N'تحويل صادر' ELSE N'تحويل وارد' END,
-                           CASE WHEN ct.ToCashBoxID=@CBID THEN ct.Amount ELSE 0 END,
-                           CASE WHEN ct.FromCashBoxID=@CBID THEN ct.Amount ELSE 0 END,
-                           ct.Description, ct.Status,
-                           CASE WHEN ct.FromCashBoxID=@CBID THEN tcb.CashBoxNameAr ELSE fcb.CashBoxNameAr END, 0
-                    FROM dbo.CashBoxes cb
-                    JOIN dbo.CashTransfers ct ON (ct.FromCashBoxID=cb.CashBoxID OR ct.ToCashBoxID=cb.CashBoxID)
-                    LEFT JOIN dbo.CashBoxes fcb ON ct.FromCashBoxID=fcb.CashBoxID
-                    LEFT JOIN dbo.CashBoxes tcb ON ct.ToCashBoxID=tcb.CashBoxID
-                    WHERE cb.CashBoxID=@CBID AND ct.Status=2 AND (@From IS NULL OR ct.TransferDate >= @From) AND (@To IS NULL OR ct.TransferDate <= @To)
-                ";
-                try
-                {
-                    var result = await connection.QueryAsync<CashBoxStatementDto>(sql2, new { CBID = cashBoxId, From = from, To = to });
-                    var list = result.OrderBy(x => x.TransactionDate).ThenBy(x => x.TransactionNo).ToList();
-                    var opening = await connection.ExecuteScalarAsync<decimal>("SELECT ISNULL(OpeningBalance,0) FROM dbo.CashBoxes WHERE CashBoxID=@ID", new { ID = cashBoxId });
-                    decimal bal = opening;
-                    foreach (var item in list)
-                    {
-                        bal += item.DebitAmount - item.CreditAmount;
-                        item.Balance = bal;
-                    }
-                    return list.OrderByDescending(x => x.TransactionDate).ToList();
-                }
-                catch
-                {
-                    return new List<CashBoxStatementDto>();
-                }
+                trans.Rollback();
+                throw;
             }
+
+            await _audit.WriteAuditLogAsync(userId, 3, "CashTransfers", id.ToString(), moduleName: "SCR_BANKS", description: "حذف تحويل خزينة");
+        }
+
+        public async Task<List<CashBoxStatementDto>> GetCashBoxStatementAsync(int cashBoxId, DateTime? from, DateTime? to)
+        {
+            await _authorization.RequireCurrentCashBoxStatementViewAsync(
+                "ليس لديك صلاحية عرض كشف حساب الخزينة.");
+
+            if (cashBoxId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(cashBoxId), "يجب تحديد خزينة صالحة لعرض الكشف.");
+
+            using var connection = CreateConnection();
+            var toExclusive = to.HasValue ? to.Value.Date.AddDays(1) : (DateTime?)null;
+
+            // اقرأ الحركات من الجداول المصدر مباشرة؛ لا تعتمد على اكتمال vw_CashBoxStatement.
+            // تُقرأ الحركات السابقة لبداية الفترة أيضاً لحساب رصيد جارٍ صحيح، ثم تُخفى عن قائمة العرض.
+            var sql = @"
+                SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
+                       rv.ReceiptDate AS TransactionDate, rv.ReceiptNumber AS TransactionNo, rv.ReceiptID AS TransactionID,
+                       'Receipt' AS TransactionType, N'سند قبض' AS TransactionTypeAr,
+                       ISNULL(rv.Amount,0) AS DebitAmount, 0 AS CreditAmount,
+                       rv.Description, rv.ReceiptStatus AS Status, rv.ReceivedFrom AS EntityName, 0 AS Balance
+                FROM dbo.CashBoxes cb
+                INNER JOIN dbo.ReceiptVouchers rv ON rv.CashBoxID=cb.CashBoxID
+                WHERE cb.CashBoxID=@CBID AND rv.ReceiptStatus=2
+                  AND (@ToExclusive IS NULL OR rv.ReceiptDate < @ToExclusive)
+
+                UNION ALL
+
+                SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
+                       pv.PaymentDate, pv.PaymentNumber, pv.PaymentID AS TransactionID,
+                       'Payment', N'سند صرف',
+                       0, ISNULL(pv.Amount,0),
+                       pv.Description, pv.PaymentStatus, pv.PaidTo, 0
+                FROM dbo.CashBoxes cb
+                INNER JOIN dbo.PaymentVouchers pv ON pv.CashBoxID=cb.CashBoxID
+                WHERE cb.CashBoxID=@CBID AND pv.PaymentStatus=2
+                  AND (@ToExclusive IS NULL OR pv.PaymentDate < @ToExclusive)
+
+                UNION ALL
+
+                SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
+                       oe.ExpenseDate, oe.ExpenseNumber, oe.ExpenseID AS TransactionID,
+                       'Expense', N'مصروف',
+                       0, ISNULL(oe.Amount,0),
+                       oe.Description, ISNULL(oe.ExpenseStatus,1), coa.AccountNameAr, 0
+                FROM dbo.CashBoxes cb
+                INNER JOIN dbo.OverheadExpenses oe ON oe.CashBoxID=cb.CashBoxID
+                LEFT JOIN dbo.ChartOfAccounts coa ON oe.AccountID=coa.AccountID
+                WHERE cb.CashBoxID=@CBID AND ISNULL(oe.ExpenseStatus,1)<>3
+                  AND (@ToExclusive IS NULL OR oe.ExpenseDate < @ToExclusive)
+
+                UNION ALL
+
+                SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr,
+                       ct.TransferDate, ct.TransferNo, ct.TransferID AS TransactionID,
+                       'Transfer',
+                       CASE WHEN ct.FromCashBoxID=@CBID THEN N'تحويل صادر' ELSE N'تحويل وارد' END,
+                       CASE WHEN ct.ToCashBoxID=@CBID THEN ISNULL(ct.Amount,0) ELSE 0 END,
+                       CASE WHEN ct.FromCashBoxID=@CBID THEN ISNULL(ct.Amount,0) ELSE 0 END,
+                       ct.Description, ct.Status,
+                       CASE WHEN ct.FromCashBoxID=@CBID THEN tcb.CashBoxNameAr ELSE fcb.CashBoxNameAr END, 0
+                FROM dbo.CashBoxes cb
+                INNER JOIN dbo.CashTransfers ct
+                    ON ct.FromCashBoxID=cb.CashBoxID OR ct.ToCashBoxID=cb.CashBoxID
+                LEFT JOIN dbo.CashBoxes fcb ON ct.FromCashBoxID=fcb.CashBoxID
+                LEFT JOIN dbo.CashBoxes tcb ON ct.ToCashBoxID=tcb.CashBoxID
+                WHERE cb.CashBoxID=@CBID AND ct.Status=2
+                  AND (@ToExclusive IS NULL OR ct.TransferDate < @ToExclusive)";
+
+            var queryParameters = new DynamicParameters();
+            queryParameters.Add("CBID", cashBoxId, System.Data.DbType.Int32);
+            queryParameters.Add("ToExclusive", toExclusive, System.Data.DbType.DateTime);
+            var rows = await connection.QueryAsync<CashBoxStatementDto>(sql, queryParameters);
+
+            var opening = await connection.ExecuteScalarAsync<decimal>(
+                "SELECT ISNULL(OpeningBalance,0) FROM dbo.CashBoxes WHERE CashBoxID=@ID",
+                new { ID = cashBoxId });
+
+            var ascending = rows
+                .OrderBy(x => x.TransactionDate)
+                .ThenBy(x => x.TransactionNo, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.TransactionType, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            decimal balance = opening;
+            foreach (var item in ascending)
+            {
+                balance += item.DebitAmount - item.CreditAmount;
+                item.Balance = balance;
+            }
+
+            return ascending
+                .Where(x => !from.HasValue || x.TransactionDate.Date >= from.Value.Date)
+                .OrderByDescending(x => x.TransactionDate)
+                .ThenByDescending(x => x.TransactionNo, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(x => x.TransactionType, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         public async Task<byte[]> ExportReceiptsToExcelAsync(List<ReceiptVoucherListDto> data, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, "SCR_RECV", p => p.CanExport, "ليس لديك صلاحية تصدير سندات القبض.");
+
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("سندات القبض");
             ws.RightToLeft = true;
@@ -1026,6 +1304,9 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<BankAccountListDto>> GetBankAccountsAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض الحسابات البنكية.", p => p.CanView, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             var sql = @"SELECT ba.BankAccountID, ba.BankAccountCode, ba.BankName, ba.BranchName, ba.AccountNumber, ba.IBAN, ba.SwiftCode,
                                ba.AccountType, CASE ba.AccountType WHEN 1 THEN N'جاري' WHEN 2 THEN N'توفير' WHEN 3 THEN N'اعتماد' ELSE N'أخرى' END AS AccountTypeName,
@@ -1051,8 +1332,27 @@ namespace YKCoatings.Services
             }
         }
 
+        public async Task<List<BankAccountListDto>> GetBankAccountLookupsAsync()
+        {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية استخدام الحسابات البنكية في هذا المسار.",
+                p => p.CanView || p.CanAdd || p.CanEdit,
+                "SCR_CHEQUES", "SCR_CHEQUE", "SCR_RECV", "SCR_PAYV");
+
+            using var connection = CreateConnection();
+            var sql = @"SELECT BankAccountID, BankAccountCode, BankName, BranchName, AccountNumber, IsActive
+                        FROM dbo.BankAccounts
+                        WHERE ISNULL(IsActive,1)=1
+                        ORDER BY BankName";
+            var result = await connection.QueryAsync<BankAccountListDto>(sql);
+            return result.ToList();
+        }
+
         public async Task<BankAccountDto?> GetBankAccountByIdAsync(int id)
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض تفاصيل الحسابات البنكية.", p => p.CanView, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             var sql = @"SELECT ba.BankAccountID, ba.BankAccountCode, ba.BankName, ba.BranchName, ba.AccountNumber, ba.IBAN, ba.SwiftCode,
                                ba.AccountType, ba.CurrencyID, cur.CurrencyCode, ba.AccountID, coa.AccountNameAr, ba.CurrentBalance,
@@ -1066,6 +1366,9 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateBankAccountCodeAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية إنشاء حساب بنكي.", p => p.CanAdd, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*)+1 FROM dbo.BankAccounts");
             return $"BANK-{count:000}";
@@ -1073,6 +1376,9 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertBankAccountAsync(BankAccountDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية إنشاء حساب بنكي.", p => p.CanAdd, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             if (string.IsNullOrWhiteSpace(dto.BankAccountCode))
                 dto.BankAccountCode = await GenerateBankAccountCodeAsync();
@@ -1102,6 +1408,9 @@ namespace YKCoatings.Services
 
         public async Task UpdateBankAccountAsync(BankAccountDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية تعديل الحسابات البنكية.", p => p.CanEdit, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.BankAccounts SET BankName=@BankName, BranchName=@BranchName, AccountNumber=@AccountNumber, IBAN=@IBAN, SwiftCode=@SwiftCode,
                         AccountType=@AccountType, CurrencyID=NULLIF(@CurrencyID,0), AccountID=NULLIF(@AccountID,0), ContactPerson=@ContactPerson, Phone=@Phone, IsActive=@IsActive
@@ -1126,6 +1435,9 @@ namespace YKCoatings.Services
 
         public async Task DeleteBankAccountAsync(int id, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية حذف الحسابات البنكية.", p => p.CanDelete, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
+
             using var connection = CreateConnection();
             var hasTrans = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM (SELECT BankAccountID FROM dbo.ReceiptVouchers WHERE BankAccountID=@ID UNION ALL SELECT BankAccountID FROM dbo.PaymentVouchers WHERE BankAccountID=@ID) t", new { ID = id });
             if (hasTrans > 0) throw new Exception("لا يمكن حذف حساب بنكي به حركات");
@@ -1138,6 +1450,9 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<ChequeListDto>> GetChequesAsync(DateTime? from = null, DateTime? to = null, int? type = null, int? status = null)
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض الشيكات.", p => p.CanView, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
             var sql = @"SELECT ch.ChequeID, ch.ChequeNumber, ch.ChequeType, CASE ch.ChequeType WHEN 1 THEN N'وارد' WHEN 2 THEN N'صادر' ELSE N'غير محدد' END AS ChequeTypeName,
                                ch.ChequeDate, ch.DueDate, ch.Amount, ch.CurrencyID, cur.CurrencyCode, ch.BankName, ch.BranchName,
@@ -1165,6 +1480,9 @@ namespace YKCoatings.Services
 
         public async Task<ChequeDto?> GetChequeByIdAsync(int id)
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض بيانات الشيك.", p => p.CanView, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
             var sql = @"SELECT ChequeID, ChequeNumber, ChequeType, ChequeDate, DueDate, Amount, CurrencyID, BankName, BranchName, BankAccountID, EntityType, EntityID, EntityName, ChequeStatus, CollectionDate, BounceDate, BounceReason, ReceiptID, PaymentID, Notes, CreatedBy, CreatedDate
                         FROM dbo.Cheques WHERE ChequeID=@ID";
@@ -1173,6 +1491,14 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertChequeAsync(ChequeDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية إضافة الشيكات.", p => p.CanAdd, "SCR_CHEQUES", "SCR_CHEQUE");
+            if (HasNonInitialChequeApprovalState(dto))
+            {
+                await RequireChequeApprovalPermissionAsync(
+                    userId, "إنشاء شيك بحالة غير ابتدائية يتطلب صلاحية اعتماد الشيكات.");
+            }
+
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.Cheques(ChequeNumber, ChequeType, ChequeDate, DueDate, Amount, CurrencyID, BankName, BranchName, BankAccountID, EntityType, EntityID, EntityName, ChequeStatus, ReceiptID, PaymentID, Notes, CreatedBy, CreatedDate)
                         VALUES(@ChequeNumber, @ChequeType, @ChequeDate, @DueDate, @Amount, NULLIF(@CurrencyID,0), @BankName, @BranchName, NULLIF(@BankAccountID,0), @EntityType, NULLIF(@EntityID,0), @EntityName, @ChequeStatus, NULLIF(@ReceiptID,0), NULLIF(@PaymentID,0), @Notes, @CreatedBy, GETDATE());
@@ -1203,38 +1529,69 @@ namespace YKCoatings.Services
 
         public async Task UpdateChequeAsync(ChequeDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية تعديل الشيكات.", p => p.CanEdit, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
-            var sql = @"UPDATE dbo.Cheques SET ChequeNumber=@ChequeNumber, ChequeType=@ChequeType, ChequeDate=@ChequeDate, DueDate=@DueDate, Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
-                        BankName=@BankName, BranchName=@BranchName, BankAccountID=NULLIF(@BankAccountID,0), EntityType=@EntityType, EntityID=NULLIF(@EntityID,0), EntityName=@EntityName,
-                        ChequeStatus=@ChequeStatus, CollectionDate=@CollectionDate, BounceDate=@BounceDate, BounceReason=@BounceReason, Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
-                        WHERE ChequeID=@ChequeID";
-            await connection.ExecuteAsync(sql, new
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
             {
-                dto.ChequeID,
-                dto.ChequeNumber,
-                dto.ChequeType,
-                dto.ChequeDate,
-                dto.DueDate,
-                dto.Amount,
-                dto.CurrencyID,
-                dto.BankName,
-                dto.BranchName,
-                dto.BankAccountID,
-                dto.EntityType,
-                dto.EntityID,
-                dto.EntityName,
-                dto.ChequeStatus,
-                dto.CollectionDate,
-                dto.BounceDate,
-                dto.BounceReason,
-                dto.Notes,
-                UserID = userId
-            });
+                var currentState = await connection.QueryFirstOrDefaultAsync<ChequeDto>(
+                    @"SELECT ChequeStatus, CollectionDate, BounceDate, BounceReason
+                      FROM dbo.Cheques WITH (UPDLOCK, HOLDLOCK) WHERE ChequeID=@ID",
+                    new { ID = dto.ChequeID }, trans);
+                if (currentState is null)
+                    throw new InvalidOperationException("الشيك المطلوب تعديله غير موجود.");
+
+                if (HasChequeApprovalStateChanged(currentState, dto))
+                {
+                    await RequireChequeApprovalPermissionAsync(
+                        userId, "تغيير حالة الشيك أو بيانات التحصيل/الارتجاع يتطلب صلاحية اعتماد الشيكات.");
+                }
+
+                var sql = @"UPDATE dbo.Cheques SET ChequeNumber=@ChequeNumber, ChequeType=@ChequeType, ChequeDate=@ChequeDate, DueDate=@DueDate, Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
+                            BankName=@BankName, BranchName=@BranchName, BankAccountID=NULLIF(@BankAccountID,0), EntityType=@EntityType, EntityID=NULLIF(@EntityID,0), EntityName=@EntityName,
+                            ChequeStatus=@ChequeStatus, CollectionDate=@CollectionDate, BounceDate=@BounceDate, BounceReason=@BounceReason, Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                            WHERE ChequeID=@ChequeID";
+                await connection.ExecuteAsync(sql, new
+                {
+                    dto.ChequeID,
+                    dto.ChequeNumber,
+                    dto.ChequeType,
+                    dto.ChequeDate,
+                    dto.DueDate,
+                    dto.Amount,
+                    dto.CurrencyID,
+                    dto.BankName,
+                    dto.BranchName,
+                    dto.BankAccountID,
+                    dto.EntityType,
+                    dto.EntityID,
+                    dto.EntityName,
+                    dto.ChequeStatus,
+                    dto.CollectionDate,
+                    dto.BounceDate,
+                    dto.BounceReason,
+                    dto.Notes,
+                    UserID = userId
+                }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "Cheques", dto.ChequeID.ToString(), moduleName: "SCR_CHEQ", description: $"تعديل شيك: {dto.ChequeNumber}");
         }
 
         public async Task CollectChequeAsync(int id, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية اعتماد تحصيل الشيك.", p => p.CanApprove, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
             await connection.ExecuteAsync("UPDATE dbo.Cheques SET ChequeStatus=3, CollectionDate=GETDATE() WHERE ChequeID=@ID", new { ID = id });
             await _audit.WriteAuditLogAsync(userId, 2, "Cheques", id.ToString(), moduleName: "SCR_CHEQ", description: "تحصيل شيك");
@@ -1242,6 +1599,9 @@ namespace YKCoatings.Services
 
         public async Task BounceChequeAsync(int id, string reason, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية اعتماد ارتجاع الشيك.", p => p.CanApprove, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
             await connection.ExecuteAsync("UPDATE dbo.Cheques SET ChequeStatus=4, BounceDate=GETDATE(), BounceReason=@Reason WHERE ChequeID=@ID", new { ID = id, Reason = reason });
             await _audit.WriteAuditLogAsync(userId, 2, "Cheques", id.ToString(), moduleName: "SCR_CHEQ", description: $"ارتجاع شيك: {reason}");
@@ -1249,18 +1609,38 @@ namespace YKCoatings.Services
 
         public async Task DeleteChequeAsync(int id, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية حذف الشيكات.", p => p.CanDelete, "SCR_CHEQUES", "SCR_CHEQUE");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>("SELECT ChequeStatus FROM dbo.Cheques WHERE ChequeID=@ID", new { ID = id });
-            if (status != 1 && status != 5) throw new Exception("لا يمكن حذف شيك مقدم للبنك أو محصل");
-            await connection.ExecuteAsync("DELETE FROM dbo.Cheques WHERE ChequeID=@ID", new { ID = id });
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
+            {
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT ChequeStatus FROM dbo.Cheques WITH (UPDLOCK, HOLDLOCK) WHERE ChequeID=@ID",
+                    new { ID = id }, trans);
+                if (status != 1 && status != 5) throw new Exception("لا يمكن حذف شيك مقدم للبنك أو محصل أو غير موجود");
+
+                await connection.ExecuteAsync("DELETE FROM dbo.Cheques WHERE ChequeID=@ID", new { ID = id }, trans);
+                trans.Commit();
+            }
+            catch
+            {
+                trans.Rollback();
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 3, "Cheques", id.ToString(), moduleName: "SCR_CHEQ", description: "حذف شيك");
         }
 
-        // ==========================================
-        // مراكز التكلفة - على الجدول الحقيقي CostCenters 9 أعمدة
-        // ==========================================
         public async Task<List<CostCenterListDto>> GetCostCentersTreeAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض مراكز التكلفة.",
+                p => p.CanView,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS");
+
             using var connection = CreateConnection();
             var sql = @"SELECT cc.CostCenterID, cc.CostCenterCode, cc.CostCenterNameAr, cc.CostCenterNameEn, cc.ParentCostCenterID, p.CostCenterNameAr AS ParentNameAr,
                                cc.CenterLevel, cc.DepartmentID, d.DepartmentNameAr, cc.IsActive, cc.CreatedDate,
@@ -1284,6 +1664,11 @@ namespace YKCoatings.Services
 
         public async Task<List<CostCenterListDto>> GetCostCentersFlatAsync()
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية استخدام مراكز التكلفة.",
+                p => p.CanView || p.CanAdd || p.CanEdit,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS", "SCR_EXPENSES", "SCR_EXPENSE", "SCR_OVERHEAD", "SCR_OVERHEAD_EXPENSES", "SCR_PAYV");
+
             using var connection = CreateConnection();
             try
             {
@@ -1307,12 +1692,21 @@ namespace YKCoatings.Services
 
         public async Task<CostCenterDto?> GetCostCenterByIdAsync(int id)
         {
+            await RequireCurrentAnyModulePermissionAsync(
+                "ليس لديك صلاحية عرض تفاصيل مركز التكلفة.",
+                p => p.CanView,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS");
+
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<CostCenterDto>("SELECT CostCenterID, CostCenterCode, CostCenterNameAr, CostCenterNameEn, ParentCostCenterID, CenterLevel, DepartmentID, IsActive, CreatedDate FROM dbo.CostCenters WHERE CostCenterID=@ID", new { ID = id });
         }
 
         public async Task<int> InsertCostCenterAsync(CostCenterDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية إنشاء مراكز التكلفة.", p => p.CanAdd,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS");
+
             using var connection = CreateConnection();
             var parentLevel = 0;
             if (dto.ParentCostCenterID.HasValue && dto.ParentCostCenterID > 0)
@@ -1338,6 +1732,10 @@ namespace YKCoatings.Services
 
         public async Task UpdateCostCenterAsync(CostCenterDto dto, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية تعديل مراكز التكلفة.", p => p.CanEdit,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS");
+
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.CostCenters SET CostCenterNameAr=@CostCenterNameAr, CostCenterNameEn=@CostCenterNameEn, DepartmentID=NULLIF(@DepartmentID,0), IsActive=@IsActive WHERE CostCenterID=@CostCenterID";
             await connection.ExecuteAsync(sql, new { dto.CostCenterID, dto.CostCenterNameAr, dto.CostCenterNameEn, dto.DepartmentID, dto.IsActive });
@@ -1346,6 +1744,10 @@ namespace YKCoatings.Services
 
         public async Task DeleteCostCenterAsync(int id, int userId)
         {
+            await RequireAnyModulePermissionAsync(
+                userId, "ليس لديك صلاحية حذف مراكز التكلفة.", p => p.CanDelete,
+                "SCR_COST", "SCR_COSTCENTERS", "SCR_COST_CENTERS");
+
             using var connection = CreateConnection();
             var hasChildren = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.CostCenters WHERE ParentCostCenterID=@ID", new { ID = id });
             if (hasChildren > 0) throw new Exception("لا يمكن حذف مركز له مراكز فرعية");

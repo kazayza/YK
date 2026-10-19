@@ -66,7 +66,7 @@ else
         </div>
 
         <div class="sb-nav-area">
-            <NavMenu IsCollapsed="false" SearchText="@navSearch" />
+            <NavMenu IsCollapsed="false" SearchText="@navSearch" OnScreenSelected="CloseMobileNavigation" />
         </div>
 
         <div class="sb-footer">
@@ -174,24 +174,24 @@ else
                     {
                         <div class="notif-panel">
                             <div class="notif-panel-head">
-                                <span class="notif-panel-title">🔔 الإشعارات @if(unreadCount>0){<span class="notif-count-chip">@unreadCount</span>}</span>
-                                @if (unreadCount > 0){<button class="notif-read-all" @onclick="MarkAllRead" @onclick:stopPropagation="true">تحديد الكل كمقروء ✓</button>}
+                                <span class="notif-panel-title"><i class="bi bi-bell-fill"></i> الإشعارات @if(unreadCount>0){<span class="notif-count-chip">@unreadCount</span>}</span>
+                                @if (unreadCount > 0){<button class="notif-read-all" @onclick="MarkAllRead" @onclick:stopPropagation="true">تحديد الكل كمقروء</button>}
                             </div>
                             <div class="notif-panel-body">
                                 @if (notifications == null || !notifications.Any())
                                 {
-                                    <div class="notif-empty"><div class="notif-empty-icon">🔕</div><span>لا توجد إشعارات جديدة</span></div>
+                                    <div class="notif-empty"><div class="notif-empty-icon"><i class="bi bi-bell-slash"></i></div><span>لا توجد إشعارات جديدة</span></div>
                                 }
                                 else
                                 {
                                     @foreach (var notif in notifications)
                                     {
                                         <button class="notif-item @(!notif.IsRead ? "unread" : "")" @onclick="@(() => OnNotifClick(notif))" @onclick:stopPropagation="true">
-                                            <div class="notif-item-icon">@NotificationService.GetTypeIcon(notif.NotificationType)</div>
+                                            <div class="notif-item-icon"><i class="@NotificationService.GetTypeIcon(notif.NotificationType)"></i></div>
                                             <div class="notif-item-body">
                                                 <div class="notif-item-title">@notif.Title</div>
                                                 <div class="notif-item-msg">@notif.Message</div>
-                                                <div class="notif-item-time">🕐 @GetTimeAgo(notif.NotificationDate)</div>
+                                                <div class="notif-item-time"><i class="bi bi-clock"></i> @GetTimeAgo(notif.NotificationDate)</div>
                                             </div>
                                             @if (!notif.IsRead){<div class="notif-unread-dot" style="background:@NotificationService.GetPriorityColor(notif.Priority)"></div>}
                                         </button>
@@ -477,6 +477,7 @@ html,body{height:100%}
     private System.Threading.Timer? _searchDebounce;
     private List<NotificationDto>? notifications;
     private int unreadCount = 0;
+    private bool _notificationSoundEnabled = true;
     private int _lastUnreadCount = -1;
     private System.Threading.Timer? _notifTimer;
     private bool _initialized = false;
@@ -497,6 +498,7 @@ html,body{height:100%}
             sessionReady = true;
             if (!restored){Navigation.NavigateTo("/login");return;}
             if (!PermissionService.IsLoaded){try{await PermissionService.LoadPermissionsAsync(UserSession.UserID);}catch{}}
+            try{_notificationSoundEnabled = await NotificationService.IsSoundEnabledAsync();}catch{}
             if (UserSession.RequiresPasswordChange)
             {
                 var currentPath = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/').ToLower();
@@ -509,7 +511,17 @@ html,body{height:100%}
         }
     }
     private void Refresh() => _ = InvokeAsync(StateHasChanged);
-    private async void OnLocationChanged(object? s, LocationChangedEventArgs e){isMobileOpen = false;showNotifications = false;showUserMenu = false;showGlobalSearch=false;if (UserSession.IsLoggedIn){try{await LoadNotifications();}catch{}}await InvokeAsync(StateHasChanged);}
+    private async void OnLocationChanged(object? s, LocationChangedEventArgs e)
+    {
+        // Close the mobile drawer on navigation without changing the desktop sidebar state.
+        isMobileOpen = false;
+        showNotifications = false;
+        showUserMenu = false;
+        showGlobalSearch = false;
+        await InvokeAsync(StateHasChanged);
+        if (UserSession.IsLoggedIn){try{await LoadNotifications();}catch{}}
+        await InvokeAsync(StateHasChanged);
+    }
     private void ToggleCollapse()
     {
         // زر واحد يخفي/يظهر القائمة تماماً
@@ -529,6 +541,11 @@ html,body{height:100%}
     }
     private void OpenMobile(){isMobileOpen = true; isCollapsed = false;}
     private void CloseMobile(){isMobileOpen = false; isCollapsed = true;}
+    private void CloseMobileNavigation()
+    {
+        // The mobile-open class controls the phone drawer; do not collapse the desktop sidebar.
+        isMobileOpen = false;
+    }
     private void ToggleUserMenu(){showUserMenu = !showUserMenu;showNotifications = false; showGlobalSearch=false;}
 
     // ===== GLOBAL SEARCH - حسب الصلاحيات =====
@@ -656,18 +673,77 @@ html,body{height:100%}
         {
             notifications = await NotificationService.GetUserNotificationsAsync(UserSession.UserID, UserSession.RoleID);
             var newCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
-            if (newCount > _lastUnreadCount && _lastUnreadCount >= 0){try{await JS.InvokeVoidAsync("playNotificationSound");}catch{}}
+            if (_notificationSoundEnabled && newCount > _lastUnreadCount && _lastUnreadCount >= 0){try{await JS.InvokeVoidAsync("playNotificationSound");}catch{}}
             _lastUnreadCount = newCount;unreadCount = newCount;
         }catch{}
     }
     private async Task ToggleNotifications(){showNotifications = !showNotifications;showUserMenu = false;if (showNotifications) await LoadNotifications();}
-    private async Task MarkAllRead(){await NotificationService.MarkAllAsReadAsync(UserSession.UserID, UserSession.RoleID);await LoadNotifications();StateHasChanged();}
+    private async Task MarkAllRead()
+    {
+        await NotificationService.MarkAllAsReadAsync(UserSession.UserID, UserSession.RoleID);
+        unreadCount = 0;
+        _lastUnreadCount = 0;
+        if (notifications is not null)
+            foreach (var notification in notifications)
+                notification.IsRead = true;
+
+        // Reconcile immediately with the same server-side predicate used by the bulk update.
+        // If the count read fails, keep the zero established by the successful update.
+        try
+        {
+            unreadCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
+            _lastUnreadCount = unreadCount;
+        }
+        catch { }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task OnNotifClick(NotificationDto notif)
     {
-        if (!notif.IsRead){await NotificationService.MarkAsReadAsync(notif.NotificationID);notif.IsRead = true;unreadCount = Math.Max(0, unreadCount - 1);}
+        if (!notif.IsRead)
+        {
+            var previousUnreadCount = unreadCount;
+            await NotificationService.MarkAsReadAsync(notif.NotificationID, UserSession.UserID, UserSession.RoleID);
+            notif.IsRead = true;
+            try
+            {
+                unreadCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
+            }
+            catch
+            {
+                unreadCount = Math.Max(0, previousUnreadCount - 1);
+            }
+            _lastUnreadCount = unreadCount;
+        }
+
         showNotifications = false;
-        if (!string.IsNullOrEmpty(notif.RelatedModule) && notif.RelatedRecordID > 0){var route = ModuleRouteHelper.GetRoute(notif.RelatedModule);Navigation.NavigateTo($"{route}/view/{notif.RelatedRecordID}");}
-        else if (!string.IsNullOrEmpty(notif.RelatedModule)){Navigation.NavigateTo(ModuleRouteHelper.GetRoute(notif.RelatedModule));}
+        if (!string.IsNullOrWhiteSpace(notif.RelatedModule))
+            Navigation.NavigateTo(GetNotificationRoute(notif));
+    }
+
+    private static string GetNotificationRoute(NotificationDto notif)
+    {
+        var moduleCode = notif.RelatedModule!.ToUpperInvariant();
+        var recordId = notif.RelatedRecordID;
+
+        if (recordId > 0)
+        {
+            return moduleCode switch
+            {
+                "SCR_PRODORD" => $"/production-orders/edit/{recordId}",
+                "SCR_BATCH" => $"/production-batches/edit/{recordId}",
+                "SCR_MATISS" => $"/material-issues/edit/{recordId}",
+                "SCR_GRN" => $"/goods-receipts/view/{recordId}",
+                "SCR_STOCK" => $"/stock-balances/view/{recordId}",
+                "SCR_TRANSFER" => $"/stock-transfers/view/{recordId}",
+                "SCR_COUNT" => $"/stock-counts/view/{recordId}",
+                "SCR_PAYROLL" => $"/payroll/details/{recordId}",
+                _ => $"{ModuleRouteHelper.GetRoute(moduleCode)}/view/{recordId}"
+            };
+        }
+
+        return ModuleRouteHelper.GetRoute(moduleCode);
     }
     private string GetTimeAgo(DateTime date)
     {

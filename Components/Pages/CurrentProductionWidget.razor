@@ -2,6 +2,8 @@
 @using YKCoatings.Services
 @implements IAsyncDisposable
 @inject DashboardService DashboardService
+@inject ModuleAuthorizationService AuthorizationService
+@inject UserSessionService UserSession
 @inject NavigationManager NavigationManager
 
 <div class="live-prod-card">
@@ -29,21 +31,43 @@
         </div>
     </div>
 
-    @if (isLoading)
+    @if (accessDenied)
+    {
+        <div class="live-state-box live-access-denied">
+            <div class="live-empty-icon"><i class="bi bi-shield-lock"></i></div>
+            <div>لا تملك صلاحية عرض متابعة التصنيع</div>
+        </div>
+    }
+    else if (loadError && !isLoading)
+    {
+        <div class="live-load-error" role="alert">
+            <i class="bi bi-exclamation-triangle"></i>
+            تعذر تحديث متابعة التصنيع؛ أعد المحاولة.
+        </div>
+    }
+
+    @if (!accessDenied && isLoading)
     {
         <div class="live-state-box">
             <div class="spinner-md"></div>
             <span>جاري تحميل المتابعة اللحظية...</span>
         </div>
     }
-    else if (!items.Any())
+    else if (!accessDenied && !isLoading && loadError && !items.Any())
+    {
+        <div class="live-state-box">
+            <div class="live-empty-icon"><i class="bi bi-arrow-repeat"></i></div>
+            <div>لا تتوفر بيانات متابعة حالياً؛ أعد المحاولة</div>
+        </div>
+    }
+    else if (!accessDenied && !isLoading && !loadError && !items.Any())
     {
         <div class="live-state-box">
             <div class="live-empty-icon"><i class="bi bi-check2-circle"></i></div>
             <div>لا توجد أوامر تصنيع حالية</div>
         </div>
     }
-    else
+    else if (!accessDenied && !isLoading)
     {
         <div class="live-prod-list">
             @foreach (var item in items)
@@ -126,35 +150,35 @@
                                                 @if (stage.StageStatus == 3)
                                                 {
                                                     <div class="htl-meta htl-meta-done">
-                                                        <span class="htl-badge-done">✓ تمت</span>
+                                                        <span class="htl-badge-done"><i class="bi bi-check2"></i> تمت</span>
                                                         @if (!string.IsNullOrWhiteSpace(stage.DurationText))
                                                         {
-                                                            <span class="htl-dur">⏱ @stage.DurationText</span>
+                                                            <span class="htl-dur"><i class="bi bi-clock"></i> @stage.DurationText</span>
                                                         }
                                                     </div>
                                                     @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
                                                     {
-                                                        <div class="htl-op">👤 @stage.OperatorName</div>
+                                                        <div class="htl-op"><i class="bi bi-person"></i> @stage.OperatorName</div>
                                                     }
                                                 }
                                                 else if (stage.StageStatus == 2)
                                                 {
                                                     <div class="htl-meta htl-meta-run">
-                                                        <span class="htl-badge-run">● جارية</span>
+                                                        <span class="htl-badge-run"><i class="bi bi-play-circle"></i> جارية</span>
                                                         @if (!string.IsNullOrWhiteSpace(stage.DurationText))
                                                         {
-                                                            <span class="htl-dur">⏱ منذ @stage.DurationText</span>
+                                                            <span class="htl-dur"><i class="bi bi-clock"></i> منذ @stage.DurationText</span>
                                                         }
                                                     </div>
                                                     @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
                                                     {
-                                                        <div class="htl-op">👤 @stage.OperatorName</div>
+                                                        <div class="htl-op"><i class="bi bi-person"></i> @stage.OperatorName</div>
                                                     }
                                                 }
                                                 else if (stage.StageStatus == 4)
                                                 {
                                                     <div class="htl-meta htl-meta-err">
-                                                        <span class="htl-badge-err">✗ مشكلة</span>
+                                                        <span class="htl-badge-err"><i class="bi bi-exclamation-circle"></i> مشكلة</span>
                                                     </div>
                                                 }
                                                 else
@@ -186,10 +210,10 @@
 
 <style>
     .live-prod-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+        background: var(--yk-surface);
+        border: 1px solid var(--yk-border);
         border-radius: 18px;
-        box-shadow: 0 4px 18px rgba(15, 23, 42, .05);
+        box-shadow: var(--yk-shadow);
         overflow: hidden;
     }
 
@@ -198,15 +222,16 @@
         justify-content: space-between;
         align-items: center;
         padding: 1rem 1.25rem;
-        border-bottom: 1px solid #eef2f7;
-        background: linear-gradient(135deg, #0f766e, #115e59);
+        border-bottom: 1px solid var(--yk-bg);
+        background: linear-gradient(135deg, var(--yk-black), var(--yk-black3));
+        border-bottom: 1px solid var(--yk-gold-20);
     }
 
     .live-prod-title {
         display: flex;
         align-items: center;
         gap: .55rem;
-        color: #fff;
+        color: var(--yk-surface);
         font-weight: 800;
         font-size: .95rem;
     }
@@ -214,8 +239,8 @@
     .live-prod-title i { font-size: 1rem; }
 
     .live-count {
-        background: rgba(255,255,255,.18);
-        color: #fff;
+        background: var(--yk-gold-15);
+        color: var(--yk-gold-light);
         padding: .15rem .55rem;
         border-radius: 999px;
         font-size: .75rem;
@@ -226,7 +251,7 @@
         width: 36px; height: 36px;
         border: 1px solid rgba(255,255,255,.25);
         background: rgba(255,255,255,.12);
-        color: #fff;
+        color: var(--yk-surface);
         border-radius: 10px;
         cursor: pointer;
         display: inline-flex;
@@ -248,7 +273,7 @@
         flex-direction: column;
         align-items: center;
         gap: .85rem;
-        color: #64748b;
+        color: var(--yk-text-2);
         font-weight: 600;
     }
 
@@ -258,10 +283,27 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #ecfdf5;
-        color: #10b981;
+        background: var(--yk-success-soft);
+        color: var(--yk-success);
         font-size: 1.55rem;
     }
+
+    .live-load-error {
+        margin: .8rem 1rem 0;
+        border: 1px solid var(--yk-gold-20);
+        border-radius: 10px;
+        background: var(--yk-warning-soft);
+        color: var(--yk-gold-dark);
+        padding: .65rem .8rem;
+        font-size: .84rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+    }
+
+    .live-access-denied { color: var(--yk-text-2); }
+    .live-access-denied .live-empty-icon { color: var(--yk-gold-dark); }
 
     .live-prod-list {
         padding: 1rem;
@@ -271,18 +313,18 @@
     }
 
     .live-order-item {
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--yk-border);
         border-radius: 16px;
         padding: 1rem;
-        background: #fafafa;
+        background: var(--yk-bg);
         transition: .2s;
         cursor: pointer;
     }
 
     .live-order-item:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
-        border-color: #cbd5e1;
+        box-shadow: var(--yk-shadow);
+        border-color: var(--yk-border-gold);
     }
 
     .live-order-top {
@@ -295,12 +337,12 @@
 
     .live-order-number {
         font-weight: 800;
-        color: #0f172a;
+        color: var(--yk-text);
         font-size: .95rem;
     }
 
     .live-product-name {
-        color: #64748b;
+        color: var(--yk-text-2);
         font-size: .83rem;
         margin-top: .15rem;
     }
@@ -313,9 +355,9 @@
         white-space: nowrap;
     }
 
-    .los-prepare { background: #fffbeb; color: #b45309; }
-    .los-work    { background: #fff7ed; color: #c2410c; }
-    .los-qc      { background: #eef2ff; color: #4338ca; }
+    .los-prepare { background: var(--yk-warning-soft); color: var(--yk-text); }
+    .los-work    { background: var(--yk-gold-10); color: var(--yk-gold-dark); }
+    .los-qc      { background: var(--yk-info-soft); color: var(--yk-text); }
 
     .live-order-mid {
         display: flex;
@@ -331,23 +373,23 @@
     }
 
     .live-label {
-        color: #64748b;
+        color: var(--yk-text-2);
         font-weight: 700;
         min-width: 72px;
     }
 
     .live-value {
-        color: #0f172a;
+        color: var(--yk-text);
         font-weight: 600;
     }
 
     .live-stage-name {
-        color: #0f766e;
+        color: var(--yk-gold-dark);
         font-weight: 800;
     }
 
     .live-elapsed {
-        color: #dc2626;
+        color: var(--yk-danger);
         font-weight: 800;
     }
 
@@ -355,7 +397,7 @@
         /* ===== HORIZONTAL TIMELINE ===== */
     .htl-wrap {
         margin-top: .9rem;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid var(--yk-border);
         padding-top: .75rem;
     }
 
@@ -365,13 +407,13 @@
         align-items: center;
         font-size: .78rem;
         font-weight: 700;
-        color: #64748b;
+        color: var(--yk-text-2);
         margin-bottom: .7rem;
     }
 
     .htl-count {
-        background: #f0fdfa;
-        color: #0f766e;
+        background: var(--yk-gold-10);
+        color: var(--yk-gold-dark);
         padding: .12rem .5rem;
         border-radius: 999px;
         font-size: .72rem;
@@ -406,42 +448,42 @@
         width: 14px;
         height: 14px;
         border-radius: 50%;
-        border: 2.5px solid #cbd5e1;
-        background: #fff;
+        border: 2.5px solid var(--yk-border);
+        background: var(--yk-surface);
         flex-shrink: 0;
     }
 
     .htl-line {
         height: 2.5px;
         flex: 1;
-        background: #e5e7eb;
+        background: var(--yk-border);
         margin: 0 2px;
     }
 
-    .htl-line.hline-done { background: #10b981; }
-    .htl-line.hline-running { background: linear-gradient(to right, #f59e0b, #e5e7eb); }
+    .htl-line.hline-done { background: var(--yk-success); }
+    .htl-line.hline-running { background: linear-gradient(to right, var(--yk-warning), var(--yk-border)); }
 
     /* dot states */
     .htl-step.tl-done .htl-dot {
-        background: #10b981;
-        border-color: #10b981;
+        background: var(--yk-success);
+        border-color: var(--yk-success);
     }
 
     .htl-step.tl-running .htl-dot {
-        background: #fff;
-        border-color: #f59e0b;
-        box-shadow: 0 0 0 3px rgba(245, 158, 11, .2);
+        background: var(--yk-surface);
+        border-color: var(--yk-warning);
+        box-shadow: 0 0 0 3px var(--yk-warning-soft);
         animation: pulse-ring 1.5s infinite;
     }
 
     .htl-step.tl-problem .htl-dot {
-        background: #ef4444;
-        border-color: #ef4444;
+        background: var(--yk-danger);
+        border-color: var(--yk-danger);
     }
 
     .htl-step.tl-waiting .htl-dot {
-        background: #fff;
-        border-color: #cbd5e1;
+        background: var(--yk-surface);
+        border-color: var(--yk-border);
     }
 
     .htl-content {
@@ -451,15 +493,15 @@
     .htl-name {
         font-weight: 800;
         font-size: .84rem;
-        color: #0f172a;
+        color: var(--yk-text);
         margin-bottom: .3rem;
         line-height: 1.3;
     }
 
-    .htl-step.tl-done .htl-name { color: #059669; }
-    .htl-step.tl-running .htl-name { color: #d97706; }
-    .htl-step.tl-problem .htl-name { color: #dc2626; }
-    .htl-step.tl-waiting .htl-name { color: #94a3b8; }
+    .htl-step.tl-done .htl-name { color: var(--yk-text); }
+    .htl-step.tl-running .htl-name { color: var(--yk-text); }
+    .htl-step.tl-problem .htl-name { color: var(--yk-danger); }
+    .htl-step.tl-waiting .htl-name { color: var(--yk-text-3); }
 
     .htl-meta {
         display: flex;
@@ -469,8 +511,8 @@
 
     .htl-badge-done {
         display: inline-block;
-        background: #ecfdf5;
-        color: #059669;
+        background: var(--yk-success-soft);
+        color: var(--yk-text);
         font-size: .7rem;
         font-weight: 800;
         padding: .15rem .45rem;
@@ -479,8 +521,8 @@
 
     .htl-badge-run {
         display: inline-block;
-        background: #fffbeb;
-        color: #d97706;
+        background: var(--yk-warning-soft);
+        color: var(--yk-text);
         font-size: .7rem;
         font-weight: 800;
         padding: .15rem .45rem;
@@ -490,8 +532,8 @@
 
     .htl-badge-err {
         display: inline-block;
-        background: #fef2f2;
-        color: #dc2626;
+        background: var(--yk-danger-soft);
+        color: var(--yk-danger);
         font-size: .7rem;
         font-weight: 800;
         padding: .15rem .45rem;
@@ -501,25 +543,25 @@
     .htl-dur {
         font-size: .76rem;
         font-weight: 800;
-        color: #475569;
+        color: var(--yk-text-2);
     }
 
-    .htl-step.tl-done .htl-dur { color: #059669; }
-    .htl-step.tl-running .htl-dur { color: #d97706; }
+    .htl-step.tl-done .htl-dur { color: var(--yk-text-2); }
+    .htl-step.tl-running .htl-dur { color: var(--yk-text-2); }
 
     .htl-op {
         font-size: .74rem;
         font-weight: 700;
-        color: #64748b;
+        color: var(--yk-text-2);
     }
 
-    .htl-step.tl-done .htl-op { color: #34d399; }
-    .htl-step.tl-running .htl-op { color: #fbbf24; }
+    .htl-step.tl-done .htl-op { color: var(--yk-text-2); }
+    .htl-step.tl-running .htl-op { color: var(--yk-text-2); }
 
     .htl-meta-wait {
         font-size: .74rem;
         font-weight: 700;
-        color: #cbd5e1;
+        color: var(--yk-text-3);
     }
 
     .live-batch-badge {
@@ -527,9 +569,9 @@
         display: inline-flex;
         align-items: center;
         gap: .35rem;
-        background: #f0f9ff;
-        color: #0369a1;
-        border: 1px solid #bae6fd;
+        background: var(--yk-info-soft);
+        color: var(--yk-text);
+        border: 1px solid var(--yk-info-soft);
         padding: .28rem .6rem;
         border-radius: 999px;
         font-size: .74rem;
@@ -545,23 +587,23 @@
     .spinner-md {
         width: 38px; height: 38px;
         border-width: 3px;
-        border-color: #dbeafe;
-        border-top-color: #0f766e;
+        border-color: var(--yk-info-soft);
+        border-top-color: var(--yk-gold);
     }
 
     .spinner-mini {
         width: 14px; height: 14px;
         border-width: 2px;
         border-color: rgba(255,255,255,.35);
-        border-top-color: #fff;
+        border-top-color: var(--yk-surface);
     }
 
     @@keyframes liveSpin { to { transform: rotate(360deg); } }
 
     @@keyframes pulse-ring {
-        0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, .35); }
-        70%  { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        0%   { box-shadow: 0 0 0 0 var(--yk-warning-soft); }
+        70%  { box-shadow: 0 0 0 6px transparent; }
+        100% { box-shadow: 0 0 0 0 transparent; }
     }
 
     @@media (max-width: 768px) {
@@ -576,41 +618,91 @@
     private List<CurrentProductionOrderDto> items = new();
     private List<StageTimelineItemDto> allStages = new();
     private bool isLoading = true;
+    private bool loadError;
+    private bool accessDenied;
+    private bool canViewOrders;
+    private bool canViewBatches;
+    private bool _loadInProgress;
 
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _cts;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
-        StartAutoRefresh();
+        if (!UserSession.IsLoggedIn)
+        {
+            accessDenied = true;
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            canViewOrders = await AuthorizationService.HasCurrentUserPermissionAsync(
+                "SCR_PRODORD", p => p.CanView);
+            canViewBatches = await AuthorizationService.HasCurrentUserPermissionAsync(
+                "SCR_BATCH", p => p.CanView);
+            accessDenied = !canViewOrders || !canViewBatches;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            accessDenied = true;
+        }
+
+        if (!accessDenied)
+        {
+            await LoadData();
+            StartAutoRefresh();
+        }
+        else
+        {
+            isLoading = false;
+        }
     }
 
     private async Task LoadData()
     {
+        if (_loadInProgress || accessDenied) return;
+        _loadInProgress = true;
         isLoading = true;
+        loadError = false;
         try
         {
-            items = await DashboardService.GetCurrentProductionTrackingAsync(8);
+            if (!UserSession.IsLoggedIn)
+            {
+                accessDenied = true;
+                items.Clear();
+                allStages.Clear();
+                return;
+            }
 
-            var batchIds = items
+            var refreshedItems = await DashboardService.GetCurrentProductionTrackingAsync(UserSession.UserID, 8);
+            var batchIds = refreshedItems
                 .Where(x => x.CurrentBatchID.HasValue && x.CurrentBatchID.Value > 0)
                 .Select(x => x.CurrentBatchID!.Value)
                 .Distinct()
                 .ToList();
+            var refreshedStages = batchIds.Count > 0
+                ? await DashboardService.GetActiveBatchesStagesAsync(UserSession.UserID, batchIds)
+                : new List<StageTimelineItemDto>();
 
-            if (batchIds.Any())
-            {
-                allStages = await DashboardService.GetActiveBatchesStagesAsync(batchIds);
-            }
-            else
-            {
-                allStages = new List<StageTimelineItemDto>();
-            }
+            items = refreshedItems;
+            allStages = refreshedStages;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            accessDenied = true;
+            items.Clear();
+            allStages.Clear();
+        }
+        catch
+        {
+            loadError = true;
         }
         finally
         {
             isLoading = false;
+            _loadInProgress = false;
         }
     }
 
@@ -624,6 +716,7 @@
 
         private void OpenOrder(int productionOrderId, int? batchId)
     {
+        if (!canViewOrders || !canViewBatches) return;
         if (batchId.HasValue && batchId.Value > 0)
         {
             NavigationManager.NavigateTo($"/production-batches/edit/{batchId.Value}?tab=stages");

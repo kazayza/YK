@@ -13,14 +13,14 @@
 @if (!UserSession.IsLoggedIn)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
+        <div class="no-access-icon"><i class="bi bi-lock-fill"></i></div>
         <h4>يجب تسجيل الدخول أولاً</h4>
     </div>
 }
 else if (permissions == null || !permissions.CanView)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+        <div class="no-access-icon"><i class="bi bi-shield-lock-fill"></i></div>
         <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
         <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>
             العودة للرئيسية
@@ -121,22 +121,22 @@ else
                     <label class="filter-label">الحالة</label>
                     <select class="filter-select" @bind="statusFilter">
                         <option value="">— الكل —</option>
-                        <option value="1">📝 مسودة</option>
-                        <option value="2">✅ معتمد</option>
-                        <option value="3">⚙️ جاري التجهيز</option>
-                        <option value="4">🏭 قيد التصنيع</option>
-                        <option value="5">🔬 فحص الجودة</option>
-                        <option value="6">✔️ مكتمل</option>
-                        <option value="7">❌ ملغي</option>
+                        <option value="1">مسودة</option>
+                        <option value="2">معتمد</option>
+                        <option value="3">جاري التجهيز</option>
+                        <option value="4">قيد التصنيع</option>
+                        <option value="5">فحص الجودة</option>
+                        <option value="6">مكتمل</option>
+                        <option value="7">ملغي</option>
                     </select>
                 </div>
                 <div class="filter-group" style="flex:1; min-width:140px;">
                     <label class="filter-label">الأولوية</label>
                     <select class="filter-select" @bind="priorityFilter">
                         <option value="">— الكل —</option>
-                        <option value="1">🔴 عاجل</option>
-                        <option value="2">🟡 عادي</option>
-                        <option value="3">🟢 غير عاجل</option>
+                        <option value="1">عاجل</option>
+                        <option value="2">عادي</option>
+                        <option value="3">غير عاجل</option>
                     </select>
                 </div>
                 <div class="filter-group" style="flex:1; min-width:140px;">
@@ -315,7 +315,7 @@ else
                                         </div>
                                     </td>
                                     <td class="tc">
-    @if (order.OrderStatus == 3 || order.OrderStatus == 4 || order.OrderStatus == 5)
+    @if (CanViewBatchTracking && (order.OrderStatus == 3 || order.OrderStatus == 4 || order.OrderStatus == 5))
     {
         <button class="btn-track" title="متابعة لحظية" @onclick:stopPropagation @onclick="() => OpenTracking(order.ProductionOrderID, order.OrderNumber, order.ProductName)">
             <i class="bi bi-activity"></i>
@@ -377,7 +377,7 @@ else
             <div class="modal-body">
                 <p>هل أنت متأكد من إلغاء أمر التصنيع رقم:</p>
                 <div class="modal-highlight danger">@selectedOrder?.OrderNumber</div>
-                <p class="modal-warning">⚠️ لا يمكن التراجع عن هذا الإجراء</p>
+                <p class="modal-warning"><i class="bi bi-exclamation-triangle-fill"></i> لا يمكن التراجع عن هذا الإجراء</p>
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel-modal" @onclick="CloseDialogs">تراجع</button>
@@ -484,35 +484,35 @@ else
                                                         @if (stage.StageStatus == 3)
                                                         {
                                                             <div class="htl-meta htl-meta-done">
-                                                                <span class="htl-badge-done">✓ تمت</span>
+                                                                <span class="htl-badge-done"><i class="bi bi-check2"></i> تمت</span>
                                                                 @if (!string.IsNullOrWhiteSpace(stage.DurationText))
                                                                 {
-                                                                    <span class="htl-dur">⏱ @stage.DurationText</span>
+                                                                    <span class="htl-dur"><i class="bi bi-clock"></i> @stage.DurationText</span>
                                                                 }
                                                             </div>
                                                             @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
                                                             {
-                                                                <div class="htl-op">👤 @stage.OperatorName</div>
+                                                                <div class="htl-op"><i class="bi bi-person"></i> @stage.OperatorName</div>
                                                             }
                                                         }
                                                         else if (stage.StageStatus == 2)
                                                         {
                                                             <div class="htl-meta htl-meta-run">
-                                                                <span class="htl-badge-run">● جارية</span>
+                                                                <span class="htl-badge-run"><i class="bi bi-play-circle"></i> جارية</span>
                                                                 @if (!string.IsNullOrWhiteSpace(stage.DurationText))
                                                                 {
-                                                                    <span class="htl-dur">⏱ منذ @stage.DurationText</span>
+                                                                    <span class="htl-dur"><i class="bi bi-clock"></i> منذ @stage.DurationText</span>
                                                                 }
                                                             </div>
                                                             @if (!string.IsNullOrWhiteSpace(stage.OperatorName))
                                                             {
-                                                                <div class="htl-op">👤 @stage.OperatorName</div>
+                                                                <div class="htl-op"><i class="bi bi-person"></i> @stage.OperatorName</div>
                                                             }
                                                         }
                                                         else if (stage.StageStatus == 4)
                                                         {
                                                             <div class="htl-meta htl-meta-err">
-                                                                <span class="htl-badge-err">✗ مشكلة</span>
+                                                                <span class="htl-badge-err"><i class="bi bi-exclamation-circle"></i> مشكلة</span>
                                                             </div>
                                                         }
                                                         else
@@ -1234,6 +1234,7 @@ private bool trackingLoading = false;
     private bool isExporting = false;
     private bool isProcessing = false;
     private ModulePermissionDto? permissions;
+    private bool CanViewBatchTracking => PermissionService.CanView("SCR_BATCH");
 
     // فلاتر
     private string? searchQuery;
@@ -1444,6 +1445,9 @@ private bool trackingLoading = false;
         // ===== Live Tracking =====
     private async Task OpenTracking(int orderId, string orderNumber, string productName)
     {
+        if (!UserSession.IsLoggedIn || !CanViewBatchTracking)
+            return;
+
         showTrackingModal = true;
         trackingOrderId = orderId;
         trackingOrderNumber = orderNumber;
@@ -1452,7 +1456,7 @@ private bool trackingLoading = false;
 
         try
         {
-            trackingBatches = await DashboardService.GetProductionOrderLiveBatchesAsync(orderId);
+            trackingBatches = await DashboardService.GetProductionOrderLiveBatchesAsync(UserSession.UserID, orderId);
 
             var batchIds = trackingBatches
                 .Select(b => b.BatchID)
@@ -1461,12 +1465,24 @@ private bool trackingLoading = false;
 
             if (batchIds.Any())
             {
-                trackingStages = await DashboardService.GetActiveBatchesStagesAsync(batchIds);
+                trackingStages = await DashboardService.GetActiveBatchesStagesAsync(UserSession.UserID, batchIds);
             }
             else
             {
                 trackingStages = new List<StageTimelineItemDto>();
             }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            showTrackingModal = false;
+            isSuccess = false;
+            resultMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            showTrackingModal = false;
+            isSuccess = false;
+            resultMessage = $"تعذر تحميل متابعة الدفعة: {ex.Message}";
         }
         finally
         {
@@ -1583,7 +1599,7 @@ private bool trackingLoading = false;
         var rawSection = rawMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #9C7C2E;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            📦 المواد الخام ({rawMaterials.Count} صنف)
+            المواد الخام ({rawMaterials.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1594,7 +1610,7 @@ private bool trackingLoading = false;
         var pkgSection = packMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #10b981;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            🎁 مواد التعبئة ({packMaterials.Count} صنف)
+            مواد التعبئة ({packMaterials.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1605,7 +1621,7 @@ private bool trackingLoading = false;
         var finishedSection = finishedProductComponents.Any() ? $@"
         <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            🏭 المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
+            المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1622,7 +1638,7 @@ private bool trackingLoading = false;
 
         var priorityName = order.OrderPriority switch
         {
-            1 => "🔴 عاجل", 2 => "🟡 عادي", 3 => "🟢 غير عاجل", _ => ""
+            1 => "عاجل", 2 => "عادي", 3 => "غير عاجل", _ => ""
         };
 
         return $@"<!DOCTYPE html>
@@ -1646,7 +1662,7 @@ private bool trackingLoading = false;
     <button onclick='window.print()'
         style='background:#D4AF37;color:#0A0F1E;border:none;padding:10px 24px;
                border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
-        🖨️ طباعة
+        <i class='bi bi-printer-fill'></i> طباعة
     </button>
     <button onclick='window.close()'
         style='background:#6b7280;color:#fff;border:none;padding:10px 24px;
@@ -1656,7 +1672,7 @@ private bool trackingLoading = false;
 </div>
 
 <div style='text-align:center;border-bottom:3px solid #9C7C2E;padding-bottom:20px;margin-bottom:28px;'>
-    <div style='font-size:2.2rem;margin-bottom:8px;'>🏭</div>
+    <div style='font-size:1.1rem;font-weight:700;margin-bottom:8px;'>التصنيع</div>
     <h1 style='font-size:1.7rem;font-weight:800;color:#0A0F1E;margin:0;'>واي كي كوتينج ERP</h1>
     <p style='color:#6b7280;margin:6px 0 0;'>أمر تصنيع (Production Order)</p>
 </div>

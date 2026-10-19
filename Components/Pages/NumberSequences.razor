@@ -1,0 +1,495 @@
+@page "/settings/number-sequences"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject SequenceService SequenceService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>إدارة تسلسلات الأرقام - Gold Edition</PageTitle>
+
+@if (!initializationComplete || isLoading)
+{
+    <div class="sequence-state-card" dir="rtl">
+        <span class="sequence-loader"></span>
+        <h2>جارٍ تجهيز إدارة التسلسلات</h2>
+        <p>نتحقق من جلسة الدخول وصلاحية SCR_SETTINGS، ثم نقرأ الإعدادات دون استهلاك أي رقم.</p>
+    </div>
+}
+else if (!UserSession.IsLoggedIn)
+{
+    <div class="sequence-state-card" dir="rtl">
+        <h2>يلزم تسجيل الدخول</h2>
+        <p>سجّل الدخول لعرض إعدادات أرقام المستندات.</p>
+        <button class="sequence-button secondary" @onclick='() => Navigation.NavigateTo("/login")'>تسجيل الدخول</button>
+    </div>
+}
+else if (!canView)
+{
+    <div class="sequence-state-card" dir="rtl">
+        <span class="sequence-eyebrow">ACCESS CONTROL</span>
+        <h2>لا تتوفر صلاحية عرض الإعدادات</h2>
+        <p>تتطلب هذه الشاشة صلاحية العرض على SCR_SETTINGS. تُفحص الصلاحية أيضاً داخل الخدمة قبل قراءة البيانات أو حفظها.</p>
+        <button class="sequence-button secondary" @onclick='() => Navigation.NavigateTo("/settings")'>العودة إلى الإعدادات</button>
+    </div>
+}
+else
+{
+    <main class="yk-gold-page sequence-page" dir="rtl">
+        <header class="sequence-hero">
+            <div class="sequence-hero-top">
+                <div class="sequence-brand">
+                    <span class="sequence-monogram">YK</span>
+                    <span class="sequence-brand-copy"><strong>GOLD EDITION</strong><small>DOCUMENT NUMBERING</small></span>
+                </div>
+                <button class="sequence-button hero-back" @onclick='() => Navigation.NavigateTo("/settings")'>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"/><path d="M9 12h11"/></svg>
+                    العودة إلى الإعدادات
+                </button>
+            </div>
+            <div class="sequence-hero-main">
+                <div>
+                    <span class="sequence-eyebrow">SCR_SETTINGS · إعدادات النظام</span>
+                    <h1>إدارة تسلسلات الأرقام</h1>
+                    <p>عرض وضبط قواعد ترقيم المستندات. المعاينة للقراءة فقط ولا تستهلك الرقم التالي.</p>
+                </div>
+                <div class="sequence-hero-mark" aria-hidden="true"><span>01</span><i></i><span>02</span><i></i><span>03</span></div>
+            </div>
+            <div class="sequence-hero-bottom"><span>تُولّد الأرقام عبر <bdi>dbo.sp_GetNextNumber</bdi></span><span class="sequence-readonly-pill"><i></i>المعاينة لا تحفظ ولا تزيد العداد</span></div>
+        </header>
+
+        <section class="sequence-warning procedure-warning">
+            <span class="sequence-warning-icon" aria-hidden="true">!</span>
+            <div><strong>تنبيه قبل إيقاف أي تسلسل</strong><p>الإجراء <bdi>sp_GetNextNumber</bdi> المتاح لا يفحص <bdi>IsActive</bdi> ويحدّث كل الصفوف ذات الرمز نفسه. بعض خدمات النظام تستدعيه مباشرةً؛ لذلك يَحمي فحص التفعيل داخل <bdi>SequenceService</bdi> مستهلكيه فقط، ولا يوقف جميع المسارات. أبقِ الرموز فريدة وراجع المستهلكين قبل التعطيل.</p></div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="sequence-alert @(statusIsError ? "error" : "success")" role="status">
+                <span class="sequence-alert-mark">@if (statusIsError) { <span>!</span> } else { <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.4 4.4L19 7.5" /></svg> }</span>
+                <p>@statusMessage</p>
+                <button type="button" aria-label="إغلاق" @onclick="ClearStatus">×</button>
+            </div>
+        }
+
+        @if (loadError)
+        {
+            <section class="sequence-warning" role="alert">
+                <div><strong>تعذر تحميل التسلسلات</strong><p>@loadErrorMessage</p></div>
+                <button class="sequence-button secondary" @onclick="() => ReloadSequencesAsync()" disabled="@isLoading">إعادة المحاولة</button>
+            </section>
+        }
+        else
+        {
+            @if (!sequences.Any(s => string.Equals(s.SequenceCode, "SQ", StringComparison.OrdinalIgnoreCase)))
+            {
+                <section class="sequence-warning sq-notice">
+                    <span class="sequence-warning-icon" aria-hidden="true">!</span>
+                    <div><strong>لم يظهر سجل SQ في إعدادات قاعدة البيانات الحالية</strong><p>لم تتم تهيئته تلقائياً؛ يلزم اعتماد البادئة وقيمة البداية أولاً. لا تحفظ تسلسلاً جديداً قبل تحديدهما.</p></div>
+                </section>
+            }
+
+            <section class="sequence-stats" aria-label="ملخص التسلسلات">
+                <article class="sequence-stat"><span class="stat-caption">إجمالي التسلسلات</span><strong>@sequences.Count</strong><span class="stat-mark">ALL</span></article>
+                <article class="sequence-stat"><span class="stat-caption">فعّالة</span><strong>@sequences.Count(s => s.IsActive)</strong><span class="stat-mark gold">LIVE</span></article>
+                <article class="sequence-stat"><span class="stat-caption">موقوفة</span><strong>@sequences.Count(s => !s.IsActive)</strong><span class="stat-mark muted">OFF</span></article>
+                <article class="sequence-stat"><span class="stat-caption">عداد يحتاج مراجعة</span><strong>@ReviewCount</strong><span class="stat-mark warning">CHECK</span></article>
+            </section>
+
+            <section class="sequence-workspace">
+                <div class="sequence-toolbar">
+                    <div class="sequence-toolbar-heading"><span class="sequence-toolbar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/><circle cx="8" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="10" cy="19" r="1.5"/></svg>
+                    </span><div><h2>قواعد الترقيم</h2><p>إعدادات <bdi>dbo.NumberSequences</bdi></p></div></div>
+                    <div class="sequence-toolbar-actions">
+                        <label class="sequence-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg><input type="search" placeholder="بحث بالرمز أو الاسم..." @bind="searchText" @bind:event="oninput" /></label>
+                        <select class="sequence-filter" aria-label="تصفية حسب الحالة" @bind="statusFilter">
+                            <option value="all">كل الحالات</option><option value="active">فعّال</option><option value="inactive">موقوف</option>
+                        </select>
+                        <button class="sequence-button refresh-button" @onclick="() => ReloadSequencesAsync()" disabled="@isLoading" title="تحديث القائمة">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2"/></svg><span>تحديث</span>
+                        </button>
+                        @if (canAdd)
+                        {
+                            <button class="sequence-button primary" @onclick="BeginAdd">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>إضافة تسلسل</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                @if (FilteredSequences.Count == 0)
+                {
+                    <div class="sequence-empty"><span class="empty-emblem">YK</span><strong>لا توجد نتائج مطابقة</strong><p>غيّر عبارة البحث أو مرشح الحالة لعرض التسلسلات.</p></div>
+                }
+                else
+                {
+                    <div class="sequence-table-wrap">
+                        <table class="sequence-table">
+                            <thead><tr>
+                                <th>الرمز / الاسم</th><th>البادئة</th><th>العداد</th><th>الطول</th><th>السنة</th><th>الحالة</th><th>الرقم التالي — معاينة</th><th>الإجراء</th>
+                            </tr></thead>
+                            <tbody>
+                                @foreach (var item in FilteredSequences)
+                                {
+                                    <tr @key="item.SequenceID">
+                                        <td class="sequence-identity"><strong><bdi>@item.SequenceCode</bdi></strong><span>@item.SequenceName</span>@if (IsDuplicateCode(item.SequenceCode)) { <small class="duplicate-code-warning">رمز مكرر — لا يمكن التوليد بأمان</small> }</td>
+                                        <td><span class="sequence-code-chip"><bdi>@(string.IsNullOrWhiteSpace(item.Prefix) ? "—" : item.Prefix)</bdi></span></td>
+                                        <td class="sequence-number"><bdi>@(item.CurrentNumber?.ToString("N0") ?? "—")</bdi><small>آخر إعادة: @(item.LastResetYear?.ToString() ?? "—")</small></td>
+                                        <td>@(item.NumberLength?.ToString() ?? "—")</td>
+                                        <td><span class="year-mode">@(item.IncludeYear ? "يتضمن السنة" : "بدون سنة")</span><small class="reset-mode">@(item.ResetYearly ? "إعادة سنوية" : "عداد مستمر")</small></td>
+                                        <td><span class="sequence-status @(item.IsActive ? "on" : "off")"><i></i>@(item.IsActive ? "فعّال" : "موقوف")</span></td>
+                                        <td class="next-preview"><bdi>@(string.IsNullOrWhiteSpace(item.NextNumberPreview) ? "غير متاح" : item.NextNumberPreview)</bdi><small>لا يستهلك الرقم</small></td>
+                                        <td>
+                                            @if (canEdit)
+                                            {
+                                                <button class="sequence-row-action" title="تعديل الإعداد" aria-label="تعديل @item.SequenceCode" @onclick="() => BeginEdit(item)">
+                                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4 15.6 5 4.8 15.8 4 20Z"/><path d="M13 7.5 16.5 11"/></svg><span>تعديل</span>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="sequence-readonly-label">عرض فقط</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                <div class="sequence-table-foot"><span>عدد النتائج <strong>@FilteredSequences.Count</strong></span><span>العداد وقيمة آخر إعادة ضبط للعرض فقط بعد إنشاء التسلسل.</span></div>
+            </section>
+
+            <footer class="sequence-page-footer"><span class="footer-signature"><b>YK</b><span><strong>إعدادات ترقيم المستندات</strong><small>صلاحيات القراءة والكتابة محكومة بـ SCR_SETTINGS</small></span></span><span class="footer-procedure">Stored procedure <bdi>sp_GetNextNumber</bdi></span></footer>
+        }
+    </main>
+
+    @if (showEditor && draft is not null)
+    {
+        <div class="sequence-modal-backdrop" role="presentation" @onclick="CloseEditor">
+            <section class="sequence-modal" role="dialog" aria-modal="true" aria-labelledby="sequence-editor-title" @onclick:stopPropagation="true">
+                <div class="sequence-modal-head">
+                    <div><span class="sequence-eyebrow">SCR_SETTINGS · CONFIGURATION</span><h2 id="sequence-editor-title">@(isEditing ? "تعديل تسلسل" : "إضافة تسلسل جديد")</h2><p>@(isEditing ? "يمكن تعديل صيغة الرقم وحالة التسلسل؛ لا يمكن تعديل العداد من هذه الشاشة." : "أدخل القيم المعتمدة. لا توجد تهيئة تلقائية لرمز SQ أو لأي بادئة.")</p></div>
+                    <button type="button" class="sequence-modal-close" aria-label="إغلاق" @onclick="CloseEditor">×</button>
+                </div>
+                <form class="sequence-form" @onsubmit="SaveSequenceAsync" @onsubmit:preventDefault="true">
+                    <div class="sequence-form-grid">
+                        <label class="sequence-field"><span>رمز التسلسل <b>*</b></span><input type="text" maxlength="20" required autocomplete="off" @bind="draft.SequenceCode" disabled="@isEditing" placeholder="مثال: SQ" dir="ltr" /><small>حد الإجراء <bdi>sp_GetNextNumber</bdi> هو 20 حرفاً.</small></label>
+                        <label class="sequence-field"><span>اسم التسلسل <b>*</b></span><input type="text" maxlength="200" required autocomplete="off" @bind="draft.SequenceName" placeholder="اسم واضح للمستخدمين" /></label>
+                        <label class="sequence-field"><span>البادئة <b>*</b></span><input type="text" maxlength="10" required="@(!isEditing || draft.IsActive)" autocomplete="off" @bind="draft.Prefix" placeholder="أدخل البادئة المعتمدة" dir="ltr" /><small>الإجراء يستخدم أول 10 أحرف فقط.</small></label>
+                        <label class="sequence-field"><span>طول الجزء الرقمي <b>*</b></span><input type="number" min="1" max="@GetMaxNumberLength(draft)" required @bind="draft.NumberLength" dir="ltr" /><small>حد الإخراج <bdi>NVARCHAR(50)</bdi> يُحسب حسب البادئة والسنة.</small></label>
+                        @if (!isEditing)
+                        {
+                            <label class="sequence-field"><span>قيمة العداد الابتدائية <b>*</b></span><input type="number" min="0" max="2147483647" required @bind="draft.CurrentNumber" dir="ltr" /><small>القيمة المسجلة؛ أول استخدام قد يزيدها أو يعيدها إلى 1 حسب إعداد السنة.</small></label>
+                            <label class="sequence-field"><span>سنة آخر إعادة ضبط <small>(حسب قيمة العداد)</small></span><input type="number" min="1900" @bind="draft.LastResetYear" dir="ltr" /><small>مطلوبة مع عداد غير صفر وإعادة ضبط سنوية؛ السنة الأقدم تجعل أول استخدام يبدأ من 1، والحالية تحفظ قيمة العداد للزيادة التالية.</small></label>
+                        }
+                        else
+                        {
+                            <div class="sequence-field readonly-field"><span>قيمة العداد الحالية</span><strong><bdi>@(draft.CurrentNumber?.ToString("N0") ?? "—")</bdi></strong><small>غير قابلة للتحرير لمنع القفز أو إعادة استخدام رقم.</small></div>
+                            <div class="sequence-field readonly-field"><span>سنة آخر إعادة ضبط</span><strong><bdi>@(draft.LastResetYear?.ToString() ?? "—")</bdi></strong><small>تُحدّثها قاعدة البيانات عند توليد رقم.</small></div>
+                        }
+                    </div>
+
+                    <div class="sequence-options">
+                        <label class="sequence-toggle"><input type="checkbox" @bind="draft.IncludeYear" /><span class="toggle-track"><i></i></span><span><strong>تضمين السنة</strong><small>تظهر السنة في الرقم الناتج.</small></span></label>
+                        <label class="sequence-toggle"><input type="checkbox" @bind="draft.ResetYearly" /><span class="toggle-track"><i></i></span><span><strong>إعادة العداد سنوياً</strong><small>عند التغيير، يبدأ الإجراء من 1 مع السنة الجديدة.</small></span></label>
+                        <label class="sequence-toggle active-toggle"><input type="checkbox" @bind="draft.IsActive" /><span class="toggle-track"><i></i></span><span><strong>التسلسل فعال</strong><small>فحص التفعيل داخل SequenceService فقط؛ بعض المسارات تستدعي الإجراء مباشرةً.</small></span></label>
+                    </div>
+                    @if (draft.ResetYearly && !draft.IncludeYear)
+                    {
+                        <div class="@(draft.IsActive ? "sequence-inline-error" : "sequence-inline-warning")">لا يمكن إعادة الرقم سنوياً دون تضمين السنة؛ @(draft.IsActive ? "أصلح هذا قبل حفظ التسلسل فعالاً." : "سيبقى التسلسل غير صالح للتفعيل حتى تصحيح الإعداد.")</div>
+                    }
+                    @if (isEditing && draft.CurrentNumber.GetValueOrDefault() > 0)
+                    {
+                        <div class="sequence-inline-warning">تغيير البادئة أو طول الرقم أو إعدادات السنة يغيّر شكل الأرقام المستقبلية، وقد يؤثر في التكاملات التي تعتمد على صيغة الرقم.</div>
+                    }
+                    @if (!isEditing)
+                    {
+                        <div class="sequence-inline-warning">الحفظ سيضيف إعداداً إلى قاعدة البيانات. لا تُنشئ SQ قبل اعتماد البادئة وقيمة البداية. لم تُنفّذ أي كتابة تلقائية.</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(editorError))
+                    {
+                        <div class="sequence-inline-error" role="alert">@editorError</div>
+                    }
+                    <div class="sequence-modal-actions">
+                        <button type="button" class="sequence-button secondary" @onclick="CloseEditor" disabled="@isSaving">إلغاء</button>
+                        <button type="submit" class="sequence-button primary" disabled="@isSaving">
+                            @if (isSaving) { <span class="sequence-button-spinner"></span><span>جارٍ الحفظ...</span> }
+                            else { <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17l9-10"/></svg><span>@(isEditing ? "حفظ التعديلات" : "إضافة التسلسل")</span> }
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
+    }
+}
+
+<style>
+.sequence-page{--seq-gold:#D4AF37;--seq-gold-dark:#9C7C2E;--seq-ink:#070B14;--seq-ink-soft:#151b28;--seq-line:#e9e2d2;--seq-paper:#fff;--seq-muted:#7f8794;font-family:'Tajawal',sans-serif;color:var(--seq-ink-soft);max-width:1440px;margin:0 auto;padding:6px 0 28px;display:flex;flex-direction:column;gap:17px}
+.sequence-hero{position:relative;overflow:hidden;border:1px solid rgba(212,175,55,.22);border-radius:23px;padding:20px 25px 16px;background:radial-gradient(ellipse at 10% 0,rgba(212,175,55,.15),transparent 34%),linear-gradient(132deg,#070B14,#0D1422 61%,#182235);color:#f4e8c7;box-shadow:0 18px 42px rgba(7,11,20,.10)}
+.sequence-hero:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,#8e712a,#f2d778,#8e712a,transparent)}
+.sequence-hero-top,.sequence-hero-main,.sequence-hero-bottom{position:relative;z-index:1}.sequence-hero-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.09)}
+.sequence-brand{display:flex;align-items:center;gap:10px}.sequence-monogram{display:grid;place-items:center;width:40px;height:40px;border:1px solid rgba(212,175,55,.36);border-radius:13px;background:linear-gradient(145deg,rgba(212,175,55,.17),rgba(212,175,55,.035));color:var(--seq-gold);font-size:.83rem;font-weight:900;letter-spacing:.08em}.sequence-brand-copy{display:flex;flex-direction:column;gap:2px}.sequence-brand-copy strong{color:#f0dfa9;font-size:.73rem;letter-spacing:.14em}.sequence-brand-copy small{color:#8993a2;font-size:.57rem;letter-spacing:.11em;font-weight:800}
+.sequence-hero-main{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:23px 0 20px}.sequence-eyebrow{display:block;color:var(--seq-gold-dark);font-size:.64rem;letter-spacing:.075em;font-weight:900}.sequence-hero .sequence-eyebrow{color:#d9bb5e}.sequence-hero h1{margin:6px 0;color:#fff;font-size:clamp(1.45rem,3vw,2rem);font-weight:900}.sequence-hero-main p{margin:0;color:#a5adba;font-size:.78rem;line-height:1.7}.sequence-hero-mark{display:flex;align-items:center;gap:8px;color:#cfb75e;font:800 .68rem 'Tajawal',sans-serif;direction:ltr}.sequence-hero-mark span{display:grid;place-items:center;width:31px;height:31px;border:1px solid rgba(212,175,55,.25);border-radius:50%;background:rgba(212,175,55,.06)}.sequence-hero-mark i{width:24px;height:1px;background:linear-gradient(90deg,rgba(212,175,55,.18),rgba(212,175,55,.65))}.sequence-hero-bottom{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:12px;border-top:1px solid rgba(255,255,255,.09);color:#949ead;font-size:.67rem}.sequence-hero-bottom bdi{color:#e1ce90;font-weight:800}.sequence-readonly-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid rgba(212,175,55,.18);border-radius:99px;background:rgba(212,175,55,.06);color:#d7c68d}.sequence-readonly-pill i{width:6px;height:6px;border-radius:50%;background:#8fd1a9;box-shadow:0 0 0 4px rgba(143,209,169,.08)}
+.sequence-alert,.sequence-warning{display:flex;align-items:center;gap:12px;padding:12px 15px;border:1px solid;border-radius:14px}.sequence-alert p,.sequence-warning p{margin:3px 0 0;font-size:.75rem;line-height:1.7}.sequence-alert.success{background:#f0faf4;border-color:#c5ead3;color:#24633d}.sequence-alert.error{background:#fff4f1;border-color:#efc9bf;color:#8c3728}.sequence-alert-mark{display:grid;place-items:center;flex:0 0 27px;width:27px;height:27px;border-radius:9px;background:rgba(0,0,0,.05);font-weight:900}.sequence-alert-mark svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.sequence-alert button{margin-right:auto;border:0;background:transparent;color:inherit;font-size:1.1rem;cursor:pointer}.sequence-warning{background:#fff9e9;border-color:#f0dfaa;color:#69531b}.sequence-warning>div{flex:1}.sequence-warning strong{font-size:.8rem;font-weight:900}.sequence-warning-icon{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:10px;background:rgba(212,175,55,.17);color:#8c6b19;font-weight:900}.sq-notice{border-right:3px solid var(--seq-gold)}.procedure-warning{align-items:flex-start;border-right:3px solid #bd9634}.duplicate-code-warning{margin-top:4px!important;color:#a23f30!important;font-size:.6rem!important;font-weight:900!important}
+.sequence-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}.sequence-stat{position:relative;display:flex;flex-direction:column;gap:5px;min-height:88px;padding:14px 16px;border:1px solid var(--seq-line);border-radius:15px;background:linear-gradient(145deg,#fff,#fcfaf5);box-shadow:0 5px 18px rgba(15,23,42,.025)}.sequence-stat:after{content:"";position:absolute;inset:auto 14px 0;height:2px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.56),transparent)}.stat-caption{color:#858b95;font-size:.68rem;font-weight:700}.sequence-stat>strong{color:#161b27;font-size:1.38rem;font-weight:900;line-height:1.1}.stat-mark{position:absolute;left:15px;top:15px;color:#a2a7af;font:900 .54rem ui-monospace,monospace;letter-spacing:.08em}.stat-mark.gold{color:#a17f23}.stat-mark.muted{color:#9097a3}.stat-mark.warning{color:#b47a16}
+.sequence-workspace{overflow:hidden;border:1px solid var(--seq-line);border-radius:19px;background:#fff;box-shadow:0 8px 25px rgba(15,23,42,.035)}.sequence-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:15px 17px;border-bottom:1px solid #f0ece3;background:linear-gradient(145deg,#fff,#fcfaf6)}.sequence-toolbar-heading{display:flex;align-items:center;gap:10px;flex-shrink:0}.sequence-toolbar-icon{display:grid;place-items:center;width:37px;height:37px;border:1px solid rgba(212,175,55,.22);border-radius:12px;background:rgba(212,175,55,.09);color:#8d7028}.sequence-toolbar-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}.sequence-toolbar-heading h2{margin:0;color:#171c27;font-size:.9rem;font-weight:900}.sequence-toolbar-heading p{margin:2px 0 0;color:#969ba4;font-size:.63rem}.sequence-toolbar-heading bdi{color:#78642c}.sequence-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.sequence-search{position:relative;display:flex;align-items:center;width:min(260px,34vw)}.sequence-search svg{position:absolute;right:10px;width:15px;height:15px;fill:none;stroke:#9da3ac;stroke-width:1.7;stroke-linecap:round}.sequence-search input,.sequence-filter{height:38px;border:1px solid #e8e2d5;border-radius:10px;background:#fff;color:#303744;font:600 .72rem 'Tajawal',sans-serif;outline:none}.sequence-search input{width:100%;padding:0 32px 0 10px}.sequence-filter{padding:0 10px;cursor:pointer}.sequence-search input:focus,.sequence-filter:focus{border-color:var(--seq-gold);box-shadow:0 0 0 3px rgba(212,175,55,.09)}
+.sequence-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:37px;padding:8px 12px;border:1px solid transparent;border-radius:10px;font:800 .7rem 'Tajawal',sans-serif;white-space:nowrap;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}.sequence-button:hover:not(:disabled){transform:translateY(-1px)}.sequence-button:disabled{opacity:.55;cursor:not-allowed}.sequence-button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.sequence-button.primary{border-color:#a7852b;background:linear-gradient(135deg,#dfc15e,#bb9a3b);color:#151820;box-shadow:0 4px 10px rgba(156,124,46,.12)}.sequence-button.primary:hover:not(:disabled){box-shadow:0 7px 15px rgba(156,124,46,.20)}.sequence-button.secondary,.refresh-button{border-color:#e5dfd3;background:#fff;color:#505866}.sequence-button.secondary:hover:not(:disabled),.refresh-button:hover:not(:disabled){background:#faf7ef;border-color:#d9c99c}.hero-back{border-color:rgba(212,175,55,.28);background:rgba(212,175,55,.07);color:#ecd893}.hero-back:hover{background:rgba(212,175,55,.14)}
+.sequence-table-wrap{width:100%;overflow-x:auto;overscroll-behavior-inline:contain}.sequence-table{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0;text-align:right}.sequence-table th{padding:11px 12px;background:#f9f7f1;color:#858b95;font-size:.65rem;font-weight:900;white-space:nowrap;border-bottom:1px solid #eee9dc}.sequence-table td{padding:12px;border-bottom:1px solid #f2efe8;color:#323a47;font-size:.7rem;vertical-align:middle}.sequence-table tbody tr:last-child td{border-bottom:0}.sequence-table tbody tr:hover{background:#fdfbf6}.sequence-identity{min-width:150px}.sequence-identity strong{display:block;width:max-content;max-width:100%;padding:3px 7px;border:1px solid rgba(212,175,55,.25);border-radius:7px;background:#fffaf0;color:#765b17;font:900 .72rem ui-monospace,monospace}.sequence-identity span{display:block;margin-top:4px;color:#6f7784;font-weight:700}.sequence-code-chip{display:inline-block;padding:3px 7px;border:1px solid #ece7dc;border-radius:7px;background:#faf9f6;color:#525c6b;font:800 .7rem ui-monospace,monospace}.sequence-number{font-weight:900;font-variant-numeric:tabular-nums}.sequence-table td small{display:block;margin-top:3px;color:#a0a5ae;font-size:.59rem;font-weight:600}.year-mode{display:block;color:#414956;font-size:.68rem;font-weight:800;white-space:nowrap}.reset-mode{color:#9c8546!important}.sequence-status{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid;border-radius:99px;font-size:.63rem;font-weight:900;white-space:nowrap}.sequence-status i{width:6px;height:6px;border-radius:50%;background:currentColor}.sequence-status.on{border-color:#cbe8d2;background:#f1faf3;color:#27804a}.sequence-status.off{border-color:#e6e4df;background:#f7f7f5;color:#858b94}.next-preview bdi{display:inline-block;padding:4px 7px;border:1px solid rgba(212,175,55,.2);border-radius:7px;background:#fffcf2;color:#4c4021;font:800 .68rem ui-monospace,monospace;white-space:nowrap}.sequence-row-action{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid #e8e0ce;border-radius:8px;background:#fff;color:#755e21;font:800 .66rem 'Tajawal',sans-serif;cursor:pointer}.sequence-row-action:hover{border-color:#d5bd73;background:#fffaf0}.sequence-row-action svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.sequence-readonly-label{color:#a2a6ad;font-size:.64rem;font-weight:700}.sequence-table-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 15px;border-top:1px solid #f1eee7;background:#fdfcf9;color:#9298a1;font-size:.62rem}.sequence-table-foot strong{color:#6e5b29}.sequence-empty{display:flex;flex-direction:column;align-items:center;gap:7px;padding:43px 20px;color:#303744;text-align:center}.empty-emblem{display:grid;place-items:center;width:43px;height:43px;border:1px solid #eee5cd;border-radius:15px;background:#fcf8ec;color:#a78a36;font-size:.71rem;font-weight:900}.sequence-empty strong{font-size:.81rem;font-weight:900}.sequence-empty p{margin:0;color:#9298a1;font-size:.68rem}
+.sequence-page-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:3px 2px;color:#89909b;font-size:.63rem}.footer-signature{display:flex;align-items:center;gap:8px}.footer-signature>b{display:grid;place-items:center;width:29px;height:29px;border:1px solid rgba(212,175,55,.3);border-radius:9px;background:linear-gradient(145deg,#111827,#070B14);color:#d8b94c;font-size:.61rem}.footer-signature>span:last-child{display:flex;flex-direction:column;gap:1px}.footer-signature strong{color:#4c5562;font-size:.68rem}.footer-signature small{color:#a0a5ad;font-size:.59rem}.footer-procedure{color:#a0a5ad}.footer-procedure bdi{color:#78642c;font-weight:800}
+.sequence-state-card{display:flex;flex-direction:column;align-items:center;gap:9px;max-width:620px;margin:48px auto;padding:34px 25px;border:1px solid #e9e2d2;border-radius:20px;background:linear-gradient(145deg,#fff,#fcfaf5);color:#303744;text-align:center;font-family:'Tajawal',sans-serif;box-shadow:0 14px 35px rgba(15,23,42,.05)}.sequence-state-card h2{margin:0;color:#151a25;font-size:1.05rem;font-weight:900}.sequence-state-card p{max-width:500px;margin:0 0 7px;color:#777f8b;font-size:.75rem;line-height:1.8}.sequence-state-card .sequence-eyebrow{color:#9c7c2e}.sequence-loader{width:29px;height:29px;border:2px solid #eee8d8;border-top-color:#d4af37;border-radius:50%;animation:sequence-spin .7s linear infinite}@@keyframes sequence-spin{to{transform:rotate(360deg)}}
+.sequence-modal-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:18px;background:rgba(4,8,15,.65);backdrop-filter:blur(4px)}.sequence-modal{width:min(760px,100%);max-height:min(92vh,900px);overflow:auto;border:1px solid rgba(212,175,55,.28);border-radius:20px;background:#fff;box-shadow:0 30px 90px rgba(0,0,0,.32);font-family:'Tajawal',sans-serif}.sequence-modal-head{display:flex;justify-content:space-between;gap:15px;padding:20px 23px 15px;border-bottom:1px solid #eee9dd;background:radial-gradient(ellipse at 0 0,rgba(212,175,55,.12),transparent 40%),linear-gradient(145deg,#fcfaf5,#fff)}.sequence-modal-head h2{margin:5px 0 3px;color:#101521;font-size:1.1rem;font-weight:900}.sequence-modal-head p{margin:0;color:#858b96;font-size:.68rem;line-height:1.65}.sequence-modal-close{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border:1px solid #e7e1d3;border-radius:10px;background:#fff;color:#606875;font-size:1.2rem;cursor:pointer}.sequence-form{padding:17px 22px 20px}.sequence-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sequence-field{display:flex;flex-direction:column;gap:6px;min-width:0;color:#3b4350;font-size:.68rem;font-weight:800}.sequence-field>span>b{color:#b04b39}.sequence-field input{width:100%;height:39px;padding:0 11px;border:1px solid #e6e0d4;border-radius:9px;background:#fff;color:#222a37;font:700 .75rem 'Tajawal',sans-serif;outline:none}.sequence-field input:focus{border-color:#c7a943;box-shadow:0 0 0 3px rgba(212,175,55,.1)}.sequence-field input:disabled{background:#f7f6f2;color:#868c96}.sequence-field small{color:#959ba4;font-size:.59rem;font-weight:600;line-height:1.55}.sequence-field small bdi{font-family:ui-monospace,monospace}.sequence-field.readonly-field{justify-content:center;min-height:84px;padding:10px 12px;border:1px dashed #e3dccb;border-radius:10px;background:#fcfbf8}.readonly-field strong{color:#6e5718;font:900 .84rem ui-monospace,monospace}.sequence-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:15px 0 10px}.sequence-toggle{display:flex;align-items:center;gap:9px;min-height:64px;padding:9px 10px;border:1px solid #ece7dc;border-radius:11px;background:#fdfcf9;cursor:pointer}.sequence-toggle input{position:absolute;width:1px;height:1px;opacity:0}.toggle-track{position:relative;flex:0 0 35px;width:35px;height:20px;border-radius:99px;background:#d9dce1;transition:background .18s ease}.toggle-track i{position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.17);transition:transform .18s ease}.sequence-toggle input:checked+.toggle-track{background:#c6a33b}.sequence-toggle input:checked+.toggle-track i{transform:translateX(-15px)}.sequence-toggle input:focus-visible+.toggle-track{outline:3px solid rgba(212,175,55,.22)}.sequence-toggle>span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}.sequence-toggle strong{color:#3c4350;font-size:.65rem;font-weight:900}.sequence-toggle small{color:#9399a3;font-size:.55rem;line-height:1.45}.active-toggle input:checked+.toggle-track{background:#39865a}.sequence-inline-warning,.sequence-inline-error{margin:8px 0;padding:9px 11px;border:1px solid;border-radius:9px;font-size:.65rem;font-weight:700;line-height:1.65}.sequence-inline-warning{border-color:#eee1b7;background:#fff9e8;color:#765d20}.sequence-inline-error{border-color:#f0c9c1;background:#fff5f2;color:#8a392c}.sequence-modal-actions{display:flex;justify-content:flex-start;gap:8px;padding-top:15px;margin-top:15px;border-top:1px solid #f0ece3}.sequence-modal-actions .sequence-button{min-width:125px}.sequence-button-spinner{width:13px;height:13px;border:2px solid rgba(0,0,0,.15);border-top-color:#171a20;border-radius:50%;animation:sequence-spin .65s linear infinite}
+@@media(max-width:900px){.sequence-toolbar{align-items:flex-start;flex-direction:column}.sequence-toolbar-actions{width:100%;justify-content:flex-start}.sequence-search{width:min(300px,40vw)}.sequence-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@@media(max-width:640px){.sequence-page{padding:0 0 20px;gap:12px}.sequence-hero{padding:16px 15px 13px;border-radius:18px}.sequence-hero-top{align-items:flex-start}.sequence-monogram{width:36px;height:36px}.sequence-hero-main{padding:17px 0 15px}.sequence-hero-mark{display:none}.sequence-hero-bottom{align-items:flex-start;flex-direction:column}.sequence-stats{gap:8px}.sequence-stat{min-height:77px;padding:11px 12px}.sequence-stat>strong{font-size:1.2rem}.sequence-toolbar{padding:12px}.sequence-toolbar-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.sequence-search{width:100%;grid-column:1/-1}.sequence-filter{width:100%}.sequence-toolbar-actions .sequence-button{width:100%}.sequence-table-foot{align-items:flex-start;flex-direction:column}.sequence-modal-backdrop{align-items:end;padding:0}.sequence-modal{max-height:94vh;border-radius:19px 19px 0 0}.sequence-modal-head{padding:17px 16px 13px}.sequence-form{padding:14px 16px 19px}.sequence-form-grid{grid-template-columns:1fr}.sequence-options{grid-template-columns:1fr}.sequence-toggle{min-height:58px}.sequence-modal-actions .sequence-button{flex:1}}
+@@media(max-width:380px){.sequence-brand-copy small{font-size:.49rem}.sequence-hero-top{gap:7px}.hero-back{padding:7px 8px;font-size:.62rem}.sequence-stats{grid-template-columns:1fr 1fr}.sequence-stat{padding:10px}.sequence-stat>strong{font-size:1.05rem}}
+</style>
+
+@code {
+    private List<NumberSequenceDto> sequences = new();
+    private NumberSequenceDto? draft;
+    private bool initializationComplete;
+    private bool isLoading = true;
+    private bool canView;
+    private bool canAdd;
+    private bool canEdit;
+    private bool loadError;
+    private bool showEditor;
+    private bool isEditing;
+    private bool isSaving;
+    private bool statusIsError;
+    private string? loadErrorMessage;
+    private string? editorError;
+    private string? statusMessage;
+    private string searchText = string.Empty;
+    private string statusFilter = "all";
+
+    private List<NumberSequenceDto> FilteredSequences => sequences
+        .Where(s => statusFilter == "all" || (statusFilter == "active" && s.IsActive) || (statusFilter == "inactive" && !s.IsActive))
+        .Where(s => string.IsNullOrWhiteSpace(searchText)
+            || s.SequenceCode.Contains(searchText.Trim(), StringComparison.OrdinalIgnoreCase)
+            || s.SequenceName.Contains(searchText.Trim(), StringComparison.OrdinalIgnoreCase)
+            || (s.Prefix?.Contains(searchText.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(s => s.SequenceCode, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(s => s.SequenceID)
+        .ToList();
+
+    private int ReviewCount => sequences.Count(s => NeedsReview(s) || IsDuplicateCode(s.SequenceCode));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (!await UserSession.EnsureRestoredAsync())
+            {
+                initializationComplete = true;
+                isLoading = false;
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            var settingsPermission = PermissionService.GetModule("SCR_SETTINGS");
+            canView = settingsPermission?.CanView == true;
+            canAdd = settingsPermission?.CanAdd == true;
+            canEdit = settingsPermission?.CanEdit == true;
+            initializationComplete = true;
+
+            if (!canView)
+            {
+                isLoading = false;
+                return;
+            }
+
+            await ReloadSequencesAsync(showSuccess: false);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            canView = false;
+            initializationComplete = true;
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            initializationComplete = true;
+            isLoading = false;
+            loadError = true;
+            loadErrorMessage = $"تعذر قراءة الإعدادات. تحقق من وجود dbo.NumberSequences وdbo.sp_GetNextNumber، ثم أعد المحاولة. التفاصيل: {ex.GetBaseException().Message}";
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ReloadSequencesAsync(bool showSuccess = true)
+    {
+        isLoading = true;
+        loadError = false;
+        loadErrorMessage = null;
+        try
+        {
+            sequences = await SequenceService.GetManagedSequencesAsync(UserSession.UserID);
+            if (showSuccess) SetStatus("تم تحديث قائمة التسلسلات دون استهلاك أي رقم.", isError: false);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            canView = false;
+            loadError = true;
+            loadErrorMessage = "لا تتوفر صلاحية عرض التسلسلات على SCR_SETTINGS.";
+        }
+        catch (Exception ex)
+        {
+            loadError = true;
+            loadErrorMessage = $"تعذر تحميل البيانات. تحقق من مخطط dbo.NumberSequences. التفاصيل: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static int GetMaxNumberLength(NumberSequenceDto sequence)
+    {
+        var effectivePrefixLength = Math.Min(sequence.Prefix?.Trim().Length ?? 0, 10);
+        var fixedPartLength = sequence.IncludeYear ? 6 : 1;
+        return Math.Max(1, 50 - effectivePrefixLength - fixedPartLength);
+    }
+
+    private bool IsDuplicateCode(string sequenceCode) => sequences.Count(s =>
+        string.Equals(s.SequenceCode?.Trim(), sequenceCode?.Trim(), StringComparison.OrdinalIgnoreCase)) > 1;
+
+    private static bool NeedsReview(NumberSequenceDto sequence) =>
+        string.IsNullOrWhiteSpace(sequence.Prefix)
+        || !sequence.NumberLength.HasValue || sequence.NumberLength.Value < 1
+        || sequence.NumberLength.Value > GetMaxNumberLength(sequence)
+        || (sequence.ResetYearly && !sequence.IncludeYear)
+        || (sequence.IsActive && string.IsNullOrWhiteSpace(sequence.NextNumberPreview));
+
+    private void BeginAdd()
+    {
+        if (!canAdd) return;
+        isEditing = false;
+        editorError = null;
+        draft = new NumberSequenceDto
+        {
+            Prefix = string.Empty,
+            CurrentNumber = null,
+            NumberLength = 6,
+            IncludeYear = true,
+            ResetYearly = true,
+            IsActive = true
+        };
+        showEditor = true;
+    }
+
+    private void BeginEdit(NumberSequenceDto item)
+    {
+        if (!canEdit) return;
+        isEditing = true;
+        editorError = null;
+        draft = new NumberSequenceDto
+        {
+            SequenceID = item.SequenceID,
+            SequenceCode = item.SequenceCode,
+            SequenceName = item.SequenceName,
+            Prefix = item.Prefix,
+            CurrentNumber = item.CurrentNumber,
+            NumberLength = item.NumberLength,
+            IncludeYear = item.IncludeYear,
+            ResetYearly = item.ResetYearly,
+            LastResetYear = item.LastResetYear,
+            IsActive = item.IsActive,
+            CreatedDate = item.CreatedDate,
+            NextNumberPreview = item.NextNumberPreview
+        };
+        showEditor = true;
+    }
+
+    private async Task SaveSequenceAsync()
+    {
+        if (draft is null || isSaving) return;
+        if (isEditing && !canEdit || !isEditing && !canAdd) return;
+        editorError = null;
+
+        if (draft.ResetYearly && !draft.IncludeYear && (!isEditing || draft.IsActive))
+        {
+            editorError = "لا يمكن إعادة العداد سنوياً دون تضمين السنة في رقم المستند؛ أصلح الإعداد قبل تفعيل التسلسل.";
+            return;
+        }
+        if ((!isEditing || draft.IsActive) && string.IsNullOrWhiteSpace(draft.Prefix))
+        {
+            editorError = "البادئة مطلوبة للتسلسل الجديد أو عند تفعيل التسلسل؛ الإجراء يضمّن شرطة حتى عند خلوها.";
+            return;
+        }
+
+        if (isEditing && HasFormatChanges(draft))
+        {
+            var confirmed = await JS.InvokeAsync<bool>("confirm",
+                "تغيير البادئة أو طول الرقم أو إعدادات السنة سيؤثر في صيغة الأرقام المستقبلية، وقد يؤثر في التكاملات المرتبطة بها. سيبقى العداد الحالي كما هو. هل تريد المتابعة؟");
+            if (!confirmed) return;
+        }
+
+        isSaving = true;
+        try
+        {
+            if (isEditing)
+            {
+                await SequenceService.UpdateManagedSequenceAsync(draft, UserSession.UserID);
+                SetStatus($"تم تحديث إعدادات التسلسل {draft.SequenceCode}.", isError: false);
+            }
+            else
+            {
+                var createdId = await SequenceService.AddManagedSequenceAsync(draft, UserSession.UserID);
+                SetStatus($"تمت إضافة التسلسل {draft.SequenceCode} (رقم الإعداد {createdId}). لم يُنشأ أي مستند.", isError: false);
+            }
+
+            showEditor = false;
+            draft = null;
+            await ReloadSequencesAsync(showSuccess: false);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            editorError = ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            editorError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            editorError = $"تعذر حفظ الإعداد: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private bool HasFormatChanges(NumberSequenceDto updated)
+    {
+        var original = sequences.FirstOrDefault(s => s.SequenceID == updated.SequenceID);
+        if (original is null || original.CurrentNumber.GetValueOrDefault() <= 0) return false;
+        return !string.Equals(original.Prefix?.Trim(), updated.Prefix?.Trim(), StringComparison.Ordinal)
+            || original.NumberLength != updated.NumberLength
+            || original.IncludeYear != updated.IncludeYear
+            || original.ResetYearly != updated.ResetYearly;
+    }
+
+    private void CloseEditor()
+    {
+        if (isSaving) return;
+        showEditor = false;
+        draft = null;
+        editorError = null;
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        statusMessage = message;
+        statusIsError = isError;
+    }
+
+    private void ClearStatus() => statusMessage = null;
+}

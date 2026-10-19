@@ -230,9 +230,16 @@ namespace YKCoatings.Services
                            EXEC sp_GetNextNumber @SeqCode, @NextNum OUTPUT;
                            SELECT @NextNum AS NewCode;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql, new { SeqCode = seqCode });
-                return result ?? $"{seqCode}-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException($"لم يُرجع إجراء sp_GetNextNumber كوداً لتسلسل {seqCode}.");
+
+                return result;
             }
-            catch { return $"{seqCode}-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"تعذر توليد كود الصنف ({seqCode}). لم يُنشأ كود بديل؛ راجع إعداد التسلسل {seqCode} والإجراء المخزن.", ex);
+            }
         }
 
         // ==========================================

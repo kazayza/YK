@@ -29,6 +29,59 @@ namespace YKCoatings.Services
             return RequireUserPermissionAsync(_userSession.UserID, moduleCode, predicate, deniedMessage);
         }
 
+        public Task RequireAnyCurrentUserPermissionAsync(
+            string deniedMessage,
+            params (string ModuleCode, Func<ModulePermissionDto, bool> Predicate)[] requirements)
+        {
+            if (!_userSession.IsLoggedIn || _userSession.UserID <= 0)
+                throw new UnauthorizedAccessException("جلسة المستخدم غير صالحة؛ سجّل الدخول مرة أخرى.");
+
+            return RequireAnyUserPermissionAsync(_userSession.UserID, deniedMessage, requirements);
+        }
+
+        /// <summary>
+        /// Read-only access to the cash-box statement. The ADMIN role is recognized for this
+        /// statement only; all other module and write permissions remain explicitly checked.
+        /// </summary>
+        public async Task RequireCurrentCashBoxStatementViewAsync(string deniedMessage)
+        {
+            if (!_userSession.IsLoggedIn || _userSession.UserID <= 0)
+                throw new UnauthorizedAccessException("جلسة المستخدم غير صالحة؛ سجّل الدخول مرة أخرى.");
+
+            // أعد التحقق من الدور الحالي في قاعدة البيانات؛ لا تعتمد الخدمة على قيمة الجلسة وحدها.
+            if (await _authService.IsActiveAdministratorAsync(_userSession.UserID))
+                return;
+
+            await RequireUserPermissionAsync(
+                _userSession.UserID,
+                "SCR_CASHSTAT",
+                permission => permission.CanView,
+                deniedMessage);
+        }
+
+        public async Task RequireAnyUserPermissionAsync(
+            int userId,
+            string deniedMessage,
+            params (string ModuleCode, Func<ModulePermissionDto, bool> Predicate)[] requirements)
+        {
+            if (userId <= 0 || !_userSession.IsLoggedIn || _userSession.UserID != userId)
+                throw new UnauthorizedAccessException("جلسة المستخدم لا تطابق منفذ العملية؛ سجّل الدخول مرة أخرى.");
+
+            if (requirements is null || requirements.Length == 0)
+                throw new ArgumentException("يلزم تحديد عملية صلاحية واحدة على الأقل.", nameof(requirements));
+
+            if (requirements.Any(r => string.IsNullOrWhiteSpace(r.ModuleCode) || r.Predicate is null))
+                throw new ArgumentException("رمز الوحدة ودالة التحقق مطلوبان لكل صلاحية.", nameof(requirements));
+
+            var permissions = await _authService.GetUserModulesAsync(userId);
+            var allowed = requirements.Any(requirement => permissions.Any(module =>
+                module.ModuleCode.Equals(requirement.ModuleCode, StringComparison.OrdinalIgnoreCase)
+                && requirement.Predicate(module)));
+
+            if (!allowed)
+                throw new UnauthorizedAccessException(deniedMessage);
+        }
+
         public async Task RequireUserPermissionAsync(
             int userId,
             string moduleCode,

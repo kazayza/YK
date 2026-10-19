@@ -121,15 +121,18 @@ namespace YKCoatings.Services
                 "SELECT FullNameAr FROM dbo.Employees WHERE EmployeeID = @ID",
                 new { ID = item.EmployeeID });
 
-            await _notif.CreateNotificationAsync(
-                notificationType: item.RecordType == 1 ? (byte)4 : (byte)2,
-                title: item.RecordType == 1 ? "جزاء جديد بانتظار الاعتماد" : "مكافأة جديدة بانتظار الاعتماد",
-                message: $"{(item.RecordType == 1 ? "جزاء" : "مكافأة")} على الموظف {empName} - {item.Description}",
-                priority: item.RecordType == 1 ? (byte)2 : (byte)2,
-                targetRoleId: 1,
-                relatedModule: "SCR_PENALTY",
-                relatedRecordId: newId,
-                createdBy: userId);
+            
+            await _notif.CreateForPermissionHoldersAsync(
+    notificationType: item.RecordType == 1 ? (byte)4 : (byte)2,
+    title: item.RecordType == 1 ? "جزاء جديد بانتظار الاعتماد" : "مكافأة جديدة بانتظار الاعتماد",
+    message: $"{(item.RecordType == 1 ? "جزاء" : "مكافأة")} على الموظف {empName} - {item.Description}",
+    priority: 2,
+    permissionModuleCode: "SCR_PENALTY",
+    requiredPermission: ModulePermissionRequirement.Approve,
+    relatedModule: "SCR_PENALTY",
+    relatedRecordId: newId,
+    createdBy: userId,
+    targetRoleId: 1);
 
             return newId;
         }

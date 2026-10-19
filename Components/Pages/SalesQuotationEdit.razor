@@ -31,7 +31,7 @@ else
             <div class="quotation-hero-body">
                 <div class="quotation-hero-symbol"><img src="/images/yk-icon-gold.png" alt="YK" /></div>
                 <div class="quotation-heading">
-                    
+                    <div class="quotation-eyebrow">إدارة عروض العملاء <span>SCR_QUOT</span></div>
                     <h1>@pageTitle</h1>
                     <p>@(string.IsNullOrWhiteSpace(header.QuotationNumber) ? "أدخل بيانات العرض وأضف أصناف التسعير" : $"{header.QuotationNumber} · {header.CustomerNameAr ?? "لم يتم اختيار العميل"}")</p>
                 </div>
@@ -161,7 +161,7 @@ else
                     }
                     @if (!isViewMode && header.QuotationStatus == 3 && (permissions.CanEdit || permissions.CanApprove))
                     {
-                        <button class="quotation-btn send-customer-btn" @onclick="MarkAsSent" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>تسجيل الإرسال للعميل</button>
+                        <button class="quotation-btn send-customer-btn" @onclick="OpenSendDialog" disabled="@isBusy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>إرسال عرض السعر للعميل</button>
                     }
                     @if (!isNewMode && permissions.CanDelete && header.QuotationStatus == 1 && !isViewMode)
                     {
@@ -206,6 +206,39 @@ else
         </div>
     }
 
+    @if (showSendDialog)
+    {
+        <div class="quotation-modal-backdrop" role="presentation" @onclick="CloseSendDialog">
+            <section class="quotation-modal" role="dialog" aria-modal="true" aria-labelledby="send-modal-title" @onclick:stopPropagation="true">
+                <div class="quotation-modal-top"></div>
+                <header class="quotation-modal-header">
+                    <div><span class="modal-eyebrow">إرسال يدوي</span><h2 id="send-modal-title">إرسال عرض السعر للعميل</h2></div>
+                    <button class="quotation-modal-close" aria-label="إغلاق" @onclick="CloseSendDialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+                </header>
+                <div class="quotation-modal-body single-column">
+                    <div class="quotation-field"><label class="required">قناة الإرسال</label><select class="quotation-input" value="@sendChannel" @onchange="OnSendChannelChanged"><option value="WhatsApp">واتساب</option><option value="Email">البريد الإلكتروني</option></select></div>
+                    <div class="quotation-field"><label class="required">المستلم</label><input class="quotation-input ltr" type="@(sendChannel == "Email" ? "email" : "tel")" @bind="sendRecipient" @bind:event="oninput" @bind:after="OnSendRecipientChanged" placeholder="@(sendChannel == "Email" ? "name@example.com" : "رقم الهاتف مع مفتاح الدولة")" /></div>
+                    <div class="quotation-field"><label>نص الرسالة المقترح</label><textarea class="quotation-input quotation-textarea" @bind="sendMessage" @bind:event="oninput" @bind:after="OnSendMessageChanged"></textarea></div>
+                    <div class="quotation-line-preview"><span>إجمالي العرض شامل الضريبة</span><strong>@header.TotalAmount.ToString("#,##0.00") <small>ج.م</small></strong></div>
+                    <div style="padding:10px 12px;border:1px solid #eee4c6;border-radius:10px;background:#fcf8e9;color:#756020;font-size:.73rem;line-height:1.7">افتح وسيلة الإرسال، أرفق ملف العرض يدوياً، ثم ارجع واضغط «تم الإرسال» بعد الإرسال الفعلي. لن تتغير حالة العرض عند فتح واتساب أو البريد فقط.</div>
+                    @if (!string.IsNullOrWhiteSpace(sendError)){<div class="quotation-inline-error">@sendError</div>}
+                </div>
+                <footer class="quotation-modal-footer">
+                    <button class="quotation-btn secondary" @onclick="CloseSendDialog" disabled="@isBusy">إلغاء</button>
+                    @if (CanOpenSendComposer)
+                    {
+                        <a class="quotation-btn send-customer-btn" href="@GetSendComposeUrl()" target="_blank" rel="noopener noreferrer" @onclick="OnSendComposerOpened"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>فتح @(sendChannel == "Email" ? "البريد" : "واتساب")</a>
+                    }
+                    else
+                    {
+                        <button class="quotation-btn send-customer-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>أدخل مستلماً صالحاً</button>
+                    }
+                    <button class="quotation-btn save-btn" @onclick="ConfirmManualSend" disabled="@(isBusy || string.IsNullOrWhiteSpace(sendRecipient))">@if(isApproving){<span class="quotation-mini-spinner"></span>}تم الإرسال، سجّل الحالة</button>
+                </footer>
+            </section>
+        </div>
+    }
+
     @if (!string.IsNullOrWhiteSpace(toastMessage))
     {
         <div class="quotation-toast" role="status"><span class="quotation-toast-icon @(toastSuccess ? "success" : "error")">@if(toastSuccess){<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>}</span><span>@toastMessage</span><button aria-label="إغلاق الإشعار" @onclick="() => toastMessage = string.Empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
@@ -229,6 +262,7 @@ else
 
     private ModulePermissionDto? permissions;
     private SalesQuotationHeaderDto header = new();
+    private SalesQuotationCustomerContactDto? sendContact;
     private List<SalesQuotationDetailDto> details = new();
     private List<SearchableItem> customers = new();
     private List<SearchableItem> saleItems = new();
@@ -245,6 +279,11 @@ else
     private string lineError = string.Empty;
     private string rejectReason = string.Empty;
     private string rejectError = string.Empty;
+    private string sendChannel = "WhatsApp";
+    private string sendRecipient = string.Empty;
+    private string sendMessage = string.Empty;
+    private string sendError = string.Empty;
+    private bool sendComposerOpened;
     private string toastMessage = string.Empty;
     private bool toastSuccess = true;
     private bool isLoading = true;
@@ -252,6 +291,7 @@ else
     private bool isApproving;
     private bool showLineDialog;
     private bool showRejectDialog;
+    private bool showSendDialog;
     private bool isEditingLine;
     private bool isNewMode;
     private bool isViewMode;
@@ -264,6 +304,38 @@ else
     private decimal SubTotal => Math.Round(details.Sum(x => x.LineTotal), 2, MidpointRounding.AwayFromZero);
     private decimal TaxTotal => Math.Round(details.Sum(x => x.TaxAmount), 2, MidpointRounding.AwayFromZero);
     private decimal GrandTotal => Math.Round(details.Sum(x => x.LineTotalWithTax), 2, MidpointRounding.AwayFromZero);
+    private bool CanOpenSendComposer => string.Equals(sendChannel, "Email", StringComparison.OrdinalIgnoreCase)
+        ? sendRecipient.Trim().IndexOf('@') > 0 && sendRecipient.Trim().LastIndexOf('.') > sendRecipient.Trim().IndexOf('@') + 1
+        : GetAsciiPhoneDigits(sendRecipient).Length >= 8;
+
+    private static string GetAsciiPhoneDigits(string? value) =>
+        new((value ?? string.Empty).Where(character => character is >= '0' and <= '9').ToArray());
+
+    private string BuildSendMessage()
+    {
+        var customerName = string.IsNullOrWhiteSpace(header.CustomerNameAr) ? "السادة الكرام" : header.CustomerNameAr.Trim();
+        var validUntil = header.ValidUntilDate.HasValue
+            ? $"وصالح حتى {header.ValidUntilDate.Value:dd/MM/yyyy}.\n"
+            : string.Empty;
+        var total = header.TotalAmount.ToString("#,##0.00", CultureInfo.GetCultureInfo("en-US"));
+        return $"السلام عليكم {customerName}،\nنرفق لكم عرض السعر رقم {header.QuotationNumber}.\nالإجمالي شامل الضريبة: {total} ج.م.\n{validUntil}نشكركم على ثقتكم، ونسعد بخدمتكم.";
+    }
+
+    private string GetSendComposeUrl()
+    {
+        var encodedMessage = Uri.EscapeDataString(sendMessage);
+        if (string.Equals(sendChannel, "Email", StringComparison.OrdinalIgnoreCase))
+        {
+            var subject = Uri.EscapeDataString($"عرض سعر رقم {header.QuotationNumber}");
+            var recipient = sendRecipient.Trim();
+            var atIndex = recipient.IndexOf('@');
+            var safeAddress = Uri.EscapeDataString(recipient[..atIndex]) + "@" + Uri.EscapeDataString(recipient[(atIndex + 1)..]);
+            return $"mailto:{safeAddress}?subject={subject}&body={encodedMessage}";
+        }
+
+        var phone = GetAsciiPhoneDigits(sendRecipient);
+        return $"https://wa.me/{phone}?text={encodedMessage}";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -580,21 +652,104 @@ else
         }
     }
 
-    private async Task MarkAsSent()
+    private async Task OpenSendDialog()
     {
         if (isBusy || header.QuotationStatus != 3 || (permissions?.CanEdit != true && permissions?.CanApprove != true)) return;
         isApproving = true;
+        sendError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        string? error = null;
         try
         {
-            await QuotationService.MarkSentToCustomerAsync(QuotationId, UserSession.UserID);
-            header.QuotationStatus = 5;
-            header.SentDate = DateTime.Now;
-            pageTitle = "تفاصيل عرض السعر";
-            await ShowToastAsync("تم تسجيل إرسال العرض للعميل");
+            var contact = await QuotationService.GetCustomerContactForManualSendAsync(QuotationId, UserSession.UserID);
+            sendContact = contact;
+            sendChannel = !string.IsNullOrWhiteSpace(contact.Phone) ? "WhatsApp" : "Email";
+            sendRecipient = string.Equals(sendChannel, "Email", StringComparison.OrdinalIgnoreCase)
+                ? contact.Email ?? string.Empty
+                : contact.Phone ?? string.Empty;
+            sendMessage = BuildSendMessage();
+            sendComposerOpened = false;
+            showSendDialog = true;
         }
         catch (Exception ex)
         {
-            await ShowToastAsync("تعذر تسجيل الإرسال: " + ex.Message, false);
+            error = "تعذر تحميل بيانات التواصل للإرسال: " + ex.Message;
+        }
+        finally
+        {
+            isApproving = false;
+        }
+        if (error is not null) await ShowToastAsync(error, false);
+    }
+
+    private void OnSendChannelChanged(ChangeEventArgs args)
+    {
+        sendChannel = string.Equals(args.Value?.ToString(), "Email", StringComparison.OrdinalIgnoreCase)
+            ? "Email"
+            : "WhatsApp";
+        sendRecipient = string.Equals(sendChannel, "Email", StringComparison.OrdinalIgnoreCase)
+            ? sendContact?.Email ?? string.Empty
+            : sendContact?.Phone ?? string.Empty;
+        sendError = string.Empty;
+        sendComposerOpened = false;
+    }
+
+    private void OnSendRecipientChanged() => sendComposerOpened = false;
+
+    private void OnSendMessageChanged() => sendComposerOpened = false;
+
+    private void OnSendComposerOpened()
+    {
+        sendComposerOpened = true;
+        sendError = string.Empty;
+    }
+
+    private void CloseSendDialog()
+    {
+        if (isBusy) return;
+        showSendDialog = false;
+        sendError = string.Empty;
+        sendContact = null;
+        sendRecipient = string.Empty;
+        sendMessage = string.Empty;
+        sendComposerOpened = false;
+    }
+
+    private async Task ConfirmManualSend()
+    {
+        if (isBusy || header.QuotationStatus != 3 || (permissions?.CanEdit != true && permissions?.CanApprove != true)) return;
+        if (!sendComposerOpened)
+        {
+            sendError = "افتح وسيلة الإرسال أولاً، ثم أكد بعد الإرسال الفعلي.";
+            return;
+        }
+        if (!CanOpenSendComposer)
+        {
+            sendError = string.Equals(sendChannel, "Email", StringComparison.OrdinalIgnoreCase)
+                ? "أدخل عنوان بريد إلكتروني صالحاً."
+                : "أدخل رقم هاتف صالحاً، ويفضّل تضمين مفتاح الدولة لواتساب.";
+            return;
+        }
+
+        isApproving = true;
+        sendError = string.Empty;
+        try
+        {
+            await QuotationService.MarkSentToCustomerAsync(
+                QuotationId, UserSession.UserID, sendChannel, sendRecipient.Trim());
+            header.QuotationStatus = 5;
+            header.SentDate = DateTime.Now;
+            pageTitle = "تفاصيل عرض السعر";
+            showSendDialog = false;
+            sendContact = null;
+            sendRecipient = string.Empty;
+            sendMessage = string.Empty;
+            sendComposerOpened = false;
+            await ShowToastAsync("تم تسجيل الإرسال اليدوي للعرض");
+        }
+        catch (Exception ex)
+        {
+            sendError = "تعذر تسجيل الإرسال: " + ex.Message;
         }
         finally
         {

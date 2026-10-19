@@ -12,14 +12,14 @@
 @if (!UserSession.IsLoggedIn)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
+        <div class="no-access-icon"><i class="bi bi-lock-fill"></i></div>
         <h4>يجب تسجيل الدخول أولاً</h4>
     </div>
 }
 else if (permissions == null || !permissions.CanView)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+        <div class="no-access-icon"><i class="bi bi-shield-lock-fill"></i></div>
         <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
         <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>
             العودة للرئيسية
@@ -53,6 +53,13 @@ else
                             <i class="bi bi-file-earmark-excel-fill"></i>
                             <span>تصدير إكسيل</span>
                         }
+                    </button>
+                }
+                @if (permissions.CanView)
+                {
+                    <button class="btn-tree-modern" @onclick='() => NavigationManager.NavigateTo("/production-tree")'>
+                        <i class="bi bi-diagram-3-fill"></i>
+                        <span>شجرة الإنتاج</span>
                     </button>
                 }
                 @if (permissions.CanAdd)
@@ -128,10 +135,10 @@ else
                     <label class="filter-label">الحالة</label>
                     <select class="filter-select" @bind="statusFilter">
                         <option value="">— الكل —</option>
-                        <option value="1">📝 مسودة</option>
-                        <option value="2">✅ نشط</option>
+                        <option value="1">مسودة</option>
+                        <option value="2">نشط</option>
                         <option value="3">⏸ متوقف</option>
-                        <option value="4">❌ ملغي</option>
+                        <option value="4">ملغي</option>
                     </select>
                 </div>
                 <div class="filter-group" style="flex:1.5; min-width:160px;">
@@ -430,6 +437,23 @@ else
         box-shadow: 0 6px 18px rgba(212,175,55,.4);
     }
     .btn-primary-modern:disabled { opacity: .65; cursor: not-allowed; }
+
+    .btn-tree-modern {
+        background: linear-gradient(135deg, #fffdf7, #f8f1dc);
+        color: #5d4c19;
+        border: 1px solid rgba(212,175,55,.55);
+        border-radius: var(--r-sm);
+        padding: .6rem 1.1rem;
+        font-size: .86rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        cursor: pointer;
+        transition: all .2s;
+        white-space: nowrap;
+    }
+    .btn-tree-modern:hover { background: #f7edcf; transform: translateY(-1px); }
 
     .btn-success-modern {
         background: linear-gradient(135deg, var(--c-success), #059669);
@@ -1007,7 +1031,7 @@ else
         var rawSection = rawMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            📦 المواد الخام ({rawMaterials.Count} صنف)
+            المواد الخام ({rawMaterials.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1028,7 +1052,7 @@ else
         var pkgSection = packagingMaterials.Any() ? $@"
         <h3 style='border-right:4px solid #10b981;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            🎁 مواد التعبئة والتغليف ({packagingMaterials.Count} صنف)
+            مواد التعبئة والتغليف ({packagingMaterials.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1049,7 +1073,7 @@ else
         var finishedSection = finishedProductComponents.Any() ? $@"
         <h3 style='border-right:4px solid #D4AF37;padding-right:12px;
                    margin:28px 0 14px;font-size:.95rem;color:#0A0F1E;'>
-            🏭 المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
+            المنتجات التامة المستخدمة كمكونات ({finishedProductComponents.Count} صنف)
         </h3>
         <table style='width:100%;border-collapse:collapse;border:1px solid #e8e2d0;
                       border-radius:10px;overflow:hidden;margin-bottom:8px;'>
@@ -1084,7 +1108,7 @@ else
         var notesSection = !string.IsNullOrWhiteSpace(bom.Notes) ? $@"
         <div style='background:#fffbeb;border:1px solid #fde68a;border-radius:10px;
                     padding:14px 18px;margin-top:24px;'>
-            <strong style='color:#92400e;font-size:13px;'>📝 ملاحظات:</strong>
+            <strong style='color:#92400e;font-size:13px;'>ملاحظات:</strong>
             <p style='margin:8px 0 0;color:#78350f;font-size:13px;line-height:1.6;'>{bom.Notes}</p>
         </div>" : "";
 
@@ -1115,7 +1139,7 @@ else
     <button onclick='window.print()'
         style='background:#D4AF37;color:#0A0F1E;border:none;padding:10px 24px;
                border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;'>
-        🖨️ طباعة
+        طباعة
     </button>
     <button onclick='window.close()'
         style='background:#6b7280;color:#fff;border:none;padding:10px 24px;
@@ -1127,7 +1151,7 @@ else
 <!-- Header -->
 <div style='text-align:center;border-bottom:3px solid #D4AF37;
             padding-bottom:20px;margin-bottom:28px;'>
-    <div style='font-size:2.2rem;margin-bottom:8px;'>🏭</div>
+    <div style='font-size:1.1rem;font-weight:700;margin-bottom:8px;'>التصنيع</div>
     <h1 style='font-size:1.7rem;font-weight:800;color:#0A0F1E;margin:0;'>واي كي كوتينج ERP</h1>
     <p style='color:#6b7280;margin:6px 0 0;'>وصفة التصنيع (Bill of Materials)</p>
 </div>

@@ -127,9 +127,20 @@ namespace YKCoatings.Services
         public async Task<string> GenerateTransferNumberAsync()
         {
             using var connection = CreateConnection();
-            try { return await connection.QueryFirstOrDefaultAsync<string>(
-                "DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'ST', @N OUTPUT; SELECT @N;") ?? $"ST-{DateTime.Now:yyMMddHHmmss}"; }
-            catch { return $"ST-{DateTime.Now:yyMMddHHmmss}"; }
+            try
+            {
+                var result = await connection.QueryFirstOrDefaultAsync<string>(
+                    "DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'ST', @N OUTPUT; SELECT @N;");
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لتحويل المخزون.");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم تحويل المخزون (ST). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل ST والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertTransferAsync(StockTransferHeaderDto header, int userId)
@@ -231,16 +242,18 @@ namespace YKCoatings.Services
 
             try
             {
-                var roles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID=rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID=sm.ModuleID
-                      WHERE sm.ModuleCode=N'SCR_TRANSFER' AND rp.CanView=1");
-                foreach (var roleId in roles)
-                    await _notif.CreateNotificationAsync(1, "تم تنفيذ تحويل مخزني ✅",
-                        $"تم تنفيذ التحويل المخزني رقم {info.TransferNumber}", 2, null, roleId,
-                        "SCR_TRANSFER", transferId, userId);
-            } catch { }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 1,
+                    title: "تم تنفيذ تحويل مخزني",
+                    message: $"تم تنفيذ التحويل المخزني رقم {info.TransferNumber}",
+                    priority: 2,
+                    permissionModuleCode: "SCR_TRANSFER",
+                    requiredPermission: ModulePermissionRequirement.View,
+                    relatedModule: "SCR_TRANSFER",
+                    relatedRecordId: transferId,
+                    createdBy: userId);
+            }
+            catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "StockTransfers", transferId.ToString(),
                 moduleName: "SCR_TRANSFER", description: $"اعتماد وتنفيذ تحويل: {info.TransferNumber}");
@@ -312,9 +325,20 @@ namespace YKCoatings.Services
         public async Task<string> GenerateCountNumberAsync()
         {
             using var connection = CreateConnection();
-            try { return await connection.QueryFirstOrDefaultAsync<string>(
-                "DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'SC', @N OUTPUT; SELECT @N;") ?? $"SC-{DateTime.Now:yyMMddHHmmss}"; }
-            catch { return $"SC-{DateTime.Now:yyMMddHHmmss}"; }
+            try
+            {
+                var result = await connection.QueryFirstOrDefaultAsync<string>(
+                    "DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'SC', @N OUTPUT; SELECT @N;");
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً للجرد.");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم الجرد (SC). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل SC والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertCountAsync(StockCountHeaderDto header, int userId)
@@ -380,16 +404,18 @@ namespace YKCoatings.Services
 
             try
             {
-                var roles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID=rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID=sm.ModuleID
-                      WHERE sm.ModuleCode=N'SCR_COUNT' AND rp.CanView=1");
-                foreach (var roleId in roles)
-                    await _notif.CreateNotificationAsync(1, "تم اعتماد الجرد ✅",
-                        $"تم اعتماد أمر الجرد رقم {info.CountNumber} وتطبيق التسويات",
-                        2, null, roleId, "SCR_COUNT", countId, userId);
-            } catch { }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 1,
+                    title: "تم اعتماد الجرد",
+                    message: $"تم اعتماد أمر الجرد رقم {info.CountNumber} وتطبيق التسويات",
+                    priority: 2,
+                    permissionModuleCode: "SCR_COUNT",
+                    requiredPermission: ModulePermissionRequirement.View,
+                    relatedModule: "SCR_COUNT",
+                    relatedRecordId: countId,
+                    createdBy: userId);
+            }
+            catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "StockCounts", countId.ToString(),
                 moduleName: "SCR_COUNT", description: $"اعتماد جرد وتطبيق تسويات: {info.CountNumber}");
@@ -472,27 +498,10 @@ namespace YKCoatings.Services
 public async Task<int> CheckAndSendStockAlertsAsync(int userId)
 {
     using var connection = CreateConnection();
-    int alertCount = 0;
-
-    // جلب الأدوار المسؤولة عن المخزون
-    var stockRoles = (await connection.QueryAsync<int>(
-        @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-          INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-          INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-          WHERE sm.ModuleCode IN (N'SCR_STOCK', N'SCR_PR') AND rp.CanView = 1")).ToList();
-
-    int? targetRole = stockRoles.Any() ? stockRoles.First() : (int?)null;
-    // حذف الإشعارات القديمة غير المقروءة من نفس النوع (لمنع التكرار)
-await connection.ExecuteAsync(
-    @"DELETE FROM dbo.Notifications 
-      WHERE RelatedModule = N'SCR_STOCK' 
-        AND IsActioned = 0 
-        AND NotificationType IN (1, 4)
-        AND CreatedDate < GETDATE()");
+    var alertCount = 0;
 
     try
     {
-        // 1) أصناف نفدت
         var outOfStock = (await connection.QueryAsync<(int ItemID, string ItemCode, string ItemNameAr, string WarehouseNameAr)>(
             @"SELECT ib.ItemID, i.ItemCode, i.ItemNameAr, w.WarehouseNameAr
               FROM dbo.InventoryBalance ib
@@ -504,22 +513,20 @@ await connection.ExecuteAsync(
         {
             try
             {
-                await _notif.CreateNotificationAsync(
+                var created = await _notif.CreateAlertForPermissionHoldersIfMissingAsync(
                     notificationType: 1,
-                    title: $"نفد المخزون ❌ — {item.ItemNameAr}",
+                    title: $"نفد المخزون — {item.ItemNameAr}",
                     message: $"الصنف {item.ItemCode} - {item.ItemNameAr} نفد في مخزن {item.WarehouseNameAr}",
                     priority: 1,
-                    targetUserId: userId,
-                    targetRoleId: targetRole,
+                    permissionModuleCode: "SCR_STOCK",
                     relatedModule: "SCR_STOCK",
                     relatedRecordId: item.ItemID,
                     createdBy: userId);
-                alertCount++;
+                if (created > 0) alertCount++;
             }
             catch { }
         }
 
-        // 2) أصناف تحت الحد الأدنى
         var belowMin = (await connection.QueryAsync<(int ItemID, string ItemCode, string ItemNameAr, string WarehouseNameAr, decimal CurrentQty, decimal MinStockLevel)>(
             @"SELECT ib.ItemID, i.ItemCode, i.ItemNameAr, w.WarehouseNameAr, ib.CurrentQty, i.MinStockLevel
               FROM dbo.InventoryBalance ib
@@ -532,22 +539,20 @@ await connection.ExecuteAsync(
         {
             try
             {
-                await _notif.CreateNotificationAsync(
+                var created = await _notif.CreateAlertForPermissionHoldersIfMissingAsync(
                     notificationType: 1,
-                    title: $"مخزون منخفض ⚠️ — {item.ItemNameAr}",
+                    title: $"مخزون منخفض — {item.ItemNameAr}",
                     message: $"الصنف {item.ItemCode} - {item.ItemNameAr} في {item.WarehouseNameAr}\nالرصيد: {item.CurrentQty:#,##0.##} | الحد الأدنى: {item.MinStockLevel:#,##0.##}",
                     priority: 2,
-                    targetUserId: userId,
-                    targetRoleId: targetRole,
+                    permissionModuleCode: "SCR_STOCK",
                     relatedModule: "SCR_STOCK",
                     relatedRecordId: item.ItemID,
                     createdBy: userId);
-                alertCount++;
+                if (created > 0) alertCount++;
             }
             catch { }
         }
 
-        // 3) باتشات قرب انتهاء الصلاحية (30 يوم)
         var nearExpiry = (await connection.QueryAsync<(string ItemNameAr, string ItemCode, string BatchNumber, DateTime ExpiryDate, string WarehouseNameAr, int DaysToExpiry)>(
             @"SELECT i.ItemNameAr, i.ItemCode, bb.BatchNumber, bb.ExpiryDate, w.WarehouseNameAr,
                      DATEDIFF(DAY, GETDATE(), bb.ExpiryDate) AS DaysToExpiry
@@ -558,26 +563,24 @@ await connection.ExecuteAsync(
                 AND bb.ExpiryDate > CAST(GETDATE() AS DATE)
                 AND bb.ExpiryDate <= DATEADD(DAY, 30, GETDATE())")).ToList();
 
-        foreach (var b in nearExpiry)
+        foreach (var batch in nearExpiry)
         {
             try
             {
-                await _notif.CreateNotificationAsync(
+                var created = await _notif.CreateAlertForPermissionHoldersIfMissingAsync(
                     notificationType: 4,
-                    title: $"قرب انتهاء الصلاحية ⏰ — {b.ItemNameAr}",
-                    message: $"الصنف {b.ItemCode} باتش {b.BatchNumber} في {b.WarehouseNameAr}\nينتهي بعد {b.DaysToExpiry} يوم ({b.ExpiryDate:dd/MM/yyyy})",
+                    title: $"قرب انتهاء الصلاحية — {batch.ItemNameAr}",
+                    message: $"الصنف {batch.ItemCode} باتش {batch.BatchNumber} في {batch.WarehouseNameAr}\nينتهي بعد {batch.DaysToExpiry} يوم ({batch.ExpiryDate:dd/MM/yyyy})",
                     priority: 1,
-                    targetUserId: userId,
-                    targetRoleId: targetRole,
+                    permissionModuleCode: "SCR_STOCK",
                     relatedModule: "SCR_STOCK",
                     relatedRecordId: 0,
                     createdBy: userId);
-                alertCount++;
+                if (created > 0) alertCount++;
             }
             catch { }
         }
 
-        // 4) باتشات منتهية الصلاحية
         var expired = (await connection.QueryAsync<(string ItemNameAr, string ItemCode, string BatchNumber, DateTime ExpiryDate, string WarehouseNameAr)>(
             @"SELECT i.ItemNameAr, i.ItemCode, bb.BatchNumber, bb.ExpiryDate, w.WarehouseNameAr
               FROM dbo.InventoryBatchBalance bb
@@ -586,21 +589,20 @@ await connection.ExecuteAsync(
               WHERE bb.CurrentQty > 0 AND bb.ExpiryDate IS NOT NULL
                 AND bb.ExpiryDate <= CAST(GETDATE() AS DATE)")).ToList();
 
-        foreach (var b in expired)
+        foreach (var batch in expired)
         {
             try
             {
-                await _notif.CreateNotificationAsync(
+                var created = await _notif.CreateAlertForPermissionHoldersIfMissingAsync(
                     notificationType: 4,
-                    title: $"منتهي الصلاحية ❌ — {b.ItemNameAr}",
-                    message: $"الصنف {b.ItemCode} باتش {b.BatchNumber} في {b.WarehouseNameAr}\nانتهت صلاحيته في {b.ExpiryDate:dd/MM/yyyy}",
+                    title: $"مخزون منتهي الصلاحية — {batch.ItemNameAr}",
+                    message: $"الصنف {batch.ItemCode} باتش {batch.BatchNumber} في {batch.WarehouseNameAr}\nانتهت صلاحيته في {batch.ExpiryDate:dd/MM/yyyy}",
                     priority: 1,
-                    targetUserId: userId,
-                    targetRoleId: targetRole,
+                    permissionModuleCode: "SCR_STOCK",
                     relatedModule: "SCR_STOCK",
                     relatedRecordId: 0,
                     createdBy: userId);
-                alertCount++;
+                if (created > 0) alertCount++;
             }
             catch { }
         }

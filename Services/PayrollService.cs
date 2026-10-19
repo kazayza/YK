@@ -334,15 +334,17 @@ namespace YKCoatings.Services
 
             if (info != null)
             {
-                await _notif.CreateNotificationAsync(
-                    notificationType: 2,
-                    title: "تم احتساب مسير مرتبات بانتظار الاعتماد",
-                    message: $"تم احتساب المسير {info.PayrollNumber} لشهر {info.PayrollMonth:MM/yyyy} بعدد {info.EmployeeCount} موظف وبصافي {info.TotalNetSalary:#,##0.00}",
-                    priority: 2,
-                    targetRoleId: 2,
-                    relatedModule: "SCR_PAYROLL",
-                    relatedRecordId: payrollId,
-                    createdBy: userId);
+                await _notif.CreateForPermissionHoldersAsync(
+    notificationType: 2,
+    title: "تم احتساب مسير مرتبات بانتظار الاعتماد",
+    message: $"تم احتساب المسير {info.PayrollNumber} لشهر {info.PayrollMonth:MM/yyyy} بعدد {info.EmployeeCount} موظف وبصافي {info.TotalNetSalary:#,##0.00}",
+    priority: 2,
+    permissionModuleCode: "SCR_PAYROLL",
+    requiredPermission: ModulePermissionRequirement.Approve,
+    relatedModule: "SCR_PAYROLL",
+    relatedRecordId: payrollId,
+    createdBy: userId,
+    targetRoleId: 2);
             }
 
             await _audit.WriteAuditLogAsync(

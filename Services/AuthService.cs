@@ -160,6 +160,23 @@ namespace YKCoatings.Services
             return result.ToList();
         }
 
+        public async Task<bool> IsActiveAdministratorAsync(int userId)
+        {
+            if (userId <= 0) return false;
+
+            using var connection = CreateConnection();
+            const string sql = @"SELECT CAST(CASE WHEN EXISTS (
+                                    SELECT 1
+                                    FROM dbo.SystemUsers u
+                                    INNER JOIN dbo.UserRoles r ON r.RoleID=u.RoleID
+                                    WHERE u.UserID=@UserID
+                                      AND u.IsActive=1
+                                      AND ISNULL(u.IsLocked,0)=0
+                                      AND r.RoleCode=N'ADMIN'
+                                ) THEN 1 ELSE 0 END AS BIT)";
+            return await connection.ExecuteScalarAsync<bool>(sql, new { UserID = userId });
+        }
+
         // ══════════════════════════════════════
         // Helpers
         // ══════════════════════════════════════

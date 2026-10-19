@@ -6,7 +6,7 @@
 @inject SettingService SettingService
 @inject NavigationManager Navigation
 
-<PageTitle>الإعدادات - واي كي كوتينج</PageTitle>
+<PageTitle>الإعدادات - Gold Edition Pro Tabs</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -32,6 +32,10 @@ else
                     <span class="lh-dot" style="background:@(hasChanges ? "#f59e0b" : "#10b981")"></span>
                     @(hasChanges ? $"{changedCount} تغيير غير محفوظ" : "محفوظ")
                 </span>
+                <button type="button" class="btn-luxury btn-sequence-shortcut" aria-label="إدارة تسلسلات أرقام المستندات" @onclick='() => Navigation.NavigateTo("/settings/number-sequences")'>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h5M8 16h3"/><path d="M16 15v4M14 17h4"/></svg>
+                    <span>إدارة التسلسلات</span>
+                </button>
                 @if (hasChanges && permissions.CanEdit){
                     <button class="btn-luxury btn-primary-luxury" @onclick="SaveAllChanges" disabled="@isSaving">
                         @if(isSaving){<div class="btn-spinner-sm"></div><span>جاري الحفظ...</span>}
@@ -96,7 +100,7 @@ else
                             <div class="sg-icon" style="background:color-mix(in srgb,var(--gc) 12%,white);color:var(--gc);border-color:color-mix(in srgb,var(--gc) 25%,white)">@((MarkupString)SettingService.GetGroupIcon(group))</div>
                             <div class="sg-info"><span class="sg-name">@SettingService.GetGroupNameAr(group)</span><span class="sg-count">@groupSettings.Count إعداد • @group</span></div>
                             <div style="margin-right:auto;display:flex;gap:6px">
-                                @if (groupSettings.Any(s => IsChanged(s))) { <span class="sg-badge">@groupSettings.Count(s => IsChanged(s)) معدل</span> }
+                                <span class="sg-badge">@groupSettings.Count(s=>IsChanged(s)) معدل</span>
                             </div>
                             <div class="sg-line" style="background:var(--gc)"></div>
                         </div>
@@ -133,7 +137,7 @@ else
                                             else if (setting.SettingKey == "AllowNegativeStock")
                                             {
                                                 <label class="switch-luxury"><input type="checkbox" checked="@IsToggleChecked(setting)" @onchange="(e)=>OnToggleChanged(setting,e)" /><span></span></label>
-                                                <span class="toggle-state @(IsToggleChecked(setting) ? "on" : "off")"><span class="toggle-dot"></span>@(IsToggleChecked(setting) ? "مسموح" : "غير مسموح")</span>
+                                                <span style="font-size:.82rem;font-weight:800;color:@(IsToggleChecked(setting)?"#059669":"#6b7280")">@(IsToggleChecked(setting)?"مسموح ✅":"غير مسموح ❌")</span>
                                             }
                                             else if (IsNumberField(setting))
                                             {
@@ -195,20 +199,20 @@ else
 .sg-info{display:flex;flex-direction:column}.sg-name{font-weight:900;color:#0A0F1E;font-size:.92rem}.sg-count{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:2px}.sg-line{position:absolute;right:0;top:0;bottom:0;width:4px}.sg-badge{background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:999px;font-size:.68rem;font-weight:800;border:1px solid #fde68a}
 .sg-body{display:flex;flex-direction:column}.sg-body.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:0}
 .setting-row-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #f9fafb;border-left:1px solid #f9fafb;transition:.2s;gap:12px;min-height:72px}.setting-row-luxury:hover{background:#faf9ff}.setting-row-luxury.changed{background:#fffbeb !important;border-right:3px solid #f59e0b}
-.sr-info{flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px}.sr-desc{font-weight:800;color:#0A0F1E;font-size:.86rem}.sr-key{font-family:monospace;font-size:.68rem;color:#9C7C2E;background:#faf7ec;padding:2px 8px;border-radius:6px;font-weight:700;width:fit-content;border:1px solid rgba(212,175,55,.18)}.sr-type{font-size:.62rem;background:#f8f6f0;color:#8B95A5;padding:2px 8px;border-radius:6px;font-weight:700;border:1px solid #e8e2d0}.sr-changed-badge{font-size:.62rem;background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:2px 8px;border-radius:999px;font-weight:800}
+.sr-info{flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px}.sr-desc{font-weight:800;color:#0A0F1E;font-size:.86rem}.sr-key{font-family:monospace;font-size:.68rem;color:#2563eb;background:#f3f4f6;padding:2px 8px;border-radius:6px;font-weight:700;width:fit-content}.sr-type{font-size:.62rem;background:#f8f6f0;color:#8B95A5;padding:2px 8px;border-radius:6px;font-weight:700;border:1px solid #e8e2d0}.sr-changed-badge{font-size:.62rem;background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:2px 8px;border-radius:999px;font-weight:800}
 .sr-input{min-width:260px;max-width:360px;display:flex;align-items:center;gap:8px;flex:1}
 .input-wrap-luxury{position:relative;display:flex;align-items:center;flex:1}.input-wrap-luxury svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.input-wrap-luxury input{width:100%;height:42px;padding:0 34px 0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff;transition:.2s}.input-wrap-luxury input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
 .select-wrap-luxury-input{position:relative;display:flex;align-items:center;flex:1}.select-wrap-luxury-input svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}.select-wrap-luxury-input select{width:100%;height:42px;padding:0 32px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none}.select-wrap-luxury-input select:focus{border-color:var(--gold)}.select-wrap-luxury-input .arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
 .luxury-input{width:100%;height:42px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fff}
-.sr-readonly{font-size:.84rem;color:#6b7280;font-weight:700;background:#f8fafc;border:1px dashed #e2e8f0;border-radius:10px;padding:10px 14px;display:block}
-.mt-icon svg{width:18px;height:18px}.sg-icon svg{width:22px;height:22px}
-.toggle-state{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:800}.toggle-state .toggle-dot{width:8px;height:8px;border-radius:50%}.toggle-state.on{color:#059669}.toggle-state.on .toggle-dot{background:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}.toggle-state.off{color:#6b7280}.toggle-state.off .toggle-dot{background:#d1d5db;box-shadow:0 0 0 3px rgba(209,213,219,.2)}
+.sr-readonly{font-size:.84rem;color:#6b7280;font-weight:700}
 .switch-luxury{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}.switch-luxury input{opacity:0;width:0;height:0}.switch-luxury span{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}.switch-luxury span:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.switch-luxury input:checked+span{background:var(--gold)}.switch-luxury input:checked+span:before{transform:translateX(20px)}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
 .no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
 .toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+.btn-sequence-shortcut{padding:7px 10px;border:1px solid rgba(212,175,55,.32);border-radius:10px;background:rgba(212,175,55,.07);color:#ecd893;font-size:.72rem;white-space:nowrap}.btn-sequence-shortcut:hover{background:rgba(212,175,55,.15);border-color:#D4AF37;color:#f7e8b9;transform:translateY(-1px)}.btn-sequence-shortcut:focus-visible{outline:3px solid rgba(212,175,55,.25);outline-offset:2px}.btn-sequence-shortcut svg{width:14px;height:14px}
 @@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @@media(max-width:1100px){.sg-body.grid-2{grid-template-columns:1fr}}
+
 </style>
 
 @code {
@@ -253,7 +257,7 @@ else
     {
         if(!editedValues.Any()) return;
         isSaving=true; StateHasChanged();
-        try{int count=0; foreach(var kvp in editedValues){await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID); count++;} resultMessage=$"تم حفظ {count} إعداد بنجاح"; resultSuccess=true; await LoadData();}
+        try{int count=0; foreach(var kvp in editedValues){await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID); count++;} resultMessage=$"تم حفظ {count} إعداد بنجاح ✅"; resultSuccess=true; await LoadData();}
         catch(Exception ex){resultMessage="خطأ: "+ex.Message; resultSuccess=false;}
         finally{isSaving=false;}
     }

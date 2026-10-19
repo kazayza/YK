@@ -211,11 +211,15 @@ namespace YKCoatings.Services
                             EXEC sp_GetNextNumber N'PO', @NextNum OUTPUT;
                             SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"PO-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لأمر الشراء.");
+
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
-                return $"PO-{DateTime.Now:yyMMddHHmmss}";
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم أمر الشراء (PO). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل PO والإجراء المخزن.", ex);
             }
         }
 
@@ -731,26 +735,16 @@ namespace YKCoatings.Services
 
             try
             {
-                var approverRoles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID
-                      FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                      WHERE sm.ModuleCode = N'SCR_PO' AND rp.CanApprove = 1");
-
-                foreach (var roleId in approverRoles)
-                {
-                    await _notif.CreateNotificationAsync(
-                        notificationType: 3,
-                        title: "أمر شراء بانتظار الاعتماد 📄",
-                        message: $"أمر الشراء رقم {info.PONumber} بانتظار الاعتماد",
-                        priority: 1,
-                        targetUserId: null,
-                        targetRoleId: roleId,
-                        relatedModule: "SCR_PO",
-                        relatedRecordId: purchaseOrderId,
-                        createdBy: userId);
-                }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "أمر شراء بانتظار الاعتماد",
+                    message: $"أمر الشراء رقم {info.PONumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: "SCR_PO",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_PO",
+                    relatedRecordId: purchaseOrderId,
+                    createdBy: userId);
             }
             catch { }
 
@@ -809,6 +803,8 @@ namespace YKCoatings.Services
                 if (requestId.HasValue && requestId.Value > 0)
                     await RefreshPRExecutionStatusAsync(connection, requestId.Value, transaction);
 
+                await _notif.MarkRelatedAsActionedAsync(
+                    connection, transaction, "SCR_PO", purchaseOrderId);
                 transaction.Commit();
             }
             catch
@@ -817,22 +813,22 @@ namespace YKCoatings.Services
                 throw;
             }
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId); } catch { }
             try
             {
                 if (createdBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(
+                    await _notif.CreateForAuthorizedUserAsync(
                         notificationType: 3,
-                        title: "تم اعتماد أمر الشراء ✅",
+                        title: "تم اعتماد أمر الشراء",
                         message: $"تم اعتماد أمر الشراء رقم {poNumber}",
                         priority: 2,
                         targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_PO",
                         relatedModule: "SCR_PO",
                         relatedRecordId: purchaseOrderId,
                         createdBy: userId);
                 }
-
-                await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId);
             }
             catch { }
 
@@ -884,22 +880,22 @@ namespace YKCoatings.Services
                     UserID = userId
                 });
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId); } catch { }
             try
             {
                 if (info.CreatedBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(
+                    await _notif.CreateForAuthorizedUserAsync(
                         notificationType: 3,
-                        title: "تم رفض أمر الشراء ❌",
+                        title: "تم رفض أمر الشراء",
                         message: $"تم رفض أمر الشراء رقم {info.PONumber}. السبب: {rejectionReason}",
                         priority: 1,
                         targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: "SCR_PO",
                         relatedModule: "SCR_PO",
                         relatedRecordId: purchaseOrderId,
                         createdBy: userId);
                 }
-
-                await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId);
             }
             catch { }
 

@@ -344,7 +344,9 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                     if (order.CustomerID != header.CustomerID)
                         throw new InvalidOperationException("العميل المحدد لا يطابق عميل أمر البيع.");
 
-                    var orderDetailIds = selectedLines!.Select(line => line.SalesOrderDetailID).ToArray();
+                    var requestedOrderLines = selectedLines
+                        ?? throw new InvalidOperationException("حدد سطور أمر البيع قبل إنشاء الفاتورة.");
+                    var orderDetailIds = requestedOrderLines.Select(line => line.SalesOrderDetailID).ToArray();
                     storedOrderLines = (await connection.QueryAsync<SalesOrderLineForInvoiceDto>(
                         @"SELECT
                               sod.SODetailID AS SalesOrderDetailID,
@@ -370,7 +372,7 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                           ORDER BY sod.LineNumber, sod.SODetailID",
                         new { SalesOrderID = orderId, OrderDetailIDs = orderDetailIds }, transaction)).ToList();
 
-                    if (storedOrderLines.Count != selectedLines.Count)
+                    if (storedOrderLines.Count != requestedOrderLines.Count)
                         throw new InvalidOperationException("تغيرت سطور أمر البيع أو لم تعد تتبع الأمر المحدد؛ أعد تحميل الأمر.");
                 }
 
@@ -831,18 +833,16 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
 
             try
             {
-                var approverRoles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID=rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID=sm.ModuleID
-                      WHERE sm.ModuleCode=N'SCR_SINV' AND rp.CanApprove=1");
-                foreach (var roleId in approverRoles)
-                {
-                    await _notif.CreateNotificationAsync(3,
-                        "فاتورة مبيعات بانتظار الاعتماد",
-                        $"فاتورة المبيعات رقم {invoiceNumber} بانتظار الاعتماد",
-                        1, null, roleId, "SCR_SINV", invoiceId, userId);
-                }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "فاتورة مبيعات بانتظار الاعتماد",
+                    message: $"فاتورة المبيعات رقم {invoiceNumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: "SCR_SINV",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_SINV",
+                    relatedRecordId: invoiceId,
+                    createdBy: userId);
             }
             catch { }
 
@@ -950,13 +950,26 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                 var totalCost = await connection.ExecuteScalarAsync<decimal>(
                     "SELECT ISNULL(SUM(LineCost),0) FROM dbo.SalesInvoiceDetails WHERE InvoiceID=@InvoiceID",
                     new { InvoiceID = invoiceId }, transaction);
+                var computedProfitColumns = (await connection.QueryAsync<string>(
+                    @"SELECT [name]
+                      FROM sys.columns
+                      WHERE object_id=OBJECT_ID(N'dbo.SalesInvoices')
+                        AND is_computed=1
+                        AND [name] IN (N'GrossProfit',N'GrossProfitPercent')",
+                    transaction: transaction))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var invoiceCostAssignments = new List<string> { "TotalCost=@TotalCost" };
+                if (!computedProfitColumns.Contains("GrossProfit"))
+                    invoiceCostAssignments.Add("GrossProfit=ISNULL(TaxableAmount,0)-@TotalCost");
+                if (!computedProfitColumns.Contains("GrossProfitPercent"))
+                    invoiceCostAssignments.Add(
+                        "GrossProfitPercent=CASE WHEN ISNULL(TaxableAmount,0)=0 THEN 0 ELSE ((ISNULL(TaxableAmount,0)-@TotalCost)*100.0/TaxableAmount) END");
+
                 await connection.ExecuteAsync(
-                    @"UPDATE dbo.SalesInvoices
-                      SET TotalCost=@TotalCost,
-                          GrossProfit=ISNULL(TaxableAmount,0)-@TotalCost,
-                          GrossProfitPercent=CASE WHEN ISNULL(TaxableAmount,0)=0 THEN 0
-                                                  ELSE ((ISNULL(TaxableAmount,0)-@TotalCost)*100.0/TaxableAmount) END
-                      WHERE InvoiceID=@InvoiceID",
+                    $@"UPDATE dbo.SalesInvoices
+                       SET {string.Join(", ", invoiceCostAssignments)}
+                       WHERE InvoiceID=@InvoiceID",
                     new { InvoiceID = invoiceId, TotalCost = totalCost }, transaction);
 
                 var receivableChange = await connection.ExecuteScalarAsync<decimal>(
@@ -1001,16 +1014,22 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                 throw;
             }
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
             try
             {
                 if (createdBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(3,
-                        "تم اعتماد فاتورة المبيعات",
-                        $"تم اعتماد فاتورة المبيعات رقم {invoiceNumber} {(isTaxable ? "مع ضريبة" : "بدون ضريبة")}",
-                        2, createdBy.Value, null, "SCR_SINV", invoiceId, userId);
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم اعتماد فاتورة المبيعات",
+                        message: $"تم اعتماد فاتورة المبيعات رقم {invoiceNumber} {(isTaxable ? "مع ضريبة" : "بدون ضريبة")}",
+                        priority: 2,
+                        targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_SINV",
+                        relatedModule: "SCR_SINV",
+                        relatedRecordId: invoiceId,
+                        createdBy: userId);
                 }
-                await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
             }
             catch { }
 
@@ -1063,16 +1082,22 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                 throw;
             }
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
             try
             {
                 if (createdBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(3,
-                        "تم رفض فاتورة المبيعات",
-                        $"تم رفض فاتورة المبيعات رقم {invoiceNumber}. السبب: {rejectionReason}",
-                        1, createdBy.Value, null, "SCR_SINV", invoiceId, userId);
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم رفض فاتورة المبيعات",
+                        message: $"تم رفض فاتورة المبيعات رقم {invoiceNumber}. السبب: {rejectionReason}",
+                        priority: 1,
+                        targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_SINV",
+                        relatedModule: "SCR_SINV",
+                        relatedRecordId: invoiceId,
+                        createdBy: userId);
                 }
-                await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
             }
             catch { }
 
@@ -1117,6 +1142,8 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                 try { transaction.Rollback(); } catch { }
                 throw;
             }
+
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
                 moduleName: "SCR_SINV", description: $"إلغاء فاتورة مبيعات: {invoiceNumber}");

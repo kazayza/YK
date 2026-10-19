@@ -1,0 +1,279 @@
+@page "/cash-transfers/new"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject TreasuryService TreasuryService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+
+<PageTitle>تحويل خزينة جديد - YK Coatings</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="yk-gold-page" dir="rtl"><div class="ct-state-card"><h4>يجب تسجيل الدخول</h4></div></div>
+}
+else if (!permissionChecked || isLoading)
+{
+    <div class="yk-gold-page" dir="rtl"><div class="ct-state-card"><span class="ct-spinner" aria-hidden="true"></span><p>جاري التحقق من صلاحية التحويل وتحميل القوائم...</p></div></div>
+}
+else if (!isAuthorized)
+{
+    <div class="yk-gold-page" dir="rtl">
+        <div class="ct-state-card">
+            <h4>ليس لديك صلاحية إنشاء تحويل خزينة</h4>
+            <button class="btn-outline-light" @onclick="GoBack">العودة للتحويلات</button>
+        </div>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="yk-gold-page" dir="rtl">
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title">تحويل خزينة جديد</h1>
+                <p class="header-subtitle">تعذّر تجهيز قوائم التحويل المطلوبة.</p>
+            </div>
+            <div class="header-actions"><button class="btn-outline-light" @onclick="GoBack">رجوع</button></div>
+        </div>
+        <div class="form-card"><div class="form-card-body"><div class="ct-message error">@loadError</div></div></div>
+    </div>
+}
+else
+{
+    <div class="yk-gold-page" dir="rtl">
+        <div class="page-header">
+            <div class="header-content">
+                <h1 class="header-title"><i class="bi bi-arrow-left-right"></i> تحويل خزينة جديد</h1>
+                <p class="header-subtitle">إنشاء مسودة تحويل؛ الاعتماد والترحيل يظلان في مسارهما الحالي.</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn-outline-light" @onclick="GoBack"><i class="bi bi-arrow-right"></i><span>رجوع</span></button>
+                @if (!isCreated)
+                {
+                    <button class="btn-primary-act" @onclick="SaveDraft" disabled="@(isSaving || cashBoxes.Count < 2)">
+                        @if (isSaving) { <span class="ct-spinner" aria-hidden="true"></span> }
+                        else { <i class="bi bi-check2-circle"></i> }
+                        <span>@(isSaving ? "جارٍ الحفظ..." : "حفظ كمسودة")</span>
+                    </button>
+                }
+                else
+                {
+                    <button class="btn-primary-act" @onclick="GoBack">عرض قائمة التحويلات</button>
+                }
+            </div>
+        </div>
+
+        @if (cashBoxes.Count < 2)
+        {
+            <div class="form-card"><div class="form-card-body">
+                <div class="ct-message warning">يلزم وجود خزانتين نشطتين على الأقل لإنشاء تحويل.</div>
+            </div></div>
+        }
+        else
+        {
+            <div class="form-card">
+                <div class="form-card-header"><i class="bi bi-info-circle-fill"></i> بيانات التحويل</div>
+                <div class="form-card-body">
+                    <div class="ct-form-grid">
+                        <div class="ct-field">
+                            <label class="form-lbl required">تاريخ التحويل</label>
+                            <input class="form-ctrl" type="date" @bind="dto.TransferDate" disabled="@isCreated" />
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl">رقم التحويل</label>
+                            <input class="form-ctrl" type="text" value="@TransferNumberDisplay" disabled />
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl required">من خزينة</label>
+                            <select class="form-ctrl" @bind="dto.FromCashBoxID" disabled="@isCreated">
+                                <option value="0">— اختر خزينة المصدر —</option>
+                                @foreach (var box in cashBoxes)
+                                {
+                                    <option value="@box.CashBoxID">@box.CashBoxNameAr (@box.CashBoxCode)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl required">إلى خزينة</label>
+                            <select class="form-ctrl" @bind="dto.ToCashBoxID" disabled="@isCreated">
+                                <option value="0">— اختر خزينة الوجهة —</option>
+                                @foreach (var box in cashBoxes)
+                                {
+                                    <option value="@box.CashBoxID">@box.CashBoxNameAr (@box.CashBoxCode)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl required">المبلغ</label>
+                            <input class="form-ctrl" type="number" min="0.01" step="0.01" @bind="dto.Amount" @bind:after="UpdateAmountLocal" disabled="@isCreated" />
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl">العملة</label>
+                            <select class="form-ctrl" @bind="dto.CurrencyID" disabled="@isCreated">
+                                <option value="0">— افتراضي —</option>
+                                @foreach (var currency in currencies)
+                                {
+                                    <option value="@currency.Id">@currency.Name (@currency.Code)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl required">سعر الصرف</label>
+                            <input class="form-ctrl" type="number" min="0.000001" step="0.000001" @bind="dto.ExchangeRate" @bind:after="UpdateAmountLocal" disabled="@isCreated" />
+                        </div>
+                        <div class="ct-field">
+                            <label class="form-lbl">المبلغ بالمحلي</label>
+                            <input class="form-ctrl" type="text" value="@dto.AmountLocal.ToString("#,##0.00")" disabled />
+                        </div>
+                        <div class="ct-field ct-field-full">
+                            <label class="form-lbl">البيان</label>
+                            <textarea class="form-ctrl" rows="3" @bind="dto.Description" disabled="@isCreated"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="ct-note">سعر الصرف والمبلغ المحلي يُحسبان وفق المدخلات الحالية؛ لا يُعتمد التحويل ولا يُرحّل من هذه الشاشة.</div>
+                    @if (!string.IsNullOrWhiteSpace(message))
+                    {
+                        <div class="ct-message @(messageIsSuccess ? "success" : "error")" role="status">@message</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+.ct-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:20px}
+.ct-field{min-width:0}.ct-field-full{grid-column:1/-1}
+.ct-state-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:180px;padding:28px;text-align:center;color:var(--yk-text-2);background:var(--yk-surface);border:1px solid var(--yk-border);border-radius:16px;box-shadow:var(--yk-shadow)}
+.ct-state-card h4,.ct-state-card p{margin:0;color:var(--yk-text)}
+.ct-note{margin:0 20px 18px;padding:12px 14px;border:1px solid var(--yk-border-gold);border-radius:12px;background:var(--yk-gold-10);color:var(--yk-text-2);font-size:.84rem}
+.ct-message{margin:0 20px 18px;padding:12px 14px;border:1px solid var(--yk-border);border-radius:12px;background:var(--yk-surface);color:var(--yk-text);font-size:.86rem}
+.ct-message.error{border-color:rgba(185,28,28,.28);background:rgba(185,28,28,.06);color:#991b1b}
+.ct-message.success{border-color:rgba(4,120,87,.28);background:rgba(4,120,87,.06);color:#065f46}
+.ct-message.warning{margin:0;border-color:var(--yk-border-gold);background:var(--yk-gold-10);color:var(--yk-text-2)}
+.ct-spinner{width:14px;height:14px;border:2px solid currentColor;border-left-color:transparent;border-radius:50%;animation:ct-spin .7s linear infinite}
+@@keyframes ct-spin{to{transform:rotate(360deg)}}
+@@media(max-width:700px){.ct-form-grid{grid-template-columns:1fr;padding:16px}.ct-field-full{grid-column:auto}.ct-note,.ct-message{margin-left:16px;margin-right:16px}}
+</style>
+
+@code {
+    private const string ModuleCode = "SCR_CASHTRANS";
+    private CashTransferDto dto = new() { TransferDate = DateTime.Today, ExchangeRate = 1 };
+    private List<CashBoxListDto> cashBoxes = new();
+    private List<LookupDto> currencies = new();
+    private bool permissionChecked;
+    private bool isAuthorized;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool isCreated;
+    private bool messageIsSuccess;
+    private string? loadError;
+    private string? message;
+    private string TransferNumberDisplay => string.IsNullOrWhiteSpace(dto.TransferNo) ? "يُنشأ عند الحفظ" : dto.TransferNo!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            isAuthorized = PermissionService.CanAdd(ModuleCode);
+            permissionChecked = true;
+            if (!isAuthorized) return;
+
+            cashBoxes = await TreasuryService.GetCashBoxLookupsAsync();
+            currencies = await LookupService.GetCurrenciesAsync();
+            UpdateAmountLocal();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            isAuthorized = false;
+            permissionChecked = true;
+        }
+        catch
+        {
+            permissionChecked = true;
+            loadError = "تعذّر تحميل قوائم الخزائن والعملات. لم يتم إنشاء أي تحويل.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void UpdateAmountLocal()
+    {
+        dto.AmountLocal = dto.Amount * (dto.ExchangeRate <= 0 ? 1 : dto.ExchangeRate);
+    }
+
+    private async Task SaveDraft()
+    {
+        if (isSaving || isCreated) return;
+        message = null;
+
+        if (dto.FromCashBoxID <= 0)
+        {
+            SetError("اختر خزينة المصدر.");
+            return;
+        }
+        if (dto.ToCashBoxID <= 0)
+        {
+            SetError("اختر خزينة الوجهة.");
+            return;
+        }
+        if (dto.FromCashBoxID == dto.ToCashBoxID)
+        {
+            SetError("لا يمكن التحويل إلى الخزينة نفسها.");
+            return;
+        }
+        if (dto.Amount <= 0)
+        {
+            SetError("أدخل مبلغاً أكبر من صفر.");
+            return;
+        }
+        if (dto.ExchangeRate <= 0)
+        {
+            SetError("أدخل سعر صرف أكبر من صفر.");
+            return;
+        }
+
+        UpdateAmountLocal();
+        isSaving = true;
+        try
+        {
+            await TreasuryService.InsertTransferAsync(dto, UserSession.UserID);
+            isCreated = true;
+            messageIsSuccess = true;
+            message = $"تم إنشاء التحويل {dto.TransferNo} كمسودة. يلزم اعتماده من شاشة التحويلات.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            SetError("ليس لديك صلاحية إنشاء تحويل خزينة.");
+        }
+        catch (Exception ex)
+        {
+            SetError("تعذر حفظ مسودة التحويل: " + ex.Message);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void SetError(string text)
+    {
+        messageIsSuccess = false;
+        message = text;
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/cash-transfers");
+}

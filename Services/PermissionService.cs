@@ -5,15 +5,22 @@ namespace YKCoatings.Services
     public class PermissionService
     {
         private readonly AuthService _authService;
+        private readonly UserSessionService _userSession;
         private List<ModulePermissionDto> _permissions = new();
 
-        public PermissionService(AuthService authService)
+        public PermissionService(AuthService authService, UserSessionService userSession)
         {
             _authService = authService;
+            _userSession = userSession;
         }
 
         public bool IsLoaded { get; private set; }
         public IReadOnlyList<ModulePermissionDto> Permissions => _permissions;
+
+        // المدير العام يملك عرض كشف الخزينة؛ تظل جميع صلاحيات الكتابة مستقلة ومحمية.
+        public bool CanViewCashBoxStatement =>
+            string.Equals(_userSession.RoleCode, "ADMIN", StringComparison.OrdinalIgnoreCase)
+            || CanView("SCR_CASHSTAT");
 
         public async Task LoadPermissionsAsync(int userId)
         {

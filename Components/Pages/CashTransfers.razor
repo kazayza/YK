@@ -3,16 +3,31 @@
 @using YKCoatings.Models
 @inject TreasuryService TreasuryService
 @inject UserSessionService UserSession
+@inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
 <PageTitle>تحويلات خزينة - Gold Edition (فعلي)</PageTitle>
 
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (!permissionChecked)
+{
+    <div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات تحويلات الخزينة...</p></div>
+}
+else if (!isAuthorized)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض تحويلات الخزينة</h4></div>
+}
+else
+{
 <div class="luxury-page" dir="rtl">
     <div class="luxury-header-hybrid">
         <div class="lh-gold-line"></div>
         <div class="lh-content">
-            <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">تحويلات بين الخزائن (فعلي: CashTransfers)</h2><p class="lh-subtitle"</p></div></div>
-            <div class="lh-actions"><button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/cash-transfers/new")'>تحويل جديد</button></div>
+            <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">تحويلات بين الخزائن (فعلي: CashTransfers)</h2><p class="lh-subtitle">جدول تم إنشاؤه في الباتش 02_TREASURY_PATCH_ACTUAL — Gold Edition</p></div></div>
+            <div class="lh-actions">@if (PermissionService.CanAdd("SCR_CASHTRANS")){<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/cash-transfers/new")'>تحويل جديد</button>}</div>
         </div>
     </div>
 
@@ -25,12 +40,41 @@
             <tbody>
                 @{int n=0;}
                 @foreach(var t in transfers){n++;
-                    <tr><td class="td-num">@n</td><td><span class="doc-num-luxury">@t.TransferNo</span></td><td class="td-muted">@t.TransferDate.ToString("dd/MM/yyyy")</td><td class="td-name">@t.FromCashBoxNameAr</td><td class="td-name">@t.ToCashBoxNameAr</td><td><span class="amount-luxury">@t.Amount.ToString("#,##0.00")</span></td><td><span class="status-badge-luxury" style="--sc:@(t.Status==1?"#6b7280":"#10b981")">@(t.StatusName ?? (t.Status==1?"مسودة":"معتمد"))</span></td><td class="td-center"><div class="actions-wrap-luxury">@if(t.Status==1){<button class="act-btn approve" @onclick="() => Approve(t.TransferID)">اعتماد</button>}</div></td></tr>
+                    <tr><td class="td-num">@n</td><td><span class="doc-num-luxury">@t.TransferNo</span></td><td class="td-muted">@t.TransferDate.ToString("dd/MM/yyyy")</td><td class="td-name">@t.FromCashBoxNameAr</td><td class="td-name">@t.ToCashBoxNameAr</td><td><span class="amount-luxury">@t.Amount.ToString("#,##0.00")</span></td><td><span class="status-badge-luxury" style="--sc:@(t.Status==1?"#6b7280":"#10b981")">@(t.StatusName ?? (t.Status==1?"مسودة":"معتمد"))</span></td><td class="td-center"><div class="actions-wrap-luxury">@if(t.Status==1 && PermissionService.CanApprove("SCR_CASHTRANS")){<button class="act-btn approve" @onclick="() => Approve(t.TransferID)">اعتماد</button>}</div></td></tr>
                 }
             </tbody>
         </table></div></div>
     }
+
+    @if (selectedTransfer is not null)
+    {
+        <div class="transfer-view-backdrop" role="presentation" @onclick="CloseTransferDetails">
+            <section class="transfer-view-card" role="dialog" aria-modal="true" aria-labelledby="transfer-view-title" @onclick:stopPropagation="true">
+                <div class="transfer-view-gold-line"></div>
+                <header class="transfer-view-header">
+                    <div>
+                        <span class="transfer-view-eyebrow">CASH TRANSFER • READ ONLY</span>
+                        <h2 id="transfer-view-title">تفاصيل تحويل الخزينة</h2>
+                    </div>
+                    <button class="transfer-view-close" type="button" aria-label="إغلاق التفاصيل" @onclick="CloseTransferDetails">×</button>
+                </header>
+                <div class="transfer-view-grid">
+                    <div><span>رقم التحويل</span><strong>@(selectedTransfer.TransferNo ?? "—")</strong></div>
+                    <div><span>الحالة</span><strong>@(selectedTransfer.StatusName ?? (selectedTransfer.Status == 1 ? "مسودة" : "معتمد"))</strong></div>
+                    <div><span>تاريخ التحويل</span><strong>@selectedTransfer.TransferDate.ToString("dd/MM/yyyy")</strong></div>
+                    <div><span>المبلغ</span><strong class="transfer-view-amount">@selectedTransfer.Amount.ToString("#,##0.00")</strong></div>
+                    <div><span>من خزينة</span><strong>@(selectedTransfer.FromCashBoxNameAr ?? "—")</strong></div>
+                    <div><span>إلى خزينة</span><strong>@(selectedTransfer.ToCashBoxNameAr ?? "—")</strong></div>
+                    <div><span>تم الترحيل</span><strong>@(selectedTransfer.IsPosted ? "نعم" : "لا")</strong></div>
+                    <div><span>تاريخ الإنشاء</span><strong>@selectedTransfer.CreatedDate.ToString("dd/MM/yyyy HH:mm")</strong></div>
+                    <div class="transfer-view-description"><span>البيان</span><strong>@(string.IsNullOrWhiteSpace(selectedTransfer.Description) ? "لا يوجد بيان مسجل." : selectedTransfer.Description)</strong></div>
+                </div>
+                <footer class="transfer-view-footer"><span>عرض للقراءة فقط</span><button class="btn-luxury btn-primary-luxury" type="button" @onclick="CloseTransferDetails">إغلاق</button></footer>
+            </section>
+        </div>
+    }
 </div>
+}
 
 <style>
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
@@ -47,10 +91,52 @@
 .status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
 .actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{padding:4px 10px;border-radius:8px;border:1px solid #a7f3d0;background:#ecfdf5;color:#059669;cursor:pointer;font-weight:700}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}
+.transfer-view-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:18px;background:rgba(7,11,20,.74);backdrop-filter:blur(5px)}.transfer-view-card{position:relative;width:min(720px,100%);max-height:calc(100vh - 36px);overflow:auto;background:#fff;border:1px solid rgba(212,175,55,.36);border-radius:20px;box-shadow:0 28px 90px rgba(0,0,0,.35);padding:24px;color:#111827}.transfer-view-gold-line{position:absolute;top:0;left:0;right:0;height:3px;border-radius:20px 20px 0 0;background:linear-gradient(90deg,transparent,var(--gold),transparent)}.transfer-view-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:16px;border-bottom:1px solid #eee7d5}.transfer-view-header h2{margin:4px 0 0;color:#0A0F1E;font-size:1.2rem;font-weight:900}.transfer-view-eyebrow{color:var(--gold-dark);font-size:.65rem;font-weight:900;letter-spacing:.08em}.transfer-view-close{width:36px;height:36px;border:1px solid #e8e2d0;border-radius:10px;background:#fff;color:#687080;font-size:1.35rem;line-height:1;cursor:pointer}.transfer-view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px 0}.transfer-view-grid>div{display:flex;flex-direction:column;gap:5px;min-width:0;padding:12px 14px;border:1px solid #eee9dc;border-radius:12px;background:#fdfcf9}.transfer-view-grid span{color:#777f8d;font-size:.7rem;font-weight:700}.transfer-view-grid strong{color:#151b28;font-size:.88rem;font-weight:800;overflow-wrap:anywhere}.transfer-view-grid .transfer-view-amount{font-family:monospace;color:var(--gold-dark)}.transfer-view-grid .transfer-view-description{grid-column:1/-1;min-height:72px}.transfer-view-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;border-top:1px solid #eee7d5}.transfer-view-footer>span{color:#818896;font-size:.75rem;font-weight:700}
+@@media(max-width:560px){.transfer-view-backdrop{padding:10px}.transfer-view-card{max-height:calc(100vh - 20px);padding:18px}.transfer-view-grid{grid-template-columns:1fr;gap:9px}.transfer-view-grid .transfer-view-description{grid-column:auto}.transfer-view-footer{align-items:flex-start;flex-direction:column}}
 </style>
 
 @code {
     private List<CashTransferListDto>? transfers;
-    protected override async Task OnInitializedAsync(){ transfers = await TreasuryService.GetTransfersAsync(); }
-    private async Task Approve(int id){ await TreasuryService.ApproveTransferAsync(id, UserSession.UserID); transfers = await TreasuryService.GetTransfersAsync(); }
+    private CashTransferListDto? selectedTransfer;
+    private bool permissionChecked;
+    private bool isAuthorized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) return;
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            isAuthorized = PermissionService.CanView("SCR_CASHTRANS");
+            permissionChecked = true;
+            if (isAuthorized)
+            {
+                transfers = await TreasuryService.GetTransfersAsync();
+                var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                if (int.TryParse(query["transferId"], out var transferId))
+                    selectedTransfer = transfers?.FirstOrDefault(t => t.TransferID == transferId);
+            }
+        }
+        catch
+        {
+            permissionChecked = true;
+            isAuthorized = false;
+        }
+    }
+
+    private void CloseTransferDetails()
+    {
+        selectedTransfer = null;
+        Navigation.NavigateTo("/cash-transfers", replace: true);
+    }
+
+    private async Task Approve(int id)
+    {
+        await TreasuryService.ApproveTransferAsync(id, UserSession.UserID);
+        transfers = await TreasuryService.GetTransfersAsync();
+    }
 }

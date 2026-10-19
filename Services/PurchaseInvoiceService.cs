@@ -123,9 +123,16 @@ namespace YKCoatings.Services
                             EXEC sp_GetNextNumber N'PI', @NextNum OUTPUT;
                             SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"PI-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لفاتورة المشتريات.");
+
+                return result;
             }
-            catch { return $"PI-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم فاتورة المشتريات (PI). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل PI والإجراء المخزن.", ex);
+            }
         }
 
         // ==========================================
@@ -481,19 +488,16 @@ namespace YKCoatings.Services
 
             try
             {
-                var approverRoles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                      WHERE sm.ModuleCode = N'SCR_PINV' AND rp.CanApprove = 1");
-
-                foreach (var roleId in approverRoles)
-                {
-                    await _notif.CreateNotificationAsync(3,
-                        "فاتورة مشتريات بانتظار الاعتماد 📄",
-                        $"فاتورة المشتريات رقم {info.InvoiceNumber} بانتظار الاعتماد",
-                        1, null, roleId, "SCR_PINV", invoiceId, userId);
-                }
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "فاتورة مشتريات بانتظار الاعتماد",
+                    message: $"فاتورة المشتريات رقم {info.InvoiceNumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: "SCR_PINV",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_PINV",
+                    relatedRecordId: invoiceId,
+                    createdBy: userId);
             }
             catch { }
 
@@ -584,17 +588,22 @@ namespace YKCoatings.Services
                 throw;
             }
 
-            // إشعارات
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PINV", invoiceId); } catch { }
             try
             {
                 if (createdBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(3,
-                        "تم اعتماد فاتورة المشتريات ✅",
-                        $"تم اعتماد فاتورة المشتريات رقم {invoiceNumber}",
-                        2, createdBy.Value, null, "SCR_PINV", invoiceId, userId);
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم اعتماد فاتورة المشتريات",
+                        message: $"تم اعتماد فاتورة المشتريات رقم {invoiceNumber}",
+                        priority: 2,
+                        targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_PINV",
+                        relatedModule: "SCR_PINV",
+                        relatedRecordId: invoiceId,
+                        createdBy: userId);
                 }
-                await _notif.MarkRelatedAsActionedAsync("SCR_PINV", invoiceId);
             }
             catch { }
 
@@ -629,16 +638,22 @@ namespace YKCoatings.Services
                   WHERE InvoiceID = @ID",
                 new { ID = invoiceId, EmployeeID = employeeId, Reason = rejectionReason, UserID = userId });
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PINV", invoiceId); } catch { }
             try
             {
                 if (info.CreatedBy.HasValue)
                 {
-                    await _notif.CreateNotificationAsync(3,
-                        "تم رفض فاتورة المشتريات ❌",
-                        $"تم رفض فاتورة المشتريات رقم {info.InvoiceNumber}. السبب: {rejectionReason}",
-                        1, info.CreatedBy.Value, null, "SCR_PINV", invoiceId, userId);
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم رفض فاتورة المشتريات",
+                        message: $"تم رفض فاتورة المشتريات رقم {info.InvoiceNumber}. السبب: {rejectionReason}",
+                        priority: 1,
+                        targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: "SCR_PINV",
+                        relatedModule: "SCR_PINV",
+                        relatedRecordId: invoiceId,
+                        createdBy: userId);
                 }
-                await _notif.MarkRelatedAsActionedAsync("SCR_PINV", invoiceId);
             }
             catch { }
 
@@ -668,6 +683,8 @@ namespace YKCoatings.Services
                     ModifiedBy = @UserID, ModifiedDate = GETDATE()
                   WHERE InvoiceID = @ID",
                 new { ID = invoiceId, UserID = userId });
+
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PINV", invoiceId); } catch { }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseInvoices", invoiceId.ToString(),
                 moduleName: "SCR_PINV",

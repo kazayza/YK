@@ -38,7 +38,10 @@ else
                     {
                         <button class="btn-luxury btn-primary-luxury" @onclick="AddNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>خزينة جديدة</button>
                     }
-                    <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/treasury-dashboard")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>لوحة التحكم</button>
+                    @if (PermissionService.CanView("SCR_TREASURY"))
+                    {
+                        <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/treasury-dashboard")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>لوحة التحكم</button>
+                    }
                 </div>
             </div>
         </div>
@@ -91,7 +94,10 @@ else
                                     <td><span class="amount-luxury remaining">@cb.TotalPayments.ToString("#,##0.00")</span></td>
                                     <td class="td-center"><span class="status-badge-luxury" style="--sc:@(cb.IsActive?"#10b981":"#6b7280")">@(cb.IsActive?"نشطة":"موقوفة")</span></td>
                                     <td class="td-center"><div class="actions-wrap-luxury">
-                                        <button class="act-btn view" title="كشف حساب" @onclick="() => ViewStatement(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+                                        @if (PermissionService.CanViewCashBoxStatement)
+                                        {
+                                            <button class="act-btn view" title="كشف حساب" @onclick="() => ViewStatement(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+                                        }
                                         @if(permissions.CanEdit){<button class="act-btn edit" title="تعديل" @onclick="() => EditBox(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         @if(permissions.CanDelete){<button class="act-btn delete" title="حذف" @onclick="() => ShowDelete(cb)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                     </div></td>
@@ -210,14 +216,30 @@ else
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_BANKS") ?? PermissionService.GetModule("SCR_CASHBOX") ?? new ModulePermissionDto{CanView=true, CanAdd=true, CanEdit=true, CanDelete=true};
-        if (permissions.CanView) await LoadData();
+        var cashBoxPermissions = PermissionService.Permissions
+            .Where(p => p.ModuleCode.Equals("SCR_BANKS", StringComparison.OrdinalIgnoreCase)
+                     || p.ModuleCode.Equals("SCR_CASHBOX", StringComparison.OrdinalIgnoreCase)
+                     || p.ModuleCode.Equals("SCR_CASHBOXES", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        permissions = cashBoxPermissions.Count == 0 ? null : new ModulePermissionDto
+        {
+            CanView = cashBoxPermissions.Any(p => p.CanView),
+            CanAdd = cashBoxPermissions.Any(p => p.CanAdd),
+            CanEdit = cashBoxPermissions.Any(p => p.CanEdit),
+            CanDelete = cashBoxPermissions.Any(p => p.CanDelete),
+            CanPrint = cashBoxPermissions.Any(p => p.CanPrint),
+            CanExport = cashBoxPermissions.Any(p => p.CanExport),
+            CanApprove = cashBoxPermissions.Any(p => p.CanApprove),
+            CanPost = cashBoxPermissions.Any(p => p.CanPost),
+            CanCancel = cashBoxPermissions.Any(p => p.CanCancel)
+        };
+        if (permissions?.CanView == true) await LoadData();
     }
 
     private async Task LoadData()
     {
         boxes = await TreasuryService.GetCashBoxesAsync();
-        try { coaList = await AccountingService.GetFlatAccountsAsync(); } catch { coaList = new(); }
+        try { coaList = await AccountingService.GetCashBoxAccountLookupsAsync(); } catch { coaList = new(); }
         try { currencies = await LookupService.GetCurrenciesAsync(); } catch { currencies = new(); }
         Filter();
     }
@@ -227,7 +249,7 @@ else
         if (boxes == null) return;
         filtered = boxes.Where(b =>
             (filterType==0 || b.CashBoxType==filterType) &&
-            (string.IsNullOrEmpty(searchText) || b.CashBoxNameAr.Contains(searchText, StringComparison.OrdinalIgnoreCase) || (b.CashBoxCode?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false))
+            (string.IsNullOrEmpty(searchText) || (b.CashBoxNameAr?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) || (b.CashBoxCode?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false))
         ).ToList();
     }
 

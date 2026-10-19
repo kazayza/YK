@@ -9,7 +9,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 
-<PageTitle>سند قبض - Gold Edition (فعلي)</PageTitle>
+<PageTitle>سند قبض</PageTitle>
 
 @if (!UserSession.IsLoggedIn){<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
 else
@@ -18,7 +18,7 @@ else
         <div class="luxury-header-hybrid">
             <div class="lh-gold-line"></div>
             <div class="lh-content">
-                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">@(isView ? "عرض سند قبض" : (isEdit ? $"تعديل {dto.ReceiptNumber}" : "سند قبض جديد"))</h2><p class="lh-subtitle"></p></div></div>
+                <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">@(isView ? "عرض سند قبض" : (isEdit ? $"تعديل {dto.ReceiptNumber}" : "سند قبض جديد"))</h2><p class="lh-subtitle">فعلي: ReceiptID / ReceiptNumber / EntityType / ReceiptStatus / JournalID — Gold Edition</p></div></div>
                 <div class="lh-actions">
                     <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/receipt-vouchers")'>رجوع</button>
                     @if (!isView && dto.ReceiptStatus==1){<button class="btn-luxury btn-primary-luxury" @onclick="SaveVoucher" disabled="@isSaving">حفظ</button>}
@@ -117,8 +117,8 @@ else
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
 
-        try { cashBoxes = await LookupService.GetCashBoxesSearchableAsync(); } catch {}
-        try { bankAccounts = await LookupService.GetBankAccountsSearchableAsync(); } catch {}
+        try { cashBoxes = (await TreasuryService.GetCashBoxLookupsAsync()).Select(cb => new SearchableItem { Id = cb.CashBoxID, Name = cb.CashBoxNameAr ?? string.Empty, Code = cb.CashBoxCode }).ToList(); } catch {}
+        try { bankAccounts = (await TreasuryService.GetBankAccountLookupsAsync()).Select(ba => new SearchableItem { Id = ba.BankAccountID, Name = ba.BankName + " - " + ba.AccountNumber, Code = ba.BankAccountCode }).ToList(); } catch {}
         try { customers = await LookupService.GetCustomersSearchableAsync(); } catch {}
         try { suppliers = await LookupService.GetSuppliersSearchableAsync(); } catch {}
         try { revenueAccounts = await LookupService.GetRevenueAccountsSearchableAsync(); } catch {}

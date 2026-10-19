@@ -7,6 +7,8 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notification;
+        private readonly ModuleAuthorizationService _authorization;
+        private const decimal ProductionQuantityTolerance = 0.0001m;
 
         private sealed class BatchHeadDbDto
         {
@@ -14,6 +16,42 @@ namespace YKCoatings.Services
             public string BatchNumber { get; set; } = "";
             public int ProductionOrderID { get; set; }
             public int BatchStatus { get; set; }
+            public int OrderStatus { get; set; }
+            public int? QCResult { get; set; }
+        }
+        private sealed class BatchWorkflowGuardDto
+        {
+            public int BatchID { get; set; }
+            public string BatchNumber { get; set; } = "";
+            public int ProductionOrderID { get; set; }
+            public int ProductItemID { get; set; }
+            public int UnitID { get; set; }
+            public int BatchStatus { get; set; }
+            public int OrderStatus { get; set; }
+            public int OrderProductItemID { get; set; }
+            public int OrderUnitID { get; set; }
+        }
+
+        private sealed class BatchOrderGuardDto
+        {
+            public int ProductionOrderID { get; set; }
+            public int ProductItemID { get; set; }
+            public int PlannedUnitID { get; set; }
+            public int? TargetWarehouseID { get; set; }
+            public decimal PlannedQty { get; set; }
+            public int OrderStatus { get; set; }
+        }
+
+        private sealed class BatchProductUnitMapDto
+        {
+            public int PrimaryUnitID { get; set; }
+            public int? SecondaryUnitID { get; set; }
+            public decimal? ConversionFactor { get; set; }
+        }
+        private sealed class BatchOrderSummaryStateDto
+        {
+            public decimal PlannedQty { get; set; }
+            public int OrderStatus { get; set; }
         }
         private sealed class BatchSuggestedQtyDto
 {
@@ -27,10 +65,19 @@ private sealed class BatchInventoryDbDto
     public string BatchNumber { get; set; } = "";
     public int ProductionOrderID { get; set; }
     public int ProductItemID { get; set; }
+    public int UnitID { get; set; }
+    public int OrderProductItemID { get; set; }
+    public int OrderUnitID { get; set; }
     public int BatchStatus { get; set; }
+    public int? QCResult { get; set; }
     public int? TargetWarehouseID { get; set; }
+    public decimal PlannedQty { get; set; }
     public decimal GoodQty { get; set; }
     public decimal UnitCost { get; set; }
+    public int OrderStatus { get; set; }
+    public int PrimaryUnitID { get; set; }
+    public int? SecondaryUnitID { get; set; }
+    public decimal? ConversionFactor { get; set; }
     public DateTime? ExpiryDate { get; set; }
 }
 
@@ -40,6 +87,7 @@ private sealed class BatchStageDbDto
     public int BatchID { get; set; }
     public DateTime? StartTime { get; set; }
     public int StageStatus { get; set; }
+    public int StageOrder { get; set; }
 }
 
 private sealed class BatchQcDbDto
@@ -48,21 +96,29 @@ private sealed class BatchQcDbDto
     public string BatchNumber { get; set; } = "";
     public int ProductionOrderID { get; set; }
     public int BatchStatus { get; set; }
+    public int OrderStatus { get; set; }
+    public int UnitID { get; set; }
+    public decimal PlannedQty { get; set; }
     public decimal ProducedQty { get; set; }
     public decimal GoodQty { get; set; }
     public decimal RejectedQty { get; set; }
     public decimal SampleQty { get; set; }
     public decimal WasteQty { get; set; }
+    public int? QCResult { get; set; }
+    public int? QCInspectedBy { get; set; }
+    public string? QCNotes { get; set; }
 }
 
         public ProductionBatchService(
             IConfiguration configuration,
             AuditService audit,
-            NotificationService notification)
+            NotificationService notification,
+            ModuleAuthorizationService authorization)
             : base(configuration)
         {
             _audit = audit;
             _notification = notification;
+            _authorization = authorization;
         }
 
         // ==========================================
@@ -74,6 +130,8 @@ private sealed class BatchQcDbDto
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض دفعات التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -157,6 +215,8 @@ ORDER BY pb.BatchDate DESC, pb.BatchID DESC";
         // ==========================================
         public async Task<ProductionBatchEditDto?> GetByIdAsync(int batchId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض دفعات التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -210,6 +270,8 @@ WHERE pb.BatchID = @BatchID";
         // ==========================================
         public async Task<List<ProductionBatchStageDto>> GetStagesAsync(int batchId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض مراحل دفعات التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -254,6 +316,8 @@ ORDER BY s.StageOrder";
         // ==========================================
         public async Task<ProductionBatchAuditDto?> GetAuditAsync(int batchId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض سجل دفعات التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -283,6 +347,8 @@ WHERE pb.BatchID = @BatchID";
         // ==========================================
         public async Task<ProductionBatchOrderInfoDto?> GetOrderInfoAsync(int productionOrderId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض معلومات الدفعات.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -308,79 +374,153 @@ WHERE po.ProductionOrderID = @ProductionOrderID";
                 sql, new { ProductionOrderID = productionOrderId });
         }
 
+        public async Task<List<ProductionLookupDto>> GetProductionOrdersLookupAsync()
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض أوامر التصنيع للدفعات.");
+            using var connection = CreateConnection();
+            var rows = await connection.QueryAsync<ProductionLookupDto>(@"
+SELECT po.ProductionOrderID AS Id,
+       CONCAT(po.OrderNumber,N' - ',i.ItemNameAr) AS Name
+FROM dbo.ProductionOrders po
+INNER JOIN dbo.Items i ON i.ItemID=po.ProductItemID
+WHERE po.OrderStatus IN (2,3,4)
+  AND po.PlannedQty>ISNULL((
+      SELECT SUM(CASE
+          WHEN pb.BatchStatus IN (1,2,3,4) THEN ISNULL(pb.PlannedQty,0)
+          WHEN pb.BatchStatus=5 THEN ISNULL(pb.GoodQty,0)
+          ELSE 0
+      END)
+      FROM dbo.ProductionBatches pb
+      WHERE pb.ProductionOrderID=po.ProductionOrderID
+  ),0)+@Tolerance
+ORDER BY po.OrderDate DESC,po.ProductionOrderID DESC",
+                new { Tolerance = ProductionQuantityTolerance });
+            return rows.ToList();
+        }
+
+        public async Task<List<ProductionLookupDto>> GetWarehousesLookupAsync()
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض مخازن دفعات التصنيع.");
+            using var connection = CreateConnection();
+            var rows = await connection.QueryAsync<ProductionLookupDto>(@"
+SELECT WarehouseID AS Id,WarehouseNameAr AS Name
+FROM dbo.Warehouses
+WHERE IsActive=1 AND WarehouseType=4
+ORDER BY WarehouseNameAr");
+            return rows.ToList();
+        }
+
+        public async Task<List<ProductionLookupDto>> GetEmployeesLookupAsync()
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض الموظفين المرتبطين بدفعات التصنيع.");
+            using var connection = CreateConnection();
+            var rows = await connection.QueryAsync<ProductionLookupDto>(@"
+SELECT EmployeeID AS Id,FullNameAr AS Name
+FROM dbo.Employees
+WHERE IsActive=1
+ORDER BY FullNameAr");
+            return rows.ToList();
+        }
+
         // ==========================================
         // إضافة باتش
         // ==========================================
         public async Task<int> InsertAsync(ProductionBatchEditDto batch, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanAdd,
+                "لا تملك صلاحية إنشاء دفعات التصنيع.");
+            if (batch.PlannedQty <= 0 || batch.ProductionOrderID <= 0)
+                throw new InvalidOperationException("حدد أمر تصنيع وكمية مخططة موجبة للدفعة.");
+            if (batch.MaterialCost < 0 || batch.LaborCost < 0 || batch.OverheadCost < 0 || batch.UnitCost < 0)
+                throw new InvalidOperationException("لا يمكن حفظ تكلفة سالبة للدفعة.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
             try
             {
+                var order = await connection.QueryFirstOrDefaultAsync<BatchOrderGuardDto>(
+                    @"SELECT ProductionOrderID,ProductItemID,PlannedUnitID,TargetWarehouseID,PlannedQty,OrderStatus
+                      FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID",
+                    new { ID = batch.ProductionOrderID }, transaction);
+                if (order is null)
+                    throw new InvalidOperationException("أمر التصنيع المرتبط بالدفعة غير موجود.");
+                if (order.OrderStatus is not (2 or 3 or 4))
+                    throw new InvalidOperationException("لا يمكن إنشاء دفعة إلا لأمر تصنيع معتمد ونشط.");
+                if (batch.ProductItemID != order.ProductItemID || batch.UnitID != order.PlannedUnitID)
+                    throw new InvalidOperationException("المنتج أو وحدة الدفعة لا يطابقان أمر التصنيع.");
+                var committedQty = await GetCommittedOrderOutputQtyAsync(
+                    connection, transaction, batch.ProductionOrderID, excludeBatchId: 0);
+                if (batch.PlannedQty - (order.PlannedQty - committedQty) > ProductionQuantityTolerance)
+                    throw new InvalidOperationException("الكمية المخططة للدفعة تتجاوز المتبقي من الناتج المخطط لأمر التصنيع.");
+                if (order.TargetWarehouseID.HasValue && order.TargetWarehouseID.Value > 0 &&
+                    batch.TargetWarehouseID != order.TargetWarehouseID)
+                    throw new InvalidOperationException("مخزن الدفعة لا يطابق مخزن المنتج المحدد في أمر التصنيع.");
+                if (batch.TargetWarehouseID.HasValue && batch.TargetWarehouseID.Value > 0)
+                {
+                    var activeWarehouse = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.Warehouses WITH (UPDLOCK,HOLDLOCK)
+                          WHERE WarehouseID=@ID AND IsActive=1 AND WarehouseType=4",
+                        new { ID = batch.TargetWarehouseID.Value }, transaction);
+                    if (activeWarehouse != 1)
+                        throw new InvalidOperationException("مخزن المنتج غير موجود أو غير نشط.");
+                }
+                await ValidateBatchEmployeesAsync(connection, transaction, batch.ProducedBy, batch.SupervisorID);
+
                 var batchNumber = await GenerateBatchNumberAsync(connection, transaction);
                 var totalCost = batch.MaterialCost + batch.LaborCost + batch.OverheadCost;
-
-                var sql = @"
+                var newId = await connection.ExecuteScalarAsync<int>(@"
 INSERT INTO dbo.ProductionBatches
 (
-    BatchNumber, ProductionOrderID, ProductItemID,
-    BatchDate, ExpiryDate,
-    PlannedQty, ProducedQty, GoodQty, RejectedQty, WasteQty, SampleQty,
-    UnitID, TargetWarehouseID,
-    MaterialCost, LaborCost, OverheadCost, TotalCost,
-    BatchStatus, StartTime, EndTime,
-    ProducedBy, SupervisorID,
-    QCInspectedBy, QCInspectionDate, QCResult, QCNotes,
-    Notes, CreatedBy, CreatedDate
+    BatchNumber,ProductionOrderID,ProductItemID,BatchDate,ExpiryDate,
+    PlannedQty,ProducedQty,GoodQty,RejectedQty,WasteQty,SampleQty,
+    UnitID,TargetWarehouseID,MaterialCost,LaborCost,OverheadCost,TotalCost,UnitCost,
+    BatchStatus,StartTime,EndTime,ProducedBy,SupervisorID,
+    QCInspectedBy,QCInspectionDate,QCResult,QCNotes,Notes,CreatedBy,CreatedDate
 )
 VALUES
 (
-    @BatchNumber, @ProductionOrderID, @ProductItemID,
-    @BatchDate, @ExpiryDate,
-    @PlannedQty, @ProducedQty, @GoodQty, @RejectedQty, @WasteQty, @SampleQty,
-    @UnitID, @TargetWarehouseID,
-    @MaterialCost, @LaborCost, @OverheadCost, @TotalCost,
-    1, @StartTime, @EndTime,
-    NULLIF(@ProducedBy, 0), NULLIF(@SupervisorID, 0),
-    NULLIF(@QCInspectedBy, 0), @QCInspectionDate, @QCResult, @QCNotes,
-    @Notes, @UserID, GETDATE()
+    @BatchNumber,@ProductionOrderID,@ProductItemID,@BatchDate,@ExpiryDate,
+    @PlannedQty,0,0,0,0,0,
+    @UnitID,@TargetWarehouseID,@MaterialCost,@LaborCost,@OverheadCost,@TotalCost,NULL,
+    1,NULL,NULL,NULLIF(@ProducedBy,0),NULLIF(@SupervisorID,0),
+    NULL,NULL,NULL,NULL,@Notes,@UserID,GETDATE()
 );
-SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
-                var newId = await connection.ExecuteScalarAsync<int>(sql, new
-                {
-                    BatchNumber = batchNumber,
-                    batch.ProductionOrderID,
-                    batch.ProductItemID,
-                    batch.BatchDate,
-                    batch.ExpiryDate,
-                    batch.PlannedQty,
-                    batch.ProducedQty,
-                    batch.GoodQty,
-                    batch.RejectedQty,
-                    batch.WasteQty,
-                    batch.SampleQty,
-                    batch.UnitID,
-                    batch.TargetWarehouseID,
-                    batch.MaterialCost,
-                    batch.LaborCost,
-                    batch.OverheadCost,
-                    TotalCost = totalCost,
-                    batch.StartTime,
-                    batch.EndTime,
-                    batch.ProducedBy,
-                    batch.SupervisorID,
-                    batch.QCInspectedBy,
-                    batch.QCInspectionDate,
-                    batch.QCResult,
-                    batch.QCNotes,
-                    batch.Notes,
-                    UserID = userId
-                }, transaction);
+SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                    new
+                    {
+                        BatchNumber = batchNumber,
+                        batch.ProductionOrderID,
+                        batch.ProductItemID,
+                        batch.BatchDate,
+                        batch.ExpiryDate,
+                        batch.PlannedQty,
+                        batch.UnitID,
+                        batch.TargetWarehouseID,
+                        batch.MaterialCost,
+                        batch.LaborCost,
+                        batch.OverheadCost,
+                        TotalCost = totalCost,
+                        batch.ProducedBy,
+                        batch.SupervisorID,
+                        batch.Notes,
+                        UserID = userId
+                    }, transaction);
 
                 await CreateDefaultStagesAsync(connection, transaction, newId, batch.ProductionOrderID);
+                await _notification.CreateForPermissionHoldersAsync(
+                    connection, transaction, notificationType: 1,
+                    title: "دفعة إنتاج جديدة",
+                    message: $"تم إنشاء دفعة إنتاج جديدة رقم {batchNumber}",
+                    priority: 2, permissionModuleCode: "SCR_BATCH",
+                    requiredPermission: ModulePermissionRequirement.View,
+                    relatedModule: "SCR_BATCH", relatedRecordId: newId,
+                    createdBy: userId, excludeUserId: userId);
 
                 transaction.Commit();
 
@@ -393,22 +533,11 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     description: $"إنشاء دفعة إنتاج جديدة: {batchNumber}"
                 );
 
-                await _notification.CreateNotificationAsync(
-                    notificationType: 1,
-                    title: "دفعة إنتاج جديدة",
-                    message: $"تم إنشاء دفعة إنتاج جديدة رقم {batchNumber}",
-                    priority: 2,
-                    targetRoleId: 3,
-                    relatedModule: "SCR_BATCH",
-                    relatedRecordId: newId,
-                    createdBy: userId
-                );
-
                 return newId;
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); } catch { }
                 throw;
             }
         }
@@ -418,88 +547,174 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         // ==========================================
         public async Task UpdateAsync(ProductionBatchEditDto batch, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+                "لا تملك صلاحية تعديل دفعات التصنيع.");
+            if (batch.PlannedQty <= 0 || batch.MaterialCost < 0 || batch.LaborCost < 0 ||
+                batch.OverheadCost < 0 || batch.UnitCost < 0 || batch.ProducedQty < 0)
+                throw new InvalidOperationException("تحقق من الكميات والتكاليف؛ يجب أن تكون غير سالبة والكمية المخططة موجبة.");
+
             using var connection = CreateConnection();
-
-            var currentStatus = await connection.ExecuteScalarAsync<int?>(
-                @"SELECT BatchStatus
-                  FROM dbo.ProductionBatches
-                  WHERE BatchID = @BatchID",
-                new { batch.BatchID });
-
-            if (!currentStatus.HasValue)
-                throw new Exception("دفعة الإنتاج غير موجودة");
-
-            if (currentStatus.Value == 5 || currentStatus.Value == 6)
-                throw new Exception("لا يمكن تعديل دفعة نهائية");
-
-            var sql = @"
-UPDATE dbo.ProductionBatches SET
-    BatchDate = @BatchDate,
-    ExpiryDate = @ExpiryDate,
-    PlannedQty = @PlannedQty,
-    ProducedQty = @ProducedQty,
-    GoodQty = @GoodQty,
-    RejectedQty = @RejectedQty,
-    WasteQty = @WasteQty,
-    SampleQty = @SampleQty,
-    UnitID = @UnitID,
-    TargetWarehouseID = @TargetWarehouseID,
-    MaterialCost = @MaterialCost,
-    LaborCost = @LaborCost,
-    OverheadCost = @OverheadCost,
-    TotalCost = @TotalCost,
-    QCInspectedBy = NULLIF(@QCInspectedBy, 0),
-    QCInspectionDate = @QCInspectionDate,
-    QCResult = @QCResult,
-    QCNotes = @QCNotes,
-    StartTime = @StartTime,
-    EndTime = @EndTime,
-    ProducedBy = NULLIF(@ProducedBy, 0),
-    SupervisorID = NULLIF(@SupervisorID, 0),
-    Notes = @Notes,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID";
-
-            await connection.ExecuteAsync(sql, new
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
             {
-                batch.BatchID,
-                batch.BatchDate,
-                batch.ExpiryDate,
-                batch.PlannedQty,
-                batch.ProducedQty,
-                batch.GoodQty,
-                batch.RejectedQty,
-                batch.WasteQty,
-                batch.SampleQty,
-                batch.UnitID,
-                batch.TargetWarehouseID,
-                batch.MaterialCost,
-                batch.LaborCost,
-                batch.OverheadCost,
-                TotalCost = batch.MaterialCost + batch.LaborCost + batch.OverheadCost,
-                batch.QCInspectedBy,
-                batch.QCInspectionDate,
-                batch.QCResult,
-                batch.QCNotes,
-                batch.StartTime,
-                batch.EndTime,
-                batch.ProducedBy,
-                batch.SupervisorID,
-                batch.Notes,
-                UserID = userId
-            });
+                var current = await connection.QueryFirstOrDefaultAsync<BatchWorkflowGuardDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.ProductItemID,pb.UnitID,pb.BatchStatus,
+       po.OrderStatus,po.ProductItemID AS OrderProductItemID,po.PlannedUnitID AS OrderUnitID
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
+                    new { batch.BatchID }, transaction);
+                if (current is null)
+                    throw new InvalidOperationException("دفعة الإنتاج غير موجودة.");
+                if (current.BatchStatus is not (1 or 2))
+                    throw new InvalidOperationException("لا تعدّل البيانات الأساسية بعد اكتمال التصنيع؛ سجّل بيانات الجودة من مسار الفحص.");
+                if (current.OrderStatus is not (2 or 3 or 4))
+                    throw new InvalidOperationException("لا يمكن تعديل دفعة إلا لأمر تصنيع نشط قبل فحص الجودة.");
+                if (batch.ProductionOrderID != current.ProductionOrderID ||
+                    batch.ProductItemID != current.OrderProductItemID ||
+                    batch.UnitID != current.OrderUnitID)
+                    throw new InvalidOperationException("لا يمكن تغيير ارتباط الدفعة أو المنتج أو وحدته بعد إنشائها.");
+                var orderPlan = await connection.QueryFirstOrDefaultAsync<BatchOrderGuardDto>(@"
+SELECT ProductionOrderID,ProductItemID,PlannedUnitID,TargetWarehouseID,PlannedQty,OrderStatus
+FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ID",
+                    new { ID = current.ProductionOrderID }, transaction);
+                if (orderPlan is null)
+                    throw new InvalidOperationException("أمر التصنيع المرتبط بالدفعة غير موجود.");
+                if (orderPlan.OrderStatus is not (2 or 3 or 4))
+                    throw new InvalidOperationException("أمر التصنيع غير نشط؛ لا يمكن تعديل الدفعة.");
+                if (orderPlan.TargetWarehouseID.HasValue && batch.TargetWarehouseID != orderPlan.TargetWarehouseID)
+                    throw new InvalidOperationException("مخزن الدفعة لا يطابق مخزن المنتج المحدد في أمر التصنيع.");
+                var committedQty = await GetCommittedOrderOutputQtyAsync(
+                    connection, transaction, current.ProductionOrderID, batch.BatchID);
+                if (batch.PlannedQty - (orderPlan.PlannedQty - committedQty) > ProductionQuantityTolerance)
+                    throw new InvalidOperationException("الكمية المخططة للدفعة تتجاوز المتبقي من الناتج المخطط لأمر التصنيع.");
 
-            await SyncOrderSummaryFromBatchesAsync(batch.ProductionOrderID, userId);
+                if (batch.TargetWarehouseID.HasValue && batch.TargetWarehouseID.Value > 0)
+                {
+                    var activeWarehouse = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.Warehouses WITH (UPDLOCK,HOLDLOCK)
+                          WHERE WarehouseID=@ID AND IsActive=1 AND WarehouseType=4",
+                        new { ID = batch.TargetWarehouseID.Value }, transaction);
+                    if (activeWarehouse != 1)
+                        throw new InvalidOperationException("مخزن المنتج غير موجود أو غير نشط.");
+                }
+                await ValidateBatchEmployeesAsync(connection, transaction, batch.ProducedBy, batch.SupervisorID);
 
-            await _audit.WriteAuditLogAsync(
-                userId: userId,
-                actionType: 2,
-                tableName: "ProductionBatches",
-                recordId: batch.BatchID.ToString(),
-                moduleName: "SCR_BATCH",
-                description: $"تعديل دفعة إنتاج: {batch.BatchNumber}"
-            );
+                var changed = await connection.ExecuteAsync(@"
+UPDATE dbo.ProductionBatches SET
+    BatchDate=@BatchDate,ExpiryDate=@ExpiryDate,PlannedQty=@PlannedQty,
+    ProducedQty=CASE WHEN @CurrentStatus=2 THEN @ProducedQty ELSE ProducedQty END,
+    UnitID=@UnitID,TargetWarehouseID=@TargetWarehouseID,
+    MaterialCost=@MaterialCost,LaborCost=@LaborCost,OverheadCost=@OverheadCost,
+    TotalCost=@TotalCost,
+    ProducedBy=NULLIF(@ProducedBy,0),SupervisorID=NULLIF(@SupervisorID,0),
+    Notes=@Notes,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=@CurrentStatus",
+                    new
+                    {
+                        batch.BatchID,
+                        CurrentStatus = current.BatchStatus,
+                        batch.BatchDate,
+                        batch.ExpiryDate,
+                        batch.PlannedQty,
+                        batch.ProducedQty,
+                        batch.UnitID,
+                        batch.TargetWarehouseID,
+                        batch.MaterialCost,
+                        batch.LaborCost,
+                        batch.OverheadCost,
+                        TotalCost = batch.MaterialCost + batch.LaborCost + batch.OverheadCost,
+                        batch.ProducedBy,
+                        batch.SupervisorID,
+                        batch.Notes,
+                        UserID = userId
+                    }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة الدفعة أثناء الحفظ؛ أعد تحميلها.");
+
+                await SyncOrderSummaryFromBatchesAsync(connection, transaction, current.ProductionOrderID, userId);
+                transaction.Commit();
+
+                await _audit.WriteAuditLogAsync(
+                    userId: userId,
+                    actionType: 2,
+                    tableName: "ProductionBatches",
+                    recordId: batch.BatchID.ToString(),
+                    changedColumns: "BatchDate,ExpiryDate,PlannedQty,ProducedQty,Costs,TargetWarehouseID,Notes",
+                    moduleName: "SCR_BATCH",
+                    description: $"تعديل دفعة إنتاج: {current.BatchNumber}"
+                );
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
+        }
+
+        public async Task<(bool Success, string Message)> SetOutputUnitCostAsync(
+            int batchId, decimal unitCost, int userId)
+        {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanPost,
+                "لا تملك صلاحية تسجيل تكلفة وحدة المنتج قبل الترحيل.");
+            if (unitCost <= 0)
+                return (false, "أدخل تكلفة موجبة للوحدة المنتجة؛ لن تُشتق التكلفة تلقائياً من الهالك أو المرفوض.");
+
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                var batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,pb.QCResult,po.OrderStatus
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
+                    new { BatchID = batchId }, transaction);
+                if (batch is null) return (false, "دفعة الإنتاج غير موجودة.");
+                if (batch.OrderStatus is 6 or 7)
+                    return (false, "لا يمكن تسجيل تكلفة دفعة مرتبطة بأمر مكتمل أو ملغي.");
+                if (batch.BatchStatus != 5)
+                    return (false, "لا تُسجل تكلفة الترحيل إلا بعد قبول الدفعة من الجودة.");
+                if (batch.QCResult != 1)
+                    return (false, "لا تُسجل تكلفة ترحيل لدفعة بلا نتيجة قبول جودة صريحة.");
+
+                var alreadyPosted = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.InventoryTransactions WITH (UPDLOCK,HOLDLOCK)
+WHERE SourceDocType=N'PB' AND SourceDocID=@BatchID AND TransactionType=3",
+                    new { BatchID = batchId }, transaction);
+                if (alreadyPosted > 0)
+                    return (false, "لا يمكن تعديل تكلفة الوحدة بعد ترحيل الدفعة إلى المخزون.");
+
+                var changed = await connection.ExecuteAsync(@"
+UPDATE dbo.ProductionBatches
+SET UnitCost=@UnitCost,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=5 AND QCResult=1",
+                    new { BatchID = batchId, UnitCost = unitCost, UserID = userId }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة الدفعة أثناء حفظ التكلفة؛ أعد تحميلها.");
+
+                transaction.Commit();
+                await _audit.WriteAuditLogAsync(
+                    userId: userId,
+                    actionType: 2,
+                    tableName: "ProductionBatches",
+                    recordId: batchId.ToString(),
+                    changedColumns: "UnitCost",
+                    moduleName: "SCR_BATCH",
+                    description: $"تحديد يدوي لتكلفة ترحيل وحدة الدفعة: {batch.BatchNumber}"
+                );
+                return (true, "تم حفظ تكلفة وحدة المنتج كما أُدخلت يدوياً.");
+            }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
         }
 
         // ==========================================
@@ -507,132 +722,14 @@ WHERE BatchID = @BatchID";
         // ==========================================
         public async Task<(bool Success, string Message)> ChangeStatusAsync(int batchId, int newStatus, int userId)
         {
-            using var connection = CreateConnection();
-            await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            var needsApproval = newStatus is 5 or 6;
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH",
+                p => needsApproval ? p.CanApprove : p.CanEdit,
+                "لا تملك صلاحية تغيير حالة دفعة التصنيع.");
 
-            try
-            {
-                var current = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(
-                    @"SELECT BatchID, BatchNumber, ProductionOrderID, BatchStatus
-                      FROM dbo.ProductionBatches
-                      WHERE BatchID = @BatchID",
-                    new { BatchID = batchId }, transaction);
-
-                if (current is null)
-                    return (false, "دفعة الإنتاج غير موجودة");
-
-                var allowed = current.BatchStatus switch
-                {
-                    1 => new[] { 2 },
-                    2 => new[] { 3 },
-                    3 => new[] { 4 },
-                    4 => new[] { 5, 6 },
-                    _ => Array.Empty<int>()
-                };
-
-                if (!allowed.Contains(newStatus))
-                    return (false, "لا يمكن الانتقال لهذه الحالة");
-
-                await connection.ExecuteAsync(@"
-UPDATE dbo.ProductionBatches SET
-    BatchStatus = @NewStatus,
-    StartTime = CASE WHEN @NewStatus = 2 AND StartTime IS NULL THEN GETDATE() ELSE StartTime END,
-    EndTime = CASE WHEN @NewStatus = 3 AND EndTime IS NULL THEN GETDATE() ELSE EndTime END,
-    QCInspectionDate = CASE WHEN @NewStatus IN (5,6) AND QCInspectionDate IS NULL THEN GETDATE() ELSE QCInspectionDate END,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID",
-                    new
-                    {
-                        BatchID = batchId,
-                        NewStatus = newStatus,
-                        UserID = userId
-                    }, transaction);
-
-                await SyncOrderSummaryFromBatchesAsync(connection, transaction, current.ProductionOrderID, userId);
-
-                transaction.Commit();
-
-                var statusName = GetBatchStatusName(newStatus);
-
-                await _audit.WriteAuditLogAsync(
-                    userId: userId,
-                    actionType: 2,
-                    tableName: "ProductionBatches",
-                    recordId: batchId.ToString(),
-                    changedColumns: "BatchStatus",
-                    moduleName: "SCR_BATCH",
-                    description: $"تغيير حالة الدفعة {current.BatchNumber} إلى {statusName}"
-                );
-
-                await _notification.CreateNotificationAsync(
-                    notificationType: 3,
-                    title: $"تحديث دفعة إنتاج #{current.BatchNumber}",
-                    message: $"تم تحويل حالة دفعة الإنتاج إلى: {statusName}",
-                    priority: 2,
-                    targetRoleId: 3,
-                    relatedModule: "SCR_BATCH",
-                    relatedRecordId: batchId,
-                    createdBy: userId
-                );
-
-                return (true, $"تم تحويل الحالة إلى [{statusName}] بنجاح");
-            }
-            catch (Exception ex)
-            {
-                transaction.Rollback();
-                return (false, ex.Message);
-            }
-        }
-
-        // ==========================================
-        // Lookups
-        // ==========================================
-        public async Task<List<ProductionLookupDto>> GetProductionOrdersLookupAsync()
-        {
-            using var connection = CreateConnection();
-
-            var sql = @"
-SELECT
-    po.ProductionOrderID AS Id,
-    (po.OrderNumber + N' - ' + i.ItemNameAr) AS Name
-FROM dbo.ProductionOrders po
-INNER JOIN dbo.Items i ON po.ProductItemID = i.ItemID
-WHERE po.OrderStatus IN (2,3,4,5)
-ORDER BY po.OrderDate DESC";
-
-            return (await connection.QueryAsync<ProductionLookupDto>(sql)).ToList();
-        }
-
-        public async Task<List<ProductionLookupDto>> GetWarehousesLookupAsync()
-        {
-            using var connection = CreateConnection();
-
-            var sql = @"
-SELECT
-    WarehouseID AS Id,
-    (WarehouseCode + N' - ' + WarehouseNameAr) AS Name
-FROM dbo.Warehouses
-WHERE IsActive = 1
-ORDER BY WarehouseNameAr";
-
-            return (await connection.QueryAsync<ProductionLookupDto>(sql)).ToList();
-        }
-
-        public async Task<List<ProductionLookupDto>> GetEmployeesLookupAsync()
-        {
-            using var connection = CreateConnection();
-
-            var sql = @"
-SELECT
-    EmployeeID AS Id,
-    FullNameAr AS Name
-FROM dbo.Employees
-WHERE IsActive = 1
-ORDER BY FullNameAr";
-
-            return (await connection.QueryAsync<ProductionLookupDto>(sql)).ToList();
+            return newStatus is 5 or 6
+                ? (false, "تغيير نتيجة الجودة يتطلب مسار الفحص الذي يتحقق من المفتش والكميات.")
+                : (false, "استخدم مساري بدء التصنيع أو اكتماله؛ لا يُسمح بتغيير حالة الدفعة مباشرة.");
         }
 
         // ==========================================
@@ -676,7 +773,7 @@ ORDER BY bs.StageOrder",
         {
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
             try
             {
@@ -696,75 +793,78 @@ ORDER BY bs.StageOrder",
             int productionOrderId,
             int userId)
         {
+            var order = await connection.QueryFirstOrDefaultAsync<BatchOrderSummaryStateDto>(@"
+SELECT PlannedQty,OrderStatus
+FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID",
+                new { ProductionOrderID = productionOrderId }, transaction);
+            if (order is null) return;
+
             await connection.ExecuteAsync(@"
 UPDATE po
-SET
-    ActualQty = ISNULL(x.AcceptedQty, 0),
-    WasteQty = ISNULL(x.TotalWaste, 0),
-    ActualMaterialCost = ISNULL(x.MaterialCost, 0),
-    ActualLaborCost = ISNULL(x.LaborCost, 0),
-    ActualOverheadCost = ISNULL(x.OverheadCost, 0),
-    ActualTotalCost = ISNULL(x.TotalCost, 0),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
+SET ActualQty=ISNULL(x.AcceptedQty,0),
+    WasteQty=ISNULL(x.WasteQty,0),
+    ModifiedBy=@UserID,ModifiedDate=GETDATE()
 FROM dbo.ProductionOrders po
-OUTER APPLY (
+OUTER APPLY
+(
     SELECT
-        SUM(CASE WHEN BatchStatus = 5 THEN ISNULL(GoodQty, 0) ELSE 0 END) AS AcceptedQty,
-        SUM(ISNULL(WasteQty, 0) + ISNULL(RejectedQty, 0)) AS TotalWaste,
-        SUM(ISNULL(MaterialCost, 0)) AS MaterialCost,
-        SUM(ISNULL(LaborCost, 0)) AS LaborCost,
-        SUM(ISNULL(OverheadCost, 0)) AS OverheadCost,
-        SUM(ISNULL(TotalCost, 0)) AS TotalCost
-    FROM dbo.ProductionBatches
-    WHERE ProductionOrderID = @ProductionOrderID
+        SUM(CASE WHEN pb.BatchStatus=5 THEN ISNULL(pb.GoodQty,0) ELSE 0 END) AS AcceptedQty,
+        SUM(ISNULL(pb.WasteQty,0)) AS WasteQty
+    FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+    WHERE pb.ProductionOrderID=@ProductionOrderID
 ) x
-WHERE po.ProductionOrderID = @ProductionOrderID",
-                new
-                {
-                    ProductionOrderID = productionOrderId,
-                    UserID = userId
-                }, transaction);
+WHERE po.ProductionOrderID=@ProductionOrderID",
+                new { ProductionOrderID = productionOrderId, UserID = userId }, transaction);
 
-            var totalBatches = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.ProductionBatches WHERE ProductionOrderID = @ProductionOrderID",
+            var totalBatches = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID",
                 new { ProductionOrderID = productionOrderId }, transaction);
+            if (totalBatches == 0) return;
 
-            var finalBatches = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.ProductionBatches
-                  WHERE ProductionOrderID = @ProductionOrderID
-                    AND BatchStatus IN (5,6)",
+            var unfinishedBatches = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID AND BatchStatus NOT IN (5,6)",
                 new { ProductionOrderID = productionOrderId }, transaction);
-
-            var hasQc = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.ProductionBatches
-                  WHERE ProductionOrderID = @ProductionOrderID
-                    AND BatchStatus = 4",
+            var acceptedQty = await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(CASE WHEN BatchStatus=5 THEN ISNULL(GoodQty,0) ELSE 0 END),0)
+FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID",
                 new { ProductionOrderID = productionOrderId }, transaction);
-
-            var hasManufacturing = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.ProductionBatches
-                  WHERE ProductionOrderID = @ProductionOrderID
-                    AND BatchStatus IN (2,3)",
+            var acceptedNotPosted = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+WHERE pb.ProductionOrderID=@ProductionOrderID AND pb.BatchStatus=5
+  AND NOT EXISTS
+  (
+      SELECT 1 FROM dbo.InventoryTransactions it WITH (UPDLOCK,HOLDLOCK)
+      WHERE it.SourceDocType=N'PB' AND it.SourceDocID=pb.BatchID AND it.TransactionType=3
+  )",
+                new { ProductionOrderID = productionOrderId }, transaction);
+            var pendingQc = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID AND BatchStatus IN (3,4)",
+                new { ProductionOrderID = productionOrderId }, transaction);
+            var inProduction = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID AND BatchStatus=2",
                 new { ProductionOrderID = productionOrderId }, transaction);
 
             int? newOrderStatus = null;
-
-            if (totalBatches > 0 && finalBatches == totalBatches)
+            if (unfinishedBatches == 0 && acceptedQty + ProductionQuantityTolerance >= order.PlannedQty && acceptedNotPosted == 0)
                 newOrderStatus = 6;
-            else if (hasQc > 0)
+            else if (pendingQc > 0 || acceptedNotPosted > 0)
                 newOrderStatus = 5;
-            else if (hasManufacturing > 0)
+            else if (inProduction > 0 || unfinishedBatches == 0)
                 newOrderStatus = 4;
 
-            if (newOrderStatus.HasValue)
+            if (newOrderStatus.HasValue && order.OrderStatus is not (6 or 7))
             {
                 await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionOrders
-SET OrderStatus = @OrderStatus,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ProductionOrderID = @ProductionOrderID",
+SET OrderStatus=@OrderStatus,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus NOT IN (6,7)",
                     new
                     {
                         ProductionOrderID = productionOrderId,
@@ -791,12 +891,15 @@ SELECT @NextNum;";
 
                 var result = await connection.QueryFirstOrDefaultAsync<string>(
                     sql, transaction: transaction);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لدفعة التصنيع.");
 
-                return result ?? $"BT-{DateTime.Now:yyMMddHHmmss}";
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
-                return $"PB-{DateTime.Now:yyMMddHHmmss}";
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم دفعة التصنيع (BT). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل BT والإجراء المخزن.", ex);
             }
         }
 
@@ -810,8 +913,44 @@ SELECT @NextNum;";
             6 => "مرفوض",
             _ => "غير محدد"
         };
+        private static async Task ValidateBatchEmployeesAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            params int?[] employeeIds)
+        {
+            foreach (var employeeId in employeeIds)
+            {
+                if (!employeeId.HasValue || employeeId.Value <= 0) continue;
+                var active = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.Employees WITH (UPDLOCK,HOLDLOCK)
+WHERE EmployeeID=@EmployeeID AND IsActive=1",
+                    new { EmployeeID = employeeId.Value }, transaction);
+                if (active != 1)
+                    throw new InvalidOperationException($"الموظف {employeeId.Value} غير موجود أو غير نشط.");
+            }
+        }
+
+        private static async Task<decimal> GetCommittedOrderOutputQtyAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction? transaction,
+            int productionOrderId,
+            int excludeBatchId)
+        {
+            return await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(CASE
+    WHEN BatchStatus IN (1,2,3,4) THEN ISNULL(PlannedQty,0)
+    WHEN BatchStatus=5 THEN ISNULL(GoodQty,0)
+    ELSE 0
+END),0)
+FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID AND BatchID<>@ExcludeBatchID",
+                new { ProductionOrderID = productionOrderId, ExcludeBatchID = excludeBatchId }, transaction);
+        }
+
         public async Task<decimal> GetSuggestedBatchQtyAsync(int productionOrderId, int excludeBatchId = 0)
 {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView, "لا تملك صلاحية عرض بيانات الدفعات.");
+
     using var connection = CreateConnection();
 
     var source = await connection.QueryFirstOrDefaultAsync<BatchSuggestedQtyDto>(@"
@@ -826,16 +965,7 @@ WHERE po.ProductionOrderID = @ProductionOrderID",
     if (source is null)
         return 0;
 
-    var previousQty = await connection.ExecuteScalarAsync<decimal?>(@"
-SELECT ISNULL(SUM(PlannedQty), 0)
-FROM dbo.ProductionBatches
-WHERE ProductionOrderID = @ProductionOrderID
-  AND BatchID <> @ExcludeBatchID",
-        new
-        {
-            ProductionOrderID = productionOrderId,
-            ExcludeBatchID = excludeBatchId
-        }) ?? 0m;
+    var previousQty = await GetCommittedOrderOutputQtyAsync(connection, null, productionOrderId, excludeBatchId);
 
     var remainingQty = source.PlannedQty - previousQty;
     if (remainingQty <= 0)
@@ -853,23 +983,35 @@ public async Task<(bool Success, string Message, int Count)> LoadStagesFromBomAs
     int userId,
     bool replaceExisting = true)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+        "لا تملك صلاحية تحميل مراحل الوصفة للدفعة.");
     using var connection = CreateConnection();
     await connection.OpenAsync();
-    using var transaction = connection.BeginTransaction();
+    using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
     try
     {
         var batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
-SELECT BatchID, BatchNumber, ProductionOrderID, BatchStatus
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,po.OrderStatus
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
             new { BatchID = batchId }, transaction);
 
         if (batch is null)
             return (false, "دفعة الإنتاج غير موجودة", 0);
+        if (batch.OrderStatus is not (2 or 3 or 4))
+            return (false, "أمر التصنيع غير نشط؛ لا يمكن تحميل مراحله.", 0);
 
-        if (batch.BatchStatus > 2)
-            return (false, "لا يمكن تحميل المراحل بعد تخطي قيد التصنيع", 0);
+        if (batch.BatchStatus != 1)
+            return (false, "لا يمكن تحميل أو استبدال مراحل الوصفة بعد بدء الدفعة.", 0);
+        var startedStages = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID AND StageStatus<>1",
+            new { BatchID = batchId }, transaction);
+        if (startedStages > 0)
+            return (false, "لا يمكن استبدال مراحل سبق بدء إحداها.", 0);
 
         if (replaceExisting)
         {
@@ -923,150 +1065,154 @@ ORDER BY bs.StageOrder",
 }
 public async Task<(bool Success, string Message)> StartProductionAsync(int batchId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+        "لا تملك صلاحية بدء تصنيع الدفعة.");
     using var connection = CreateConnection();
     await connection.OpenAsync();
-    using var transaction = connection.BeginTransaction();
+    using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+    BatchWorkflowGuardDto? batch = null;
 
     try
     {
-        var batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
-SELECT BatchID, BatchNumber, ProductionOrderID, BatchStatus
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
+        batch = await connection.QueryFirstOrDefaultAsync<BatchWorkflowGuardDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.ProductItemID,pb.UnitID,pb.BatchStatus,
+       po.OrderStatus,po.ProductItemID AS OrderProductItemID,po.PlannedUnitID AS OrderUnitID
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
             new { BatchID = batchId }, transaction);
-
-        if (batch is null)
-            return (false, "دفعة الإنتاج غير موجودة");
-
+        if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
         if (batch.BatchStatus != 1)
             return (false, "لا يمكن بدء التصنيع إلا من حالة مسودة");
+        if (batch.OrderStatus is not (2 or 3 or 4))
+            return (false, "أمر التصنيع غير نشط أو دخل مرحلة الجودة؛ لا يمكن بدء الدفعة.");
+        if (batch.ProductItemID != batch.OrderProductItemID || batch.UnitID != batch.OrderUnitID)
+            return (false, "المنتج أو وحدة الدفعة لا يطابقان أمر التصنيع.");
 
-        await connection.ExecuteAsync(@"
+        var changed = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionBatches
-SET BatchStatus = 2,
-    StartTime = GETDATE(),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID",
+SET BatchStatus=2,StartTime=ISNULL(StartTime,GETDATE()),ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=1",
             new { BatchID = batchId, UserID = userId }, transaction);
+        if (changed != 1)
+            throw new InvalidOperationException("تغيرت حالة الدفعة أثناء بدء التصنيع؛ أعد تحميلها.");
 
         await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionOrders
-SET OrderStatus = CASE WHEN OrderStatus < 4 THEN 4 ELSE OrderStatus END,
-    ActualStartDate = ISNULL(ActualStartDate, GETDATE()),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ProductionOrderID = @ProductionOrderID",
-            new
-            {
-                batch.ProductionOrderID,
-                UserID = userId
-            }, transaction);
-
-        transaction.Commit();
-
-        await _audit.WriteAuditLogAsync(
-            userId: userId,
-            actionType: 2,
-            tableName: "ProductionBatches",
-            recordId: batchId.ToString(),
-            changedColumns: "BatchStatus,StartTime",
-            moduleName: "SCR_BATCH",
-            description: $"بدء تصنيع دفعة: {batch.BatchNumber}"
-        );
-
-        await _notification.CreateNotificationAsync(
-            notificationType: 1,
+SET OrderStatus=4,ActualStartDate=ISNULL(ActualStartDate,GETDATE()),
+    ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus IN (2,3,4)",
+            new { batch.ProductionOrderID, UserID = userId }, transaction);
+        await SyncOrderSummaryFromBatchesAsync(connection, transaction, batch.ProductionOrderID, userId);
+        await _notification.MarkRelatedAsActionedAsync(
+            connection, transaction, "SCR_BATCH", batchId);
+        await _notification.CreateForPermissionHoldersAsync(
+            connection, transaction, notificationType: 1,
             title: "بدء التصنيع",
             message: $"تم بدء التصنيع لدفعة الإنتاج رقم {batch.BatchNumber}",
-            priority: 2,
-            targetRoleId: 3,
-            relatedModule: "SCR_BATCH",
-            relatedRecordId: batchId,
-            createdBy: userId
-        );
-
-        return (true, "تم بدء التصنيع بنجاح");
+            priority: 2, permissionModuleCode: "SCR_BATCH",
+            requiredPermission: ModulePermissionRequirement.View,
+            relatedModule: "SCR_BATCH", relatedRecordId: batchId,
+            createdBy: userId, excludeUserId: userId);
+        transaction.Commit();
     }
     catch (Exception ex)
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); } catch { }
         return (false, ex.Message);
     }
+
+    await _audit.WriteAuditLogAsync(
+        userId: userId,
+        actionType: 2,
+        tableName: "ProductionBatches",
+        recordId: batchId.ToString(),
+        changedColumns: "BatchStatus,StartTime",
+        moduleName: "SCR_BATCH",
+        description: $"بدء تصنيع دفعة: {batch!.BatchNumber}"
+    );
+    return (true, "تم بدء التصنيع بنجاح");
 }
 public async Task<(bool Success, string Message)> CompleteProductionAsync(int batchId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+        "لا تملك صلاحية تسجيل اكتمال التصنيع.");
+
     using var connection = CreateConnection();
     await connection.OpenAsync();
-    using var transaction = connection.BeginTransaction();
-
+    using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+    BatchQcDbDto? batch = null;
     try
     {
-        var batch = await connection.QueryFirstOrDefaultAsync<BatchQcDbDto>(@"
-SELECT
-    BatchID,
-    BatchNumber,
-    ProductionOrderID,
-    BatchStatus,
-    ISNULL(ProducedQty, 0) AS ProducedQty,
-    ISNULL(GoodQty, 0) AS GoodQty,
-    ISNULL(RejectedQty, 0) AS RejectedQty,
-    ISNULL(SampleQty, 0) AS SampleQty,
-    ISNULL(WasteQty, 0) AS WasteQty
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
+        batch = await connection.QueryFirstOrDefaultAsync<BatchQcDbDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,po.OrderStatus,pb.PlannedQty,
+       ISNULL(pb.ProducedQty,0) AS ProducedQty,ISNULL(pb.GoodQty,0) AS GoodQty,
+       ISNULL(pb.RejectedQty,0) AS RejectedQty,ISNULL(pb.SampleQty,0) AS SampleQty,
+       ISNULL(pb.WasteQty,0) AS WasteQty
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
             new { BatchID = batchId }, transaction);
-
-        if (batch is null)
-            return (false, "دفعة الإنتاج غير موجودة");
-
+        if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
+        if (batch.OrderStatus is not (2 or 3 or 4))
+            return (false, "أمر التصنيع غير نشط؛ لا يمكن إكمال الدفعة.");
         if (batch.BatchStatus != 2)
             return (false, "لا يمكن تسجيل اكتمال التصنيع إلا من حالة قيد التصنيع");
-
         if (batch.ProducedQty <= 0)
             return (false, "يجب إدخال الكمية المنتجة أولاً");
+        if (batch.ProducedQty - batch.PlannedQty > ProductionQuantityTolerance)
+            return (false, "الكمية المنتجة تتجاوز الكمية المخططة للدفعة؛ راجع الكميات قبل الإكمال.");
 
-        await connection.ExecuteAsync(@"
+        var stageCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID",
+            new { BatchID = batchId }, transaction);
+        var incompleteStages = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID AND StageStatus<>3",
+            new { BatchID = batchId }, transaction);
+        if (stageCount > 0 && incompleteStages > 0)
+            return (false, "لا يمكن إكمال التصنيع قبل إنهاء جميع مراحل الدفعة.");
+
+        var changed = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionBatches
-SET BatchStatus = 3,
-    EndTime = GETDATE(),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID",
+SET BatchStatus=3,EndTime=GETDATE(),ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=2",
             new { BatchID = batchId, UserID = userId }, transaction);
+        if (changed != 1)
+            throw new InvalidOperationException("تغيرت حالة الدفعة أثناء الإكمال؛ أعد تحميلها.");
 
-        await RecalculateMaterialCostAsync(connection, transaction, batchId);
-
+        await SyncOrderSummaryFromBatchesAsync(connection, transaction, batch.ProductionOrderID, userId);
+        await _notification.MarkRelatedAsActionedAsync(
+            connection, transaction, "SCR_BATCH", batchId);
+        await _notification.CreateForPermissionHoldersAsync(
+            connection, transaction, notificationType: 1,
+            title: "دفعة جاهزة لفحص الجودة",
+            message: $"اكتمل تصنيع الدفعة {batch.BatchNumber} وأصبحت جاهزة لفحص الجودة",
+            priority: 2, permissionModuleCode: "SCR_BATCH",
+            requiredPermission: ModulePermissionRequirement.Approve,
+            relatedModule: "SCR_BATCH", relatedRecordId: batchId,
+            createdBy: userId, excludeUserId: userId);
         transaction.Commit();
-
-        await _audit.WriteAuditLogAsync(
-            userId: userId,
-            actionType: 2,
-            tableName: "ProductionBatches",
-            recordId: batchId.ToString(),
-            changedColumns: "BatchStatus,EndTime,MaterialCost,TotalCost",
-            moduleName: "SCR_BATCH",
-            description: $"اكتمال تصنيع دفعة: {batch.BatchNumber}"
-        );
-
-        await _notification.CreateNotificationAsync(
-            notificationType: 1,
-            title: "اكتمل التصنيع",
-            message: $"تم تسجيل اكتمال التصنيع لدفعة رقم {batch.BatchNumber}",
-            priority: 2,
-            targetRoleId: 3,
-            relatedModule: "SCR_BATCH",
-            relatedRecordId: batchId,
-            createdBy: userId
-        );
-
-        return (true, "تم تسجيل اكتمال التصنيع بنجاح");
     }
     catch (Exception ex)
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); } catch { }
         return (false, ex.Message);
     }
+
+    await _audit.WriteAuditLogAsync(
+        userId: userId,
+        actionType: 2,
+        tableName: "ProductionBatches",
+        recordId: batchId.ToString(),
+        changedColumns: "BatchStatus,EndTime",
+        moduleName: "SCR_BATCH",
+        description: $"اكتمال تصنيع دفعة: {batch!.BatchNumber}"
+    );
+    return (true, "تم تسجيل اكتمال التصنيع بنجاح");
 }
 public async Task<(bool Success, string Message)> ApplyQcAsync(
     int batchId,
@@ -1076,177 +1222,273 @@ public async Task<(bool Success, string Message)> ApplyQcAsync(
     decimal goodQty,
     decimal rejectedQty,
     decimal sampleQty,
+    decimal wasteQty,
     int userId)
 {
-    using var connection = CreateConnection();
-
-    var batch = await connection.QueryFirstOrDefaultAsync<BatchQcDbDto>(@"
-SELECT
-    BatchID,
-    BatchNumber,
-    ProductionOrderID,
-    BatchStatus,
-    ISNULL(ProducedQty, 0) AS ProducedQty,
-    ISNULL(GoodQty, 0) AS GoodQty,
-    ISNULL(RejectedQty, 0) AS RejectedQty,
-    ISNULL(SampleQty, 0) AS SampleQty,
-    ISNULL(WasteQty, 0) AS WasteQty
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
-        new { BatchID = batchId });
-
-    if (batch is null)
-        return (false, "دفعة الإنتاج غير موجودة");
-
-    if (batch.BatchStatus < 3 || batch.BatchStatus > 4)
-        return (false, "يجب أن تكون الدفعة مكتملة التصنيع أو في فحص الجودة");
-
-    if (goodQty <= 0)
-        return (false, "يجب إدخال الكمية الصالحة");
-
-    if (qcInspectedBy <= 0)
-        return (false, "يجب اختيار مفتش الجودة");
-
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanApprove,
+        "لا تملك صلاحية اعتماد نتيجة جودة الدفعة.");
     if (qcResult is < 1 or > 3)
-        return (false, "يجب اختيار نتيجة فحص الجودة");
+        return (false, "يجب اختيار نتيجة فحص جودة صالحة.");
+    if (qcInspectedBy <= 0)
+        return (false, "يجب اختيار مفتش الجودة.");
+    if (goodQty < 0 || rejectedQty < 0 || sampleQty < 0 || wasteQty < 0)
+        return (false, "كميات الجودة لا يمكن أن تكون سالبة.");
+    if (qcResult != 2 && goodQty <= 0)
+        return (false, "نتيجة الفحص الناجحة تتطلب كمية صالحة موجبة.");
+    if (qcResult == 2 && goodQty > ProductionQuantityTolerance)
+        return (false, "نتيجة الفحص الفاشلة لا يمكن أن تتضمن كمية صالحة للترحيل.");
+    if (qcResult == 3 && string.IsNullOrWhiteSpace(qcNotes))
+        return (false, "يجب توضيح شرط/تحفظ نتيجة الفحص في ملاحظات الجودة.");
 
-    var total = goodQty + rejectedQty + sampleQty;
-    if (total > batch.ProducedQty)
-        return (false, "مجموع الصالح + المرفوض + العينات أكبر من الكمية المنتجة");
+    using var connection = CreateConnection();
+    await connection.OpenAsync();
+    using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+    BatchQcDbDto? batch = null;
+    int newStatus = 0;
+    try
+    {
+        batch = await connection.QueryFirstOrDefaultAsync<BatchQcDbDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,po.OrderStatus,pb.PlannedQty,
+       ISNULL(pb.ProducedQty,0) AS ProducedQty,ISNULL(pb.GoodQty,0) AS GoodQty,
+       ISNULL(pb.RejectedQty,0) AS RejectedQty,ISNULL(pb.SampleQty,0) AS SampleQty,
+       ISNULL(pb.WasteQty,0) AS WasteQty,pb.QCResult,pb.QCInspectedBy,pb.QCNotes
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
+            new { BatchID = batchId }, transaction);
+        if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
+        if (batch.OrderStatus is not (2 or 3 or 4 or 5))
+            return (false, "أمر التصنيع غير نشط؛ لا يمكن تسجيل نتيجة جودة للدفعة.");
+        var activeInspector = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.Employees WITH (UPDLOCK,HOLDLOCK)
+WHERE EmployeeID=@EmployeeID AND IsActive=1",
+            new { EmployeeID = qcInspectedBy }, transaction);
+        if (activeInspector != 1)
+            return (false, "مفتش الجودة غير موجود أو غير نشط.");
+        if (batch.BatchStatus is not (3 or 4))
+            return (false, "يجب أن تكون الدفعة مكتملة التصنيع أو في فحص الجودة");
 
-    var wasteQty = batch.ProducedQty - total;
-    if (wasteQty < 0)
-        wasteQty = 0;
+        if (batch.ProducedQty <= 0)
+            return (false, "لا يمكن فحص دفعة بلا كمية إنتاج فعلية موجبة.");
 
-    var newStatus = qcResult == 2 ? 6 : 5;
+        var classifiedQty = goodQty + rejectedQty + sampleQty + wasteQty;
+        if (Math.Abs(classifiedQty - batch.ProducedQty) > ProductionQuantityTolerance)
+            return (false, "يجب أن يساوي مجموع الصالح والمرفوض والعينات والهالك كمية الإنتاج الفعلية؛ أدخل كل كمية صراحةً.");
 
-    await connection.ExecuteAsync(@"
-UPDATE dbo.ProductionBatches
-SET BatchStatus = @BatchStatus,
-    GoodQty = @GoodQty,
-    RejectedQty = @RejectedQty,
-    SampleQty = @SampleQty,
-    WasteQty = @WasteQty,
-    QCInspectedBy = @QCInspectedBy,
-    QCInspectionDate = GETDATE(),
-    QCResult = @QCResult,
-    QCNotes = @QCNotes,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID",
-        new
+        // QC 3 is a conditional pass: keep the batch in the existing QC/hold status (4).
+        // Only an unconditional pass (1) may become stock-eligible status 5.
+        newStatus = qcResult switch
         {
-            BatchID = batchId,
-            BatchStatus = newStatus,
-            GoodQty = goodQty,
-            RejectedQty = rejectedQty,
-            SampleQty = sampleQty,
-            WasteQty = wasteQty,
-            QCInspectedBy = qcInspectedBy,
-            QCResult = qcResult,
-            QCNotes = qcNotes,
-            UserID = userId
-        });
+            1 => 5,
+            2 => 6,
+            3 => 4,
+            _ => throw new InvalidOperationException("نتيجة الجودة غير صالحة.")
+        };
 
+        var changed = await connection.ExecuteAsync(@"
+UPDATE dbo.ProductionBatches
+SET BatchStatus=@BatchStatus,GoodQty=@GoodQty,RejectedQty=@RejectedQty,
+    SampleQty=@SampleQty,WasteQty=@WasteQty,QCInspectedBy=@QCInspectedBy,
+    QCInspectionDate=GETDATE(),QCResult=@QCResult,QCNotes=@QCNotes,
+    ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus IN (3,4)",
+            new
+            {
+                BatchID = batchId,
+                BatchStatus = newStatus,
+                GoodQty = goodQty,
+                RejectedQty = rejectedQty,
+                SampleQty = sampleQty,
+                WasteQty = wasteQty,
+                QCInspectedBy = qcInspectedBy,
+                QCResult = qcResult,
+                QCNotes = qcNotes,
+                UserID = userId
+            }, transaction);
+        if (changed != 1)
+            throw new InvalidOperationException("تغيرت حالة الدفعة أثناء تسجيل نتيجة الجودة؛ أعد تحميلها.");
+
+        await SyncOrderSummaryFromBatchesAsync(connection, transaction, batch.ProductionOrderID, userId);
+        await _notification.MarkRelatedAsActionedAsync(
+            connection, transaction, "SCR_BATCH", batchId);
+        await _notification.CreateForPermissionHoldersAsync(
+            connection, transaction, notificationType: 1,
+            title: newStatus switch
+            {
+                5 => "نتيجة فحص الجودة",
+                4 => "دفعة محجوزة بعد فحص الجودة",
+                _ => "دفعة مرفوضة من الجودة"
+            },
+            message: newStatus switch
+            {
+                5 => $"تم قبول دفعة الإنتاج {batch.BatchNumber}؛ أدخل تكلفة وحدة المنتج قبل الترحيل.",
+                4 => $"نتيجة فحص الدفعة {batch.BatchNumber} ناجح بتحفظ؛ بقيت في حالة فحص الجودة ولن تُرحّل للمخزون قبل إعادة الفحص وتسجيل قبول صريح.",
+                _ => $"تم رفض دفعة الإنتاج {batch.BatchNumber} من الجودة؛ لم تُرحّل إلى المخزون."
+            },
+            priority: newStatus == 6 ? (byte)2 : (byte)1,
+            permissionModuleCode: "SCR_BATCH",
+            requiredPermission: ModulePermissionRequirement.View,
+            relatedModule: "SCR_BATCH", relatedRecordId: batchId,
+            createdBy: userId, excludeUserId: userId);
+        transaction.Commit();
+    }
+    catch (Exception ex)
+    {
+        try { transaction.Rollback(); } catch { }
+        return (false, ex.Message);
+    }
+
+    var auditedBatch = batch!;
     await _audit.WriteAuditLogAsync(
         userId: userId,
         actionType: 2,
         tableName: "ProductionBatches",
         recordId: batchId.ToString(),
-        changedColumns: "BatchStatus,QCResult,QCInspectionDate,QCInspectedBy,GoodQty,RejectedQty,SampleQty,WasteQty",
+        oldValues: System.Text.Json.JsonSerializer.Serialize(new
+        {
+            auditedBatch.BatchStatus,
+            auditedBatch.QCResult,
+            auditedBatch.QCInspectedBy,
+            auditedBatch.GoodQty,
+            auditedBatch.RejectedQty,
+            auditedBatch.SampleQty,
+            auditedBatch.WasteQty,
+            auditedBatch.QCNotes
+        }),
+        newValues: System.Text.Json.JsonSerializer.Serialize(new
+        {
+            BatchStatus = newStatus,
+            QCResult = qcResult,
+            QCInspectedBy = qcInspectedBy,
+            GoodQty = goodQty,
+            RejectedQty = rejectedQty,
+            SampleQty = sampleQty,
+            WasteQty = wasteQty,
+            QCNotes = qcNotes
+        }),
+        changedColumns: "BatchStatus,QCResult,QCInspectionDate,QCInspectedBy,GoodQty,RejectedQty,SampleQty,WasteQty,QCNotes",
         moduleName: "SCR_BATCH",
-        description: $"فحص جودة دفعة: {batch.BatchNumber}"
+        description: $"فحص جودة دفعة: {auditedBatch.BatchNumber}"
     );
-
-    await _notification.CreateNotificationAsync(
-        notificationType: 1,
-        title: "نتيجة فحص الجودة",
-        message: $"تم تسجيل نتيجة الجودة للدفعة {batch.BatchNumber}",
-        priority: 1,
-        targetRoleId: 3,
-        relatedModule: "SCR_BATCH",
-        relatedRecordId: batchId,
-        createdBy: userId
-    );
-
     return (true, "تم تسجيل نتيجة فحص الجودة بنجاح");
 }
-public async Task<bool> HasInventoryEntryAsync(string batchNumber)
+public async Task<bool> HasInventoryEntryAsync(int batchId)
 {
+    await _authorization.RequireCurrentUserPermissionAsync("SCR_BATCH", p => p.CanView,
+        "لا تملك صلاحية عرض دفعات التصنيع.");
     using var connection = CreateConnection();
-
-    var count = await connection.ExecuteScalarAsync<int>(
-        @"SELECT COUNT(*)
-          FROM dbo.InventoryBatchBalance
-          WHERE BatchNumber = @BatchNumber",
-        new { BatchNumber = batchNumber });
-
+    var count = await connection.ExecuteScalarAsync<int>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1 FROM dbo.InventoryTransactions
+    WHERE SourceDocType=N'PB' AND SourceDocID=@BatchID AND TransactionType=3
+) OR EXISTS
+(
+    SELECT 1
+    FROM dbo.ProductionBatches pb
+    INNER JOIN dbo.InventoryBatchBalance ib
+        ON ib.ItemID=pb.ProductItemID AND ib.BatchNumber=pb.BatchNumber
+       AND (pb.TargetWarehouseID IS NULL OR ib.WarehouseID=pb.TargetWarehouseID)
+    WHERE pb.BatchID=@BatchID
+) THEN 1 ELSE 0 END",
+        new { BatchID = batchId });
     return count > 0;
 }
 public async Task<(bool Success, string Message)> AddToInventoryAsync(int batchId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanPost,
+        "لا تملك صلاحية ترحيل دفعات التصنيع إلى المخزون.");
     using var connection = CreateConnection();
     await connection.OpenAsync();
-    using var transaction = connection.BeginTransaction();
+    using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+    BatchInventoryDbDto? batch = null;
+    decimal primaryQuantity = 0m;
+    decimal primaryUnitCost = 0m;
 
     try
     {
-        var batch = await connection.QueryFirstOrDefaultAsync<BatchInventoryDbDto>(@"
-SELECT
-    BatchID,
-    BatchNumber,
-    ProductionOrderID,
-    ProductItemID,
-    BatchStatus,
-    TargetWarehouseID,
-    ISNULL(GoodQty, 0) AS GoodQty,
-    ISNULL(UnitCost, 0) AS UnitCost,
-    ExpiryDate
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
+        batch = await connection.QueryFirstOrDefaultAsync<BatchInventoryDbDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.ProductItemID,pb.UnitID,
+       po.ProductItemID AS OrderProductItemID,po.PlannedUnitID AS OrderUnitID,po.OrderStatus,
+       pb.BatchStatus,pb.QCResult,pb.TargetWarehouseID,pb.PlannedQty,ISNULL(pb.GoodQty,0) AS GoodQty,
+       ISNULL(pb.UnitCost,0) AS UnitCost,pb.ExpiryDate,
+       i.PrimaryUnitID,i.SecondaryUnitID,i.ConversionFactor
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+INNER JOIN dbo.Items i WITH (UPDLOCK,HOLDLOCK)
+    ON i.ItemID=pb.ProductItemID
+WHERE pb.BatchID=@BatchID",
             new { BatchID = batchId }, transaction);
-
-        if (batch is null)
-            return (false, "دفعة الإنتاج غير موجودة");
-
+        if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
         if (batch.BatchStatus != 5)
             return (false, "يجب أن تكون الدفعة مقبولة من الجودة");
-
+        if (batch.QCResult != 1)
+            return (false, "لا يمكن ترحيل دفعة دون نتيجة قبول جودة صريحة.");
+        if (batch.OrderStatus is 6 or 7)
+            return (false, "لا يمكن ترحيل دفعة مرتبطة بأمر مكتمل أو ملغي.");
+        if (batch.ProductItemID != batch.OrderProductItemID || batch.UnitID != batch.OrderUnitID)
+            return (false, "المنتج أو وحدة الدفعة لا يطابقان أمر التصنيع.");
         if (!batch.TargetWarehouseID.HasValue || batch.TargetWarehouseID.Value <= 0)
             return (false, "يجب اختيار مخزن المنتج");
-
         if (batch.GoodQty <= 0)
-            return (false, "يجب إدخال الكمية الصالحة");
+            return (false, "يجب إدخال كمية صالحة موجبة");
+        if (batch.UnitCost <= 0)
+            return (false, "أدخل تكلفة وحدة المنتج يدوياً بعد اعتماد الجودة وقبل الترحيل؛ لن نوزع تكلفة المواد أو الهالك/المرفوض تلقائياً.");
+        if (batch.PrimaryUnitID <= 0)
+            return (false, "لا توجد وحدة مخزون أساسية صالحة للمنتج.");
 
-        var alreadyAdded = await connection.ExecuteScalarAsync<int>(
-            @"SELECT COUNT(*) FROM dbo.InventoryBatchBalance WHERE BatchNumber = @BatchNumber",
-            new { batch.BatchNumber }, transaction);
+        var warehouseIsActive = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.Warehouses WITH (UPDLOCK,HOLDLOCK)
+WHERE WarehouseID=@WarehouseID AND IsActive=1 AND WarehouseType=4",
+            new { WarehouseID = batch.TargetWarehouseID.Value }, transaction);
+        if (warehouseIsActive != 1)
+            return (false, "مخزن المنتج غير موجود أو غير نشط.");
 
-        if (alreadyAdded > 0)
-            return (false, "تم إدخال هذه الدفعة إلى المخزون مسبقًا");
-
-        await connection.ExecuteAsync(
-            @"EXEC dbo.sp_UpdateInventoryBalance
-                @ItemID = @ItemID,
-                @WarehouseID = @WarehouseID,
-                @Quantity = @Quantity,
-                @UnitCost = @UnitCost,
-                @TransactionType = @TransactionType,
-                @BatchNumber = @BatchNumber,
-                @ExpiryDate = @ExpiryDate,
-                @SourceDocType = @SourceDocType,
-                @SourceDocID = @SourceDocID,
-                @SourceDocNumber = @SourceDocNumber,
-                @SourceDocLineID = @SourceDocLineID,
-                @Notes = @Notes,
-                @UserID = @UserID",
+        var alreadyPosted = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.InventoryTransactions WITH (UPDLOCK,HOLDLOCK)
+WHERE SourceDocType=N'PB' AND SourceDocID=@BatchID AND TransactionType=3",
+            new { BatchID = batchId }, transaction);
+        if (alreadyPosted > 0)
+            return (false, "تم ترحيل هذه الدفعة إلى المخزون مسبقاً.");
+        var orphanBatchBalance = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.InventoryBatchBalance WITH (UPDLOCK,HOLDLOCK)
+WHERE ItemID=@ItemID AND WarehouseID=@WarehouseID AND BatchNumber=@BatchNumber",
             new
             {
                 ItemID = batch.ProductItemID,
                 WarehouseID = batch.TargetWarehouseID.Value,
-                Quantity = batch.GoodQty,
-                UnitCost = batch.UnitCost,
-                TransactionType = 3,
+                BatchNumber = batch.BatchNumber
+            }, transaction);
+        if (orphanBatchBalance > 0)
+            return (false, "يوجد رصيد باتش سابق بلا حركة مصدر موثوقة؛ أوقفنا الترحيل للمطابقة اليدوية.");
+
+        var factor = await ResolveBatchToPrimaryUnitFactorAsync(connection, transaction,
+            new BatchProductUnitMapDto
+            {
+                PrimaryUnitID = batch.PrimaryUnitID,
+                SecondaryUnitID = batch.SecondaryUnitID,
+                ConversionFactor = batch.ConversionFactor
+            }, batch.UnitID);
+        primaryQuantity = decimal.Round(batch.GoodQty * factor, 4, MidpointRounding.AwayFromZero);
+        primaryUnitCost = decimal.Round(batch.UnitCost / factor, 4, MidpointRounding.AwayFromZero);
+        if (primaryQuantity <= 0 || primaryUnitCost <= 0)
+            return (false, "كمية أو تكلفة المنتج أقل من دقة وحدة المخزون الأساسية.");
+
+        await connection.ExecuteAsync(@"
+EXEC dbo.sp_UpdateInventoryBalance
+    @ItemID=@ItemID,@WarehouseID=@WarehouseID,@Quantity=@Quantity,@UnitCost=@UnitCost,
+    @TransactionType=@TransactionType,@BatchNumber=@BatchNumber,@ExpiryDate=@ExpiryDate,
+    @SourceDocType=@SourceDocType,@SourceDocID=@SourceDocID,@SourceDocNumber=@SourceDocNumber,
+    @SourceDocLineID=@SourceDocLineID,@Notes=@Notes,@UserID=@UserID",
+            new
+            {
+                ItemID = batch.ProductItemID,
+                WarehouseID = batch.TargetWarehouseID.Value,
+                Quantity = primaryQuantity,
+                UnitCost = primaryUnitCost,
+                TransactionType = (byte)3,
                 BatchNumber = batch.BatchNumber,
                 batch.ExpiryDate,
                 SourceDocType = "PB",
@@ -1257,57 +1499,66 @@ WHERE BatchID = @BatchID",
                 UserID = userId
             }, transaction);
 
-        // تحديث تكلفة الصنف
-        if (batch.UnitCost > 0)
-        {
-            await connection.ExecuteAsync(@"
-UPDATE dbo.Items
-SET AverageCost = @UnitCost,
-    StandardCost = @UnitCost,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ItemID = @ItemID",
-                new
-                {
-                    ItemID = batch.ProductItemID,
-                    UnitCost = batch.UnitCost,
-                    UserID = userId
-                }, transaction);
-        }
-
-        // تحديث أمر التصنيع من الدفعات المقبولة
         await UpdateProductionOrderActualsAsync(connection, transaction, batch.ProductionOrderID, userId);
+        await _notification.MarkRelatedAsActionedAsync(
+            connection, transaction, "SCR_BATCH", batchId);
+        await _notification.CreateForPermissionHoldersAsync(
+            connection, transaction, notificationType: 1,
+            title: "ترحيل دفعة إلى المخزون",
+            message: $"تم ترحيل دفعة الإنتاج رقم {batch.BatchNumber} إلى المخزون",
+            priority: 2, permissionModuleCode: "SCR_BATCH",
+            requiredPermission: ModulePermissionRequirement.View,
+            relatedModule: "SCR_BATCH", relatedRecordId: batchId,
+            createdBy: userId, excludeUserId: userId);
 
         transaction.Commit();
-
-        await _audit.WriteAuditLogAsync(
-            userId: userId,
-            actionType: 2,
-            tableName: "ProductionBatches",
-            recordId: batchId.ToString(),
-            moduleName: "SCR_BATCH",
-            description: $"إدخال المخزن لدفعة: {batch.BatchNumber}"
-        );
-
-        await _notification.CreateNotificationAsync(
-            notificationType: 1,
-            title: "إضافة للمخزون",
-            message: $"تم إدخال دفعة الإنتاج رقم {batch.BatchNumber} إلى المخزون",
-            priority: 2,
-            targetRoleId: 3,
-            relatedModule: "SCR_BATCH",
-            relatedRecordId: batchId,
-            createdBy: userId
-        );
-
-        return (true, "تم إضافة المنتج للمخزون بنجاح");
     }
     catch (Exception ex)
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); } catch { }
         return (false, ex.Message);
     }
+
+    await _audit.WriteAuditLogAsync(
+        userId: userId,
+        actionType: 2,
+        tableName: "ProductionBatches",
+        recordId: batchId.ToString(),
+        changedColumns: "InventoryTransactions,InventoryBalance,InventoryBatchBalance,ProductionOrderSummary",
+        moduleName: "SCR_BATCH",
+        description: $"إدخال المخزن لدفعة: {batch!.BatchNumber}؛ الكمية الأساسية {primaryQuantity:#,##0.####} بتكلفة وحدة {primaryUnitCost:#,##0.####}"
+    );
+    return (true, "تم ترحيل الكمية المقبولة إلى المخزون بالتكلفة المدخلة يدوياً.");
 }
+
+private static async Task<decimal> ResolveBatchToPrimaryUnitFactorAsync(
+    System.Data.IDbConnection connection,
+    System.Data.IDbTransaction transaction,
+    BatchProductUnitMapDto item,
+    int unitId)
+{
+    if (unitId == item.PrimaryUnitID) return 1m;
+    if (item.SecondaryUnitID == unitId && item.ConversionFactor.GetValueOrDefault() > 0)
+        return item.ConversionFactor!.Value;
+
+    var directFactor = await connection.QueryFirstOrDefaultAsync<decimal?>(@"
+SELECT TOP (1) ConversionFactor FROM dbo.UnitConversions
+WHERE FromUnitID=@FromUnitID AND ToUnitID=@ToUnitID AND IsActive=1
+ORDER BY ConversionID DESC",
+        new { FromUnitID = unitId, ToUnitID = item.PrimaryUnitID }, transaction);
+    if (directFactor.GetValueOrDefault() > 0) return directFactor!.Value;
+
+    var reverseFactor = await connection.QueryFirstOrDefaultAsync<decimal?>(@"
+SELECT TOP (1) ConversionFactor FROM dbo.UnitConversions
+WHERE FromUnitID=@FromUnitID AND ToUnitID=@ToUnitID AND IsActive=1
+ORDER BY ConversionID DESC",
+        new { FromUnitID = item.PrimaryUnitID, ToUnitID = unitId }, transaction);
+    if (reverseFactor.GetValueOrDefault() > 0) return 1m / reverseFactor!.Value;
+
+    throw new InvalidOperationException(
+        $"لا يوجد تحويل صريح من وحدة الدفعة إلى وحدة المخزون الأساسية للمنتج {item.PrimaryUnitID}؛ لم يُرحّل أي مخزون.");
+}
+
         public async Task<(bool Success, string Message)> StartStageAsync(
             int batchStageId,
             string? temperature,
@@ -1315,84 +1566,79 @@ WHERE ItemID = @ItemID",
             int? operatorId,
             int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+                "لا تملك صلاحية بدء مراحل الدفعات.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            BatchStageDbDto? stage = null;
+            BatchWorkflowGuardDto? batch = null;
 
             try
             {
-                var stage = await connection.QueryFirstOrDefaultAsync<BatchStageDbDto>(@"
-SELECT BatchStageID, BatchID, StartTime, StageStatus
-FROM dbo.ProductionBatchStages
-WHERE BatchStageID = @BatchStageID",
+                stage = await connection.QueryFirstOrDefaultAsync<BatchStageDbDto>(@"
+SELECT BatchStageID,BatchID,StartTime,StageStatus,StageOrder
+FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchStageID=@BatchStageID",
                     new { BatchStageID = batchStageId }, transaction);
+                if (stage is null) return (false, "المرحلة غير موجودة");
+                if (stage.StageStatus is not (1 or 4))
+                    return (false, "لا يمكن بدء المرحلة من حالتها الحالية.");
 
-                if (stage is null)
-                    return (false, "المرحلة غير موجودة");
-
-                var batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
-SELECT BatchID, BatchNumber, ProductionOrderID, BatchStatus
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
+                batch = await connection.QueryFirstOrDefaultAsync<BatchWorkflowGuardDto>(@"
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.ProductItemID,pb.UnitID,pb.BatchStatus,
+       po.OrderStatus,po.ProductItemID AS OrderProductItemID,po.PlannedUnitID AS OrderUnitID
+FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
+    ON po.ProductionOrderID=pb.ProductionOrderID
+WHERE pb.BatchID=@BatchID",
                     new { BatchID = stage.BatchID }, transaction);
+                if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
+                if (batch.BatchStatus is not (1 or 2))
+                    return (false, "لا يمكن بدء مرحلة إلا لدفعة مسودة أو قيد التصنيع.");
+                if (batch.OrderStatus is not (2 or 3 or 4))
+                    return (false, "أمر التصنيع غير نشط؛ لا يمكن بدء مراحل الدفعة.");
+                if (batch.ProductItemID != batch.OrderProductItemID || batch.UnitID != batch.OrderUnitID)
+                    return (false, "المنتج أو وحدة الدفعة لا يطابقان أمر التصنيع.");
+                await ValidateBatchEmployeesAsync(connection, transaction, operatorId);
 
-                if (batch is null)
-                    return (false, "دفعة الإنتاج غير موجودة");
+                var earlierIncomplete = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID AND StageOrder<@StageOrder AND StageStatus<>3",
+                    new { BatchID = stage.BatchID, stage.StageOrder }, transaction);
+                if (earlierIncomplete > 0)
+                    return (false, "أكمل المراحل السابقة قبل بدء هذه المرحلة.");
 
-                // لو أول مرحلة والباتش لسه مسودة → بدء التصنيع تلقائيًا
+                var runningStages = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID AND StageStatus=2 AND BatchStageID<>@BatchStageID",
+                    new { BatchID = stage.BatchID, BatchStageID = batchStageId }, transaction);
+                if (runningStages > 0)
+                    return (false, "أنه المرحلة الجارية قبل بدء مرحلة أخرى.");
+
                 if (batch.BatchStatus == 1)
                 {
-                    // نتأكد إن ده فعلاً أول مرحلة
-                    var isFirstStage = await connection.ExecuteScalarAsync<int>(@"
-SELECT COUNT(*)
-FROM dbo.ProductionBatchStages
-WHERE BatchID = @BatchID
-  AND StageOrder < (
-      SELECT StageOrder FROM dbo.ProductionBatchStages WHERE BatchStageID = @BatchStageID
-  )",
-                        new
-                        {
-                            BatchID = stage.BatchID,
-                            BatchStageID = batchStageId
-                        }, transaction);
-
-                    if (isFirstStage == 0)
-                    {
-                        // ده أول مرحلة فعلاً → بدء التصنيع
-                        await connection.ExecuteAsync(@"
+                    var started = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionBatches
-SET BatchStatus = 2,
-    StartTime = GETDATE(),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE BatchID = @BatchID",
-                            new { BatchID = stage.BatchID, UserID = userId }, transaction);
+SET BatchStatus=2,StartTime=ISNULL(StartTime,GETDATE()),ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=1",
+                        new { BatchID = batch.BatchID, UserID = userId }, transaction);
+                    if (started != 1)
+                        throw new InvalidOperationException("تغيرت حالة الدفعة أثناء بدء المرحلة.");
 
-                        // تحديث أمر التصنيع
-                        await connection.ExecuteAsync(@"
+                    await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionOrders
-SET OrderStatus = CASE WHEN OrderStatus < 4 THEN 4 ELSE OrderStatus END,
-    ActualStartDate = ISNULL(ActualStartDate, GETDATE()),
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ProductionOrderID = @ProductionOrderID",
-                            new
-                            {
-                                batch.ProductionOrderID,
-                                UserID = userId
-                            }, transaction);
-                    }
+SET OrderStatus=4,ActualStartDate=ISNULL(ActualStartDate,GETDATE()),
+    ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus IN (2,3,4)",
+                        new { batch.ProductionOrderID, UserID = userId }, transaction);
                 }
 
-                // بدء المرحلة نفسها
-                await connection.ExecuteAsync(@"
+                var changed = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionBatchStages
-SET StartTime = GETDATE(),
-    StageStatus = 2,
-    Temperature = @Temperature,
-    Speed = @Speed,
-    OperatorID = NULLIF(@OperatorID, 0)
-WHERE BatchStageID = @BatchStageID",
+SET StartTime=GETDATE(),StageStatus=2,Temperature=@Temperature,Speed=@Speed,
+    OperatorID=NULLIF(@OperatorID,0)
+WHERE BatchStageID=@BatchStageID AND StageStatus IN (1,4)",
                     new
                     {
                         BatchStageID = batchStageId,
@@ -1400,132 +1646,101 @@ WHERE BatchStageID = @BatchStageID",
                         Speed = speed,
                         OperatorID = operatorId
                     }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة المرحلة أثناء بدء التشغيل.");
 
+                await SyncOrderSummaryFromBatchesAsync(connection, transaction, batch.ProductionOrderID, userId);
                 transaction.Commit();
-
-                await _audit.WriteAuditLogAsync(
-                    userId: userId,
-                    actionType: 2,
-                    tableName: "ProductionBatchStages",
-                    recordId: batchStageId.ToString(),
-                    moduleName: "SCR_BATCH",
-                    description: $"بدء مرحلة في دفعة: {batch.BatchNumber}"
-                );
-
-                return (true, "تم تسجيل بداية المرحلة بنجاح");
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); } catch { }
                 return (false, ex.Message);
             }
+
+            await _audit.WriteAuditLogAsync(
+                userId: userId,
+                actionType: 2,
+                tableName: "ProductionBatchStages",
+                recordId: batchStageId.ToString(),
+                changedColumns: "StartTime,StageStatus,Temperature,Speed,OperatorID",
+                moduleName: "SCR_BATCH",
+                description: $"بدء مرحلة في دفعة: {batch!.BatchNumber}"
+            );
+            return (true, "تم تسجيل بداية المرحلة بنجاح");
         }
-public async Task<(bool Success, string Message)> EndStageAsync(int batchStageId, int userId)
-{
-    using var connection = CreateConnection();
 
-    var stage = await connection.QueryFirstOrDefaultAsync<BatchStageDbDto>(@"
-SELECT BatchStageID, BatchID, StartTime, StageStatus
-FROM dbo.ProductionBatchStages
-WHERE BatchStageID = @BatchStageID",
-        new { BatchStageID = batchStageId });
-
-    if (stage is null)
-        return (false, "المرحلة غير موجودة");
-
-    if (!stage.StartTime.HasValue)
-        return (false, "يجب تسجيل وقت البداية أولاً");
-
-    await connection.ExecuteAsync(@"
-UPDATE dbo.ProductionBatchStages
-SET EndTime = GETDATE(),
-    StageStatus = 3
-WHERE BatchStageID = @BatchStageID",
-        new { BatchStageID = batchStageId });
-
-    return (true, "تم تسجيل نهاية المرحلة بنجاح");
-}
-private async Task RecalculateMaterialCostAsync(
-    System.Data.IDbConnection connection,
-    System.Data.IDbTransaction transaction,
-    int batchId)
-{
-    var head = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
-SELECT BatchID, BatchNumber, ProductionOrderID, BatchStatus
-FROM dbo.ProductionBatches
-WHERE BatchID = @BatchID",
-        new { BatchID = batchId }, transaction);
-
-    if (head is null)
-        return;
-
-    var totalMaterialCost = await connection.ExecuteScalarAsync<decimal?>(@"
-SELECT ISNULL(SUM(mid.IssuedQty * mid.UnitCost), 0)
-FROM dbo.MaterialIssueNotes mi
-INNER JOIN dbo.MaterialIssueDetails mid ON mi.IssueID = mid.IssueID
-WHERE mi.ProductionOrderID = @ProductionOrderID
-  AND mi.IssueStatus = 2",
-        new { head.ProductionOrderID }, transaction) ?? 0m;
-
-    var batchCount = await connection.ExecuteScalarAsync<int>(@"
-SELECT COUNT(*)
-FROM dbo.ProductionBatches
-WHERE ProductionOrderID = @ProductionOrderID",
-        new { head.ProductionOrderID }, transaction);
-
-    if (batchCount <= 0) batchCount = 1;
-
-    var materialCostForBatch = Math.Round(totalMaterialCost / batchCount, 2);
-
-    await connection.ExecuteAsync(@"
-UPDATE dbo.ProductionBatches
-SET MaterialCost = @MaterialCost,
-    TotalCost = @MaterialCost + ISNULL(LaborCost, 0) + ISNULL(OverheadCost, 0)
-WHERE BatchID = @BatchID",
-        new
+        public async Task<(bool Success, string Message)> EndStageAsync(int batchStageId, int userId)
         {
-            BatchID = batchId,
-            MaterialCost = materialCostForBatch
-        }, transaction);
-}
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanEdit,
+                "لا تملك صلاحية إنهاء مراحل الدفعات.");
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            BatchStageDbDto? stage = null;
+            BatchHeadDbDto? batch = null;
+            try
+            {
+                stage = await connection.QueryFirstOrDefaultAsync<BatchStageDbDto>(@"
+SELECT BatchStageID,BatchID,StartTime,StageStatus,StageOrder
+FROM dbo.ProductionBatchStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchStageID=@BatchStageID",
+                    new { BatchStageID = batchStageId }, transaction);
+                if (stage is null) return (false, "المرحلة غير موجودة");
+                if (stage.StageStatus != 2 || !stage.StartTime.HasValue)
+                    return (false, "لا يمكن إنهاء مرحلة لم تبدأ أو ليست قيد التنفيذ.");
+
+                batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
+SELECT BatchID,BatchNumber,ProductionOrderID,BatchStatus
+FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE BatchID=@BatchID",
+                    new { BatchID = stage.BatchID }, transaction);
+                if (batch is null) return (false, "دفعة الإنتاج غير موجودة");
+                if (batch.BatchStatus != 2)
+                    return (false, "لا يمكن إنهاء مرحلة لدفعة ليست قيد التصنيع.");
+                var orderStatus = await connection.ExecuteScalarAsync<int?>(@"
+SELECT OrderStatus FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ProductionOrderID",
+                    new { batch.ProductionOrderID }, transaction);
+                if (!orderStatus.HasValue || orderStatus.Value is not (2 or 3 or 4))
+                    return (false, "أمر التصنيع غير نشط؛ لا يمكن إنهاء المرحلة.");
+
+                var changed = await connection.ExecuteAsync(@"
+UPDATE dbo.ProductionBatchStages
+SET EndTime=GETDATE(),StageStatus=3
+WHERE BatchStageID=@BatchStageID AND StageStatus=2",
+                    new { BatchStageID = batchStageId }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة المرحلة أثناء إنهائها.");
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
+
+            await _audit.WriteAuditLogAsync(
+                userId: userId,
+                actionType: 2,
+                tableName: "ProductionBatchStages",
+                recordId: batchStageId.ToString(),
+                changedColumns: "EndTime,StageStatus",
+                moduleName: "SCR_BATCH",
+                description: $"إنهاء مرحلة في دفعة: {batch!.BatchNumber}"
+            );
+            return (true, "تم تسجيل نهاية المرحلة بنجاح");
+        }
+
 private async Task UpdateProductionOrderActualsAsync(
     System.Data.IDbConnection connection,
     System.Data.IDbTransaction transaction,
     int productionOrderId,
     int userId)
 {
-    await connection.ExecuteAsync(@"
-UPDATE po
-SET
-    ActualQty = ISNULL(x.TotalGood, 0),
-    WasteQty = ISNULL(x.TotalWaste, 0),
-    ActualMaterialCost = ISNULL(x.TotalMaterial, 0),
-    ActualLaborCost = ISNULL(x.TotalLabor, 0),
-    ActualOverheadCost = ISNULL(x.TotalOverhead, 0),
-    ActualTotalCost = ISNULL(x.TotalMaterial, 0) + ISNULL(x.TotalLabor, 0) + ISNULL(x.TotalOverhead, 0),
-    ActualEndDate = GETDATE(),
-    OrderStatus = 6,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-FROM dbo.ProductionOrders po
-OUTER APPLY
-(
-    SELECT
-        SUM(ISNULL(GoodQty, 0)) AS TotalGood,
-        SUM(ISNULL(WasteQty, 0)) AS TotalWaste,
-        SUM(ISNULL(MaterialCost, 0)) AS TotalMaterial,
-        SUM(ISNULL(LaborCost, 0)) AS TotalLabor,
-        SUM(ISNULL(OverheadCost, 0)) AS TotalOverhead
-    FROM dbo.ProductionBatches
-    WHERE ProductionOrderID = @ProductionOrderID
-      AND BatchStatus = 5
-) x
-WHERE po.ProductionOrderID = @ProductionOrderID",
-        new
-        {
-            ProductionOrderID = productionOrderId,
-            UserID = userId
-        }, transaction);
+    // Material issue cost is retained at order level. No per-batch or reject/waste
+    // allocation is inferred because the current schema has no issue-to-batch link.
+    await SyncOrderSummaryFromBatchesAsync(connection, transaction, productionOrderId, userId);
 }
 
         // ==========================================
@@ -1533,6 +1748,8 @@ WHERE po.ProductionOrderID = @ProductionOrderID",
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<ProductionBatchListDto> items, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanExport, "لا تملك صلاحية تصدير دفعات التصنيع.");
+
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("دفعات الإنتاج");
 

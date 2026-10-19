@@ -19,14 +19,17 @@ namespace YKCoatings.Services
 
         private readonly AuditService _audit;
         private readonly NotificationService _notifications;
+        private readonly ModuleAuthorizationService _authorization;
 
         public SalesQuotationService(
             IConfiguration configuration,
             AuditService audit,
-            NotificationService notifications) : base(configuration)
+            NotificationService notifications,
+            ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
             _notifications = notifications;
+            _authorization = authorization;
         }
 
         public async Task<List<SalesQuotationListDto>> GetQuotationsListAsync()
@@ -84,7 +87,6 @@ ORDER BY sq.[QuotationDate] DESC, sq.[QuotationID] DESC";
             using var connection = CreateConnection();
             var schema = await LoadTableSchemaAsync(connection, null, HeaderTable);
             EnsureColumns(schema, HeaderTable, "QuotationID", "QuotationNumber", "QuotationDate", "CustomerID", "QuotationStatus", "TotalAmount");
-
             var validUntil = Projection(schema, "sq", "CAST(NULL AS date)", "ValidUntilDate", "ValidUntil", "ExpiryDate", "ExpirationDate");
             var subTotal = NumberProjection(schema, "sq", "ISNULL(sq.[TotalAmount], 0)", "SubTotal", "Subtotal");
             var discountPercent = NumberProjection(schema, "sq", "CAST(0 AS decimal(5,2))", "DiscountPercent");
@@ -178,14 +180,16 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
                     @"DECLARE @NextNum NVARCHAR(50);
                       EXEC dbo.sp_GetNextNumber N'SQ', @NextNum OUTPUT;
                       SELECT @NextNum;");
-                if (!string.IsNullOrWhiteSpace(generated)) return generated;
-            }
-            catch
-            {
-                // بعض قواعد البيانات لم تضف بادئة SQ إلى إعدادات الترقيم بعد.
-            }
+                if (string.IsNullOrWhiteSpace(generated))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لعرض السعر.");
 
-            return $"QT-{DateTime.Now:yyMMddHHmmss}-{Guid.NewGuid():N}".ToUpperInvariant();
+                return generated;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم عرض السعر (SQ). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل SQ والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> SaveQuotationAsync(
@@ -352,20 +356,16 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
             try
             {
-                using var connection = CreateConnection();
-                var roles = await connection.QueryAsync<int>(@"
-SELECT DISTINCT ur.RoleID
-FROM dbo.UserRoles ur
-INNER JOIN dbo.RolePermissions rp ON rp.RoleID = ur.RoleID
-INNER JOIN dbo.SystemModules sm ON sm.ModuleID = rp.ModuleID
-WHERE sm.ModuleCode = @Module AND rp.CanApprove = 1", new { Module = ModuleCode });
-                foreach (var roleId in roles.Distinct())
-                {
-                    await _notifications.CreateNotificationAsync(
-                        3, "عرض سعر بانتظار الاعتماد",
-                        $"عرض السعر رقم {info.QuotationNumber} بانتظار الاعتماد",
-                        1, null, roleId, ModuleCode, quotationId, userId);
-                }
+                await _notifications.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "عرض سعر بانتظار الاعتماد",
+                    message: $"عرض السعر رقم {info.QuotationNumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: ModuleCode,
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: ModuleCode,
+                    relatedRecordId: quotationId,
+                    createdBy: userId);
             }
             catch { }
 
@@ -380,10 +380,16 @@ WHERE sm.ModuleCode = @Module AND rp.CanApprove = 1", new { Module = ModuleCode 
             {
                 if (info.CreatedBy.HasValue && info.CreatedBy.Value > 0)
                 {
-                    await _notifications.CreateNotificationAsync(
-                        3, "تم اعتماد عرض السعر",
-                        $"تم اعتماد عرض السعر رقم {info.QuotationNumber}",
-                        2, info.CreatedBy.Value, null, ModuleCode, quotationId, userId);
+                    await _notifications.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم اعتماد عرض السعر",
+                        message: $"تم اعتماد عرض السعر رقم {info.QuotationNumber}",
+                        priority: 2,
+                        targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: ModuleCode,
+                        relatedModule: ModuleCode,
+                        relatedRecordId: quotationId,
+                        createdBy: userId);
                 }
             }
             catch { }
@@ -401,21 +407,85 @@ WHERE sm.ModuleCode = @Module AND rp.CanApprove = 1", new { Module = ModuleCode 
             {
                 if (info.CreatedBy.HasValue && info.CreatedBy.Value > 0)
                 {
-                    await _notifications.CreateNotificationAsync(
-                        3, "تم رفض عرض السعر",
-                        $"تم رفض عرض السعر رقم {info.QuotationNumber}. السبب: {reason.Trim()}",
-                        1, info.CreatedBy.Value, null, ModuleCode, quotationId, userId);
+                    await _notifications.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم رفض عرض السعر",
+                        message: $"تم رفض عرض السعر رقم {info.QuotationNumber}. السبب: {reason.Trim()}",
+                        priority: 1,
+                        targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: ModuleCode,
+                        relatedModule: ModuleCode,
+                        relatedRecordId: quotationId,
+                        createdBy: userId);
                 }
             }
             catch { }
             await _audit.WriteAuditLogAsync(userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode, description: $"رفض عرض سعر: {info.QuotationNumber} - {reason.Trim()}");
         }
 
-        /// <summary>يسجل أن العرض المعتمد أُرسل للعميل؛ لا يرسل بريداً أو رسالة خارجية.</summary>
-        public async Task MarkSentToCustomerAsync(int quotationId, int userId)
+        /// <summary>يجلب بيانات التواصل فقط لمن يستطيع إرسال عرض السعر المعتمد.</summary>
+        public async Task<SalesQuotationCustomerContactDto> GetCustomerContactForManualSendAsync(int quotationId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(
+                userId, ModuleCode, permission => permission.CanEdit || permission.CanApprove,
+                "لا تملك صلاحية إرسال عروض الأسعار للعميل.");
+            if (quotationId <= 0) throw new ArgumentOutOfRangeException(nameof(quotationId));
+
+            using var connection = CreateConnection();
+            var headerSchema = await LoadTableSchemaAsync(connection, null, HeaderTable);
+            var customerSchema = await LoadTableSchemaAsync(connection, null, "Customers");
+            EnsureColumns(headerSchema, HeaderTable, "QuotationID", "CustomerID", "QuotationStatus");
+            EnsureColumns(customerSchema, "Customers", "CustomerID");
+
+            var phoneExpressions = new[] { "Mobile", "Phone1", "Phone" }
+                .Where(customerSchema.Contains)
+                .Select(name => $"NULLIF(LTRIM(RTRIM(c.{QuoteIdentifier(name)})), N'')")
+                .ToArray();
+            var phoneProjection = phoneExpressions.Length == 0
+                ? "CAST(NULL AS nvarchar(100))"
+                : $"COALESCE({string.Join(", ", phoneExpressions)}, CAST(NULL AS nvarchar(100)))";
+            var emailProjection = Projection(customerSchema, "c", "CAST(NULL AS nvarchar(255))", "Email");
+            var sql = $@"SELECT {phoneProjection} AS Phone, {emailProjection} AS Email
+                         FROM dbo.{HeaderTable} sq
+                         INNER JOIN dbo.Customers c ON c.[CustomerID]=sq.[CustomerID]
+                         WHERE sq.[QuotationID]=@ID AND sq.[QuotationStatus]=3";
+            return await connection.QueryFirstOrDefaultAsync<SalesQuotationCustomerContactDto>(sql, new { ID = quotationId })
+                ?? throw new InvalidOperationException("يجب أن يكون عرض السعر معتمداً قبل بدء الإرسال");
+        }
+
+        /// <summary>يسجل الإرسال اليدوي بعد تأكيد المستخدم، من دون إرسال خارجي آلي.</summary>
+        public async Task MarkSentToCustomerAsync(int quotationId, int userId, string channel, string recipient)
+        {
+            await _authorization.RequireUserPermissionAsync(
+                userId, ModuleCode, permission => permission.CanEdit || permission.CanApprove,
+                "لا تملك صلاحية تسجيل إرسال عروض الأسعار.");
+            var channelValue = channel?.Trim();
+            var isEmail = string.Equals(channelValue, "Email", StringComparison.OrdinalIgnoreCase);
+            var isWhatsApp = string.Equals(channelValue, "WhatsApp", StringComparison.OrdinalIgnoreCase);
+            if (!isEmail && !isWhatsApp)
+                throw new InvalidOperationException("اختر قناة إرسال صحيحة (واتساب أو بريد إلكتروني)");
+            if (string.IsNullOrWhiteSpace(recipient))
+                throw new InvalidOperationException("بيانات مستلم الإرسال مطلوبة");
+
+            var normalizedRecipient = recipient.Trim();
+            if (isEmail)
+            {
+                var atIndex = normalizedRecipient.IndexOf('@');
+                if (atIndex <= 0 || normalizedRecipient.LastIndexOf('.') <= atIndex + 1)
+                    throw new InvalidOperationException("عنوان البريد الإلكتروني غير صالح");
+            }
+            else
+            {
+                var phoneDigits = new string(normalizedRecipient.Where(character => character is >= '0' and <= '9').ToArray());
+                if (phoneDigits.Length < 8)
+                    throw new InvalidOperationException("رقم الهاتف غير صالح؛ أدخل الرقم كاملاً مع مفتاح الدولة");
+            }
+
+            var normalizedChannel = isEmail ? "البريد الإلكتروني" : "واتساب";
             var info = await ChangeWorkflowStatusAsync(quotationId, userId, expectedStatus: 3, newStatus: 5, WorkflowAction.MarkSent, null);
-            await _audit.WriteAuditLogAsync(userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode, description: $"تسجيل إرسال عرض سعر للعميل: {info.QuotationNumber}");
+            await _audit.WriteAuditLogAsync(
+                userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode,
+                description: $"تسجيل إرسال يدوي لعرض السعر {info.QuotationNumber} | القناة: {normalizedChannel} | المستلم: {normalizedRecipient}");
         }
 
         public async Task<byte[]> ExportToExcelAsync(IReadOnlyList<SalesQuotationListDto> quotations, int userId)

@@ -80,9 +80,16 @@ namespace YKCoatings.Services
                            EXEC sp_GetNextNumber N'PR', @NextNum OUTPUT;
                            SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"PR-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لطلب الشراء.");
+
+                return result;
             }
-            catch { return $"PR-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم طلب الشراء (PR). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل PR والإجراء المخزن.", ex);
+            }
         }
 
         // ==========================================
@@ -237,25 +244,16 @@ namespace YKCoatings.Services
 
                 try
                 {
-                    var approverRoles = await connection.QueryAsync<int>(
-                        @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                          INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                          INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                          WHERE sm.ModuleCode = N'SCR_PR' AND rp.CanApprove = 1");
-
-                    foreach (var roleId in approverRoles)
-                    {
-                        await _notif.CreateNotificationAsync(
-                            notificationType: 3,
-                            title: "طلب شراء بانتظار الاعتماد 📋",
-                            message: $"طلب الشراء رقم {reqNum} بانتظار الاعتماد",
-                            priority: 1,
-                            targetUserId: null,
-                            targetRoleId: roleId,
-                            relatedModule: "SCR_PR",
-                            relatedRecordId: requestId,
-                            createdBy: userId);
-                    }
+                    await _notif.CreateForPermissionHoldersAsync(
+                        notificationType: 3,
+                        title: "طلب شراء بانتظار الاعتماد",
+                        message: $"طلب الشراء رقم {reqNum} بانتظار الاعتماد",
+                        priority: 1,
+                        permissionModuleCode: "SCR_PR",
+                        requiredPermission: ModulePermissionRequirement.Approve,
+                        relatedModule: "SCR_PR",
+                        relatedRecordId: requestId,
+                        createdBy: userId);
                 }
                 catch { }
 
@@ -275,22 +273,22 @@ namespace YKCoatings.Services
                       WHERE RequestID = @ID",
                     new { ID = requestId, EmployeeID = employeeId, UserID = userId });
 
+                try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
                 try
                 {
                     if (createdBy.HasValue)
                     {
-                        await _notif.CreateNotificationAsync(
+                        await _notif.CreateForAuthorizedUserAsync(
                             notificationType: 3,
-                            title: "تم اعتماد طلب الشراء ✅",
+                            title: "تم اعتماد طلب الشراء",
                             message: $"تم اعتماد طلب الشراء رقم {reqNum}",
                             priority: 2,
                             targetUserId: createdBy.Value,
+                            permissionModuleCode: "SCR_PR",
                             relatedModule: "SCR_PR",
                             relatedRecordId: requestId,
                             createdBy: userId);
                     }
-
-                    await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
                 }
                 catch { }
 
@@ -311,22 +309,22 @@ namespace YKCoatings.Services
                       WHERE RequestID = @ID",
                     new { ID = requestId, EmployeeID = employeeId, Reason = rejectionReason, UserID = userId });
 
+                try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
                 try
                 {
                     if (createdBy.HasValue)
                     {
-                        await _notif.CreateNotificationAsync(
+                        await _notif.CreateForAuthorizedUserAsync(
                             notificationType: 3,
-                            title: "تم رفض طلب الشراء ❌",
+                            title: "تم رفض طلب الشراء",
                             message: $"تم رفض طلب الشراء رقم {reqNum}. السبب: {rejectionReason}",
                             priority: 1,
                             targetUserId: createdBy.Value,
+                            permissionModuleCode: "SCR_PR",
                             relatedModule: "SCR_PR",
                             relatedRecordId: requestId,
                             createdBy: userId);
                     }
-
-                    await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
                 }
                 catch { }
 
@@ -401,22 +399,22 @@ namespace YKCoatings.Services
         "SELECT CreatedBy FROM dbo.PurchaseRequests WHERE RequestID = @ID",
         new { ID = requestId });
 
+    try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
     try
     {
         if (createdBy.HasValue)
         {
-            await _notif.CreateNotificationAsync(
+            await _notif.CreateForAuthorizedUserAsync(
                 notificationType: 3,
-                title: "تم اعتماد طلب الشراء ✅",
+                title: "تم اعتماد طلب الشراء",
                 message: $"تم اعتماد طلب الشراء رقم {reqNum} (اعتماد سريع)",
                 priority: 2,
                 targetUserId: createdBy.Value,
+                permissionModuleCode: "SCR_PR",
                 relatedModule: "SCR_PR",
                 relatedRecordId: requestId,
                 createdBy: userId);
         }
-
-        await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
     }
     catch { }
 
@@ -492,22 +490,22 @@ namespace YKCoatings.Services
         "SELECT CreatedBy FROM dbo.PurchaseRequests WHERE RequestID = @ID",
         new { ID = requestId });
 
+    try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
     try
     {
         if (createdBy.HasValue)
         {
-            await _notif.CreateNotificationAsync(
+            await _notif.CreateForAuthorizedUserAsync(
                 notificationType: 3,
-                title: "تم اعتماد طلب الشراء ✅",
+                title: "تم اعتماد طلب الشراء",
                 message: $"تم اعتماد طلب الشراء رقم {reqNum} (اعتماد تفصيلي)",
                 priority: 2,
                 targetUserId: createdBy.Value,
+                permissionModuleCode: "SCR_PR",
                 relatedModule: "SCR_PR",
                 relatedRecordId: requestId,
                 createdBy: userId);
         }
-
-        await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
     }
     catch { }
 

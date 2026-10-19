@@ -338,6 +338,7 @@ namespace YKCoatings.Models
         public string? CashBoxNameAr { get; set; }
         public DateTime TransactionDate { get; set; }
         public string? TransactionNo { get; set; }
+        public int TransactionID { get; set; }
         public string? TransactionType { get; set; }
         public string? TransactionTypeAr { get; set; }
         public decimal DebitAmount { get; set; }

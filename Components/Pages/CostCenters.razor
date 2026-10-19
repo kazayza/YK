@@ -4,11 +4,16 @@
 @inject TreasuryService TreasuryService
 @inject LookupService LookupService
 @inject UserSessionService UserSession
+@inject PermissionService PermissionService
 
 <PageTitle>مراكز التكلفة - Gold Edition</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (!permissionChecked)
+{<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات مراكز التكلفة...</p></div>}
+else if (!isAuthorized)
+{<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض مراكز التكلفة</h4></div>}
 else
 {
 <div class="luxury-page" dir="rtl">
@@ -28,7 +33,10 @@ else
                     <button class="vt-btn @(viewMode==1?"active":"")" @onclick="()=>viewMode=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>تفصيلي</button>
                 </div>
                 <span class="lh-badge"><span class="lh-dot"></span>@totalCount مركز</span>
-                <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddRoot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مركز رئيسي</button>
+                @if (HasCostCenterPermission(p => p.CanAdd))
+                {
+                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddRoot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مركز رئيسي</button>
+                }
             </div>
         </div>
     </div>
@@ -74,8 +82,14 @@ else
                                     <div class="dc-badges"><span class="coa-level">L@(selected.CenterLevel)</span><span class="coa-detail @(selected.Children.Any()?"group":"detail")">@(selected.Children.Any()?"مجموعة":"تفصيلي")</span></div>
                                 </div>
                                 <div class="dc-actions">
-                                    <button class="act-btn add" title="إضافة فرعي" @onclick="()=>ShowAddChild(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
-                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    @if (HasCostCenterPermission(p => p.CanAdd))
+                                    {
+                                        <button class="act-btn add" title="إضافة فرعي" @onclick="()=>ShowAddChild(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+                                    }
+                                    @if (HasCostCenterPermission(p => p.CanEdit))
+                                    {
+                                        <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(selected.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    }
                                 </div>
                             </div>
                             @if (selected.Children.Any())
@@ -110,7 +124,10 @@ else
                                     <td class="td-muted">@(cc.DepartmentNameAr ?? "—")</td>
                                     <td>@if(cc.Children.Any()){<span class="coa-detail group">مجموعة (@cc.ChildrenCount)</span>}else{<span class="coa-detail detail">تفصيلي</span>}</td>
                                     <td><span class="status-badge-luxury" style="--sc:@(cc.IsActive?"#10b981":"#6b7280")"><span class="status-dot" style="--sc:@(cc.IsActive?"#10b981":"#6b7280")"></span>@(cc.IsActive?"نشط":"موقوف")</span></td>
-                                    <td class="td-center"><div class="actions-wrap-luxury"><button class="act-btn add" @onclick="()=>ShowAddChild(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button><button class="act-btn edit" @onclick="()=>ShowEdit(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button></div></td>
+                                    <td class="td-center"><div class="actions-wrap-luxury">
+                                        @if (HasCostCenterPermission(p => p.CanAdd)){<button class="act-btn add" @onclick="()=>ShowAddChild(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>}
+                                        @if (HasCostCenterPermission(p => p.CanEdit)){<button class="act-btn edit" @onclick="()=>ShowEdit(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                    </div></td>
                                 </tr>
                             }
                         </tbody>
@@ -219,8 +236,34 @@ else
     private bool isAllExpanded = true;
     private CostCenterListDto? selected = null;
     private List<LookupDto> departments = new();
+    private bool permissionChecked;
+    private bool isAuthorized;
 
-    protected override async Task OnInitializedAsync(){ await LoadData(); }
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) return;
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            isAuthorized = HasCostCenterPermission(p => p.CanView);
+            permissionChecked = true;
+            if (isAuthorized) await LoadData();
+        }
+        catch
+        {
+            permissionChecked = true;
+            isAuthorized = false;
+        }
+    }
+
+    private bool HasCostCenterPermission(Func<ModulePermissionDto, bool> predicate) =>
+        PermissionService.Permissions.Any(p =>
+            (p.ModuleCode.Equals("SCR_COST", StringComparison.OrdinalIgnoreCase) ||
+             p.ModuleCode.Equals("SCR_COSTCENTERS", StringComparison.OrdinalIgnoreCase) ||
+             p.ModuleCode.Equals("SCR_COST_CENTERS", StringComparison.OrdinalIgnoreCase)) && predicate(p));
 
     private async Task LoadData()
     {

@@ -710,9 +710,16 @@ namespace YKCoatings.Services
                            EXEC sp_GetNextNumber N'CUST', @NextNum OUTPUT;
                            SELECT @NextNum;";
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"CUST-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber كوداً للعميل.");
+
+                return result;
             }
-            catch { return $"CUST-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد كود العميل (CUST). لم يُنشأ كود بديل؛ راجع إعداد التسلسل CUST والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<ItemAuditDto?> GetCustomerAuditAsync(int customerId)

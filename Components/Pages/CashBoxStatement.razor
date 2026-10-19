@@ -2,41 +2,101 @@
 @using YKCoatings.Services
 @using YKCoatings.Models
 @inject TreasuryService TreasuryService
-@inject LookupService LookupService
 @inject NavigationManager Navigation
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
 
 <PageTitle>كشف حساب خزينة - Gold Edition (فعلي)</PageTitle>
 
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (!permissionChecked)
+{
+    <div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات كشف الخزينة...</p></div>
+}
+else if (!isAuthorized)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض كشف حساب الخزينة</h4></div>
+}
+else
+{
 <div class="luxury-page" dir="rtl">
     <div class="luxury-header-hybrid">
         <div class="lh-gold-line"></div>
         <div class="lh-content">
-            <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">كشف حساب خزينة —  شامل المصروفات</h2><p class="lh-subtitle">سند قبض + سند صرف + مصروف + تحويل خزينة — الرصيد يبدأ من OpeningBalance</p></div></div>
+            <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">كشف حساب خزينة — Gold Edition شامل المصروفات</h2><p class="lh-subtitle">سند قبض + سند صرف + مصروف + تحويل خزينة — الرصيد يبدأ من OpeningBalance</p></div></div>
             <div class="lh-actions"><span class="lh-badge"><span class="lh-dot"></span>@(statements?.Count ?? 0) حركة</span></div>
         </div>
     </div>
 
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div style="padding:12px 16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font-weight:700">@errorMessage</div>
+    }
+
     <div class="filter-luxury">
-        <select @bind="cashBoxId" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal';min-width:200px"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name</option>}</select>
-        <input type="date" @bind="fromDate" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal'" />
-        <input type="date" @bind="toDate" @bind:after="Load" style="height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal'" />
-        <button class="btn-luxury btn-ghost-luxury" @onclick="Load">تحديث</button>
+        <label class="filter-field"><span>الخزينة</span><select @bind="cashBoxId" @bind:after="Load"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name</option>}</select></label>
+        <label class="filter-field"><span>من تاريخ <small>(اتركه فارغاً لعرض كل الحركات)</small></span><input type="date" @bind="fromDate" @bind:after="Load" /></label>
+        <label class="filter-field"><span>إلى تاريخ</span><input type="date" @bind="toDate" @bind:after="Load" /></label>
+        <button class="btn-luxury btn-ghost-luxury" @onclick="Load">تحديث الكشف</button>
     </div>
 
-    @if (statements == null){<div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لعرض الكشف من vw_CashBoxStatement</p></div>}
-    else
+    @if (isLoadingStatement)
+    {
+        <div class="loading-luxury"><div class="loader-luxury"></div><p>جارٍ تحميل الحركات من السجلات المالية...</p></div>
+    }
+    else if (statements == null && cashBoxId == 0 && string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لعرض حركاتها خلال الفترة المحددة</p></div>
+    }
+    else if (statements == null && string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لبدء عرض الكشف</p></div>
+    }
+    else if (statements is not null && statements.Count == 0)
+    {
+        <div class="empty-statement" role="status">
+            <div class="empty-statement-mark" aria-hidden="true">—</div>
+            <h3>لا توجد حركات في الفترة المحددة</h3>
+            <p>لم يُعثر على سندات قبض أو صرف أو مصروفات أو تحويلات لهذه الخزينة ضمن نطاق التاريخ الحالي.</p>
+        </div>
+    }
+    else if (statements is not null)
     {
         <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury">
             <thead><tr><th>#</th><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>البيان</th><th>مقبوض</th><th>مدفوع</th><th>الرصيد</th></tr></thead>
             <tbody>
                 @{int n=0;}
-                @foreach(var s in statements){n++;
-                    <tr><td class="td-num">@n</td><td class="td-muted">@s.TransactionDate.ToString("dd/MM/yyyy")</td><td><span class="source-badge-luxury" style="--sc:@(s.TransactionType=="Receipt"?"#10b981":s.TransactionType=="Payment"?"#ef4444":s.TransactionType=="Expense"?"#f59e0b":"#2563eb")">@s.TransactionTypeAr</span></td><td><span class="doc-num-luxury">@s.TransactionNo</span></td><td class="td-name">@(s.Description ?? s.EntityName ?? "—")</td><td><span class="amount-luxury paid">@(s.DebitAmount>0 ? s.DebitAmount.ToString("#,##0.00") : "-")</span></td><td><span class="amount-luxury remaining">@(s.CreditAmount>0 ? s.CreditAmount.ToString("#,##0.00") : "-")</span></td><td><span class="amount-luxury">@s.Balance.ToString("#,##0.00")</span></td></tr>
+                @foreach (var s in statements)
+                {
+                    n++;
+                    <tr>
+                        <td class="td-num">@n</td>
+                        <td class="td-muted">@s.TransactionDate.ToString("dd/MM/yyyy")</td>
+                        <td><span class="source-badge-luxury" style="--sc:@(s.TransactionType == "Receipt" ? "#10b981" : s.TransactionType == "Payment" ? "#ef4444" : s.TransactionType == "Expense" ? "#f59e0b" : "#2563eb")">@s.TransactionTypeAr</span></td>
+                        <td>
+                            @if (CanOpenReference(s))
+                            {
+                                <a class="doc-num-luxury doc-num-link" href="@GetReferenceUrl(s)" target="_blank" rel="opener" aria-label="فتح المستند @s.TransactionNo في تبويب جديد">@(s.TransactionNo ?? "—")</a>
+                            }
+                            else
+                            {
+                                <span class="doc-num-luxury">@(s.TransactionNo ?? "—")</span>
+                            }
+                        </td>
+                        <td class="td-name">@(s.Description ?? s.EntityName ?? "—")</td>
+                        <td><span class="amount-luxury paid">@(s.DebitAmount > 0 ? s.DebitAmount.ToString("#,##0.00") : "-")</span></td>
+                        <td><span class="amount-luxury remaining">@(s.CreditAmount > 0 ? s.CreditAmount.ToString("#,##0.00") : "-")</span></td>
+                        <td><span class="amount-luxury">@s.Balance.ToString("#,##0.00")</span></td>
+                    </tr>
                 }
             </tbody>
         </table></div></div>
     }
 </div>
+}
 
 <style>
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
@@ -47,33 +107,121 @@
 .lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
 .lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
 .lh-actions{display:flex;align-items:center;gap:8px}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
-.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
-.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
+.filter-luxury{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px}.filter-field{display:flex;flex:1 1 185px;flex-direction:column;gap:5px;min-width:175px}.filter-field>span{color:#656d7a;font-size:.68rem;font-weight:800}.filter-field small{color:#9b8a59;font-weight:600}.filter-field select,.filter-field input{width:100%;height:40px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;background:#fff;color:#202635;font-family:'Tajawal',sans-serif;font-size:.8rem}.btn-luxury{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
 .table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden}.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;background:#fcfaf6}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6}
-.td-num{text-align:center;color:#9ca3af}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#6b7280}.doc-num-luxury{color:var(--gold-dark);font-weight:800;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.empty-statement{display:grid;justify-items:center;gap:8px;text-align:center;padding:52px 24px;border:1px dashed #d8c99c;border-radius:20px;background:radial-gradient(ellipse at top,rgba(212,175,55,.09),transparent 52%),#fff;color:#6b7280}.empty-statement-mark{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#0A0F1E;color:#D4AF37;font-size:1.4rem;font-weight:900;border:1px solid rgba(212,175,55,.24)}.empty-statement h3{margin:4px 0 0;color:#111827;font-size:1.05rem;font-weight:900}.empty-statement p{margin:0;max-width:580px;font-size:.85rem;line-height:1.8}
+.td-num{text-align:center;color:#9ca3af}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#6b7280}.doc-num-luxury{color:var(--gold-dark);font-weight:800;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}.doc-num-link{display:inline-flex;text-decoration:none;cursor:pointer;transition:background .18s ease,border-color .18s ease,transform .18s ease}.doc-num-link:hover{background:rgba(212,175,55,.18);border-color:rgba(156,124,46,.4);transform:translateY(-1px)}.doc-num-link:focus-visible{outline:2px solid var(--gold-dark);outline-offset:2px}
 .amount-luxury{font-family:monospace;font-weight:800;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}.amount-luxury.paid{background:#ecfdf5;color:#059669;border-color:#a7f3d0}.amount-luxury.remaining{background:#fef2f2;color:#dc2626;border-color:#fecaca}
 .source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}@@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 
 @code {
+    private static readonly string[] ExpenseModuleCodes =
+    {
+        "SCR_EXPENSES", "SCR_EXPENSE", "SCR_OVERHEAD", "SCR_OVERHEAD_EXPENSES"
+    };
+
     private int cashBoxId = 0;
-    private DateTime fromDate = DateTime.Today.AddMonths(-1);
-    private DateTime toDate = DateTime.Today;
+    private DateTime? fromDate;
+    private DateTime? toDate = DateTime.Today;
     private List<CashBoxStatementDto>? statements;
     private List<SearchableItem> cashBoxes = new();
+    private bool permissionChecked;
+    private bool isAuthorized;
+    private bool isLoadingStatement;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        try { cashBoxes = await LookupService.GetCashBoxesSearchableAsync(); } catch {}
-        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
-        var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        if (int.TryParse(q["cashBoxId"], out var id)){ cashBoxId=id; await Load(); }
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionChecked = true;
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            permissionChecked = true;
+            isAuthorized = PermissionService.CanViewCashBoxStatement;
+            if (!isAuthorized) return;
+
+            cashBoxes = (await TreasuryService.GetCashBoxStatementLookupsAsync())
+                .Select(cb => new SearchableItem { Id = cb.CashBoxID, Name = cb.CashBoxNameAr ?? string.Empty, Code = cb.CashBoxCode })
+                .ToList();
+
+            var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+            var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (int.TryParse(q["cashBoxId"], out var id))
+            {
+                cashBoxId = id;
+                await Load();
+            }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            permissionChecked = true;
+            isAuthorized = false;
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            permissionChecked = true;
+            errorMessage = ex.Message;
+        }
     }
 
     private async Task Load()
     {
-        if (cashBoxId==0){ statements=null; return; }
-        statements = await TreasuryService.GetCashBoxStatementAsync(cashBoxId, fromDate, toDate);
+        if (!isAuthorized) return;
+        if (cashBoxId == 0) { statements = null; errorMessage = null; return; }
+
+        isLoadingStatement = true;
+        statements = null;
+        errorMessage = null;
+        try
+        {
+            statements = await TreasuryService.GetCashBoxStatementAsync(cashBoxId, fromDate, toDate);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            isAuthorized = false;
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoadingStatement = false;
+        }
     }
+
+    private bool CanOpenReference(CashBoxStatementDto movement)
+    {
+        if (movement.TransactionID <= 0) return false;
+
+        return movement.TransactionType switch
+        {
+            "Receipt" => PermissionService.CanView("SCR_RECV"),
+            "Payment" => PermissionService.CanView("SCR_PAYV"),
+            "Expense" => ExpenseModuleCodes.Any(PermissionService.CanView),
+            "Transfer" => PermissionService.CanView("SCR_CASHTRANS"),
+            _ => false
+        };
+    }
+
+    private static string GetReferenceUrl(CashBoxStatementDto movement) => movement.TransactionType switch
+    {
+        "Receipt" => $"/receipt-vouchers/view/{movement.TransactionID}",
+        "Payment" => $"/payment-vouchers/view/{movement.TransactionID}",
+        "Expense" => $"/expenses/view/{movement.TransactionID}",
+        "Transfer" => $"/cash-transfers?transferId={movement.TransactionID}",
+        _ => "/cash-box-statement"
+    };
 }

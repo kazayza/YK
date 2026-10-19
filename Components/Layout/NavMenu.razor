@@ -17,18 +17,6 @@
 else
 {
     <nav class="nm-root" role="navigation" aria-label="القائمة الرئيسية">
-        @if (!IsCollapsed)
-        {
-            <div class="nm-section-label"><span>القائمة الرئيسية</span></div>
-        }
-
-        <NavLink class="@GetItemClass()" href="/dashboard" Match="NavLinkMatch.All" title="الرئيسية">
-            <span class="nm-icon" style="--ic:#D4AF37">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z"/><path d="M9 21V12h6v9"/></svg>
-            </span>
-            @if (!IsCollapsed){<span class="nm-label">الرئيسية</span>}
-        </NavLink>
-
         @if (filteredModules.Any() && !IsCollapsed)
         {
             <div class="nm-section-label alt"><span>الأقسام والوحدات</span></div>
@@ -61,7 +49,7 @@ else
                             @foreach (var kid in kids.Where(k => IsChildVisible(k)))
                             {
                                 var kidColor = GetModuleColor(kid, new List<ModulePermissionDto>());
-                                <NavLink class="nm-sub-item" href="@ModuleRouteHelper.GetRoute(kid.ModuleCode)" Match="NavLinkMatch.Prefix" title="@kid.ModuleNameAr">
+                                <NavLink class="nm-sub-item" href="@ModuleRouteHelper.GetRoute(kid.ModuleCode)" Match="NavLinkMatch.Prefix" title="@kid.ModuleNameAr" @onclick="HandleScreenSelected">
                                     <span class="nm-sub-icon" style="@($"--ic:{kidColor}")">@((MarkupString)NavMenuIcons.Get(kid.ModuleCode))</span>
                                     <span class="nm-sub-dot"></span><span class="nm-sub-text">@kid.ModuleNameAr</span>
                                     <svg class="nm-sub-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m15 18-6-6 6-6"/></svg>
@@ -73,7 +61,7 @@ else
             }
             else
             {
-                <NavLink class="@GetItemClass()" href="@ModuleRouteHelper.GetRoute(mod.ModuleCode)" Match="NavLinkMatch.Prefix" title="@mod.ModuleNameAr" style="@($"--mc:{modColor}")">
+                <NavLink class="@GetItemClass()" href="@ModuleRouteHelper.GetRoute(mod.ModuleCode)" Match="NavLinkMatch.Prefix" title="@mod.ModuleNameAr" style="@($"--mc:{modColor}")" @onclick="HandleScreenSelected">
                     <span class="nm-icon" style="@($"--ic:{modColor}")">@((MarkupString)NavMenuIcons.Get(mod.ModuleCode))</span>
                     @if (!IsCollapsed){<span class="nm-label">@mod.ModuleNameAr</span>}
                 </NavLink>
@@ -154,6 +142,8 @@ else
 @code {
     [Parameter] public bool IsCollapsed { get; set; }
     [Parameter] public string SearchText { get; set; } = "";
+    [Parameter] public EventCallback OnScreenSelected { get; set; }
+    private Task HandleScreenSelected() => OnScreenSelected.InvokeAsync();
     private bool isLoading = true;
     private List<ModulePermissionDto> mainModules = new();
     private HashSet<int> expandedGroups = new();
@@ -198,7 +188,6 @@ else
         ["SCR_LOGINLOG"] = "#ef4444", ["SCR_SYSSET"] = "#ef4444", ["SCR_BACKUP"] = "#ef4444"
     };
     private static readonly string[] ColorPalette = { "#D4AF37", "#0ea5e9", "#10b981", "#8b5cf6", "#f97316", "#06b6d4", "#ec4899", "#ef4444", "#84cc16" };
-
     /// <summary>لون الموديول: من الخريطة الدلالية، أو من أول شاشة فرعية، أو من اللوحة حسب المعرّف (ثابت)</summary>
     private string GetModuleColor(ModulePermissionDto mod, List<ModulePermissionDto> kids)
     {

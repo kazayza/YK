@@ -65,9 +65,17 @@ namespace YKCoatings.Services
             try
             {
                 var sql = @"DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'SUP', @N OUTPUT; SELECT @N;";
-                return await connection.QueryFirstOrDefaultAsync<string>(sql) ?? $"SUP-{DateTime.Now:yyMMddHHmmss}";
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber كوداً للمورد.");
+
+                return result;
             }
-            catch { return $"SUP-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد كود المورد (SUP). لم يُنشأ كود بديل؛ راجع إعداد التسلسل SUP والإجراء المخزن.", ex);
+            }
         }
 
         // ==========================================

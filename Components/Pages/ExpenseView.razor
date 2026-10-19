@@ -1,0 +1,252 @@
+@page "/expenses/view/{Id:int}"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject AccountingService AccountingService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+<PageTitle>عرض المصروف - Gold Edition Pro</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="expense-view-message" dir="rtl"><h4>يجب تسجيل الدخول</h4><p>سجّل الدخول لعرض تفاصيل المصروف.</p></div>
+}
+else if (!permissionsChecked)
+{
+    <div class="expense-view-message" dir="rtl"><span class="message-eyebrow">GOLD EDITION</span><h4>التحقق من الصلاحيات</h4><p>جارٍ تجهيز العرض الآمن للمصروف...</p></div>
+}
+else if (!canViewExpenses)
+{
+    <div class="expense-view-message" dir="rtl"><span class="message-eyebrow">ACCESS CONTROL</span><h4>لا تتوفر صلاحية عرض المصروفات</h4><p>هذه الصفحة للقراءة فقط وتتطلب صلاحية عرض المصروفات.</p></div>
+}
+else if (isLoading)
+{
+    <div class="expense-view-message" dir="rtl"><span class="message-loader"></span><h4>جارٍ تحميل المصروف</h4><p>نحمّل تفاصيل المستند وسجله المحاسبي.</p></div>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="expense-view-message error" dir="rtl"><span class="message-eyebrow">LOAD ERROR</span><h4>تعذر تحميل المصروف</h4><p>@errorMessage</p><button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button></div>
+}
+else if (expense is null)
+{
+    <div class="expense-view-message" dir="rtl"><span class="message-eyebrow">DOCUMENT NOT FOUND</span><h4>المصروف غير موجود</h4><p>قد يكون رقم المستند غير صحيح أو لا يتوفر ضمن السجلات المسموح بعرضها.</p><button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button></div>
+}
+else
+{
+    <main class="yk-gold-page expense-view-page" dir="rtl">
+        <header class="expense-hero">
+            <div class="hero-topline">
+                <div class="brand-lockup">
+                    <span class="brand-monogram" aria-hidden="true">YK</span>
+                    <span class="brand-copy"><strong>GOLD EDITION</strong><small>ACCOUNTING DOCUMENT</small></span>
+                </div>
+                <span class="readonly-badge"><span class="readonly-dot"></span>عرض للقراءة فقط</span>
+            </div>
+
+            <div class="hero-main">
+                <div class="hero-heading">
+                    <span class="hero-eyebrow">تفاصيل المستند المالي</span>
+                    <h1>عرض المصروف</h1>
+                    <div class="hero-document-number"><span>رقم المصروف</span><strong>@(expense.ExpenseNumber ?? "—")</strong></div>
+                </div>
+                <div class="hero-amount-card">
+                    <span class="hero-amount-label">إجمالي المصروف</span>
+                    <strong class="hero-amount-value">@expense.Amount.ToString("#,##0.00") <small>ج.م</small></strong>
+                    <span class="status-pill @GetStatusClass(expense.ExpenseStatus)">@GetStatusName(expense.ExpenseStatus)</span>
+                </div>
+            </div>
+            <div class="hero-bottomline">
+                <span class="hero-note">بيانات هذا المستند معروضة فقط؛ لا تتوفر هنا عمليات تعديل أو حفظ.</span>
+                <button class="hero-back-button" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button>
+            </div>
+        </header>
+
+        <section class="expense-section-grid" aria-label="تفاصيل المصروف">
+            <article class="detail-card">
+                <div class="section-heading">
+                    <span class="section-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M7 3.75h7l4.25 4.3v12.2H7a2 2 0 0 1-2-2v-12.5a2 2 0 0 1 2-2Z"/><path d="M14 3.9v4.5h4.2M8.5 12h7M8.5 15.5h7"/></svg>
+                    </span>
+                    <div><h2>بيانات المستند</h2><p>التاريخ والفترة والمرجع</p></div>
+                </div>
+                <div class="detail-list">
+                    <div class="detail-row"><span>تاريخ المصروف</span><strong>@expense.ExpenseDate.ToString("dd/MM/yyyy")</strong></div>
+                    <div class="detail-row"><span>الفترة المالية</span><strong>@(expense.PeriodName ?? "—")</strong></div>
+                    <div class="detail-row"><span>السنة المالية</span><strong>@(expense.FiscalYearName ?? "—")</strong></div>
+                    <div class="detail-row"><span>رقم المرجع</span><strong>@(expense.Reference ?? "—")</strong></div>
+                </div>
+            </article>
+
+            <article class="detail-card">
+                <div class="section-heading">
+                    <span class="section-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M4 7.5h16M6.5 4.5v6M17.5 4.5v6M5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V7.5H4v11A1.5 1.5 0 0 0 5.5 20Z"/><path d="m8.5 14 2.2 2.2 4.8-4.8"/></svg>
+                    </span>
+                    <div><h2>التوجيه المحاسبي</h2><p>الحسابات ومركز التكلفة</p></div>
+                </div>
+                <div class="detail-list">
+                    <div class="detail-row account-row"><span>حساب المصروف</span><strong>@(expense.ExpenseAccountNameAr ?? "—")</strong><small>@(expense.ExpenseAccountCode ?? "")</small></div>
+                    <div class="detail-row account-row"><span>الحساب الدائن</span><strong>@(expense.CreditAccountNameAr ?? expense.CashBoxNameAr ?? expense.BankName ?? "—")</strong><small>@(expense.CreditAccountCode ?? "")</small></div>
+                    <div class="detail-row"><span>مركز التكلفة</span><strong>@(expense.CostCenterNameAr ?? "—")</strong></div>
+                    <div class="detail-row"><span>رقم القيد</span><strong class="reference-value">@(expense.JournalNumber ?? "—")</strong></div>
+                </div>
+            </article>
+
+            <article class="detail-card">
+                <div class="section-heading">
+                    <span class="section-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17M7 14h3M15 14h2"/></svg>
+                    </span>
+                    <div><h2>وسيلة السداد</h2><p>مصدر السداد المرتبط بالمصروف</p></div>
+                </div>
+                <div class="detail-list">
+                    <div class="detail-row"><span>طريقة الدفع</span><strong>@GetPaymentMethodName(expense.PaymentMethod)</strong></div>
+                    <div class="detail-row"><span>الخزينة</span><strong>@(expense.CashBoxNameAr ?? "—")</strong></div>
+                    <div class="detail-row"><span>البنك</span><strong>@(expense.BankName ?? "—")</strong></div>
+                </div>
+                @if (expense.CashBoxID.HasValue && PermissionService.CanViewCashBoxStatement)
+                {
+                    <button class="inline-link-button" @onclick='() => Navigation.NavigateTo($"/cash-box-statement?cashBoxId={expense.CashBoxID.Value}")'>فتح كشف حركات الخزينة <span aria-hidden="true">←</span></button>
+                }
+            </article>
+
+            <article class="detail-card audit-card">
+                <div class="section-heading">
+                    <span class="section-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.25"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0M19 4.5v4M17 6.5h4"/></svg>
+                    </span>
+                    <div><h2>سجل المستند</h2><p>معلومات الإنشاء والاعتماد</p></div>
+                </div>
+                <div class="detail-list">
+                    <div class="detail-row"><span>أُنشئ بواسطة</span><strong>@(expense.CreatedByName ?? "—")</strong></div>
+                    <div class="detail-row"><span>تاريخ الإنشاء</span><strong>@expense.CreatedDate.ToString("dd/MM/yyyy · HH:mm")</strong></div>
+                    <div class="detail-row"><span>تاريخ الاعتماد</span><strong>@(expense.ApprovedDate?.ToString("dd/MM/yyyy · HH:mm") ?? "—")</strong></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="narrative-card">
+            <div class="narrative-heading"><span class="narrative-overline">DOCUMENT NARRATIVE</span><h2>البيان والملاحظات</h2></div>
+            <div class="narrative-content">
+                <div><span>البيان</span><p>@(string.IsNullOrWhiteSpace(expense.Description) ? "لا يوجد بيان مسجل لهذا المصروف." : expense.Description)</p></div>
+                @if (!string.IsNullOrWhiteSpace(expense.Notes))
+                {
+                    <div class="notes-block"><span>ملاحظات إضافية</span><p>@expense.Notes</p></div>
+                }
+            </div>
+        </section>
+
+        <footer class="expense-view-footer">
+            <div class="footer-caption"><span class="footer-mark" aria-hidden="true">YK</span><span><strong>سجل مصروف</strong><small>واجهة عرض آمنة — لا تغيّر بيانات المستند</small></span></div>
+            <div class="footer-actions">
+                @if (expense.JournalID.HasValue && PermissionService.CanView("SCR_JV"))
+                {
+                    <button class="expense-action primary" @onclick='() => Navigation.NavigateTo($"/journal-entries/{expense.JournalID.Value}")'>عرض القيد المرتبط</button>
+                }
+                <button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button>
+            </div>
+        </footer>
+    </main>
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-deep:#9C7C2E;--ink:#070B14;--ink-soft:#111827;--muted:#737b88;--line:#e9e2d2;--paper:#fff;--paper-warm:#fcfaf5;--gold-wash:rgba(212,175,55,.10)}
+.yk-gold-page{font-family:'Tajawal',sans-serif;color:var(--ink-soft)}
+.expense-view-page{max-width:1240px;margin:0 auto;padding:6px 0 28px;display:flex;flex-direction:column;gap:18px}
+.expense-hero{position:relative;overflow:hidden;padding:22px 26px 18px;border:1px solid rgba(212,175,55,.22);border-radius:24px;background:radial-gradient(ellipse at 12% 20%,rgba(212,175,55,.16),transparent 34%),linear-gradient(130deg,#070B14 0%,#0A0F1E 57%,#172033 100%);color:#F5E6C8;box-shadow:0 20px 48px rgba(7,11,20,.12)}
+.expense-hero:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent 4%,#8f722b 32%,#f0d477 50%,#8f722b 68%,transparent 96%)}
+.expense-hero:after{content:"";position:absolute;width:330px;height:330px;border:1px solid rgba(212,175,55,.08);border-radius:50%;top:18px;left:-155px;box-shadow:0 0 0 28px rgba(212,175,55,.025),0 0 0 58px rgba(212,175,55,.018);pointer-events:none}
+.hero-topline,.hero-main,.hero-bottomline{position:relative;z-index:1}.hero-topline{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.09)}
+.brand-lockup{display:flex;align-items:center;gap:11px}.brand-monogram,.footer-mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid rgba(212,175,55,.35);border-radius:14px;background:linear-gradient(145deg,rgba(212,175,55,.18),rgba(212,175,55,.04));color:var(--gold);font:900 .86rem 'Tajawal',sans-serif;letter-spacing:.06em}
+.brand-copy{display:flex;flex-direction:column;gap:2px}.brand-copy strong{color:#f4e2b5;font-size:.75rem;letter-spacing:.14em}.brand-copy small{color:#8290a4;font-size:.58rem;letter-spacing:.11em;font-weight:800}
+.readonly-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.045);color:#d8dce4;font-size:.72rem;font-weight:800}.readonly-dot{width:7px;height:7px;border-radius:50%;background:#8dd7b0;box-shadow:0 0 0 4px rgba(141,215,176,.1)}
+.hero-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,340px);align-items:center;gap:22px;padding:24px 0 20px}.hero-eyebrow{display:block;color:var(--gold);font-size:.7rem;font-weight:900;letter-spacing:.09em}.hero-heading h1{margin:7px 0 17px;color:#fff;font-size:clamp(1.55rem,3vw,2.05rem);font-weight:900;letter-spacing:-.025em}.hero-document-number{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.hero-document-number span{color:#8993a3;font-size:.72rem;font-weight:700}.hero-document-number strong{padding:6px 11px;border:1px solid rgba(212,175,55,.22);border-radius:9px;background:rgba(212,175,55,.08);color:#f2dc9a;font-size:.82rem;letter-spacing:.03em}
+.hero-amount-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:18px 20px;border:1px solid rgba(212,175,55,.23);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:inset 0 1px rgba(255,255,255,.07)}.hero-amount-label{color:#9fa8b5;font-size:.72rem;font-weight:700}.hero-amount-value{color:#f5e3ab;font-size:clamp(1.65rem,3vw,2.2rem);font-weight:900;line-height:1.1;direction:ltr;unicode-bidi:plaintext}.hero-amount-value small{font-size:.82rem;font-weight:800;color:#d2b45c}.status-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid;border-radius:999px;font-size:.68rem;font-weight:900}.status-pill:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.status-approved{color:#99e0b7;background:rgba(60,170,105,.13);border-color:rgba(122,214,158,.22)}.status-draft{color:#f0cb78;background:rgba(212,175,55,.12);border-color:rgba(212,175,55,.2)}.status-cancelled{color:#f0a1a1;background:rgba(210,76,76,.12);border-color:rgba(235,139,139,.2)}.status-unknown{color:#b8c0ce;background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.12)}
+.hero-bottomline{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding-top:14px;border-top:1px solid rgba(255,255,255,.09)}.hero-note{color:#8e98a8;font-size:.7rem}.hero-back-button{border:1px solid rgba(212,175,55,.34);border-radius:10px;padding:8px 12px;background:rgba(212,175,55,.09);color:#efd98c;font:800 .73rem 'Tajawal',sans-serif;cursor:pointer;transition:background .18s ease,transform .18s ease}.hero-back-button:hover{background:rgba(212,175,55,.16);transform:translateY(-1px)}
+.expense-section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.detail-card,.narrative-card{min-width:0;border:1px solid var(--line);border-radius:19px;background:var(--paper);box-shadow:0 8px 24px rgba(15,23,42,.035)}.detail-card{padding:18px 19px}.section-heading{display:flex;align-items:center;gap:12px;margin-bottom:15px;padding-bottom:13px;border-bottom:1px solid #f0ece3}.section-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(212,175,55,.22);border-radius:13px;background:linear-gradient(145deg,rgba(212,175,55,.16),rgba(212,175,55,.045));color:var(--gold-deep)}.section-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.section-heading h2{margin:0;color:var(--ink);font-size:.96rem;font-weight:900}.section-heading p{margin:3px 0 0;color:#9399a3;font-size:.68rem;font-weight:600}
+.detail-list{display:flex;flex-direction:column}.detail-row{display:grid;grid-template-columns:minmax(105px,.72fr) minmax(0,1.28fr);align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #f3f0e9}.detail-row:last-child{border-bottom:0}.detail-row>span{color:#818895;font-size:.72rem;font-weight:700}.detail-row>strong{color:#202635;font-size:.78rem;font-weight:800;text-align:left;overflow-wrap:anywhere}.detail-row.account-row{grid-template-columns:minmax(105px,.72fr) minmax(0,1.28fr);row-gap:3px}.detail-row.account-row strong{grid-column:2}.detail-row.account-row small{grid-column:2;color:#9b8a59;font-size:.67rem;text-align:left;direction:ltr}
+.reference-value{color:var(--gold-deep)!important}.inline-link-button{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:12px;padding:10px 12px;border:1px solid rgba(212,175,55,.2);border-radius:11px;background:var(--paper-warm);color:#80651f;text-align:right;font:800 .72rem 'Tajawal',sans-serif;cursor:pointer;transition:background .18s ease,border .18s ease}.inline-link-button:hover{background:#f8f1dc;border-color:rgba(212,175,55,.42)}.inline-link-button span{font-size:1rem}
+.narrative-card{display:grid;grid-template-columns:minmax(170px,.34fr) minmax(0,1fr);overflow:hidden}.narrative-heading{padding:20px;background:linear-gradient(145deg,#0A0F1E,#121b2b);color:#f5e6c8}.narrative-overline{color:var(--gold);font-size:.58rem;letter-spacing:.11em;font-weight:900}.narrative-heading h2{margin:6px 0 0;font-size:.95rem;font-weight:900}.narrative-content{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;padding:18px 20px}.narrative-content>div{min-width:0}.narrative-content span{color:#8a909a;font-size:.68rem;font-weight:800}.narrative-content p{margin:6px 0 0;color:#303744;font-size:.8rem;font-weight:600;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}.notes-block{padding-right:14px;border-right:2px solid rgba(212,175,55,.38)}
+.expense-view-footer{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:13px 16px;border:1px solid var(--line);border-radius:17px;background:var(--paper-warm)}.footer-caption{display:flex;align-items:center;gap:10px}.footer-mark{width:36px;height:36px;border-radius:12px;font-size:.7rem}.footer-caption>span:last-child{display:flex;flex-direction:column;gap:2px}.footer-caption strong{color:#263041;font-size:.75rem;font-weight:900}.footer-caption small{color:#9298a2;font-size:.64rem}.footer-actions{display:flex;gap:8px;flex-wrap:wrap}.expense-action{border-radius:10px;padding:9px 13px;font:800 .72rem 'Tajawal',sans-serif;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease}.expense-action:hover{transform:translateY(-1px)}.expense-action.primary{border:1px solid #927426;background:linear-gradient(135deg,#dfc15e,#b89532);color:#111827;box-shadow:0 5px 12px rgba(156,124,46,.14)}.expense-action.quiet{border:1px solid #e2dccf;background:#fff;color:#384151}
+.expense-view-message{max-width:680px;margin:36px auto;padding:32px 26px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(145deg,#fff,#fcfaf5);text-align:center;color:#374151;font-family:'Tajawal',sans-serif;box-shadow:0 14px 35px rgba(15,23,42,.05)}.expense-view-message h4{margin:10px 0 5px;color:#111827;font-weight:900}.expense-view-message p{margin:0 0 12px;color:#737b88;font-size:.84rem;line-height:1.7}.message-eyebrow{color:var(--gold-deep);font-size:.62rem;font-weight:900;letter-spacing:.12em}.message-loader{display:block;width:28px;height:28px;margin:0 auto;border:2px solid #eee8d8;border-top-color:var(--gold);border-radius:50%;animation:expense-spin .7s linear infinite}@@keyframes expense-spin{to{transform:rotate(360deg)}}.expense-view-message.error{border-color:#efd0c8;background:#fff9f7}
+@@media(max-width:760px){.expense-view-page{gap:13px;padding:0 0 20px}.expense-hero{padding:17px 16px 15px;border-radius:19px}.hero-topline{padding-bottom:14px}.brand-monogram{width:37px;height:37px}.readonly-badge{font-size:.64rem;padding:7px 9px}.hero-main{grid-template-columns:1fr;gap:14px;padding:19px 0 15px}.hero-amount-card{padding:14px 16px}.hero-bottomline{align-items:flex-start}.hero-note{max-width:100%;line-height:1.65}.expense-section-grid{grid-template-columns:1fr;gap:12px}.detail-card{padding:15px}.narrative-card{grid-template-columns:1fr}.narrative-heading{padding:14px 16px}.narrative-content{padding:15px 16px}.expense-view-footer{align-items:flex-start}.footer-actions{width:100%}.footer-actions .expense-action{flex:1}.detail-row{grid-template-columns:minmax(94px,.72fr) minmax(0,1.28fr)}}
+@@media(max-width:420px){.hero-heading h1{font-size:1.45rem}.brand-copy small{font-size:.52rem}.detail-row>span{font-size:.67rem}.detail-row>strong{font-size:.73rem}.hero-document-number{gap:7px}}
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private static readonly string[] ExpenseModuleCodes =
+    {
+        "SCR_EXPENSES", "SCR_EXPENSE", "SCR_OVERHEAD", "SCR_OVERHEAD_EXPENSES"
+    };
+
+    private ExpenseListDto? expense;
+    private bool permissionsChecked;
+    private bool canViewExpenses;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionsChecked = true;
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            canViewExpenses = PermissionService.Permissions.Any(p =>
+                ExpenseModuleCodes.Contains(p.ModuleCode, StringComparer.OrdinalIgnoreCase) && p.CanView);
+            permissionsChecked = true;
+            if (!canViewExpenses) return;
+
+            expense = (await AccountingService.GetExpensesAsync(expenseId: Id))
+                .FirstOrDefault();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            canViewExpenses = false;
+            permissionsChecked = true;
+        }
+        catch (Exception ex)
+        {
+            permissionsChecked = true;
+            errorMessage = $"تعذر تحميل تفاصيل المصروف: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string GetStatusName(int status) => status switch
+    {
+        1 => "مسودة",
+        2 => "معتمد",
+        3 => "ملغي",
+        _ => "غير محدد"
+    };
+
+    private static string GetStatusClass(int status) => status switch
+    {
+        1 => "status-draft",
+        2 => "status-approved",
+        3 => "status-cancelled",
+        _ => "status-unknown"
+    };
+
+    private static string GetPaymentMethodName(int? method) => method switch
+    {
+        1 => "نقدي — خزينة",
+        2 => "بنك",
+        3 => "آجل — مستحق",
+        _ => "—"
+    };
+}

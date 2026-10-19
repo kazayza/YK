@@ -4,11 +4,16 @@
 @inject TreasuryService TreasuryService
 @inject LookupService LookupService
 @inject UserSessionService UserSession
+@inject PermissionService PermissionService
 
-<PageTitle>إدارة الشيكات - Gold Edition</PageTitle>
+<PageTitle>إدارة الشيكات</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (!permissionChecked)
+{<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات الشيكات...</p></div>}
+else if (!isAuthorized)
+{<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض الشيكات</h4></div>}
 else
 {
 <div class="luxury-page" dir="rtl">
@@ -26,7 +31,10 @@ else
                 <span class="lh-badge"><span class="lh-dot"></span>@filteredList.Count شيك</span>
                 <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">محصلة: @filteredList.Where(c=>c.ChequeStatus==3).Sum(c=>c.Amount).ToString("#,##0")</span>
                 <span class="lh-badge" style="background:rgba(239,68,68,.08);color:#dc2626;border-color:rgba(239,68,68,.15)">مرتجعة: @filteredList.Count(c=>c.ChequeStatus==4)</span>
-                <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>شيك جديد</button>
+                @if (HasChequePermission(p => p.CanAdd))
+                {
+                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>شيك جديد</button>
+                }
             </div>
         </div>
     </div>
@@ -108,9 +116,9 @@ else
                                 </td>
                                 <td class="td-muted">@(ch.ReceiptNumber ?? ch.PaymentNumber ?? "—")</td>
                                 <td class="td-center"><div class="actions-wrap-luxury">
-                                    @if(ch.ChequeStatus==1){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
-                                    @if(ch.ChequeStatus==1 || ch.ChequeStatus==2){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="ارتجاع" @onclick="()=>Bounce(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>}
-                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeStatus==1){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && (ch.ChequeStatus==1 || ch.ChequeStatus==2)){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="ارتجاع" @onclick="()=>Bounce(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanEdit)){<button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                 </div></td>
                             </tr>
                         }
@@ -226,8 +234,33 @@ else
     private List<LookupDto> bankAccounts = new();
     private int bounceId = 0;
     private string bounceReason = "";
+    private bool permissionChecked;
+    private bool isAuthorized;
 
-    protected override async Task OnInitializedAsync(){ await LoadData(); }
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn) return;
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            isAuthorized = HasChequePermission(p => p.CanView);
+            permissionChecked = true;
+            if (isAuthorized) await LoadData();
+        }
+        catch
+        {
+            permissionChecked = true;
+            isAuthorized = false;
+        }
+    }
+
+    private bool HasChequePermission(Func<ModulePermissionDto, bool> predicate) =>
+        PermissionService.Permissions.Any(p =>
+            (p.ModuleCode.Equals("SCR_CHEQUES", StringComparison.OrdinalIgnoreCase) ||
+             p.ModuleCode.Equals("SCR_CHEQUE", StringComparison.OrdinalIgnoreCase)) && predicate(p));
 
     private async Task LoadData()
     {
@@ -236,7 +269,7 @@ else
         {
             allList = await TreasuryService.GetChequesAsync(filterFrom, filterTo, filterType==0?null:filterType, filterStatus==0?null:filterStatus);
             currencies = await LookupService.GetCurrenciesAsync();
-            var banks = await TreasuryService.GetBankAccountsAsync();
+            var banks = await TreasuryService.GetBankAccountLookupsAsync();
             bankAccounts = banks.Select(b=>new LookupDto{ Id=b.BankAccountID, Name=b.BankName+" - "+b.AccountNumber, Code=b.BankAccountCode }).ToList();
             ApplyFilter();
         }

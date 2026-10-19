@@ -1,0 +1,336 @@
+@page "/items/import"
+@using Microsoft.AspNetCore.Components.Forms
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject ItemImportService ItemImportService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>استيراد الأصناف من Excel - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="import-denied" dir="rtl"><h3>يجب تسجيل الدخول أولاً</h3><button @onclick='() => Navigation.NavigateTo("/login")'>تسجيل الدخول</button></div>
+}
+else if (permissions == null || !permissions.CanView)
+{
+    <div class="import-denied" dir="rtl"><h3>ليس لديك صلاحية لعرض هذه الشاشة</h3><button @onclick='() => Navigation.NavigateTo("/items")'>العودة إلى الأصناف</button></div>
+}
+else
+{
+    <div class="item-import-page yk-gold-page" dir="rtl">
+        <header class="import-header">
+            <div class="import-header-mark">YK</div>
+            <div class="import-title-wrap">
+                <span class="import-eyebrow">إدارة الأصناف</span>
+                <h1>استيراد المنتجات والأصناف</h1>
+                <p>معاينة الصفوف والتعارضات قبل أي حفظ</p>
+            </div>
+            <button class="import-back" @onclick='() => Navigation.NavigateTo("/items")'>العودة للأصناف</button>
+        </header>
+
+        <section class="import-card">
+            <div class="import-card-heading">
+                <div>
+                    <h2>1 — اختر ملف القالب</h2>
+                    <p>ملف Excel بصيغة .xlsx، بحد أقصى 10 ميغابايت و500 صف بيانات.</p>
+                </div>
+                <a class="import-template-link" href="/templates/Items_Import_Template.xlsx" download="Items_Import_Template.xlsx">تنزيل قالب Excel</a>
+            </div>
+
+            <div class="import-file-area">
+                <label class="file-label" for="items-import-file">ملف الاستيراد</label>
+                <InputFile id="items-import-file" OnChange="HandleFileSelected" accept=".xlsx" disabled="@(isPreviewing || isCommitting)" />
+                @if (selectedFile is not null)
+                {
+                    <span class="file-meta">@selectedFile.Name — @FormatBytes(selectedFile.Size)</span>
+                }
+                <button class="import-primary" @onclick="PreviewFile" disabled="@(selectedFile is null || isPreviewing || isCommitting)">
+                    @if (isPreviewing){<span class="small-spinner"></span><span>جارٍ الفحص...</span>}
+                    else{<span>معاينة والتحقق</span>}
+                </button>
+            </div>
+
+            <div class="import-safety-note">
+                <strong>قبل الاستيراد:</strong>
+                كود الصنف مطلوب ولا يُولّد من الشاشة. التعارض يبدأ افتراضياً بالتخطي؛ اختر التحديث لكل صف بعد مراجعة الفرق.
+                في التحديث تُطبّق الخلايا غير الفارغة فقط؛ الخلية الفارغة لا تمسح قيمة قائمة، والصفر قيمة صريحة.
+                لا يتغير كود الصنف أو متوسط التكلفة أو رصيد المخزون أو مكونات BOM.
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="import-message @(statusIsError ? "error" : "success")">@statusMessage</div>
+        }
+
+        @if (preview is not null)
+        {
+            <section class="import-card preview-card">
+                <div class="import-card-heading preview-heading">
+                    <div>
+                        <h2>2 — راجع نتيجة المعاينة</h2>
+                        <p>لا تُكتب أي بيانات حتى تضغط حفظ الصفوف المختارة.</p>
+                    </div>
+                    @if (preview.Rows.Count > 0)
+                    {
+                        <div class="summary-pills">
+                            <span class="summary-pill new">جديد: @preview.ValidNewCount</span>
+                            <span class="summary-pill conflict">تعارض: @preview.ConflictCount</span>
+                            <span class="summary-pill invalid">غير صالح: @preview.InvalidCount</span>
+                        </div>
+                    }
+                </div>
+
+                @if (preview.Errors.Count > 0)
+                {
+                    <div class="import-error-list">
+                        @foreach (var error in preview.Errors){<div>@error</div>}
+                    </div>
+                }
+
+                @if (preview.Rows.Count > 0)
+                {
+                    <div class="import-actions-row">
+                        <span>الصفوف الصحيحة تُحدد للإضافة تلقائياً؛ التعارضات تبدأ بالتخطي.</span>
+                        <button class="import-primary save-button" @onclick="CommitSelected" disabled="@(!CanCommit || isCommitting)">
+                            @if (isCommitting){<span class="small-spinner"></span><span>جارٍ الحفظ...</span>}
+                            else{<span>حفظ الصفوف المختارة</span>}
+                        </button>
+                    </div>
+
+                    <div class="import-table-wrap">
+                        <table class="import-table">
+                            <thead>
+                                <tr>
+                                    <th>صف Excel</th><th>كود الصنف</th><th>الاسم</th><th>النوع</th>
+                                    <th>الحالة</th><th>القرار</th><th>تفاصيل المراجعة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in preview.Rows)
+                                {
+                                    <tr class="@(row.IsValid ? (row.HasConflict ? "conflict-row" : "") : "invalid-row")">
+                                        <td>@row.RowNumber</td>
+                                        <td class="code-cell">@(row.Data.ItemCode ?? "—")</td>
+                                        <td>@(row.Data.ItemNameAr ?? "—")</td>
+                                        <td>@GetTypeName(row.Data.ItemType)</td>
+                                        <td>
+                                            @if (!row.IsValid){<span class="state-pill invalid">غير صالح</span>}
+                                            else if (row.HasConflict){<span class="state-pill conflict">موجود بالنظام</span>}
+                                            else{<span class="state-pill new">صنف جديد</span>}
+                                        </td>
+                                        <td>
+                                            @if (!row.IsValid)
+                                            {
+                                                <span class="decision-disabled">لن يُحفظ</span>
+                                            }
+                                            else
+                                            {
+                                                <select class="decision-select" value="@((int)row.Action)" @onchange="args => SetDecision(row, args)" disabled="@isCommitting">
+                                                    <option value="2">تخطي الصف</option>
+                                                    @if (row.HasConflict)
+                                                    {
+                                                        @if (permissions.CanEdit && row.Differences.Count > 0)
+                                                        {
+                                                            <option value="3">تحديث هذا الصنف</option>
+                                                        }
+                                                    }
+                                                    else if (permissions.CanAdd)
+                                                    {
+                                                        <option value="1">إضافة الصنف</option>
+                                                    }
+                                                </select>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (!row.IsValid)
+                                            {
+                                                <ul class="row-errors">@foreach (var error in row.Errors){<li>@error</li>}</ul>
+                                            }
+                                            else if (row.HasConflict)
+                                            {
+                                                <details class="diff-details">
+                                                    <summary>مقارنة القيم (@row.Differences.Count فرق)</summary>
+                                                    @if (row.Differences.Count == 0)
+                                                    {
+                                                        <p class="no-diff">لا توجد فروق قابلة للتحديث.</p>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="diff-scroll">
+                                                            <table class="diff-table"><thead><tr><th>الحقل</th><th>الموجود</th><th>الوارد</th></tr></thead>
+                                                                <tbody>@foreach (var diff in row.Differences){<tr><td>@diff.FieldNameAr</td><td>@diff.ExistingValue</td><td>@diff.IncomingValue</td></tr>}</tbody>
+                                                            </table>
+                                                        </div>
+                                                    }
+                                                </details>
+                                            }
+                                            else
+                                            {
+                                                <span class="review-hint">ستتم إضافته بعد التأكيد.</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="import-footer-note">
+                        التحديث يغيّر الحقول الواردة غير الفارغة في الصف المختار، بما فيها النوع والتصنيف والوحدات والأسعار عند اختلافها؛ راجع المقارنة قبل اختيار التحديث.
+                        لا يمكن من هذا القالب مسح نص اختياري بتركه فارغاً؛ استخدم شاشة الصنف لذلك.
+                    </div>
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private ModulePermissionDto? permissions;
+    private IBrowserFile? selectedFile;
+    private ItemImportPreview? preview;
+    private bool isPreviewing;
+    private bool isCommitting;
+    private string statusMessage = "";
+    private bool statusIsError;
+
+    private bool CanCommit => preview is not null && preview.Rows.Any(r => r.IsValid &&
+        ((r.Action == ItemImportAction.Add && permissions?.CanAdd == true) ||
+         (r.Action == ItemImportAction.Update && permissions?.CanEdit == true)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+        permissions = PermissionService.GetModule("SCR_ITEMS");
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs args)
+    {
+        selectedFile = args.File;
+        preview = null;
+        statusMessage = "";
+        statusIsError = false;
+    }
+
+    private async Task PreviewFile()
+    {
+        if (selectedFile is null)
+            return;
+
+        if (!selectedFile.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            SetMessage("اختر ملف Excel بصيغة .xlsx.", true);
+            return;
+        }
+
+        isPreviewing = true;
+        preview = null;
+        statusMessage = "";
+        try
+        {
+            await using var input = selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            preview = await ItemImportService.PreviewWorkbookAsync(input, UserSession.UserID);
+            if (preview.Errors.Count == 0)
+                SetMessage($"اكتملت المعاينة: {preview.Rows.Count} صفاً.", false);
+            else
+                SetMessage("لم تكتمل المعاينة؛ راجع ملاحظات الملف.", true);
+        }
+        catch (Exception ex)
+        {
+            SetMessage("تعذر فحص الملف: " + ex.Message, true);
+        }
+        finally
+        {
+            isPreviewing = false;
+        }
+    }
+
+    private async Task CommitSelected()
+    {
+        if (preview is null || !CanCommit)
+            return;
+
+        var addCount = preview.Rows.Count(r => r.IsValid && r.Action == ItemImportAction.Add);
+        var updateCount = preview.Rows.Count(r => r.IsValid && r.Action == ItemImportAction.Update);
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"سيتم إضافة {addCount} صنف وتحديث {updateCount} صنف ضمن معاملة واحدة. هل تؤكد؟");
+        if (!confirmed)
+            return;
+
+        isCommitting = true;
+        try
+        {
+            var result = await ItemImportService.CommitAsync(preview.Rows, UserSession.UserID);
+            SetMessage($"اكتمل الاستيراد: إضافة {result.Added}، تحديث {result.Updated}، تخطي {result.Skipped}.", false);
+            preview = null;
+            selectedFile = null;
+        }
+        catch (Exception ex)
+        {
+            SetMessage("لم يُحفظ الاستيراد: " + ex.Message, true);
+        }
+        finally
+        {
+            isCommitting = false;
+        }
+    }
+
+    private static void SetDecision(ItemImportPreviewRow row, ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value)
+            && Enum.IsDefined(typeof(ItemImportAction), value))
+            row.Action = (ItemImportAction)value;
+    }
+
+    private void SetMessage(string message, bool isError)
+    {
+        statusMessage = message;
+        statusIsError = isError;
+    }
+
+    private static string GetTypeName(int? type)
+    {
+        if (!type.HasValue)
+            return "—";
+        return type.Value switch
+        {
+            1 => "مادة خام",
+            2 => "مادة تعبئة",
+            3 => "نصف مصنع",
+            4 => "منتج تام",
+            _ => "—"
+        };
+    }
+
+    private static string FormatBytes(long bytes) => bytes < 1024 * 1024
+        ? $"{bytes / 1024d:0.#} KB"
+        : $"{bytes / (1024d * 1024d):0.##} MB";
+}
+
+<style>
+.item-import-page{max-width:1500px;margin:0 auto;padding:18px 20px 40px;color:#111827;font-family:'Tajawal','Segoe UI',sans-serif}
+.import-header{position:relative;overflow:hidden;display:flex;align-items:center;gap:16px;padding:22px 24px;border-radius:18px;background:linear-gradient(125deg,#080d17 0%,#141a27 65%,#1c1b17 100%);color:#f9f5e8;border:1px solid rgba(212,175,55,.35);box-shadow:0 16px 34px rgba(7,11,20,.14);margin-bottom:18px}
+.import-header:before{content:'';position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,#d4af37,#f2d47a,transparent)}
+.import-header-mark{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,.11);border:1px solid rgba(212,175,55,.32);color:#e4c35e;font-weight:900;letter-spacing:1px}
+.import-title-wrap{flex:1}.import-eyebrow{font-size:.68rem;letter-spacing:.12em;color:#d4af37;font-weight:800}.import-title-wrap h1{font-size:1.3rem;margin:4px 0;color:#f5e6c8;font-weight:900}.import-title-wrap p{font-size:.78rem;color:#aab2c0;margin:0}
+.import-back,.import-primary,.import-template-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:10px 15px;text-decoration:none;font:700 .78rem 'Tajawal','Segoe UI',sans-serif;cursor:pointer;transition:.2s}
+.import-back{background:transparent;border:1px solid rgba(255,255,255,.2);color:#f5e6c8}.import-back:hover{border-color:#d4af37;color:#f2d47a}
+.import-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 6px 20px rgba(10,15,30,.035)}
+.import-card-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.import-card-heading h2{font-size:1rem;color:#111827;margin:0 0 4px;font-weight:900}.import-card-heading p{font-size:.76rem;color:#7b8492;margin:0}
+.import-template-link{background:#111827;color:#f5e6c8;border:1px solid rgba(212,175,55,.55)}.import-template-link:hover{background:#1d2635;color:#f2d47a}
+.import-file-area{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px;border:1px dashed #d8c996;border-radius:12px;background:#fcfaf4}.file-label{font-size:.78rem;font-weight:800;color:#283244}.file-meta{font-size:.75rem;color:#6b7280;direction:ltr}.import-primary{border:1px solid #c9a73a;background:linear-gradient(135deg,#e5c75c,#c9a12a);color:#151515;box-shadow:0 5px 14px rgba(212,175,55,.2)}.import-primary:hover:not(:disabled){filter:brightness(1.03);transform:translateY(-1px)}.import-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}.small-spinner{width:13px;height:13px;border:2px solid rgba(0,0,0,.2);border-top-color:#111;border-radius:50%;animation:importSpin .7s linear infinite}@@keyframes importSpin{to{transform:rotate(360deg)}}
+.import-safety-note,.import-footer-note{margin-top:14px;padding:12px 14px;border-radius:10px;background:#fbf7e9;border:1px solid #eee1b3;color:#5d4b16;font-size:.74rem;line-height:1.8}.import-message{margin:0 0 15px;padding:12px 15px;border-radius:10px;font-size:.8rem;font-weight:700}.import-message.success{background:#effaf3;color:#146c3a;border:1px solid #cdebd7}.import-message.error{background:#fff1f0;color:#a62d22;border:1px solid #f5d0cc}.import-error-list{background:#fff4f2;border:1px solid #f1cbc6;color:#982a21;border-radius:10px;padding:12px 16px;font-size:.78rem;line-height:1.8}
+.summary-pills{display:flex;gap:7px;flex-wrap:wrap}.summary-pill,.state-pill{padding:5px 9px;border-radius:999px;font-size:.69rem;font-weight:800;white-space:nowrap}.summary-pill.new,.state-pill.new{background:#eaf7ed;color:#21713c}.summary-pill.conflict,.state-pill.conflict{background:#fff6df;color:#826112}.summary-pill.invalid,.state-pill.invalid{background:#fff0ee;color:#a62d22}.import-actions-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;color:#657080;font-size:.74rem}.save-button{min-width:180px}.import-table-wrap{overflow:auto;border:1px solid #e8e2d0;border-radius:12px}.import-table{width:100%;min-width:950px;border-collapse:collapse;font-size:.75rem}.import-table th{background:#101725;color:#f5e6c8;padding:11px 10px;text-align:right;white-space:nowrap;border-bottom:2px solid #d4af37}.import-table td{padding:10px;border-bottom:1px solid #eee9dc;vertical-align:top;color:#273244}.import-table tbody tr:nth-child(even){background:#fcfbf7}.import-table tbody tr.invalid-row{background:#fff9f8}.import-table tbody tr.conflict-row{background:#fffdf6}.code-cell{font-family:Consolas,monospace;direction:ltr;text-align:right;font-weight:800;color:#8a6b13}.decision-select{min-width:130px;padding:7px 9px;border:1px solid #ded5bb;border-radius:8px;background:#fff;font:700 .72rem 'Tajawal','Segoe UI',sans-serif;color:#182131}.decision-disabled,.review-hint{font-size:.7rem;color:#737b87}.row-errors{margin:0;padding-right:17px;color:#9e3026;line-height:1.7}.diff-details{min-width:220px}.diff-details summary{cursor:pointer;color:#856815;font-weight:800;font-size:.72rem}.diff-scroll{max-height:260px;overflow:auto;margin-top:8px}.diff-table{width:100%;border-collapse:collapse;font-size:.69rem}.diff-table th{background:#f2ead0;color:#292313;padding:7px;text-align:right}.diff-table td{border-bottom:1px solid #eee7d6;padding:7px;max-width:190px;overflow-wrap:anywhere}.no-diff{color:#737b87;font-size:.7rem}.import-denied{direction:rtl;max-width:600px;margin:50px auto;padding:24px;background:#101725;color:#f5e6c8;border:1px solid #d4af37;border-radius:16px;text-align:center}.import-denied button{padding:9px 14px;border:1px solid #d4af37;border-radius:9px;background:#d4af37;color:#111;font-weight:800}
+@@media(max-width:760px){.item-import-page{padding:12px 10px 28px}.import-header{padding:18px 14px;flex-wrap:wrap}.import-title-wrap{min-width:calc(100% - 70px)}.import-back{margin-right:auto}.import-card{padding:15px}.import-card-heading,.import-actions-row{align-items:flex-start;flex-direction:column}.import-primary.save-button{width:100%}.summary-pills{width:100%}}
+</style>

@@ -21,23 +21,24 @@
                 // المشتريات
                 "SCR_PR"   => "/purchase-requests",
                 "SCR_PO"   => "/purchase-orders",
-                "SCR_GRN"  => "/goods-receipts",
+                "SCR_GRN"  => "/goods-receipt",
                 "SCR_PINV" => "/purchase-invoices",
                 "SCR_PRET" => "/purchase-returns",
 
                 // التصنيع
+                "SCR_MFG_DASHBOARD" => "/manufacturing-dashboard",
                 "SCR_BOM"     => "/boms",
                 "SCR_PRODORD" => "/production-orders",
                 "SCR_MATISS"  => "/material-issues",
                 "SCR_BATCH"   => "/production-batches",
                 "SCR_QC"      => "/quality-control",
-                "SCR_CONTRACT" => "/contract-orders",
+                //"SCR_CONTRACT" => "/contract-orders",
 
                 // المخازن
-                "SCR_STOCK"    => "/stock-balances",
+                "SCR_STOCK"    => "/stock",
                 "SCR_TRANS"    => "/stock-movements",
-                "SCR_TRANSFER" => "/stock-transfers",
-                "SCR_COUNT"    => "/stock-counts",
+                "SCR_TRANSFER" => "/stock-transfer",
+                "SCR_COUNT"    => "/stock-count",
 
                 // المبيعات
                 "SCR_QUOT" => "/quotations",

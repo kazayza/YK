@@ -4,13 +4,24 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
 
-<h3 style="font-family:Cairo;direction:rtl;padding:20px">صفحة اختبار مؤقتة — تُنشئ جلسة حقيقية ثم تنتقل</h3>
+@if (IsDevelopmentEnvironment)
+{
+    <h3 style="font-family:Cairo;direction:rtl;padding:20px">صفحة اختبار مؤقتة — تُنشئ جلسة اختبار ثم تنتقل</h3>
+}
+else
+{
+    <div dir="rtl" role="status" style="font-family:Cairo;padding:20px">صفحة الاختبار غير متاحة خارج بيئة التطوير.</div>
+}
 
 @code {
+    private bool IsDevelopmentEnvironment =>
+        string.Equals(HostEnvironment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || !IsDevelopmentEnvironment) return;
 
         // إنشاء جلسة حقيقية في ProtectedSessionStorage بدون لمس قاعدة البيانات
         await UserSession.LoginAsync(

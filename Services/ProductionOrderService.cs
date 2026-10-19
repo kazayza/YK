@@ -7,20 +7,95 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notification;
+        private readonly ModuleAuthorizationService _authorization;
         private sealed class ProductionOrderBomCalcDto
         {
+            public int ProductItemID { get; set; }
+            public int OutputUnitID { get; set; }
             public decimal OutputQty { get; set; }
             public decimal LaborCostPerBatch { get; set; }
             public decimal OverheadCostPerBatch { get; set; }
+            public int BOMStatus { get; set; }
+            public bool IsActive { get; set; }
+        }
+        private sealed class ProductionOrderWorkflowDto
+        {
+            public int ProductionOrderID { get; set; }
+            public string OrderNumber { get; set; } = "";
+            public int OrderStatus { get; set; }
+            public int BOMID { get; set; }
+            public int ProductItemID { get; set; }
+            public int PlannedUnitID { get; set; }
+            public decimal PlannedQty { get; set; }
+            public int? CreatedBy { get; set; }
         }
         public ProductionOrderService(
             IConfiguration configuration,
             AuditService audit,
-            NotificationService notification)
+            NotificationService notification,
+            ModuleAuthorizationService authorization)
             : base(configuration)
         {
             _audit = audit;
             _notification = notification;
+            _authorization = authorization;
+        }
+
+        private static async Task ValidateOrderReferencesAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            int productItemId,
+            int outputUnitId,
+            int? assignedTo,
+            int? supervisorId)
+        {
+            var activeReferences = await connection.ExecuteScalarAsync<int>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1 FROM dbo.Items WITH (UPDLOCK,HOLDLOCK)
+    WHERE ItemID=@ProductItemID AND IsActive=1
+) AND EXISTS
+(
+    SELECT 1 FROM dbo.Units WITH (UPDLOCK,HOLDLOCK)
+    WHERE UnitID=@OutputUnitID AND IsActive=1
+) THEN 1 ELSE 0 END",
+                new { ProductItemID = productItemId, OutputUnitID = outputUnitId }, transaction);
+            if (activeReferences != 1)
+                throw new InvalidOperationException("المنتج أو وحدة الناتج غير موجودين أو غير نشطين.");
+
+            foreach (var employeeId in new[] { assignedTo, supervisorId })
+            {
+                if (!employeeId.HasValue || employeeId.Value <= 0) continue;
+                var activeEmployee = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.Employees WITH (UPDLOCK,HOLDLOCK)
+WHERE EmployeeID=@EmployeeID AND IsActive=1",
+                    new { EmployeeID = employeeId.Value }, transaction);
+                if (activeEmployee != 1)
+                    throw new InvalidOperationException($"الموظف {employeeId.Value} غير موجود أو غير نشط.");
+            }
+        }
+
+        private static async Task ValidateOrderWarehousesAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            int? sourceWarehouseId,
+            int? targetWarehouseId)
+        {
+            var warehouseChecks = new[]
+            {
+                (Id: sourceWarehouseId, ExpectedType: 1, Name: "مخزن المواد"),
+                (Id: targetWarehouseId, ExpectedType: 4, Name: "مخزن المنتج التام")
+            };
+            foreach (var warehouse in warehouseChecks)
+            {
+                if (!warehouse.Id.HasValue || warehouse.Id.Value <= 0) continue;
+                var valid = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.Warehouses WITH (UPDLOCK,HOLDLOCK)
+WHERE WarehouseID=@WarehouseID AND IsActive=1 AND WarehouseType=@WarehouseType",
+                    new { WarehouseID = warehouse.Id.Value, WarehouseType = warehouse.ExpectedType }, transaction);
+                if (valid != 1)
+                    throw new InvalidOperationException($"{warehouse.Name} غير موجود أو غير نشط أو من نوع غير مناسب.");
+            }
         }
 
         // ==========================================
@@ -33,6 +108,8 @@ namespace YKCoatings.Services
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -123,6 +200,8 @@ ORDER BY
         // ==========================================
         public async Task<ProductionOrderEditDto?> GetOrderByIdAsync(int orderId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -170,9 +249,16 @@ WHERE ProductionOrderID = @OrderID";
         // ==========================================
         public async Task<int> InsertOrderAsync(ProductionOrderEditDto order, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanAdd, "لا تملك صلاحية إنشاء أوامر التصنيع.");
+
+            if (order.OrderPriority is < 1 or > 3)
+                throw new InvalidOperationException("أولوية أمر التصنيع غير صالحة.");
+            if (order.PlannedStartDate.HasValue && order.PlannedEndDate.HasValue && order.PlannedEndDate.Value < order.PlannedStartDate.Value)
+                throw new InvalidOperationException("تاريخ نهاية الخطة لا يمكن أن يسبق تاريخ بدايتها.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
             try
             {
@@ -180,16 +266,27 @@ WHERE ProductionOrderID = @OrderID";
 
                 // جلب بيانات الوصفة لحساب عدد الدفعات
                 var bomData = await connection.QueryFirstOrDefaultAsync<ProductionOrderBomCalcDto>(
-    @"SELECT
-          ISNULL(OutputQty, 0) AS OutputQty,
-          ISNULL(LaborCostPerBatch, 0) AS LaborCostPerBatch,
-          ISNULL(OverheadCostPerBatch, 0) AS OverheadCostPerBatch
-      FROM dbo.BillOfMaterials
-      WHERE BOMID = @BOMID",
+    @"SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
+          ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
+          ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
+          BOMStatus,ISNULL(IsActive,1) AS IsActive
+      FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+      WHERE BOMID=@BOMID",
     new { order.BOMID }, transaction);
+                if (order.BOMID <= 0 || order.ProductItemID <= 0 || order.PlannedUnitID <= 0 || order.PlannedQty <= 0)
+                    throw new InvalidOperationException("حدد وصفة ومنتجاً ووحدة إنتاج وكمية مخططة موجبة.");
+                if (bomData is null || bomData.BOMStatus != 2 || !bomData.IsActive)
+                    throw new InvalidOperationException("لا يمكن إنشاء أمر إلا من وصفة نشطة ومعتمدة.");
+                if (bomData.ProductItemID != order.ProductItemID || bomData.OutputUnitID != order.PlannedUnitID)
+                    throw new InvalidOperationException("المنتج أو وحدة أمر التصنيع لا يطابقان مخرج الوصفة.");
+                if (bomData.OutputQty <= 0)
+                    throw new InvalidOperationException("كمية المخرج في الوصفة غير صالحة.");
+                await ValidateOrderReferencesAsync(connection, transaction, order.ProductItemID, order.PlannedUnitID,
+                    order.AssignedTo, order.SupervisorID);
+                await ValidateOrderWarehousesAsync(connection, transaction, order.SourceWarehouseID, order.TargetWarehouseID);
 
-decimal bomOutputQty = bomData?.OutputQty ?? 0m;
-decimal multiplier = bomOutputQty > 0 ? order.PlannedQty / bomOutputQty : 1m;
+                decimal bomOutputQty = bomData.OutputQty;
+                decimal multiplier = bomOutputQty > 0 ? order.PlannedQty / bomOutputQty : 1m;
 
                 int numberOfBatches = order.NumberOfBatches > 0
                     ? order.NumberOfBatches
@@ -241,6 +338,18 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 // ===== حساب المواد المطلوبة من الوصفة =====
                 await CalculateOrderMaterialsAsync(connection, transaction, newId, order.BOMID, order.PlannedQty);
 
+                await _notification.CreateForPermissionHoldersAsync(
+                    connection, transaction, notificationType: 1,
+                    title: "أمر تصنيع جديد",
+                    message: $"تم إنشاء أمر تصنيع جديد رقم {orderNumber} وهو بانتظار الاعتماد",
+                    priority: order.OrderPriority == 1 ? (byte)1 : (byte)2,
+                    permissionModuleCode: "SCR_PRODORD",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_PRODORD",
+                    relatedRecordId: newId,
+                    createdBy: userId,
+                    excludeUserId: userId);
+
                 transaction.Commit();
 
                 // ===== Audit =====
@@ -260,17 +369,6 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     description: $"إنشاء أمر تصنيع جديد: {orderNumber}"
                 );
 
-                // ===== إشعار =====
-                await _notification.CreateNotificationAsync(
-                    notificationType: 1,
-                    title: "أمر تصنيع جديد",
-                    message: $"تم إنشاء أمر تصنيع جديد رقم {orderNumber}",
-                    priority: order.OrderPriority == 1 ? (byte)1 : (byte)2,
-                    relatedModule: "SCR_PRODORD",
-                    relatedRecordId: newId,
-                    createdBy: userId
-                );
-
                 return newId;
             }
             catch
@@ -285,120 +383,141 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         // ==========================================
         public async Task UpdateOrderAsync(ProductionOrderEditDto order, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanEdit,
+                "لا تملك صلاحية تعديل أوامر التصنيع.");
+            if (order.ProductionOrderID <= 0 || order.BOMID <= 0 || order.ProductItemID <= 0 ||
+                order.PlannedQty <= 0 || order.PlannedUnitID <= 0)
+                throw new InvalidOperationException("بيانات أمر التصنيع غير مكتملة أو كميته المخططة غير موجبة.");
+            if (order.OrderPriority is < 1 or > 3)
+                throw new InvalidOperationException("أولوية أمر التصنيع غير صالحة.");
+            if (order.PlannedStartDate.HasValue && order.PlannedEndDate.HasValue && order.PlannedEndDate.Value < order.PlannedStartDate.Value)
+                throw new InvalidOperationException("تاريخ نهاية الخطة لا يمكن أن يسبق تاريخ بدايتها.");
+
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            ProductionOrderEditDto? oldOrder = null;
+            try
+            {
+                oldOrder = await connection.QueryFirstOrDefaultAsync<ProductionOrderEditDto>(@"
+SELECT ProductionOrderID,OrderNumber,OrderDate,BOMID,ProductItemID,
+       PlannedQty,PlannedUnitID,NumberOfBatches,PlannedStartDate,PlannedEndDate,
+       SourceWarehouseID,TargetWarehouseID,OrderPriority,AssignedTo,SupervisorID,Notes,OrderStatus
+FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@ID",
+                    new { ID = order.ProductionOrderID }, transaction);
+                if (oldOrder is null)
+                    throw new InvalidOperationException("أمر التصنيع غير موجود.");
+                if (oldOrder.OrderStatus != 1)
+                    throw new InvalidOperationException("لا يمكن تعديل أمر تصنيع بعد اعتماده أو بدء تنفيذه.");
 
-            var oldOrder = await connection.QueryFirstOrDefaultAsync<ProductionOrderEditDto>(
-                @"SELECT ProductionOrderID, OrderNumber, OrderDate, BOMID, ProductItemID,
-                         PlannedQty, PlannedUnitID, NumberOfBatches,
-                         PlannedStartDate, PlannedEndDate,
-                         SourceWarehouseID, TargetWarehouseID,
-                         OrderPriority, AssignedTo, SupervisorID, Notes
-                  FROM dbo.ProductionOrders
-                  WHERE ProductionOrderID = @ID",
-                new { ID = order.ProductionOrderID });
+                var bomData = await connection.QueryFirstOrDefaultAsync<ProductionOrderBomCalcDto>(@"
+SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
+       ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
+       ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
+       BOMStatus,ISNULL(IsActive,1) AS IsActive
+FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                    new { order.BOMID }, transaction);
+                if (bomData is null || bomData.BOMStatus != 2 || !bomData.IsActive || bomData.OutputQty <= 0)
+                    throw new InvalidOperationException("لا يمكن ربط أمر التصنيع إلا بوصفة نشطة ومعتمدة ذات مخرج صالح.");
+                if (bomData.ProductItemID != order.ProductItemID || bomData.OutputUnitID != order.PlannedUnitID)
+                    throw new InvalidOperationException("المنتج أو وحدة أمر التصنيع لا يطابقان مخرج الوصفة.");
+                await ValidateOrderReferencesAsync(connection, transaction, order.ProductItemID, order.PlannedUnitID,
+                    order.AssignedTo, order.SupervisorID);
+                await ValidateOrderWarehousesAsync(connection, transaction, order.SourceWarehouseID, order.TargetWarehouseID);
 
-            var sql = @"
+                var changed = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionOrders SET
-    OrderDate = @OrderDate,
-    BOMID = @BOMID,
-    ProductItemID = @ProductItemID,
-    PlannedQty = @PlannedQty,
-    PlannedUnitID = @PlannedUnitID,
-    NumberOfBatches = @NumberOfBatches,
-    PlannedStartDate = @PlannedStartDate,
-    PlannedEndDate = @PlannedEndDate,
-    SourceWarehouseID = @SourceWarehouseID,
-    TargetWarehouseID = @TargetWarehouseID,
-    OrderPriority = @OrderPriority,
-    AssignedTo = NULLIF(@AssignedTo, 0),
-    SupervisorID = NULLIF(@SupervisorID, 0),
-    Notes = @Notes,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ProductionOrderID = @ProductionOrderID
-  AND OrderStatus = 1";
+    OrderDate=@OrderDate,BOMID=@BOMID,ProductItemID=@ProductItemID,
+    PlannedQty=@PlannedQty,PlannedUnitID=@PlannedUnitID,NumberOfBatches=@NumberOfBatches,
+    PlannedStartDate=@PlannedStartDate,PlannedEndDate=@PlannedEndDate,
+    SourceWarehouseID=@SourceWarehouseID,TargetWarehouseID=@TargetWarehouseID,
+    OrderPriority=@OrderPriority,AssignedTo=NULLIF(@AssignedTo,0),
+    SupervisorID=NULLIF(@SupervisorID,0),Notes=@Notes,
+    ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
+                    new
+                    {
+                        order.ProductionOrderID,
+                        order.OrderDate,
+                        order.BOMID,
+                        order.ProductItemID,
+                        order.PlannedQty,
+                        order.PlannedUnitID,
+                        order.NumberOfBatches,
+                        order.PlannedStartDate,
+                        order.PlannedEndDate,
+                        order.SourceWarehouseID,
+                        order.TargetWarehouseID,
+                        order.OrderPriority,
+                        order.AssignedTo,
+                        order.SupervisorID,
+                        order.Notes,
+                        UserID = userId
+                    }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة أمر التصنيع أثناء الحفظ؛ أعد تحميله.");
 
-            await connection.ExecuteAsync(sql, new
-            {
-                order.ProductionOrderID,
-                order.OrderDate,
-                order.BOMID,
-                order.ProductItemID,
-                order.PlannedQty,
-                order.PlannedUnitID,
-                order.NumberOfBatches,
-                order.PlannedStartDate,
-                order.PlannedEndDate,
-                order.SourceWarehouseID,
-                order.TargetWarehouseID,
-                order.OrderPriority,
-                order.AssignedTo,
-                order.SupervisorID,
-                order.Notes,
-                UserID = userId
-            });
-
-            // ===== إعادة حساب المواد لو الوصفة أو الكمية اتغيرت =====
-            if (oldOrder != null &&
-                (oldOrder.BOMID != order.BOMID || oldOrder.PlannedQty != order.PlannedQty))
-            {
-                using var conn2 = CreateConnection();
-                await conn2.OpenAsync();
-                using var tx = conn2.BeginTransaction();
-                try
+                if (oldOrder.BOMID != order.BOMID || oldOrder.PlannedQty != order.PlannedQty)
                 {
                     await CalculateOrderMaterialsAsync(
-                        conn2, tx, order.ProductionOrderID, order.BOMID, order.PlannedQty);
-                    tx.Commit();
+                        connection, transaction, order.ProductionOrderID, order.BOMID, order.PlannedQty);
                 }
-                catch
-                {
-                    tx.Rollback();
-                    throw;
-                }
+
+                await _notification.CreateForPermissionHoldersAsync(
+                    connection, transaction, notificationType: 3,
+                    title: $"تعديل مسودة أمر تصنيع #{oldOrder.OrderNumber}",
+                    message: $"تم تعديل بيانات مسودة أمر التصنيع {oldOrder.OrderNumber}",
+                    priority: 2, permissionModuleCode: "SCR_PRODORD",
+                    requiredPermission: ModulePermissionRequirement.View,
+                    relatedModule: "SCR_PRODORD",
+                    relatedRecordId: order.ProductionOrderID,
+                    createdBy: userId,
+                    excludeUserId: userId);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
             }
 
-            // ===== Audit =====
             var changes = new List<string>();
-            if (oldOrder != null)
-            {
-                if (oldOrder.OrderDate != order.OrderDate) changes.Add("OrderDate");
-                if (oldOrder.BOMID != order.BOMID) changes.Add("BOMID");
-                if (oldOrder.ProductItemID != order.ProductItemID) changes.Add("ProductItemID");
-                if (oldOrder.PlannedQty != order.PlannedQty) changes.Add("PlannedQty");
-                if (oldOrder.NumberOfBatches != order.NumberOfBatches) changes.Add("NumberOfBatches");
-                if (oldOrder.PlannedStartDate != order.PlannedStartDate) changes.Add("PlannedStartDate");
-                if (oldOrder.PlannedEndDate != order.PlannedEndDate) changes.Add("PlannedEndDate");
-                if (oldOrder.SourceWarehouseID != order.SourceWarehouseID) changes.Add("SourceWarehouseID");
-                if (oldOrder.TargetWarehouseID != order.TargetWarehouseID) changes.Add("TargetWarehouseID");
-                if (oldOrder.OrderPriority != order.OrderPriority) changes.Add("OrderPriority");
-                if (oldOrder.AssignedTo != order.AssignedTo) changes.Add("AssignedTo");
-                if (oldOrder.SupervisorID != order.SupervisorID) changes.Add("SupervisorID");
-                if (oldOrder.Notes != order.Notes) changes.Add("Notes");
-            }
+            if (oldOrder!.OrderDate != order.OrderDate) changes.Add("OrderDate");
+            if (oldOrder.BOMID != order.BOMID) changes.Add("BOMID");
+            if (oldOrder.ProductItemID != order.ProductItemID) changes.Add("ProductItemID");
+            if (oldOrder.PlannedQty != order.PlannedQty) changes.Add("PlannedQty");
+            if (oldOrder.PlannedUnitID != order.PlannedUnitID) changes.Add("PlannedUnitID");
+            if (oldOrder.NumberOfBatches != order.NumberOfBatches) changes.Add("NumberOfBatches");
+            if (oldOrder.PlannedStartDate != order.PlannedStartDate) changes.Add("PlannedStartDate");
+            if (oldOrder.PlannedEndDate != order.PlannedEndDate) changes.Add("PlannedEndDate");
+            if (oldOrder.SourceWarehouseID != order.SourceWarehouseID) changes.Add("SourceWarehouseID");
+            if (oldOrder.TargetWarehouseID != order.TargetWarehouseID) changes.Add("TargetWarehouseID");
+            if (oldOrder.OrderPriority != order.OrderPriority) changes.Add("OrderPriority");
+            if (oldOrder.AssignedTo != order.AssignedTo) changes.Add("AssignedTo");
+            if (oldOrder.SupervisorID != order.SupervisorID) changes.Add("SupervisorID");
+            if (oldOrder.Notes != order.Notes) changes.Add("Notes");
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
                 actionType: 2,
                 tableName: "ProductionOrders",
                 recordId: order.ProductionOrderID.ToString(),
-                oldValues: oldOrder != null
-                    ? System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        oldOrder.BOMID,
-                        oldOrder.PlannedQty,
-                        oldOrder.OrderPriority
-                    })
-                    : null,
+                oldValues: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    oldOrder.BOMID,oldOrder.ProductItemID,oldOrder.PlannedQty,oldOrder.PlannedUnitID,
+                    oldOrder.OrderPriority,oldOrder.SourceWarehouseID,oldOrder.TargetWarehouseID
+                }),
                 newValues: System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    order.BOMID,
-                    order.PlannedQty,
-                    order.OrderPriority
+                    order.BOMID,order.ProductItemID,order.PlannedQty,order.PlannedUnitID,
+                    order.OrderPriority,order.SourceWarehouseID,order.TargetWarehouseID
                 }),
-                changedColumns: changes.Any() ? string.Join(",", changes) : null,
+                changedColumns: changes.Count > 0 ? string.Join(",", changes) : null,
                 moduleName: "SCR_PRODORD",
-                description: $"تعديل أمر تصنيع: {order.OrderNumber}"
+                description: $"تعديل أمر تصنيع: {oldOrder.OrderNumber}"
             );
         }
 
@@ -408,90 +527,160 @@ WHERE ProductionOrderID = @ProductionOrderID
         public async Task<(bool Success, string Message)> ChangeStatusAsync(
             int orderId, int newStatus, int userId, int? employeeId = null)
         {
+            if (newStatus == 7)
+                return (false, "استخدم مسار إلغاء الأمر؛ فهو يتحقق من الصرف والدفعات.");
+            if (newStatus == 6)
+                return (false, "اكتمال الأمر يُسجل من مسار استلام الدفعات المقبولة.");
+            if (newStatus is not (2 or 3 or 4 or 5))
+                return (false, "حالة أمر التصنيع المطلوبة غير صالحة.");
+
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD",
+                p => newStatus == 2 ? p.CanApprove : (newStatus is 3 or 4 or 5) && p.CanEdit,
+                "لا تملك صلاحية تغيير حالة أمر التصنيع.");
+
             using var connection = CreateConnection();
-
-            var current = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                @"SELECT ProductionOrderID, OrderNumber, OrderStatus, ProductItemID
-                  FROM dbo.ProductionOrders WHERE ProductionOrderID = @ID",
-                new { ID = orderId });
-
-            if (current == null)
-                return (false, "أمر التصنيع غير موجود");
-
-            int currentStatus = (int)current.OrderStatus;
-            string orderNumber = (string)current.OrderNumber;
-
-            // ===== التحقق من صحة التحويل =====
-            var validTransitions = new Dictionary<int, int[]>
-            {
-                { 1, new[] { 2, 7 } },       // مسودة → معتمد أو ملغي
-                { 2, new[] { 3, 7 } },       // معتمد → جاري التجهيز أو ملغي
-                { 3, new[] { 4, 7 } },       // جاري التجهيز → قيد التصنيع أو ملغي
-                { 4, new[] { 5, 7 } },       // قيد التصنيع → فحص الجودة أو ملغي
-                { 5, new[] { 6, 4 } },       // فحص الجودة → مكتمل أو إرجاع للتصنيع
-            };
-
-            if (!validTransitions.ContainsKey(currentStatus) ||
-                !validTransitions[currentStatus].Contains(newStatus))
-            {
-                return (false, "لا يمكن الانتقال من هذه الحالة إلى الحالة المطلوبة");
-            }
-
-            // ===== التحقق من الاعتماد =====
-            if (newStatus == 2)
-            {
-                var materialCount = await connection.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(*) FROM dbo.ProductionOrderMaterials
-                      WHERE ProductionOrderID = @ID",
-                    new { ID = orderId });
-
-                if (materialCount == 0)
-                    return (false, "لا يمكن اعتماد أمر تصنيع بدون مواد");
-            }
-
-            // ===== تحديث الحالة =====
-            var updateSql = @"
-UPDATE dbo.ProductionOrders SET
-    OrderStatus = @NewStatus,
-    ActualStartDate = CASE 
-        WHEN @NewStatus = 4 AND ActualStartDate IS NULL THEN GETDATE()
-        ELSE ActualStartDate 
-    END,
-    ActualEndDate = CASE 
-        WHEN @NewStatus = 6 THEN GETDATE()
-        ELSE ActualEndDate 
-    END,
-    ApprovedBy = CASE 
-        WHEN @NewStatus = 2 AND @EmployeeID IS NOT NULL AND @EmployeeID > 0 
-        THEN @EmployeeID ELSE ApprovedBy 
-    END,
-    ApprovedDate = CASE 
-        WHEN @NewStatus = 2 THEN GETDATE()
-        ELSE ApprovedDate 
-    END,
-    ModifiedBy = @UserID,
-    ModifiedDate = GETDATE()
-WHERE ProductionOrderID = @OrderID";
-
-            await connection.ExecuteAsync(updateSql, new
-            {
-                OrderID = orderId,
-                NewStatus = newStatus,
-                EmployeeID = employeeId,
-                UserID = userId
-            });
-
-            // ===== الأسماء =====
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            ProductionOrderWorkflowDto? current = null;
             var statusNames = new Dictionary<int, string>
             {
                 {1, "مسودة"}, {2, "معتمد"}, {3, "جاري التجهيز"},
-                {4, "قيد التصنيع"}, {5, "فحص الجودة"},
-                {6, "مكتمل"}, {7, "ملغي"}
+                {4, "قيد التصنيع"}, {5, "فحص الجودة"}, {6, "مكتمل"}, {7, "ملغي"}
             };
-            var newStatusName = statusNames.GetValueOrDefault(newStatus, "");
-            var oldStatusName = statusNames.GetValueOrDefault(currentStatus, "");
 
-            // ===== Audit =====
+            try
+            {
+                current = await connection.QueryFirstOrDefaultAsync<ProductionOrderWorkflowDto>(
+                    @"SELECT ProductionOrderID,OrderNumber,OrderStatus,BOMID,ProductItemID,PlannedUnitID,PlannedQty,CreatedBy
+                      FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID",
+                    new { ID = orderId }, transaction);
+                if (current is null) return (false, "أمر التصنيع غير موجود");
+
+                var validTransitions = new Dictionary<int, int[]>
+                {
+                    { 1, new[] { 2 } },
+                    { 2, new[] { 3 } },
+                    { 3, new[] { 4 } },
+                    { 4, new[] { 5 } },
+                    { 5, new[] { 4 } }
+                };
+                if (!validTransitions.TryGetValue(current.OrderStatus, out var allowed) || !allowed.Contains(newStatus))
+                    return (false, "لا يمكن الانتقال من هذه الحالة إلى الحالة المطلوبة");
+
+                if (newStatus == 2)
+                {
+                    var bom = await connection.QueryFirstOrDefaultAsync<ProductionOrderBomCalcDto>(@"
+SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
+       ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
+       ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
+       BOMStatus,ISNULL(IsActive,1) AS IsActive
+FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                        new { current.BOMID }, transaction);
+                    if (bom is null || bom.BOMStatus != 2 || !bom.IsActive || bom.OutputQty <= 0)
+                        return (false, "لا يمكن اعتماد أمر التصنيع دون وصفة نشطة ومعتمدة ذات مخرج صالح.");
+                    if (bom.ProductItemID != current.ProductItemID || bom.OutputUnitID != current.PlannedUnitID)
+                        return (false, "المنتج أو وحدة أمر التصنيع لم يعودا يطابقان مخرج الوصفة.");
+                    var activeReferences = await connection.ExecuteScalarAsync<int>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1 FROM dbo.Items WITH (UPDLOCK,HOLDLOCK)
+    WHERE ItemID=@ProductItemID AND IsActive=1
+) AND EXISTS
+(
+    SELECT 1 FROM dbo.Units WITH (UPDLOCK,HOLDLOCK)
+    WHERE UnitID=@OutputUnitID AND IsActive=1
+) THEN 1 ELSE 0 END",
+                        new { ProductItemID = current.ProductItemID, OutputUnitID = current.PlannedUnitID }, transaction);
+                    if (activeReferences != 1)
+                        return (false, "المنتج أو وحدة ناتج الوصفة غير نشطين؛ لا يمكن اعتماد الأمر.");
+
+                    var invalidMaterialCount = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.ProductionOrderMaterials WITH (UPDLOCK,HOLDLOCK)
+                          WHERE ProductionOrderID=@ID AND RequiredQty<=0",
+                        new { ID = orderId }, transaction);
+                    var materialCount = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.ProductionOrderMaterials WITH (UPDLOCK,HOLDLOCK)
+                          WHERE ProductionOrderID=@ID AND RequiredQty>0",
+                        new { ID = orderId }, transaction);
+                    if (materialCount == 0 || invalidMaterialCount > 0)
+                        return (false, "لا يمكن اعتماد أمر تصنيع بلا مواد مطلوبة صالحة.");
+                }
+                if (newStatus == 5)
+                {
+                    var batches = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+                          WHERE ProductionOrderID=@ID",
+                        new { ID = orderId }, transaction);
+                    if (batches == 0)
+                        return (false, "لا يمكن نقل أمر التصنيع إلى فحص الجودة بلا دفعات.");
+                    var unfinished = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+                          WHERE ProductionOrderID=@ID AND BatchStatus IN (1,2)",
+                        new { ID = orderId }, transaction);
+                    if (unfinished > 0)
+                        return (false, "أنه الدفعات المفتوحة أو أوقفها قبل نقل الأمر إلى فحص الجودة.");
+                    var readyForQc = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+                          WHERE ProductionOrderID=@ID AND BatchStatus IN (3,4,5)",
+                        new { ID = orderId }, transaction);
+                    if (readyForQc == 0)
+                        return (false, "لا توجد دفعة مكتملة أو مقبولة للانتقال إلى فحص الجودة.");
+                }
+
+                var affected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.ProductionOrders SET
+                          OrderStatus=@NewStatus,
+                          ActualStartDate=CASE WHEN @NewStatus=4 AND ActualStartDate IS NULL THEN GETDATE() ELSE ActualStartDate END,
+                          ApprovedBy=CASE WHEN @NewStatus=2 AND @EmployeeID IS NOT NULL AND @EmployeeID>0 THEN @EmployeeID ELSE ApprovedBy END,
+                          ApprovedDate=CASE WHEN @NewStatus=2 THEN GETDATE() ELSE ApprovedDate END,
+                          ModifiedBy=@UserID,ModifiedDate=GETDATE()
+                      WHERE ProductionOrderID=@OrderID AND OrderStatus=@CurrentStatus",
+                    new
+                    {
+                        OrderID = orderId,
+                        CurrentStatus = current.OrderStatus,
+                        NewStatus = newStatus,
+                        EmployeeID = employeeId,
+                        UserID = userId
+                    }, transaction);
+                if (affected != 1)
+                    throw new InvalidOperationException("تغيرت حالة أمر التصنيع؛ أعد تحميله قبل التعديل.");
+
+                await _notification.MarkRelatedAsActionedAsync(
+                    connection, transaction, "SCR_PRODORD", orderId);
+
+                if (current.CreatedBy.HasValue)
+                {
+                    await _notification.CreateForAuthorizedUserAsync(
+                        connection, transaction, notificationType: 3,
+                        title: $"تحديث أمر تصنيع #{current.OrderNumber}",
+                        message: $"تم تحويل حالة أمر التصنيع إلى: {statusNames[newStatus]}",
+                        priority: 2, targetUserId: current.CreatedBy.Value,
+                        permissionModuleCode: "SCR_PRODORD", relatedModule: "SCR_PRODORD",
+                        relatedRecordId: orderId, createdBy: userId);
+                }
+                if (newStatus == 2)
+                {
+                    await _notification.CreateForPermissionHoldersAsync(
+                        connection, transaction, notificationType: 1,
+                        title: $"أمر تصنيع معتمد #{current.OrderNumber}",
+                        message: $"اعتمد أمر التصنيع {current.OrderNumber} وأصبح جاهزاً لإنشاء أذون صرف المواد.",
+                        priority: 2, permissionModuleCode: "SCR_MATISS",
+                        requiredPermission: ModulePermissionRequirement.Add,
+                        relatedModule: "SCR_MATISS", relatedRecordId: 0, createdBy: userId,
+                        excludeUserId: userId);
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
+
             await _audit.WriteAuditLogAsync(
                 userId: userId,
                 actionType: 2,
@@ -499,22 +688,10 @@ WHERE ProductionOrderID = @OrderID";
                 recordId: orderId.ToString(),
                 changedColumns: "OrderStatus",
                 moduleName: "SCR_PRODORD",
-                description: $"تغيير حالة أمر {orderNumber} من [{oldStatusName}] إلى [{newStatusName}]"
+                description: $"تغيير حالة أمر {current!.OrderNumber} من [{statusNames[current.OrderStatus]}] إلى [{statusNames[newStatus]}]"
             );
 
-            // ===== إشعار =====
-            byte notifPriority = newStatus == 7 ? (byte)1 : (byte)2;
-            await _notification.CreateNotificationAsync(
-                notificationType: 3,
-                title: $"تحديث أمر تصنيع #{orderNumber}",
-                message: $"تم تحويل حالة أمر التصنيع إلى: {newStatusName}",
-                priority: notifPriority,
-                relatedModule: "SCR_PRODORD",
-                relatedRecordId: orderId,
-                createdBy: userId
-            );
-
-            return (true, $"تم تحويل الحالة إلى [{newStatusName}] بنجاح");
+            return (true, $"تم تحويل الحالة إلى [{statusNames[newStatus]}] بنجاح");
         }
 
         // ==========================================
@@ -522,31 +699,74 @@ WHERE ProductionOrderID = @OrderID";
         // ==========================================
         public async Task<(bool Success, string Message)> CancelOrderAsync(int orderId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanCancel,
+                "لا تملك صلاحية إلغاء أوامر التصنيع.");
+
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            ProductionOrderWorkflowDto? current = null;
+            try
+            {
+                current = await connection.QueryFirstOrDefaultAsync<ProductionOrderWorkflowDto>(
+                    @"SELECT ProductionOrderID,OrderNumber,OrderStatus,BOMID,ProductItemID,PlannedUnitID,PlannedQty,CreatedBy
+                      FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID",
+                    new { ID = orderId }, transaction);
+                if (current is null) return (false, "أمر التصنيع غير موجود");
+                if (current.OrderStatus == 6) return (false, "لا يمكن إلغاء أمر مكتمل");
+                if (current.OrderStatus == 7) return (false, "الأمر ملغي بالفعل");
 
-            var current = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                @"SELECT OrderNumber, OrderStatus
-                  FROM dbo.ProductionOrders WHERE ProductionOrderID = @ID",
-                new { ID = orderId });
+                var pendingIssues = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.MaterialIssueNotes WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID AND IssueStatus=1",
+                    new { ID = orderId }, transaction);
+                if (pendingIssues > 0)
+                    return (false, "ألغِ مسودات أذون الصرف المرتبطة بالأمر قبل إلغائه.");
 
-            if (current == null) return (false, "أمر التصنيع غير موجود");
-            if ((int)current.OrderStatus == 6) return (false, "لا يمكن إلغاء أمر مكتمل");
-            if ((int)current.OrderStatus == 7) return (false, "الأمر ملغي بالفعل");
+                var approvedIssues = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.MaterialIssueNotes WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID AND IssueStatus=2",
+                    new { ID = orderId }, transaction);
+                if (approvedIssues > 0)
+                    return (false, "لا يمكن إلغاء أمر صُرفت له مواد معتمدة؛ يلزم مستند عكسي يعيد المخزون أولاً.");
 
-            // التحقق من عدم وجود دفعات قيد التصنيع
-            var activeBatches = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.ProductionBatches
-                  WHERE ProductionOrderID = @ID AND BatchStatus IN (2, 3, 4)",
-                new { ID = orderId });
+                var linkedBatches = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ID",
+                    new { ID = orderId }, transaction);
+                if (linkedBatches > 0)
+                    return (false, "لا يمكن إلغاء أمر مرتبط بدفعات؛ يجب تسوية الدفعات أولاً حتى لا تبقى دفعات مسودة تابعة لأمر ملغي.");
 
-            if (activeBatches > 0)
-                return (false, "لا يمكن إلغاء أمر يحتوي على دفعات قيد التصنيع");
+                var changed = await connection.ExecuteAsync(
+                    @"UPDATE dbo.ProductionOrders
+                      SET OrderStatus=7,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+                      WHERE ProductionOrderID=@ID AND OrderStatus=@CurrentStatus",
+                    new { ID = orderId, CurrentStatus = current.OrderStatus, UserID = userId }, transaction);
+                if (changed != 1)
+                    throw new InvalidOperationException("تغيرت حالة أمر التصنيع؛ أعد تحميله قبل الإلغاء.");
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.ProductionOrders
-                  SET OrderStatus = 7, ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                  WHERE ProductionOrderID = @ID",
-                new { ID = orderId, UserID = userId });
+                await _notification.MarkRelatedAsActionedAsync(
+                    connection, transaction, "SCR_PRODORD", orderId);
+
+                if (current.CreatedBy.HasValue)
+                {
+                    await _notification.CreateForAuthorizedUserAsync(
+                        connection, transaction, notificationType: 3,
+                        title: $"إلغاء أمر تصنيع #{current.OrderNumber}",
+                        message: $"تم إلغاء أمر التصنيع رقم {current.OrderNumber}",
+                        priority: 1, targetUserId: current.CreatedBy.Value,
+                        permissionModuleCode: "SCR_PRODORD", relatedModule: "SCR_PRODORD",
+                        relatedRecordId: orderId, createdBy: userId);
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); } catch { }
+                return (false, ex.Message);
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -554,17 +774,7 @@ WHERE ProductionOrderID = @OrderID";
                 tableName: "ProductionOrders",
                 recordId: orderId.ToString(),
                 moduleName: "SCR_PRODORD",
-                description: $"إلغاء أمر تصنيع: {current.OrderNumber}"
-            );
-
-            await _notification.CreateNotificationAsync(
-                notificationType: 3,
-                title: "إلغاء أمر تصنيع",
-                message: $"تم إلغاء أمر التصنيع رقم {current.OrderNumber}",
-                priority: 1,
-                relatedModule: "SCR_PRODORD",
-                relatedRecordId: orderId,
-                createdBy: userId
+                description: $"إلغاء أمر تصنيع: {current!.OrderNumber}"
             );
 
             return (true, "تم إلغاء أمر التصنيع بنجاح");
@@ -575,6 +785,8 @@ WHERE ProductionOrderID = @OrderID";
         // ==========================================
         public async Task<List<ProductionOrderMaterialDto>> GetOrderMaterialsAsync(int orderId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض مواد أمر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -703,6 +915,8 @@ WHERE ProductionOrderID = @OrderID",
         // ==========================================
         public async Task<ProductionOrderAuditDto?> GetOrderAuditAsync(int orderId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض سجل أمر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -732,6 +946,8 @@ WHERE po.ProductionOrderID = @OrderID";
         // ==========================================
         public async Task<ProductionOrderCostSummaryDto> GetCostSummaryAsync(int orderId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض تكلفة أمر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -757,6 +973,8 @@ WHERE ProductionOrderID = @OrderID";
         // ==========================================
         public async Task<List<ProductionLookupDto>> GetActiveBOMsLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -772,6 +990,8 @@ ORDER BY b.BOMName";
 
         public async Task<List<ProductionLookupDto>> GetWarehousesLookupAsync(int? warehouseType = null)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -789,6 +1009,8 @@ ORDER BY WarehouseNameAr";
 
         public async Task<List<ProductionLookupDto>> GetEmployeesLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -804,6 +1026,8 @@ ORDER BY FullNameAr";
 
         public async Task<List<ProductionLookupDto>> GetUnitsLookupAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             var sql = @"
@@ -817,6 +1041,8 @@ ORDER BY UnitNameAr";
         // ===== جلب بيانات الوصفة عند اختيارها =====
         public async Task<dynamic?> GetBOMInfoAsync(int bomId)
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
+
             using var connection = CreateConnection();
 
             return await connection.QueryFirstOrDefaultAsync<dynamic>(@"
@@ -844,6 +1070,7 @@ WHERE b.BOMID = @BOMID",
         // ==========================================
         public async Task<string> GenerateOrderNumberAsync()
         {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView || p.CanAdd, "لا تملك صلاحية إنشاء رقم أمر تصنيع.");
             using var connection = CreateConnection();
 
             try
@@ -854,11 +1081,15 @@ EXEC dbo.sp_GetNextNumber 'MO', @NextNum OUTPUT;
 SELECT @NextNum;";
 
                 var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
-                return result ?? $"PRD-{DateTime.Now:yyMMddHHmmss}";
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لأمر التصنيع.");
+
+                return result;
             }
-            catch
+            catch (Exception ex)
             {
-                return $"MO-{DateTime.Now:yyMMddHHmmss}";
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم أمر التصنيع (MO). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل MO والإجراء المخزن.", ex);
             }
         }
 
@@ -867,6 +1098,8 @@ SELECT @NextNum;";
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<ProductionOrderListDto> items, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanExport, "لا تملك صلاحية تصدير أوامر التصنيع.");
+
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("أوامر التصنيع");
 

@@ -74,9 +74,17 @@ namespace YKCoatings.Services
             try
             {
                 var sql = @"DECLARE @N NVARCHAR(50); EXEC sp_GetNextNumber N'PRET', @N OUTPUT; SELECT @N;";
-                return await connection.QueryFirstOrDefaultAsync<string>(sql) ?? $"PRET-{DateTime.Now:yyMMddHHmmss}";
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لمرتجع المشتريات.");
+
+                return result;
             }
-            catch { return $"PRET-{DateTime.Now:yyMMddHHmmss}"; }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم مرتجع المشتريات (PRET). لم يُنشأ رقم بديل؛ راجع إعداد التسلسل PRET والإجراء المخزن.", ex);
+            }
         }
 
         public async Task<int> InsertReturnAsync(PurchaseReturnHeaderDto header, int userId)
@@ -265,17 +273,16 @@ namespace YKCoatings.Services
 
             try
             {
-                var roles = await connection.QueryAsync<int>(
-                    @"SELECT DISTINCT r.RoleID FROM dbo.UserRoles r
-                      INNER JOIN dbo.RolePermissions rp ON r.RoleID = rp.RoleID
-                      INNER JOIN dbo.SystemModules sm ON rp.ModuleID = sm.ModuleID
-                      WHERE sm.ModuleCode = N'SCR_PRET' AND rp.CanApprove = 1");
-
-                foreach (var roleId in roles)
-                    await _notif.CreateNotificationAsync(3,
-                        "مرتجع مشتريات بانتظار الاعتماد 📦",
-                        $"مرتجع المشتريات رقم {info.ReturnNumber} بانتظار الاعتماد",
-                        1, null, roleId, "SCR_PRET", returnId, userId);
+                await _notif.CreateForPermissionHoldersAsync(
+                    notificationType: 3,
+                    title: "مرتجع مشتريات بانتظار الاعتماد",
+                    message: $"مرتجع المشتريات رقم {info.ReturnNumber} بانتظار الاعتماد",
+                    priority: 1,
+                    permissionModuleCode: "SCR_PRET",
+                    requiredPermission: ModulePermissionRequirement.Approve,
+                    relatedModule: "SCR_PRET",
+                    relatedRecordId: returnId,
+                    createdBy: userId);
             }
             catch { }
 
@@ -350,15 +357,22 @@ namespace YKCoatings.Services
             }
             catch { transaction.Rollback(); throw; }
 
-            // إشعارات
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId); } catch { }
             try
             {
                 if (createdBy.HasValue)
-                    await _notif.CreateNotificationAsync(3,
-                        "تم اعتماد المرتجع ✅",
-                        $"تم اعتماد مرتجع المشتريات رقم {returnNumber}",
-                        2, createdBy.Value, null, "SCR_PRET", returnId, userId);
-                await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId);
+                {
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم اعتماد المرتجع",
+                        message: $"تم اعتماد مرتجع المشتريات رقم {returnNumber}",
+                        priority: 2,
+                        targetUserId: createdBy.Value,
+                        permissionModuleCode: "SCR_PRET",
+                        relatedModule: "SCR_PRET",
+                        relatedRecordId: returnId,
+                        createdBy: userId);
+                }
             }
             catch { }
 
@@ -385,14 +399,22 @@ namespace YKCoatings.Services
                   WHERE ReturnID = @ID",
                 new { ID = returnId, EmpID = employeeId, Reason = reason, UserID = userId });
 
+            try { await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId); } catch { }
             try
             {
                 if (info.CreatedBy.HasValue)
-                    await _notif.CreateNotificationAsync(3,
-                        "تم رفض المرتجع ❌",
-                        $"تم رفض مرتجع المشتريات رقم {info.ReturnNumber}. السبب: {reason}",
-                        1, info.CreatedBy.Value, null, "SCR_PRET", returnId, userId);
-                await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId);
+                {
+                    await _notif.CreateForAuthorizedUserAsync(
+                        notificationType: 3,
+                        title: "تم رفض المرتجع",
+                        message: $"تم رفض مرتجع المشتريات رقم {info.ReturnNumber}. السبب: {reason}",
+                        priority: 1,
+                        targetUserId: info.CreatedBy.Value,
+                        permissionModuleCode: "SCR_PRET",
+                        relatedModule: "SCR_PRET",
+                        relatedRecordId: returnId,
+                        createdBy: userId);
+                }
             }
             catch { }
 

@@ -5,7 +5,12 @@ namespace YKCoatings.Services
 {
     public class DashboardService : BaseDbService
     {
-        public DashboardService(IConfiguration configuration) : base(configuration) { }
+        private readonly ModuleAuthorizationService _authorization;
+
+        public DashboardService(IConfiguration configuration, ModuleAuthorizationService authorization) : base(configuration)
+        {
+            _authorization = authorization;
+        }
 
         // ==========================================
         // إحصائيات عامة
@@ -251,10 +256,42 @@ public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync(int months
     return (await connection.QueryAsync<MonthlyChartDto>(sql, new { Months = months })).ToList();
 }
         // ==========================================
+        // ملخص لوحة التصنيع - قراءة فقط
+        // ==========================================
+        public async Task<ManufacturingDashboardSummaryDto> GetManufacturingDashboardSummaryAsync(int userId)
+        {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanView,
+                "لا تملك صلاحية عرض أوامر التصنيع.");
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض دفعات التصنيع.");
+
+            using var connection = CreateConnection();
+            var sql = @"
+SELECT
+    (SELECT COUNT(*) FROM dbo.ProductionOrders WHERE OrderStatus IN (3, 4, 5)) AS ActiveOrderCount,
+    (SELECT COUNT(*) FROM dbo.ProductionBatches WHERE BatchStatus = 2) AS InProductionBatchCount,
+    (SELECT COUNT(*) FROM dbo.ProductionBatches WHERE BatchStatus = 3) AS ProductionCompleteBatchCount,
+    (SELECT COUNT(*) FROM dbo.ProductionBatches WHERE BatchStatus = 4) AS QualityInspectionBatchCount,
+    (SELECT COUNT(*)
+     FROM dbo.ProductionBatchStages pbs
+     INNER JOIN dbo.ProductionBatches pb ON pb.BatchID = pbs.BatchID
+     WHERE pb.BatchStatus IN (2, 3, 4) AND pbs.StageStatus = 4) AS ProblemStageCount,
+    (SELECT COUNT(*) FROM dbo.ProductionBatches WHERE BatchStatus = 6) AS RejectedBatchCount;";
+
+            return await connection.QueryFirstOrDefaultAsync<ManufacturingDashboardSummaryDto>(sql)
+                ?? new ManufacturingDashboardSummaryDto();
+        }
+
+        // ==========================================
         // أوامر التصنيع الحالية - متابعة لحظية
         // ==========================================
-        public async Task<List<CurrentProductionOrderDto>> GetCurrentProductionTrackingAsync(int take = 8)
+        public async Task<List<CurrentProductionOrderDto>> GetCurrentProductionTrackingAsync(int userId, int take = 8)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanView,
+                "لا تملك صلاحية عرض أوامر التصنيع.");
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض دفعات التصنيع.");
+            take = Math.Clamp(take, 1, 50);
             using var connection = CreateConnection();
 
             var sql = @"
@@ -371,8 +408,12 @@ ORDER BY
         // ==========================================
         // تفاصيل الباتشات الحية لأمر تصنيع واحد
         // ==========================================
-        public async Task<List<CurrentProductionBatchDto>> GetProductionOrderLiveBatchesAsync(int productionOrderId)
+        public async Task<List<CurrentProductionBatchDto>> GetProductionOrderLiveBatchesAsync(int userId, int productionOrderId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD", p => p.CanView,
+                "لا تملك صلاحية عرض أوامر التصنيع.");
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض دفعات التصنيع.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -483,8 +524,10 @@ ORDER BY bb.BatchID DESC;";
         // ==========================================
         // مراحل الباتشات النشطة - للخط الزمني
         // ==========================================
-        public async Task<List<StageTimelineItemDto>> GetActiveBatchesStagesAsync(List<int> batchIds)
+        public async Task<List<StageTimelineItemDto>> GetActiveBatchesStagesAsync(int userId, List<int> batchIds)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_BATCH", p => p.CanView,
+                "لا تملك صلاحية عرض مراحل دفعات التصنيع.");
             if (batchIds is null || !batchIds.Any())
                 return new List<StageTimelineItemDto>();
 

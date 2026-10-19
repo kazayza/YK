@@ -1,0 +1,364 @@
+@page "/manufacturing-dashboard"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@implements IAsyncDisposable
+@inject DashboardService DashboardService
+@inject UserSessionService UserSession
+@inject NavigationManager Navigation
+
+<PageTitle>لوحة التصنيع - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="mfg-state mfg-denied" role="alert">
+        <div class="mfg-state-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3"/></svg>
+        </div>
+        <h2>يجب تسجيل الدخول أولاً</h2>
+        <button type="button" class="mfg-state-action" @onclick='() => Navigation.NavigateTo("/login")'>تسجيل الدخول</button>
+    </div>
+}
+else if (accessDenied)
+{
+    <div class="mfg-state mfg-denied" role="alert">
+        <div class="mfg-state-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg>
+        </div>
+        <h2>ليس لديك صلاحية عرض لوحة التصنيع</h2>
+        <p>تتطلب اللوحة صلاحية عرض أوامر التصنيع ودفعات التصنيع.</p>
+        <button type="button" class="mfg-state-action" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+    </div>
+}
+else
+{
+    <main class="mfg-board yk-gold-page" dir="rtl">
+        <header class="mfg-hero">
+            <div class="mfg-hero-glow"></div>
+            <div class="mfg-hero-main">
+                <div class="mfg-heading">
+                    <div class="mfg-heading-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l6 4V9l6 4V5l6 4v12H3Z"/><path d="M7 21v-4h3v4m4 0v-4h3v4"/></svg>
+                    </div>
+                    <div>
+                        <p class="mfg-eyebrow">YK COATINGS · OPERATIONS</p>
+                        <h1>لوحة التصنيع</h1>
+                        <p class="mfg-hero-subtitle">ملخص حالات أوامر التصنيع والدفعات ومتابعة مراحل التشغيل</p>
+                    </div>
+                </div>
+                <div class="mfg-hero-actions">
+                    <span class="mfg-readonly">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>
+                        عرض للمتابعة فقط
+                    </span>
+                    <button type="button" class="mfg-refresh" @onclick="LoadSummaryAsync" disabled="@(isLoading || isRefreshing)">
+                        @if (isRefreshing)
+                        {
+                            <span class="mfg-spinner"></span>
+                            <span>جاري التحديث</span>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3"/></svg>
+                            <span>تحديث المؤشرات</span>
+                        }
+                    </button>
+                </div>
+            </div>
+            <div class="mfg-hero-foot">
+                <span class="mfg-live"><span class="mfg-live-dot"></span>تحديث تلقائي كل 30 ثانية</span>
+                @if (lastUpdated.HasValue)
+                {
+                    <span class="mfg-updated">آخر تحديث: @lastUpdated.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                }
+            </div>
+        </header>
+
+        @if (loadError && summary is not null)
+        {
+            <div class="mfg-error" role="status">
+                <span>تعذر تحديث المؤشرات؛ المعروض هو آخر ملخص تم تحميله.</span>
+                <button type="button" @onclick="LoadSummaryAsync" disabled="@isRefreshing">إعادة المحاولة</button>
+            </div>
+        }
+
+        @if (isLoading)
+        {
+            <section class="mfg-stat-grid" aria-busy="true" aria-label="جاري تحميل مؤشرات التصنيع">
+                @for (var i = 0; i < 4; i++)
+                {
+                    <div class="mfg-stat mfg-skeleton"><span></span><i></i><b></b></div>
+                }
+            </section>
+        }
+        else if (summary is null)
+        {
+            <section class="mfg-state mfg-load-state" role="alert">
+                <div class="mfg-state-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3"/></svg>
+                </div>
+                <h2>تعذر تحميل مؤشرات التصنيع</h2>
+                <p>تحقق من الاتصال ثم أعد المحاولة. لم يتم إجراء أي تغيير على البيانات.</p>
+                <button type="button" class="mfg-state-action" @onclick="LoadSummaryAsync" disabled="@isRefreshing">إعادة المحاولة</button>
+            </section>
+        }
+        else
+        {
+            <section class="mfg-stat-grid" aria-label="مؤشرات التصنيع">
+                <article class="stat-card mfg-stat accent-gold">
+                    <div class="mfg-stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h5M8 16h8"/></svg>
+                    </div>
+                    <div class="mfg-stat-copy"><span>أوامر قيد التنفيذ</span><strong>@summary.ActiveOrderCount.ToString("N0")</strong><small>حالات التجهيز أو التصنيع أو فحص الجودة</small></div>
+                </article>
+                <article class="stat-card mfg-stat accent-info">
+                    <div class="mfg-stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
+                    </div>
+                    <div class="mfg-stat-copy"><span>دفعات قيد التصنيع</span><strong>@summary.InProductionBatchCount.ToString("N0")</strong><small>حالة الدفعة: قيد التصنيع</small></div>
+                </article>
+                <article class="stat-card mfg-stat accent-success">
+                    <div class="mfg-stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+                    </div>
+                    <div class="mfg-stat-copy"><span>دفعات اكتمل تصنيعها</span><strong>@summary.ProductionCompleteBatchCount.ToString("N0")</strong><small>حالة الدفعة: اكتمل التصنيع</small></div>
+                </article>
+                <article class="stat-card mfg-stat accent-qc">
+                    <div class="mfg-stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5M8 11h5.5M10.75 8.25v5.5"/></svg>
+                    </div>
+                    <div class="mfg-stat-copy"><span>دفعات في فحص الجودة</span><strong>@summary.QualityInspectionBatchCount.ToString("N0")</strong><small>حالة الدفعة: في فحص الجودة</small></div>
+                </article>
+            </section>
+
+            <section class="mfg-watch-row" aria-label="مؤشرات المتابعة">
+                <div class="mfg-watch-title">
+                    <span class="mfg-watch-mark"></span>
+                    <div><h2>مؤشرات المتابعة</h2><p>حسب الحالات المسجلة في النظام</p></div>
+                </div>
+                <div class="mfg-watch-items">
+                    <div class="mfg-watch-item @(summary.ProblemStageCount > 0 ? "has-issue" : "")">
+                        <span class="mfg-watch-label">مراحل عليها مشكلة</span>
+                        <strong>@summary.ProblemStageCount.ToString("N0")</strong>
+                    </div>
+                    <div class="mfg-watch-item @(summary.RejectedBatchCount > 0 ? "has-rejection" : "")">
+                        <span class="mfg-watch-label">دفعات بحالة مرفوض</span>
+                        <strong>@summary.RejectedBatchCount.ToString("N0")</strong>
+                    </div>
+                </div>
+            </section>
+
+            <CurrentProductionWidget />
+
+            <section class="mfg-quick-section" aria-label="روابط التصنيع">
+                <div class="mfg-section-heading">
+                    <div><h2>الوصول السريع</h2><p>فتح شاشات التصنيع ذات الصلة</p></div>
+                </div>
+                <div class="mfg-quick-grid">
+                    <a class="mfg-quick-link" href="/production-orders">
+                        <span class="mfg-quick-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h5M8 16h8"/></svg>
+                        </span>
+                        <span><strong>أوامر التصنيع</strong><small>عرض وإدارة الأوامر</small></span>
+                        <svg class="mfg-quick-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </a>
+                    <a class="mfg-quick-link" href="/production-batches">
+                        <span class="mfg-quick-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
+                        </span>
+                        <span><strong>دفعات التصنيع</strong><small>عرض تفاصيل الدفعات ومراحلها</small></span>
+                        <svg class="mfg-quick-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </a>
+                </div>
+            </section>
+        }
+    </main>
+}
+
+<style>
+.mfg-board{display:flex;flex-direction:column;gap:18px;color:var(--yk-text)}
+.mfg-hero{position:relative;overflow:hidden;padding:24px 28px 18px;border:1px solid var(--yk-border-gold);border-radius:20px;background:linear-gradient(135deg,var(--yk-black) 0%,var(--yk-black2) 55%,var(--yk-black3) 100%);color:var(--yk-surface);box-shadow:var(--yk-shadow-lg),inset 0 1px 0 rgba(255,255,255,.04)}
+.mfg-hero::before{content:'';position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,var(--yk-gold),transparent);opacity:.9}
+.mfg-hero-glow{position:absolute;left:8%;top:-115px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,var(--yk-gold-15),transparent 70%);pointer-events:none}
+.mfg-hero-main,.mfg-hero-foot{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.mfg-heading{display:flex;align-items:center;gap:15px}
+.mfg-heading-icon{width:54px;height:54px;border:1px solid var(--yk-border-gold);border-radius:15px;background:var(--yk-gold-10);color:var(--yk-gold-light);display:flex;align-items:center;justify-content:center;flex:none}
+.mfg-heading-icon svg{width:27px;height:27px}
+.mfg-eyebrow{margin:0 0 4px;color:var(--yk-gold-light);font-size:.65rem;font-weight:800;letter-spacing:1.4px}
+.mfg-heading h1{margin:0;color:var(--yk-gold-soft);font-size:1.5rem;line-height:1.3;font-weight:900}
+.mfg-hero-subtitle{margin:5px 0 0;color:rgba(245,230,200,.78);font-size:.82rem;font-weight:600}
+.mfg-hero-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mfg-readonly{display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid rgba(255,255,255,.1);border-radius:11px;background:rgba(255,255,255,.04);color:rgba(245,230,200,.86);font-size:.74rem;font-weight:700}
+.mfg-readonly svg{width:16px;height:16px;color:var(--yk-gold-light)}
+.mfg-refresh{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px 13px;border:1px solid var(--yk-gold-20);border-radius:11px;background:var(--yk-gold-10);color:var(--yk-gold-soft);font-family:'Tajawal',sans-serif;font-size:.76rem;font-weight:800;cursor:pointer;transition:all var(--yk-transition)}
+.mfg-refresh:hover:not(:disabled){border-color:var(--yk-gold);background:var(--yk-gold-15);transform:translateY(-1px)}
+.mfg-refresh:disabled{opacity:.62;cursor:not-allowed}
+.mfg-refresh svg{width:16px;height:16px}
+.mfg-hero-foot{margin-top:17px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);color:rgba(245,230,200,.68);font-size:.7rem;font-weight:600}
+.mfg-live{display:flex;align-items:center;gap:7px}
+.mfg-live-dot{width:7px;height:7px;border-radius:50%;background:var(--yk-success);box-shadow:0 0 0 4px var(--yk-success-soft);animation:mfgPulse 1.8s infinite}
+.mfg-updated{direction:ltr}
+.mfg-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.mfg-stat{--accent:var(--yk-gold);position:relative;display:flex;align-items:flex-start;gap:13px;min-height:122px;padding:17px 17px 15px;border:1px solid var(--yk-border);border-radius:16px;background:var(--yk-surface);box-shadow:var(--yk-shadow-sm);overflow:hidden;transition:border-color var(--yk-transition),box-shadow var(--yk-transition),transform var(--yk-transition)}
+.mfg-stat:hover{border-color:var(--yk-border-gold);box-shadow:var(--yk-shadow);transform:translateY(-1px)}
+.mfg-stat::before{content:'';position:absolute;right:0;top:13px;bottom:13px;width:3px;border-radius:3px;background:var(--accent);opacity:.85}
+.mfg-stat.accent-gold{--accent:var(--yk-gold-dark)}.mfg-stat.accent-info{--accent:var(--yk-info)}.mfg-stat.accent-success{--accent:var(--yk-success)}.mfg-stat.accent-qc{--accent:var(--yk-gold)}
+.mfg-stat-icon{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;border:1px solid color-mix(in srgb,var(--accent) 20%,var(--yk-surface));border-radius:12px;background:color-mix(in srgb,var(--accent) 10%,var(--yk-surface));color:var(--accent)}
+.mfg-stat-icon svg{width:20px;height:20px}
+.mfg-stat-copy{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:4px}
+.mfg-stat-copy>span{color:var(--yk-text-2);font-size:.76rem;font-weight:700}
+.mfg-stat-copy strong{color:var(--yk-text);font-size:1.65rem;line-height:1.1;font-weight:900;font-variant-numeric:tabular-nums}
+.mfg-stat-copy small{color:var(--yk-text-3);font-size:.66rem;font-weight:600;line-height:1.4}
+.mfg-watch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:15px 18px;border:1px solid var(--yk-border);border-radius:15px;background:linear-gradient(105deg,var(--yk-surface),var(--yk-bg));box-shadow:var(--yk-shadow-sm)}
+.mfg-watch-title{display:flex;align-items:center;gap:10px}
+.mfg-watch-mark{width:4px;height:34px;border-radius:4px;background:linear-gradient(180deg,var(--yk-gold),var(--yk-gold-dark))}
+.mfg-watch-title h2,.mfg-section-heading h2{margin:0;color:var(--yk-text);font-size:.9rem;font-weight:900}
+.mfg-watch-title p,.mfg-section-heading p{margin:3px 0 0;color:var(--yk-text-3);font-size:.68rem;font-weight:600}
+.mfg-watch-items{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mfg-watch-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--yk-border);border-radius:10px;background:var(--yk-surface)}
+.mfg-watch-label{color:var(--yk-text-2);font-size:.73rem;font-weight:700}
+.mfg-watch-item strong{min-width:27px;padding:3px 7px;border-radius:7px;background:var(--yk-bg);color:var(--yk-text-2);text-align:center;font-size:.8rem;font-weight:900;font-variant-numeric:tabular-nums}
+.mfg-watch-item.has-issue,.mfg-watch-item.has-rejection{border-color:var(--yk-danger-soft);background:var(--yk-danger-soft)}
+.mfg-watch-item.has-issue strong,.mfg-watch-item.has-rejection strong{background:var(--yk-surface);color:var(--yk-danger)}
+.mfg-quick-section{padding:19px;border:1px solid var(--yk-border);border-radius:16px;background:var(--yk-surface);box-shadow:var(--yk-shadow-sm)}
+.mfg-section-heading{margin-bottom:13px}
+.mfg-quick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.mfg-quick-link{display:flex;align-items:center;gap:12px;min-width:0;padding:13px 14px;border:1px solid var(--yk-border);border-radius:12px;background:var(--yk-bg);color:var(--yk-text);text-decoration:none;transition:all var(--yk-transition)}
+.mfg-quick-link:hover{transform:translateY(-2px);border-color:var(--yk-gold);background:var(--yk-surface);box-shadow:var(--yk-shadow)}
+.mfg-quick-icon{width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex:none;border:1px solid var(--yk-border-gold);border-radius:11px;background:var(--yk-gold-10);color:var(--yk-gold-dark)}
+.mfg-quick-icon svg{width:19px;height:19px}
+.mfg-quick-link>span:nth-child(2){display:flex;min-width:0;flex-direction:column;gap:2px}
+.mfg-quick-link strong{font-size:.78rem;font-weight:800}
+.mfg-quick-link small{color:var(--yk-text-3);font-size:.67rem;font-weight:600}
+.mfg-quick-arrow{width:16px;height:16px;margin-inline-start:auto;flex:none;color:var(--yk-text-3);transition:transform var(--yk-transition),color var(--yk-transition)}
+.mfg-quick-link:hover .mfg-quick-arrow{color:var(--yk-gold-dark);transform:translateX(-3px)}
+.mfg-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid var(--yk-warning-soft);border-radius:11px;background:var(--yk-warning-soft);color:var(--yk-text);font-size:.76rem;font-weight:700}
+.mfg-error button,.mfg-state-action{padding:7px 12px;border:1px solid var(--yk-gold);border-radius:9px;background:linear-gradient(135deg,var(--yk-gold),var(--yk-gold-dark));color:var(--yk-black2);font-family:'Tajawal',sans-serif;font-size:.74rem;font-weight:800;cursor:pointer}
+.mfg-error button:disabled,.mfg-state-action:disabled{opacity:.6;cursor:not-allowed}
+.mfg-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;min-height:270px;margin:10px auto;padding:28px 20px;text-align:center;font-family:'Tajawal',sans-serif}
+.mfg-denied,.mfg-load-state{max-width:560px;border:1px solid var(--yk-border-gold);border-radius:18px;background:var(--yk-surface);box-shadow:var(--yk-shadow-lg)}
+.mfg-state-icon{width:54px;height:54px;display:flex;align-items:center;justify-content:center;border:1px solid var(--yk-border-gold);border-radius:16px;background:var(--yk-gold-10);color:var(--yk-gold-dark)}
+.mfg-state-icon svg{width:25px;height:25px}
+.mfg-state h2{margin:2px 0 0;color:var(--yk-text);font-size:1rem;font-weight:900}
+.mfg-state p{margin:0;color:var(--yk-text-2);font-size:.8rem;line-height:1.7}
+.mfg-state-action{margin-top:5px}
+.mfg-skeleton{min-height:122px;display:flex;flex-direction:column;justify-content:space-between}
+.mfg-skeleton span,.mfg-skeleton i,.mfg-skeleton b{display:block;border-radius:7px;background:linear-gradient(90deg,var(--yk-bg) 25%,var(--yk-surface) 50%,var(--yk-bg) 75%);background-size:200% 100%;animation:mfgShimmer 1.25s infinite}
+.mfg-skeleton span{width:38%;height:12px}.mfg-skeleton i{width:25%;height:25px}.mfg-skeleton b{width:72%;height:9px}
+@@keyframes mfgSpin{to{transform:rotate(360deg)}}
+@@keyframes mfgPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.82)}}
+@@keyframes mfgShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@@media(max-width:1050px){.mfg-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@@media(max-width:640px){.mfg-board{gap:13px}.mfg-hero{padding:18px 16px 14px}.mfg-heading{align-items:flex-start;gap:10px}.mfg-heading-icon{width:44px;height:44px;border-radius:12px}.mfg-heading-icon svg{width:23px;height:23px}.mfg-heading h1{font-size:1.22rem}.mfg-hero-subtitle{max-width:290px;font-size:.73rem}.mfg-hero-actions{width:100%}.mfg-readonly,.mfg-refresh{flex:1;justify-content:center}.mfg-stat-grid{gap:8px}.mfg-stat{min-height:112px;padding:13px 12px;gap:9px}.mfg-stat-icon{width:34px;height:34px;border-radius:10px}.mfg-stat-icon svg{width:17px;height:17px}.mfg-stat-copy>span{font-size:.68rem}.mfg-stat-copy strong{font-size:1.4rem}.mfg-stat-copy small{font-size:.61rem}.mfg-watch-row{align-items:flex-start;padding:13px}.mfg-watch-items{width:100%;display:grid;grid-template-columns:1fr}.mfg-watch-item{justify-content:space-between}.mfg-quick-section{padding:15px}.mfg-quick-grid{grid-template-columns:1fr}.mfg-error{align-items:flex-start;flex-direction:column}}
+@@media(max-width:380px){.mfg-stat-grid{grid-template-columns:1fr}.mfg-stat{min-height:94px}.mfg-hero-foot{align-items:flex-start;flex-direction:column}}
+</style>
+
+@code {
+    private ManufacturingDashboardSummaryDto? summary;
+    private bool isLoading = true;
+    private bool isRefreshing;
+    private bool loadError;
+    private bool accessDenied;
+    private bool _loadInProgress;
+    private DateTime? lastUpdated;
+    private PeriodicTimer? _refreshTimer;
+    private CancellationTokenSource? _refreshCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            accessDenied = true;
+            isLoading = false;
+            return;
+        }
+
+        await LoadSummaryAsync();
+        if (!accessDenied)
+            StartAutoRefresh();
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        if (_loadInProgress || accessDenied)
+            return;
+
+        if (!UserSession.IsLoggedIn)
+        {
+            accessDenied = true;
+            summary = null;
+            isLoading = false;
+            return;
+        }
+
+        _loadInProgress = true;
+        isRefreshing = summary is not null;
+        if (summary is null)
+            isLoading = true;
+        loadError = false;
+
+        try
+        {
+            summary = await DashboardService.GetManufacturingDashboardSummaryAsync(UserSession.UserID);
+            lastUpdated = DateTime.Now;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            accessDenied = true;
+            summary = null;
+        }
+        catch
+        {
+            loadError = true;
+        }
+        finally
+        {
+            isLoading = false;
+            isRefreshing = false;
+            _loadInProgress = false;
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        if (_refreshTimer is not null)
+            return;
+
+        _refreshCts = new CancellationTokenSource();
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        _ = AutoRefreshLoopAsync();
+    }
+
+    private async Task AutoRefreshLoopAsync()
+    {
+        try
+        {
+            while (_refreshTimer is not null && _refreshCts is not null &&
+                   await _refreshTimer.WaitForNextTickAsync(_refreshCts.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadSummaryAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        try
+        {
+            _refreshCts?.Cancel();
+            _refreshTimer?.Dispose();
+            _refreshCts?.Dispose();
+        }
+        catch
+        {
+        }
+
+        return ValueTask.CompletedTask;
+    }
+}

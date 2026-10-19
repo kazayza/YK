@@ -10,12 +10,12 @@
 
 @if (!UserSession.IsLoggedIn)
 {
-    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+    <div class="no-access-card"><div class="no-access-icon"><i class="bi bi-lock-fill"></i></div><h4>يجب تسجيل الدخول أولاً</h4></div>
 }
 else if (permissions is null || !Perms.CanView)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+        <div class="no-access-icon"><i class="bi bi-shield-lock-fill"></i></div>
         <h4>ليس لديك صلاحية لعرض هذه الشاشة</h4>
         <button class="btn-back-dash" @onclick='() => NavigationManager.NavigateTo("/dashboard")'>العودة للرئيسية</button>
     </div>
@@ -140,26 +140,31 @@ else
                     <div class="form-row">
                         <div class="form-group col-3">
                             <label class="form-lbl">إنتاج فعلي</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.ProducedQty" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.0001" @bind="batch.ProducedQty" disabled="@isViewMode" />
                         </div>
                         <div class="form-group col-3">
                             <label class="form-lbl">صالح</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.GoodQty" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.0001" @bind="batch.GoodQty" disabled="@(!CanEditQcData)" />
                         </div>
                         <div class="form-group col-3">
                             <label class="form-lbl">مرفوض</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.RejectedQty" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.0001" @bind="batch.RejectedQty" disabled="@(!CanEditQcData)" />
                         </div>
                         <div class="form-group col-3">
                             <label class="form-lbl">هالك</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.WasteQty" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.0001" @bind="batch.WasteQty" disabled="@(!CanEditQcData)" />
                         </div>
                     </div>
 
                     <div class="form-row">
+                        <div class="form-group col-12">
+                            <small class="form-hint">أدخل الصالح والمرفوض والعينات والهالك كلّاً على حدة؛ يجب أن يساوي مجموعها كمية الإنتاج الفعلية قبل حفظ نتيجة الجودة.</small>
+                        </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group col-3">
                             <label class="form-lbl">عينات</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.SampleQty" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.0001" @bind="batch.SampleQty" disabled="@(!CanEditQcData)" />
                         </div>
                         <div class="form-group col-3">
                             <label class="form-lbl">المخزن المستهدف</label>
@@ -215,11 +220,23 @@ else
                     <div class="form-row">
                         <div class="form-group col-3">
                             <label class="form-lbl">مصاريف غير مباشرة</label>
-                            <input type="number" class="form-ctrl" step="0.01" @bind="batch.OverheadCost" disabled="@isViewMode" />
+                            <input type="number" class="form-ctrl" step="0.01" min="0" @bind="batch.OverheadCost" disabled="@isViewMode" />
                         </div>
                         <div class="form-group col-3">
-                            <label class="form-lbl">الإجمالي</label>
+                            <label class="form-lbl">الإجمالي المسجل للدفعة</label>
                             <input class="form-ctrl readonly-field" value="@CurrentTotalCost.ToString("N2")" readonly />
+                        </div>
+                        <div class="form-group col-3">
+                            <label class="form-lbl">تكلفة وحدة المنتج للترحيل (@batch.UnitName)</label>
+                            <input type="number" class="form-ctrl" step="0.0001" min="0"
+                                   @bind="batch.UnitCost" disabled="@(!CanEditUnitCost)" />
+                            <small class="form-hint">تُدخل يدوياً بعد الجودة؛ لا تُوزّع تكلفة الصرف أو الهالك/المرفوض تلقائياً.</small>
+                            @if (CanSetOutputUnitCost)
+                            {
+                                <button type="button" class="btn-stage-load" @onclick="SaveOutputUnitCost" disabled="@isSaving">
+                                    <i class="bi bi-save"></i> حفظ تكلفة الوحدة
+                                </button>
+                            }
                         </div>
                         <div class="form-group col-12">
                             <label class="form-lbl">ملاحظات</label>
@@ -239,7 +256,7 @@ else
                 <span class="count-badge">@stages.Count مرحلة</span>
             </div>
 
-            @if (Id > 0 && batch.BatchStatus <= 2 && Perms.CanEdit)
+            @if (Id > 0 && batch.BatchStatus == 1 && Perms.CanEdit)
             {
                 <button class="btn-stage-load" @onclick="ReloadStagesFromBom" disabled="@isSaving">
                     <i class="bi bi-arrow-repeat"></i>
@@ -360,7 +377,7 @@ else
                     <div class="form-row">
                         <div class="form-group col-4">
                             <label class="form-lbl">مفتش الجودة</label>
-                            <select class="form-ctrl" @bind="batch.QCInspectedBy" disabled="@isViewMode">
+                            <select class="form-ctrl" @bind="batch.QCInspectedBy" disabled="@(!CanEditQcData)">
                                 <option value="">— اختر —</option>
                                 @foreach (var e in employeeLookup)
                                 {
@@ -370,22 +387,23 @@ else
                         </div>
                         <div class="form-group col-4">
                             <label class="form-lbl">تاريخ الفحص</label>
-                            <input type="datetime-local" class="form-ctrl" @bind="batch.QCInspectionDate" disabled="@isViewMode" />
+                            <input type="datetime-local" class="form-ctrl" @bind="batch.QCInspectionDate" disabled="true" />
                         </div>
                         <div class="form-group col-4">
                             <label class="form-lbl">نتيجة الفحص</label>
-                            <select class="form-ctrl" @bind="batch.QCResult" disabled="@isViewMode">
+                            <select class="form-ctrl" @bind="batch.QCResult" disabled="@(!CanEditQcData)">
                                 <option value="">— اختر —</option>
                                 <option value="1">ناجح</option>
                                 <option value="2">فاشل</option>
-                                <option value="3">ناجح بتحفظ</option>
+                                <option value="3">ناجح بتحفظ (حجز)</option>
                             </select>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group col-12">
                             <label class="form-lbl">ملاحظات الجودة</label>
-                            <textarea class="form-ctrl textarea-ctrl" rows="4" @bind="batch.QCNotes" disabled="@isViewMode"></textarea>
+                            <textarea class="form-ctrl textarea-ctrl" rows="4" @bind="batch.QCNotes" disabled="@(!CanEditQcData)"></textarea>
+                            <small class="form-hint">«ناجح بتحفظ» يبقي الدفعة في حالة فحص الجودة؛ لا تُرحّل حتى تُعاد وتُسجّل لها نتيجة قبول صريحة.</small>
                         </div>
                     </div>
                 </div>
@@ -422,14 +440,14 @@ else
 
         <div class="action-bar">
     <div class="action-bar-start">
-        @if (Id > 0 && batch.BatchStatus == 1 && Perms.CanApprove)
+        @if (Id > 0 && batch.BatchStatus == 1 && Perms.CanEdit)
         {
             <button class="btn-action start" @onclick="StartProduction" disabled="@isSaving">
                 <i class="bi bi-play-circle-fill"></i> بدء التصنيع
             </button>
         }
 
-        @if (Id > 0 && batch.BatchStatus == 2 && Perms.CanApprove)
+        @if (Id > 0 && batch.BatchStatus == 2 && Perms.CanEdit)
         {
             <button class="btn-action done" @onclick="CompleteProduction" disabled="@isSaving">
                 <i class="bi bi-check2-circle"></i> اكتمال التصنيع
@@ -443,7 +461,7 @@ else
             </button>
         }
 
-        @if (Id > 0 && batch.BatchStatus == 5 && !inventoryAdded && Perms.CanApprove)
+        @if (Id > 0 && batch.BatchStatus == 5 && !inventoryAdded && Perms.CanPost)
         {
             <button class="btn-action accept" @onclick="AddToInventory" disabled="@isSaving">
                 <i class="bi bi-box-seam"></i> إدخال المخزن
@@ -540,6 +558,7 @@ else
     .form-ctrl:disabled { background:#f1f5f9; color:var(--c-text-2); cursor:not-allowed; }
     .readonly-field { background:#f8fafc !important; color:var(--c-text-2) !important; }
     .textarea-ctrl { resize:vertical; min-height:70px; }
+    .form-hint { display:block; margin-top:.35rem; color:#64748b; font-size:.78rem; line-height:1.45; }
     .field-error { font-size:.75rem; color:var(--c-danger); font-weight:600; }
 
     .table-scroll { overflow-x:auto; }
@@ -712,10 +731,10 @@ else
     }
 
     batch = existing;
-    isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+    isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
 
     if (!string.IsNullOrWhiteSpace(batch.BatchNumber))
-        inventoryAdded = await BatchService.HasInventoryEntryAsync(batch.BatchNumber);
+        inventoryAdded = await BatchService.HasInventoryEntryAsync(batch.BatchID);
 }
 else
 {
@@ -821,7 +840,7 @@ private async Task StartProduction()
             if (refreshed is not null)
             {
                 batch = refreshed;
-                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
             }
         }
     }
@@ -848,7 +867,7 @@ private async Task CompleteProduction()
             if (refreshed is not null)
             {
                 batch = refreshed;
-                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
             }
         }
     }
@@ -873,6 +892,7 @@ private async Task ApplyQc()
             goodQty: batch.GoodQty,
             rejectedQty: batch.RejectedQty,
             sampleQty: batch.SampleQty,
+            wasteQty: batch.WasteQty,
             userId: UserSession.UserID);
 
         isSuccess = result.Success;
@@ -884,7 +904,7 @@ private async Task ApplyQc()
             if (refreshed is not null)
             {
                 batch = refreshed;
-                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
             }
         }
     }
@@ -894,6 +914,37 @@ private async Task ApplyQc()
         _ = ClearMessage();
     }
 }
+private bool CanEditQcData => Perms.CanApprove && (batch.BatchStatus == 3 || batch.BatchStatus == 4);
+private bool CanSetOutputUnitCost => Id > 0 && batch.BatchStatus == 5 && batch.QCResult == 1 && !inventoryAdded && Perms.CanPost;
+private bool CanEditUnitCost => CanSetOutputUnitCost;
+
+private async Task SaveOutputUnitCost()
+{
+    if (!CanSetOutputUnitCost) return;
+    isSaving = true;
+    try
+    {
+        var result = await BatchService.SetOutputUnitCostAsync(Id, batch.UnitCost, UserSession.UserID);
+        isSuccess = result.Success;
+        resultMessage = result.Message;
+        if (result.Success)
+        {
+            var refreshed = await BatchService.GetByIdAsync(Id);
+            if (refreshed is not null) batch = refreshed;
+        }
+    }
+    catch (Exception ex)
+    {
+        isSuccess = false;
+        resultMessage = $"تعذر حفظ تكلفة الوحدة: {ex.Message}";
+    }
+    finally
+    {
+        isSaving = false;
+        _ = ClearMessage();
+    }
+}
+
 private async Task AddToInventory()
 {
     if (Id <= 0) return;
@@ -913,7 +964,7 @@ private async Task AddToInventory()
             if (refreshed is not null)
             {
                 batch = refreshed;
-                isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
             }
         }
     }
@@ -1044,7 +1095,7 @@ private async Task EndStage(int batchStageId)
                 if (refreshed is not null)
                 {
                     batch = refreshed;
-                    isViewMode = (batch.BatchStatus == 5 || batch.BatchStatus == 6) || !Perms.CanEdit;
+                    isViewMode = batch.BatchStatus >= 3 || !Perms.CanEdit;
                 }
 
                 if (activeTab == "stages")
