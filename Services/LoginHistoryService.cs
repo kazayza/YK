@@ -26,9 +26,9 @@ namespace YKCoatings.Services
                     lh.SessionDuration,
                     lh.LoginStatus,
                     CASE lh.LoginStatus
-                        WHEN 1 THEN N'ناجح ✅'
-                        WHEN 2 THEN N'فاشل - كلمة مرور ❌'
-                        WHEN 3 THEN N'فاشل - محظور 🔒'
+                        WHEN 1 THEN N'ناجح'
+                        WHEN 2 THEN N'فاشل - كلمة مرور'
+                        WHEN 3 THEN N'فاشل - محظور'
                     END AS LoginStatusName,
                     lh.IPAddress,
                     lh.MachineName,

@@ -11,7 +11,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>@PageTitleText - واي كي كوتينج Gold Edition</PageTitle>
+<PageTitle>@PageTitleText - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -74,14 +74,14 @@ else
                             <div class="form-field"><label class="field-label">اسم العميل (إنجليزي)</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" class="field-input" @bind="model.CustomerNameEn" dir="ltr" disabled="@isViewMode" placeholder="Customer name..." /></div></div>
                             <div class="form-field"><label class="field-label required">نوع العميل</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><select class="field-select" @bind="model.CustomerType" disabled="@isViewMode"><option value="0">-- اختر --</option><option value="1">جملة</option><option value="2">نص جملة</option><option value="3">تجزئة</option><option value="4">أونلاين</option><option value="5">مؤسسي</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                             <div class="form-field"><label class="field-label">مجموعة العميل</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg><select class="field-select" @bind="model.CustomerGroupID" disabled="@isViewMode"><option value="0">-- بدون --</option>@if(customerGroups!=null){@foreach(var item in customerGroups){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                            <div class="form-field"><label class="field-label">التقييم</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="model.Rating" disabled="@isViewMode"><option value="1">⭐ ضعيف</option><option value="2">⭐⭐ مقبول</option><option value="3">⭐⭐⭐ جيد</option><option value="4">⭐⭐⭐⭐ ممتاز</option><option value="5">⭐⭐⭐⭐⭐ مميز</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                            <div class="form-field"><label class="field-label">التقييم</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="model.Rating" disabled="@isViewMode"><option value="1">ضعيف</option><option value="2">مقبول</option><option value="3">جيد</option><option value="4">ممتاز</option><option value="5">مميز</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                         </div>
                         <div class="form-grid cols-3">
                             <div class="form-field"><label class="field-label">الرقم الضريبي</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><input type="text" class="field-input" @bind="model.TaxNumber" dir="ltr" disabled="@isViewMode" /></div></div>
                             <div class="form-field"><label class="field-label">السجل التجاري</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><input type="text" class="field-input" @bind="model.CommercialRegister" dir="ltr" disabled="@isViewMode" /></div></div>
-                            <div class="form-field"><label class="field-label">الحالة</label><div class="field-input disabled"><span>@(isNewMode?"سيصبح نشطًا بعد الحفظ":(model.IsActive?"نشط ✅":"غير نشط"))</span></div><span class="field-hint">التفعيل من قائمة العملاء</span></div>
+                            <div class="form-field"><label class="field-label">الحالة</label><div class="field-input disabled"><span>@(isNewMode?"سيصبح نشطًا بعد الحفظ":(model.IsActive?"نشط ":"غير نشط"))</span></div><span class="field-hint">التفعيل من قائمة العملاء</span></div>
                         </div>
-                        <div class="preview-card-luxury"><h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>معاينة العميل</h4><div class="pc-body"><span class="code-luxury">@(model.CustomerCode ?? "CODE")</span><strong>@(string.IsNullOrWhiteSpace(model.CustomerNameAr)?"اسم العميل":model.CustomerNameAr)</strong><span class="type-badge-luxury type-cust-@model.CustomerType">@(model.CustomerType==0?"غير محدد":CustomerService.GetCustomerTypeName(model.CustomerType))</span><span class="rating-gold">@for(int i=1;i<=5;i++){<span class="@(i<=model.Rating?"filled":"empty")">★</span>}</span></div></div>
+                        <div class="preview-card-luxury"><h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>معاينة العميل</h4><div class="pc-body"><span class="code-luxury">@(model.CustomerCode ?? "CODE")</span><strong>@(string.IsNullOrWhiteSpace(model.CustomerNameAr)?"اسم العميل":model.CustomerNameAr)</strong><span class="type-badge-luxury type-cust-@model.CustomerType">@(model.CustomerType==0?"غير محدد":CustomerService.GetCustomerTypeName(model.CustomerType))</span><span class="rating-gold">@for(int i=1;i<=5;i++){<span class="@(i<=model.Rating?"filled":"empty")"><i class=bi-star-fill></i></span>}</span></div></div>
                     </div>
                 }
                 @if (activeTab == "contact")
@@ -174,66 +174,147 @@ else
         <div class="modal-overlay-luxury" @onclick="CloseContactDialog"><div class="modal-card-luxury form-md" @onclick:stopPropagation="true"><div class="ml-gold-line"></div><div class="modal-header-luxury"><h3>@(contactModel.ContactID==0?"إضافة جهة اتصال":"تعديل جهة اتصال")</h3><button class="btn-close-x" @onclick="CloseContactDialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div><div class="modal-body-luxury"><div class="form-grid cols-2"><div class="form-field"><label class="field-label required">الاسم</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" class="field-input" @bind="contactModel.ContactName" /></div></div><div class="form-field"><label class="field-label">الوظيفة</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/></svg><input type="text" class="field-input" @bind="contactModel.JobTitle" /></div></div><div class="form-field"><label class="field-label">الهاتف</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2"/></svg><input type="text" class="field-input" @bind="contactModel.Phone" dir="ltr" /></div></div><div class="form-field"><label class="field-label">الموبايل</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/></svg><input type="text" class="field-input" @bind="contactModel.Mobile" dir="ltr" /></div></div><div class="form-field"><label class="field-label">البريد الإلكتروني</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg><input type="email" class="field-input" @bind="contactModel.Email" dir="ltr" /></div></div><div class="form-field"><label class="field-label">جهة الاتصال الأساسية</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="contactModel.IsPrimary"><option value="false">لا</option><option value="true">نعم - أساسي</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div></div><div class="form-field" style="margin-top:12px"><label class="field-label">ملاحظات</label><textarea class="field-textarea" rows="3" @bind="contactModel.Notes"></textarea></div>@if(!string.IsNullOrWhiteSpace(contactDialogMessage)){<div class="msg-luxury msg-error" style="margin-top:12px">@contactDialogMessage</div>}</div><div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveContact" disabled="@isContactSaving">@if(isContactSaving){<div class="btn-spinner"></div>}else{<span>حفظ</span>}</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseContactDialog" disabled="@isContactSaving">إلغاء</button></div></div></div>
     }
 
-    @if (!string.IsNullOrEmpty(resultMessage)){<div class="toast-luxury"><div class="toast-card-luxury @(resultSuccess?"success":"error")"><span>@resultMessage</span><button @onclick='() => resultMessage=""'>✕</button></div></div>}
+    @if (!string.IsNullOrEmpty(resultMessage)){<div class="toast-luxury"><div class="toast-card-luxury @(resultSuccess?"success":"error")"><span>@resultMessage</span><button @onclick='() => resultMessage=""'><i class=bi-x-lg></i></button></div></div>}
 }
 
 <style>
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
 .luxury-edit-page{display:flex;flex-direction:column;gap:16px;max-width:1300px;margin:0 auto;font-family:'Tajawal',sans-serif}
-.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
-.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:100px;height:100px;object-fit:contain}
-.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:40px;height:40px;border-radius:10px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}
-.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
-.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
-.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-luxury svg{width:14px;height:14px}.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
+.lh-bg-logo img{width:100px;height:100px;object-fit:contain}
+.lh-logo-wrap{width:40px;height:40px;border-radius:10px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}
+.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;color:var(--gold)}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}
+.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}
+.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}
+.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}
+.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}
 .stats-luxury{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
-.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)}.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.st-icon svg{width:18px;height:18px}.st-info{display:flex;flex-direction:column}.st-value{font-size:1rem;font-weight:900;color:#0A0F1E;line-height:1}.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:.2s}.stat-luxury:hover .st-gold-line{opacity:.8}
-.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800}.status-badge-luxury.active{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.status-badge-luxury.inactive{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
-.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
-.mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header::-webkit-scrollbar{display:none}
-.mudtab-btn{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}.mudtab-btn:hover{background:rgba(212,175,55,.04);color:#0A0F1E}.mudtab-btn.active{color:var(--gold-dark);background:rgba(212,175,55,.06);border-bottom-color:var(--gold)}
-.mt-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}.mt-icon svg{width:16px;height:16px}.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
+.st-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));color:var(--gold);border:1px solid var(--border-gold)}
+.st-icon.gold{background:rgba(212,175,55,.1);color:var(--gold-dark);border:1px solid rgba(212,175,55,.15)}
+.st-icon.blue{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
+.st-icon.green{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.st-info{display:flex;flex-direction:column}
+.st-value{font-size:1rem;font-weight:900;color:#0A0F1E;line-height:1}
+.st-label{font-size:.7rem;color:#8B95A5;font-weight:600;margin-top:3px}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800}
+.status-badge-luxury.inactive{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
+.mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}
+.mudtabs-header::-webkit-scrollbar{display:none}
+.mudtab-btn{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}
+.mudtab-btn:hover{background:rgba(212,175,55,.04);color:#0A0F1E}
+.mudtab-btn.active{color:var(--gold-dark);background:rgba(212,175,55,.06);border-bottom-color:var(--gold)}
+.mt-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+.mt-icon svg{width:16px;height:16px}
+.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
 .mudtab-indicator{position:absolute;bottom:0;height:2px;background:var(--gold);transition:all .3s;width:calc(100% / var(--total));right:calc(var(--tab) * (100% / var(--total)));opacity:0}
 .mudtabs-body{padding:22px;background:#fff;min-height:400px}
-.tab-panel{display:flex;flex-direction:column;gap:18px}.tab-panel.luxury-fade{animation:fadeUp .4s both}@@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-.tab-header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #f1efe8}.tab-icon{width:40px;height:40px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;display:flex;align-items:center;justify-content:center;color:#475569}.tab-icon.gold{background:rgba(212,175,55,.1);border-color:rgba(212,175,55,.15);color:var(--gold-dark)}.tab-icon svg{width:18px;height:18px}.tab-header h3{font-size:.95rem;font-weight:800;color:#0A0F1E;margin:0}.tab-header p{font-size:.72rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
-.form-grid{display:grid;gap:14px;margin-bottom:4px}.cols-2{grid-template-columns:repeat(2,1fr)} .cols-3{grid-template-columns:repeat(3,1fr)} .cols-4{grid-template-columns:repeat(4,1fr)}
-.form-field{display:flex;flex-direction:column;gap:6px}.field-label{font-size:.78rem;font-weight:700;color:#374151}.field-label.required::after{content:' *';color:#ef4444}
-.input-wrap{position:relative;display:flex;align-items:center}.input-wrap svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
-.field-input{width:100%;height:42px;padding:0 36px 0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';transition:all .2s;outline:none}.field-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.field-input.disabled{background:#f9fafb;color:#9ca3af;border-style:dashed;display:flex;align-items:center;gap:8px;padding:0 12px}.field-input.disabled svg{position:static;width:14px;height:14px}
-.select-wrap{position:relative;display:flex;align-items:center}.select-wrap svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
-.field-select{width:100%;height:42px;padding:0 36px 0 28px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';appearance:none;cursor:pointer;outline:none;transition:all .2s}.field-select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.tab-panel{display:flex;flex-direction:column;gap:18px}
+.tab-panel.luxury-fade{animation:fadeUp .4s both}
+.tab-header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #f1efe8}
+.tab-icon{width:40px;height:40px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;display:flex;align-items:center;justify-content:center;color:#475569}
+.tab-icon.gold{background:rgba(212,175,55,.1);border-color:rgba(212,175,55,.15);color:var(--gold-dark)}
+.tab-icon svg{width:18px;height:18px}
+.tab-header h3{font-size:.95rem;font-weight:800;color:#0A0F1E;margin:0}
+.tab-header p{font-size:.72rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
+.form-grid{display:grid;gap:14px;margin-bottom:4px}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-4{grid-template-columns:repeat(4,1fr)}
+.form-field{display:flex;flex-direction:column;gap:6px}
+.field-label{font-size:.78rem;font-weight:700;color:#374151}
+.field-label.required::after{content:' *';color:#ef4444}
+.input-wrap{position:relative;display:flex;align-items:center}
+.input-wrap svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-input{width:100%;height:42px;padding:0 36px 0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';transition:all .2s;outline:none}
+.field-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.field-input.disabled{background:#f9fafb;color:#9ca3af;border-style:dashed;display:flex;align-items:center;gap:8px;padding:0 12px}
+.field-input.disabled svg{position:static;width:14px;height:14px}
+.select-wrap{position:relative;display:flex;align-items:center}
+.select-wrap svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-select{width:100%;height:42px;padding:0 36px 0 28px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';appearance:none;cursor:pointer;outline:none;transition:all .2s}
+.field-select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
 .select-arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
-.field-hint{font-size:.7rem;color:#9ca3af;font-weight:600}.field-hint.error{color:#ef4444}
-.input-with-suffix{position:relative;display:flex;align-items:center}.input-with-suffix .field-input{padding-left:50px}.field-suffix{position:absolute;left:1px;top:1px;bottom:1px;width:44px;display:flex;align-items:center;justify-content:center;background:#f8f6f0;border-radius:0 9px 9px 0;font-size:.78rem;font-weight:700;color:#6b7280;border-right:1px solid #e8e2d0}
-.field-textarea{width:100%;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;background:#fff;font-family:'Tajawal';resize:vertical;outline:none;transition:all .2s}.field-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
-.preview-card-luxury{background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;padding:12px}.preview-card-luxury h4{display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:800;color:#0A0F1E;margin:0 0 8px}.preview-card-luxury h4 svg{width:14px;height:14px;color:var(--gold-dark)}.pc-body{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pc-body strong{color:#0A0F1E}
+.field-hint{font-size:.7rem;color:#9ca3af;font-weight:600}
+.field-hint.error{color:#ef4444}
+.input-with-suffix{position:relative;display:flex;align-items:center}
+.input-with-suffix .field-input{padding-left:50px}
+.field-suffix{position:absolute;left:1px;top:1px;bottom:1px;width:44px;display:flex;align-items:center;justify-content:center;background:#f8f6f0;border-radius:0 9px 9px 0;font-size:.78rem;font-weight:700;color:#6b7280;border-right:1px solid #e8e2d0}
+.field-textarea{width:100%;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;background:#fff;font-family:'Tajawal';resize:vertical;outline:none;transition:all .2s}
+.field-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.preview-card-luxury{background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;padding:12px}
+.preview-card-luxury h4{display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:800;color:#0A0F1E;margin:0 0 8px}
+.preview-card-luxury h4 svg{width:14px;height:14px;color:var(--gold-dark)}
+.pc-body{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pc-body strong{color:#0A0F1E}
 .code-luxury{background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:8px;font-size:.78rem;color:var(--gold-dark);font-weight:700;font-family:monospace}
-.type-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700}.type-cust-1{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}.type-cust-2{background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc}.type-cust-3{background:#fef3c7;color:#d97706;border:1px solid #fde68a}.type-cust-4{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}.type-cust-5{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
-.rating-gold{font-size:.8rem}.rating-gold .filled{color:var(--gold)}.rating-gold .empty{color:#e8e2d0}
-.map-placeholder-luxury{display:flex;align-items:center;gap:10px;padding:14px;background:#f8f6f0;border:1px dashed #e8e2d0;border-radius:12px;color:#8B95A5;font-size:.8rem;font-weight:600;justify-content:center}.map-placeholder-luxury svg{width:20px;height:20px;flex-shrink:0}
-.credit-bar-luxury{height:6px;background:#e8e2d0;border-radius:99px;overflow:hidden;margin-top:6px}.credit-fill-luxury{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-dark));border-radius:99px;transition:width .8s}
-.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
-.table-luxury{width:100%;border-collapse:collapse}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.th-num{width:45px;text-align:center}.th-center{text-align:center}.th-actions{text-align:center;width:80px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-actions{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}
+.type-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700}
+.type-cust-1{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
+.type-cust-2{background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc}
+.type-cust-3{background:#fef3c7;color:#d97706;border:1px solid #fde68a}
+.type-cust-4{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.type-cust-5{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+.rating-gold{font-size:.8rem}
+.rating-gold .filled{color:var(--gold)}
+.rating-gold .empty{color:#e8e2d0}
+.map-placeholder-luxury{display:flex;align-items:center;gap:10px;padding:14px;background:#f8f6f0;border:1px dashed #e8e2d0;border-radius:12px;color:#8B95A5;font-size:.8rem;font-weight:600;justify-content:center}
+.map-placeholder-luxury svg{width:20px;height:20px;flex-shrink:0}
+.credit-bar-luxury{height:6px;background:#e8e2d0;border-radius:99px;overflow:hidden;margin-top:6px}
+.credit-fill-luxury{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-dark));border-radius:99px;transition:width .8s}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);position:relative}
+.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse}
+.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
+.th-actions{text-align:center;width:80px}
+.td-actions{text-align:center}
 .primary-badge-luxury{background:#ecfdf5;color:#059669;padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:700;border:1px solid #a7f3d0}
-.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}.act-btn svg{width:14px;height:14px}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
+.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}
+.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}
+.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}
+.act-btn.delete{color:#ef4444;border-color:#fee2e2}
+.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}
+.act-btn svg{width:14px;height:14px}
 .actions-bar-luxury{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0;box-shadow:0 2px 12px rgba(0,0,0,.04)}
-.notice-luxury{display:flex;align-items:center;gap:8px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;color:#92400e;font-size:.84rem;font-weight:600}.notice-luxury svg{width:18px;height:18px;flex-shrink:0}
-.timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}.tl-item:last-child{border:none}.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}.tl-content{display:flex;flex-direction:column;gap:2px}.tl-content strong{font-size:.84rem;color:#0A0F1E}.tl-content span{font-size:.72rem;color:#8B95A5}
-.audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}.audit-item-luxury strong{color:#0A0F1E}.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
-.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
-.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.modal-card-luxury.form-md{max-width:640px}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
-.modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}.modal-body-luxury{padding:18px 22px}.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
-.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.loading-luxury.small{padding:20px}.empty-luxury{text-align:center;padding:40px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}.empty-luxury.small{padding:24px}.empty-icon-luxury{width:48px;height:48px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:24px;height:24px}
-.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
-.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@@media(max-width:992px){.cols-4{grid-template-columns:repeat(2,1fr)}.cols-3{grid-template-columns:repeat(2,1fr)}}@@media(max-width:600px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}.lh-content{flex-direction:column;align-items:flex-start}.actions-bar-luxury{flex-direction:column;gap:10px}}
+.notice-luxury{display:flex;align-items:center;gap:8px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;color:#92400e;font-size:.84rem;font-weight:600}
+.notice-luxury svg{width:18px;height:18px;flex-shrink:0}
+.timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}
+.tl-item:last-child{border:none}
+.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}
+.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}
+.tl-content{display:flex;flex-direction:column;gap:2px}
+.tl-content strong{font-size:.84rem;color:#0A0F1E}
+.tl-content span{font-size:.72rem;color:#8B95A5}
+.audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}
+.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}
+.audit-item-luxury strong{color:#0A0F1E}
+.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}
+.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}
+.modal-card-luxury.form-md{max-width:640px}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}
+.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}
+.btn-close-x svg{width:12px;height:12px}
+.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+.loading-luxury.small{padding:20px}
+.empty-luxury{text-align:center;padding:40px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}
+.empty-luxury.small{padding:24px}
+.empty-icon-luxury{width:48px;height:48px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.empty-icon-luxury svg{width:24px;height:24px}
+.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.no-access-luxury .na-icon svg{width:32px;height:32px}
 </style>
 
 @code {
@@ -296,8 +377,8 @@ else
         if(model.Rating<1||model.Rating>5){formMessage="التقييم يجب أن يكون بين 1 و 5";formSuccess=false;activeTab="basic";return;}
         isSaving=true;
         try{
-            if(isNewMode){model.CustomerCode=await CustomerService.GenerateCustomerCodeAsync();var newId=await CustomerService.InsertCustomerAsync(model, UserSession.UserID);resultMessage="تم إضافة العميل بنجاح ✅";resultSuccess=true;Navigation.NavigateTo($"/customers/edit/{newId}");return;}
-            else{await CustomerService.UpdateCustomerAsync(model, UserSession.UserID);resultMessage="تم حفظ التعديلات بنجاح ✅";resultSuccess=true;formMessage="تم حفظ البيانات بنجاح";formSuccess=true;}
+            if(isNewMode){model.CustomerCode=await CustomerService.GenerateCustomerCodeAsync();var newId=await CustomerService.InsertCustomerAsync(model, UserSession.UserID);resultMessage="تم إضافة العميل بنجاح ";resultSuccess=true;Navigation.NavigateTo($"/customers/edit/{newId}");return;}
+            else{await CustomerService.UpdateCustomerAsync(model, UserSession.UserID);resultMessage="تم حفظ التعديلات بنجاح ";resultSuccess=true;formMessage="تم حفظ البيانات بنجاح";formSuccess=true;}
         }catch(Exception ex){formMessage="خطأ: "+ex.Message;formSuccess=false;}
         finally{isSaving=false;}
     }
@@ -313,9 +394,9 @@ else
     {
         contactDialogMessage="";if(model.CustomerID<=0){contactDialogMessage="يجب حفظ العميل أولاً";return;}if(string.IsNullOrWhiteSpace(contactModel.ContactName)){contactDialogMessage="اسم جهة الاتصال مطلوب";return;}
         isContactSaving=true;
-        try{contactModel.CustomerID=model.CustomerID;await CustomerService.SaveCustomerContactAsync(contactModel, UserSession.UserID);contactMessage=contactModel.ContactID==0?"تمت إضافة جهة الاتصال بنجاح ✅":"تم تعديل جهة الاتصال بنجاح ✅";contactSuccess=true;showContactDialog=false;contactModel=new CustomerContactDto();await LoadContactsAsync();}
+        try{contactModel.CustomerID=model.CustomerID;await CustomerService.SaveCustomerContactAsync(contactModel, UserSession.UserID);contactMessage=contactModel.ContactID==0?"تمت إضافة جهة الاتصال بنجاح ":"تم تعديل جهة الاتصال بنجاح ";contactSuccess=true;showContactDialog=false;contactModel=new CustomerContactDto();await LoadContactsAsync();}
         catch(Exception ex){contactDialogMessage="خطأ: "+ex.Message;}
         finally{isContactSaving=false;}
     }
-    private async Task DeleteContact(CustomerContactDto item){var confirmed=await JS.InvokeAsync<bool>("confirm",$"هل تريد حذف جهة الاتصال: {item.ContactName} ؟");if(!confirmed)return;try{var result=await CustomerService.DeleteCustomerContactAsync(item.ContactID, UserSession.UserID);contactMessage=result.Message+(result.Success?" ✅":"");contactSuccess=result.Success;await LoadContactsAsync();}catch(Exception ex){contactMessage="خطأ: "+ex.Message;contactSuccess=false;}}
+    private async Task DeleteContact(CustomerContactDto item){var confirmed=await JS.InvokeAsync<bool>("confirm",$"هل تريد حذف جهة الاتصال: {item.ContactName} ؟");if(!confirmed)return;try{var result=await CustomerService.DeleteCustomerContactAsync(item.ContactID, UserSession.UserID);contactMessage=result.Message+(result.Success?" ":"");contactSuccess=result.Success;await LoadContactsAsync();}catch(Exception ex){contactMessage="خطأ: "+ex.Message;contactSuccess=false;}}
 }

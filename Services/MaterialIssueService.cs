@@ -223,7 +223,7 @@ SELECT
     d.BatchNumber,
     d.ExpiryDate,
     d.Notes,
-    CAST(0 AS DECIMAL(18,4)) AS AvailableStock
+    ISNULL((SELECT SUM(b.AvailableQty) FROM dbo.InventoryBalance b WHERE b.ItemID = d.ItemID), 0) AS AvailableStock
 FROM dbo.MaterialIssueDetails d
 INNER JOIN dbo.Items i ON d.ItemID = i.ItemID
 INNER JOIN dbo.Units u ON d.UnitID = u.UnitID
@@ -263,7 +263,7 @@ SELECT
     END AS MaterialTypeName,
     pom.RequiredQty,
     ISNULL(pom.IssuedQty, 0) AS AlreadyIssuedQty,
-    ISNULL(pom.UnitCost, 0) AS UnitCost
+    COALESCE(NULLIF(pom.UnitCost, 0), i.AverageCost, 0) AS UnitCost
 FROM dbo.ProductionOrderMaterials pom
 INNER JOIN dbo.Items i ON pom.ItemID = i.ItemID
 INNER JOIN dbo.Units u ON pom.UnitID = u.UnitID
@@ -879,12 +879,12 @@ SELECT @NextNum;";
 INSERT INTO dbo.MaterialIssueDetails
 (
     IssueID, LineNumber, POMaterialID, ItemID, UnitID,
-    IssuedQty, UnitCost, LineCost, BatchNumber, ExpiryDate, Notes
+    IssuedQty, UnitCost, BatchNumber, ExpiryDate, Notes
 )
 VALUES
 (
     @IssueID, @LineNumber, @POMaterialID, @ItemID, @UnitID,
-    @IssuedQty, @UnitCost, @LineCost, NULLIF(@BatchNumber, N''), @ExpiryDate, @Notes
+    @IssuedQty, @UnitCost, NULLIF(@BatchNumber, N''), @ExpiryDate, @Notes
 )",
                     new
                     {
@@ -895,7 +895,6 @@ VALUES
                         d.UnitID,
                         IssuedQty = d.IssueQty,
                         d.UnitCost,
-                        LineCost = decimal.Round(d.IssueQty * d.UnitCost, 8, MidpointRounding.AwayFromZero),
                         d.BatchNumber,
                         d.ExpiryDate,
                         d.Notes

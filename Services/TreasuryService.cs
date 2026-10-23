@@ -1261,7 +1261,7 @@ namespace YKCoatings.Services
             var ws = wb.Worksheets.Add("سندات القبض");
             ws.RightToLeft = true;
             ws.Style.Font.FontName = "Tajawal";
-            ws.Cell(1, 1).Value = "تقرير سندات القبض — Gold Edition";
+            ws.Cell(1, 1).Value = "تقرير سندات القبض —   ";
             ws.Range(1, 1, 1, 8).Merge().Style.Font.Bold = true;
             ws.Range(1, 1, 1, 8).Style.Font.FontSize = 14;
             ws.Range(1, 1, 1, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;

@@ -12,7 +12,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>@pageTitle - واي كي كوتينج Gold Edition</PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
@@ -52,7 +52,7 @@ else
         }
         @if (canMarkAsSent)
         {
-            <div class="approval-bar-luxury sent"><div class="ab-gold-line blue"></div><div class="ab-content"><div class="ab-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg></div><div><strong>أمر الشراء معتمد - جاهز للإرسال</strong><span>اختر طريقة الإرسال وأكد إرساله للمورد</span></div></div><div class="ab-actions"><div class="select-wrap-luxury sm"><select @bind="sentMethod"><option value="">طريقة الإرسال...</option><option value="email">بريد إلكتروني</option><option value="fax">فاكس</option><option value="hand">تسليم يدوي</option><option value="whatsapp">واتساب</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div><button class="btn-luxury btn-primary-luxury" @onclick="ExecuteMarkAsSent" disabled="@isSaving">📤 تأكيد الإرسال</button></div></div>
+            <div class="approval-bar-luxury sent"><div class="ab-gold-line blue"></div><div class="ab-content"><div class="ab-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg></div><div><strong>أمر الشراء معتمد - جاهز للإرسال</strong><span>اختر طريقة الإرسال وأكد إرساله للمورد</span></div></div><div class="ab-actions"><div class="select-wrap-luxury sm"><select @bind="sentMethod"><option value="">طريقة الإرسال...</option><option value="email">بريد إلكتروني</option><option value="fax">فاكس</option><option value="hand">تسليم يدوي</option><option value="whatsapp">واتساب</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div><button class="btn-luxury btn-primary-luxury" @onclick="ExecuteMarkAsSent" disabled="@isSaving"><i class=bi-book></i> تأكيد الإرسال</button></div></div>
         }
 
         @if (isLoading)
@@ -104,7 +104,7 @@ else
                                     <div class="form-field"><label class="field-label">التوريد المتوقع</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><input type="date" class="field-input" @bind="header.ExpectedDeliveryDate" disabled="@isReadOnly" /></div></div>
                                     <div class="form-field"><label class="field-label required">المخزن</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select class="field-select" @bind="header.WarehouseID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(warehouses!=null){@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                                 </div>
-                                @if (header.POStatus==4 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="msg-luxury msg-error">❌ <strong>سبب الرفض:</strong> @header.RejectionReason</div>}
+                                @if (header.POStatus==4 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="msg-luxury msg-error"><i class=bi-x-circle-fill></i> <strong>سبب الرفض:</strong> @header.RejectionReason</div>}
                             }
                             else if (isNewMode && header.POSource==0)
                             {<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>اختر مصدر أمر الشراء أولاً</h4><p style="font-size:.8rem;color:#8B95A5;margin:6px 0 0">يدوي أو من طلب شراء معتمد</p></div>}
@@ -122,7 +122,7 @@ else
                             </div>
                             @if (supplierInfo != null)
                             {
-                                <div class="supplier-info-luxury"><div class="ml-gold-line"></div><div class="si-grid"><div class="si-item"><span class="si-label">الهاتف</span><span class="si-value">@(supplierInfo.Phone1 ?? "—")</span></div><div class="si-item"><span class="si-label">المدينة</span><span class="si-value">@(supplierInfo.City ?? "—")</span></div><div class="si-item"><span class="si-label">الرصيد الحالي</span><span class="si-value @(supplierInfo.CurrentBalance>0?"si-danger":"")">@supplierInfo.CurrentBalance.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">الحد الائتماني</span><span class="si-value">@supplierInfo.CreditLimit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">المتاح</span><span class="si-value @(supplierInfo.AvailableCredit<0?"si-danger":"si-ok")">@supplierInfo.AvailableCredit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">التقييم</span><span class="si-value rating-gold">@for(int i=1;i<=5;i++){<span class="@(i<=supplierInfo.Rating?"filled":"empty")">★</span>}</span></div></div></div>
+                                <div class="supplier-info-luxury"><div class="ml-gold-line"></div><div class="si-grid"><div class="si-item"><span class="si-label">الهاتف</span><span class="si-value">@(supplierInfo.Phone1 ?? "—")</span></div><div class="si-item"><span class="si-label">المدينة</span><span class="si-value">@(supplierInfo.City ?? "—")</span></div><div class="si-item"><span class="si-label">الرصيد الحالي</span><span class="si-value @(supplierInfo.CurrentBalance>0?"si-danger":"")">@supplierInfo.CurrentBalance.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">الحد الائتماني</span><span class="si-value">@supplierInfo.CreditLimit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">المتاح</span><span class="si-value @(supplierInfo.AvailableCredit<0?"si-danger":"si-ok")">@supplierInfo.AvailableCredit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">التقييم</span><span class="si-value rating-gold">@for(int i=1;i<=5;i++){<span class="@(i<=supplierInfo.Rating?"filled":"empty")"><i class=bi-star-fill></i></span>}</span></div></div></div>
                             }
                         </div>
                     }
@@ -188,7 +188,7 @@ else
                                 <div class="st-step @(header.POStatus>=5?"done":"")"><div class="st-dot"></div><div class="st-line"></div><div class="st-content"><strong>مرسل للمورد</strong><span>@(header.POStatus>=5?"تم الإرسال":"لم يرسل")</span></div></div>
                                 <div class="st-step @(header.POStatus>=6?"done":"")"><div class="st-dot"></div><div class="st-content"><strong>استلام</strong><span>متابعة استلام البضاعة</span></div></div>
                             </div>
-                            @if (header.POStatus==4){<div class="msg-luxury msg-error" style="margin-top:16px">❌ مرفوض - السبب: @header.RejectionReason</div>}
+                            @if (header.POStatus==4){<div class="msg-luxury msg-error" style="margin-top:16px"><i class=bi-x-circle-fill></i> مرفوض - السبب: @header.RejectionReason</div>}
                         </div>
                     }
 
@@ -229,7 +229,7 @@ else
                         @if (!isReadOnly)
                         {
                             <button class="btn-luxury btn-primary-luxury" @onclick="SaveOrder" disabled="@isSaving">@if(isSaving){<div class="btn-spinner"></div><span>جاري الحفظ...</span>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg><span>@(isNewMode?"حفظ أمر الشراء":"حفظ التعديلات")</span>}</button>
-                            @if (OrderId>0 && header.POStatus==1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving">📤 إرسال للاعتماد</button>}
+                            @if (OrderId>0 && header.POStatus==1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"><i class=bi-book></i> إرسال للاعتماد</button>}
                         }
                     </div>
                     <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع للقائمة</button>
@@ -243,69 +243,192 @@ else
         <div class="modal-overlay-luxury" @onclick="() => showRejectDialog=false"><div class="modal-card-luxury" @onclick:stopPropagation="true"><div class="ml-gold-line danger"></div><div class="modal-header-luxury"><h3>رفض أمر الشراء</h3><button class="btn-close-x" @onclick="() => showRejectDialog=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div><div class="modal-body-luxury"><div class="form-field"><label class="field-label required">سبب الرفض</label><textarea class="field-textarea" rows="3" @bind="rejectReason" placeholder="أدخل سبب الرفض..."></textarea></div>@if(!string.IsNullOrEmpty(rejectMsg)){<div class="msg-luxury msg-error" style="margin-top:10px">@rejectMsg</div>}</div><div class="ml-footer"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmReject">تأكيد الرفض</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showRejectDialog=false">إلغاء</button></div></div></div>
     }
 
-    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast=""'>✕</button></div></div>}
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast=""'><i class=bi-x-lg></i></button></div></div>}
 }
 
 <style>
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18)}
 .luxury-edit-page{display:flex;flex-direction:column;gap:16px;max-width:1300px;margin:0 auto;font-family:'Tajawal',sans-serif}
-.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:18px 22px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
-.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}.lh-bg-logo img{width:100px;height:100px;object-fit:contain}
-.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:40px;height:40px;border-radius:10px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}
-.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
-.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 20%,white)}
-.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
-.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--gold)}.btn-success-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}.btn-warning-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}.btn-luxury svg{width:14px;height:14px}.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
-.approval-bar-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-radius:16px;flex-wrap:wrap;overflow:hidden}.approval-bar-luxury.approve{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #a7f3d0}.approval-bar-luxury.sent{background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #93c5fd}.ab-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#10b981,transparent)}.ab-gold-line.blue{background:linear-gradient(90deg,transparent,#2563eb,transparent)}
-.ab-content{display:flex;align-items:center;gap:12px}.ab-icon{width:40px;height:40px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}.ab-icon.blue{background:#eff6ff;border-color:#bfdbfe;color:#2563eb}.ab-icon svg{width:20px;height:20px}.ab-content div{display:flex;flex-direction:column}.ab-content strong{font-size:.9rem;color:#0A0F1E}.ab-content span{font-size:.74rem;color:#6b7280}.ab-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.select-wrap-luxury{position:relative;display:flex;align-items:center}.select-wrap-luxury.sm select{height:36px;padding:0 30px 0 26px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.78rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;min-width:150px}.select-wrap-luxury .arrow{position:absolute;left:8px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
-.source-cards-luxury{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.source-card-luxury{position:relative;background:#fff;border:2px solid #e8e2d0;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:.2s;overflow:hidden}.source-card-luxury:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}.source-card-luxury.active{border-color:var(--gold);background:rgba(212,175,55,.04);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.sc-icon{width:52px;height:52px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}.sc-icon svg{width:24px;height:24px}.sc-title{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}.sc-desc{font-size:.76rem;color:#8B95A5}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);opacity:.8}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
-.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
-.mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}.mudtabs-header::-webkit-scrollbar{display:none}
-.mudtab-btn{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}.mudtab-btn:hover{background:rgba(212,175,55,.04);color:#0A0F1E}.mudtab-btn.active{color:var(--gold-dark);background:rgba(212,175,55,.06);border-bottom-color:var(--gold)}
-.mt-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}.mt-icon svg{width:16px;height:16px}.mt-required{width:6px;height:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12);margin-right:4px}.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}.mt-count.gold{background:rgba(212,175,55,.15);color:var(--gold-dark)}
+.lh-bg-logo img{width:100px;height:100px;object-fit:contain}
+.lh-logo-wrap{width:40px;height:40px;border-radius:10px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}
+.lh-title{font-size:1.1rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:700;color:var(--gold)}
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.72rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.7rem;font-weight:700;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 20%,white)}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:.78rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 2px 10px rgba(212,175,55,.25)}
+.btn-ghost-dark{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}
+.btn-ghost-dark:hover{background:rgba(255,255,255,.1)}
+.btn-ghost-luxury{background:#fff;border:1px solid #e8e2d0;color:#475569}
+.btn-success-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+.btn-warning-luxury{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff}
+.btn-spinner{width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--black2);border-radius:50%;animation:spin .6s linear infinite}
+.approval-bar-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-radius:16px;flex-wrap:wrap;overflow:hidden}
+.approval-bar-luxury.approve{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #a7f3d0}
+.approval-bar-luxury.sent{background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #93c5fd}
+.ab-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#10b981,transparent)}
+.ab-gold-line.blue{background:linear-gradient(90deg,transparent,#2563eb,transparent)}
+.ab-content{display:flex;align-items:center;gap:12px}
+.ab-icon{width:40px;height:40px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669}
+.ab-icon.blue{background:#eff6ff;border-color:#bfdbfe;color:#2563eb}
+.ab-icon svg{width:20px;height:20px}
+.ab-content div{display:flex;flex-direction:column}
+.ab-content strong{font-size:.9rem;color:#0A0F1E}
+.ab-content span{font-size:.74rem;color:#6b7280}
+.ab-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.select-wrap-luxury.sm select{height:36px;padding:0 30px 0 26px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.78rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;min-width:150px}
+.select-wrap-luxury .arrow{position:absolute;left:8px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
+.source-cards-luxury{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.source-card-luxury{position:relative;background:#fff;border:2px solid #e8e2d0;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:.2s;overflow:hidden}
+.source-card-luxury:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06)}
+.source-card-luxury.active{border-color:var(--gold);background:rgba(212,175,55,.04);box-shadow:0 0 0 3px rgba(212,175,55,.12)}
+.sc-icon{width:52px;height:52px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}
+.sc-icon svg{width:24px;height:24px}
+.sc-title{font-weight:800;font-size:.92rem;color:#0A0F1E;margin-bottom:4px}
+.sc-desc{font-size:.76rem;color:#8B95A5}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent);opacity:.8}
+.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}
+.mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
+.mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}
+.mudtabs-header::-webkit-scrollbar{display:none}
+.mudtab-btn{position:relative;display:flex;align-items:center;gap:8px;padding:14px 18px;background:transparent;border:none;border-bottom:2px solid transparent;font-family:'Tajawal';font-size:.82rem;font-weight:700;color:#8B95A5;cursor:pointer;transition:all .25s;white-space:nowrap;flex-shrink:0}
+.mudtab-btn:hover{background:rgba(212,175,55,.04);color:#0A0F1E}
+.mudtab-btn.active{color:var(--gold-dark);background:rgba(212,175,55,.06);border-bottom-color:var(--gold)}
+.mt-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+.mt-icon svg{width:16px;height:16px}
+.mt-required{width:6px;height:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12);margin-right:4px}
+.mt-count{background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
+.mt-count.gold{background:rgba(212,175,55,.15);color:var(--gold-dark)}
 .mudtab-indicator{position:absolute;bottom:0;height:2px;background:var(--gold);transition:all .3s;width:calc(100% / var(--total));right:calc(var(--tab) * (100% / var(--total)));opacity:0}
 .mudtabs-body{padding:22px;background:#fff;min-height:400px}
-.tab-panel{display:flex;flex-direction:column;gap:18px}.tab-panel.luxury-fade{animation:fadeUp .4s both}@@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-.tab-header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #f1efe8}.tab-icon{width:40px;height:40px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;display:flex;align-items:center;justify-content:center;color:#475569}.tab-icon.gold{background:rgba(212,175,55,.1);border-color:rgba(212,175,55,.15);color:var(--gold-dark)}.tab-icon.blue{background:#eff6ff;border-color:#dbeafe;color:#2563eb}.tab-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));border-color:var(--border-gold);color:var(--gold)}.tab-icon svg{width:18px;height:18px}.tab-header h3{font-size:.95rem;font-weight:800;color:#0A0F1E;margin:0}.tab-header p{font-size:.72rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
-.form-grid{display:grid;gap:14px;margin-bottom:4px}.cols-2{grid-template-columns:repeat(2,1fr)} .cols-3{grid-template-columns:repeat(3,1fr)} .cols-4{grid-template-columns:repeat(4,1fr)}
-.form-field{display:flex;flex-direction:column;gap:6px}.field-label{font-size:.78rem;font-weight:700;color:#374151}.field-label.required::after{content:' *';color:#ef4444}
-.input-wrap{position:relative;display:flex;align-items:center}.input-wrap svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
-.field-input{width:100%;height:42px;padding:0 36px 0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';transition:all .2s;outline:none}.field-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}.field-input.disabled{background:#f9fafb;color:#9ca3af;border-style:dashed;display:flex;align-items:center;gap:8px;padding:0 12px}.field-input.disabled svg{position:static;width:14px;height:14px}
-.select-wrap{position:relative;display:flex;align-items:center}.select-wrap svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
-.field-select{width:100%;height:42px;padding:0 36px 0 28px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';appearance:none;cursor:pointer;outline:none;transition:all .2s}.field-select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.tab-panel{display:flex;flex-direction:column;gap:18px}
+.tab-panel.luxury-fade{animation:fadeUp .4s both}
+.tab-header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #f1efe8}
+.tab-icon{width:40px;height:40px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;display:flex;align-items:center;justify-content:center;color:#475569}
+.tab-icon.gold{background:rgba(212,175,55,.1);border-color:rgba(212,175,55,.15);color:var(--gold-dark)}
+.tab-icon.blue{background:#eff6ff;border-color:#dbeafe;color:#2563eb}
+.tab-icon.dark{background:linear-gradient(135deg,var(--black2),var(--black3));border-color:var(--border-gold);color:var(--gold)}
+.tab-icon svg{width:18px;height:18px}
+.tab-header h3{font-size:.95rem;font-weight:800;color:#0A0F1E;margin:0}
+.tab-header p{font-size:.72rem;color:#8B95A5;font-weight:600;margin:2px 0 0}
+.form-grid{display:grid;gap:14px;margin-bottom:4px}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-4{grid-template-columns:repeat(4,1fr)}
+.form-field{display:flex;flex-direction:column;gap:6px}
+.field-label{font-size:.78rem;font-weight:700;color:#374151}
+.field-label.required::after{content:' *';color:#ef4444}
+.input-wrap{position:relative;display:flex;align-items:center}
+.input-wrap svg{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-input{width:100%;height:42px;padding:0 36px 0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';transition:all .2s;outline:none}
+.field-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.field-input.disabled{background:#f9fafb;color:#9ca3af;border-style:dashed;display:flex;align-items:center;gap:8px;padding:0 12px}
+.field-input.disabled svg{position:static;width:14px;height:14px}
+.select-wrap{position:relative;display:flex;align-items:center}
+.select-wrap svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+.field-select{width:100%;height:42px;padding:0 36px 0 28px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.86rem;background:#fff;font-family:'Tajawal';appearance:none;cursor:pointer;outline:none;transition:all .2s}
+.field-select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
 .select-arrow{position:absolute;left:10px;width:12px;height:12px;color:#9ca3af;pointer-events:none}
 .field-hint{font-size:.7rem;color:var(--gold-dark);font-weight:600}
-.input-with-suffix{position:relative;display:flex;align-items:center}.input-with-suffix .field-input{padding-left:50px}.field-suffix{position:absolute;left:1px;top:1px;bottom:1px;width:44px;display:flex;align-items:center;justify-content:center;background:#f8f6f0;border-radius:0 9px 9px 0;font-size:.78rem;font-weight:700;color:#6b7280;border-right:1px solid #e8e2d0}
-.field-textarea{width:100%;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;background:#fff;font-family:'Tajawal';resize:vertical;outline:none;transition:all .2s}.field-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
-.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
-.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}.th-center{text-align:center}.th-actions{text-align:center;width:100px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}.td-center{text-align:center}.td-actions{text-align:center}.td-name{font-weight:700;color:#0A0F1E}.td-muted{color:#9ca3af;font-size:.82rem}.num-cell{font-family:monospace;font-weight:700}.bal-danger{color:#dc2626}
+.input-with-suffix{position:relative;display:flex;align-items:center}
+.input-with-suffix .field-input{padding-left:50px}
+.field-suffix{position:absolute;left:1px;top:1px;bottom:1px;width:44px;display:flex;align-items:center;justify-content:center;background:#f8f6f0;border-radius:0 9px 9px 0;font-size:.78rem;font-weight:700;color:#6b7280;border-right:1px solid #e8e2d0}
+.field-textarea{width:100%;padding:12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;background:#fff;font-family:'Tajawal';resize:vertical;outline:none;transition:all .2s}
+.field-textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.03);position:relative}
+.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.table-luxury{width:100%;border-collapse:collapse;min-width:900px}
+.table-luxury th{padding:12px 14px;font-size:.78rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
+.th-actions{text-align:center;width:100px}
+.td-actions{text-align:center}
+.num-cell{font-family:monospace;font-weight:700}
+.bal-danger{color:#dc2626}
 .code-luxury{background:#f8f6f0;border:1px solid #e8e2d0;padding:3px 8px;border-radius:8px;font-size:.78rem;color:var(--gold-dark);font-weight:700;font-family:monospace}
 .row-dim{opacity:.45}
-.supplier-info-luxury{position:relative;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:14px;padding:16px;margin-top:12px;overflow:hidden}.si-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.si-item{display:flex;flex-direction:column;gap:2px}.si-label{font-size:.7rem;color:#8B95A5;font-weight:600}.si-value{font-size:.84rem;font-weight:700;color:#0A0F1E}.si-danger{color:#dc2626}.si-ok{color:#059669}.rating-gold{font-size:.8rem}.rating-gold .filled{color:var(--gold)}.rating-gold .empty{color:#e8e2d0}
-.line-form-luxury{position:relative;margin-top:16px;padding:18px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}.lf-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6}
-.line-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.line-form-head h4{display:flex;align-items:center;gap:6px;font-weight:800;color:#0A0F1E;margin:0;font-size:.9rem}.line-form-head h4 svg{width:16px;height:16px;color:var(--gold-dark)}.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}.btn-close-x svg{width:12px;height:12px}.line-form-btns{display:flex;gap:8px;margin-top:14px}
-.line-calc-bar-luxury{display:flex;gap:20px;flex-wrap:wrap;padding:12px 16px;background:#fff;border:1px solid #e8e2d0;border-radius:12px;margin-top:12px;font-size:.84rem;color:#6b7280}.line-calc-bar-luxury strong{color:#0A0F1E;font-family:monospace}.line-calc-bar-luxury .grand{background:rgba(212,175,55,.08);padding:4px 10px;border-radius:8px;border:1px solid rgba(212,175,55,.15)}
-.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}.act-btn.delete{color:#ef4444;border-color:#fee2e2}.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}.act-btn svg{width:14px;height:14px}
+.supplier-info-luxury{position:relative;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:14px;padding:16px;margin-top:12px;overflow:hidden}
+.si-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.si-item{display:flex;flex-direction:column;gap:2px}
+.si-label{font-size:.7rem;color:#8B95A5;font-weight:600}
+.si-value{font-size:.84rem;font-weight:700;color:#0A0F1E}
+.si-danger{color:#dc2626}
+.si-ok{color:#059669}
+.rating-gold{font-size:.8rem}
+.rating-gold .filled{color:var(--gold)}
+.rating-gold .empty{color:#e8e2d0}
+.line-form-luxury{position:relative;margin-top:16px;padding:18px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}
+.lf-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6}
+.line-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.line-form-head h4{display:flex;align-items:center;gap:6px;font-weight:800;color:#0A0F1E;margin:0;font-size:.9rem}
+.line-form-head h4 svg{width:16px;height:16px;color:var(--gold-dark)}
+.btn-close-x{width:28px;height:28px;border-radius:8px;border:1px solid #e8e2d0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7280}
+.btn-close-x svg{width:12px;height:12px}
+.line-form-btns{display:flex;gap:8px;margin-top:14px}
+.line-calc-bar-luxury{display:flex;gap:20px;flex-wrap:wrap;padding:12px 16px;background:#fff;border:1px solid #e8e2d0;border-radius:12px;margin-top:12px;font-size:.84rem;color:#6b7280}
+.line-calc-bar-luxury strong{color:#0A0F1E;font-family:monospace}
+.line-calc-bar-luxury .grand{background:rgba(212,175,55,.08);padding:4px 10px;border-radius:8px;border:1px solid rgba(212,175,55,.15)}
+.act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}
+.act-btn.edit{color:var(--gold-dark);border-color:rgba(212,175,55,.2)}
+.act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}
+.act-btn.delete{color:#ef4444;border-color:#fee2e2}
+.act-btn.delete:hover{background:#fef2f2;border-color:#ef4444}
+.act-btn svg{width:14px;height:14px}
 .actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
-.totals-bar-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:18px;overflow:hidden}.totals-grid{display:flex;justify-content:flex-end;gap:20px;flex-wrap:wrap}.total-item{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:100px}.total-label{font-size:.72rem;color:#8B95A5;font-weight:600}.total-value{font-size:1rem;font-weight:800;color:#0A0F1E;font-family:monospace}.t-discount{color:#ef4444}.total-grand-luxury{padding:10px 18px;background:linear-gradient(135deg,var(--black2),var(--black3));border-radius:12px;border:1px solid var(--border-gold)}.total-grand-luxury .total-label{color:#8B95A5}.total-grand-luxury .total-value{color:var(--gold);font-size:1.1rem}
-.total-row-luxury{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)!important;font-weight:800}.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px 14px}
-.status-timeline-luxury{display:flex;flex-direction:column;gap:0}.st-step{display:flex;gap:12px;position:relative;padding:12px 0}.st-dot{width:14px;height:14px;border-radius:50%;background:#e8e2d0;border:2px solid #fff;box-shadow:0 0 0 2px #e8e2d0;flex-shrink:0;margin-top:2px;z-index:1}.st-step.done .st-dot{background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);border-color:#fff}.st-step.current .st-dot{background:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);animation:pulse 2s infinite}.st-line{position:absolute;right:6px;top:26px;bottom:-12px;width:2px;background:#e8e2d0}.st-step.done .st-line{background:var(--gold)}.st-content{display:flex;flex-direction:column;gap:2px}.st-content strong{font-size:.86rem;color:#0A0F1E}.st-content span{font-size:.72rem;color:#8B95A5}
-.timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}.tl-item:last-child{border:none}.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}.tl-content{display:flex;flex-direction:column;gap:2px}.tl-content strong{font-size:.84rem;color:#0A0F1E}.tl-content span{font-size:.72rem;color:#8B95A5}
-.audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}.audit-item-luxury strong{color:#0A0F1E}.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
-.actions-bar-luxury{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0;box-shadow:0 2px 12px rgba(0,0,0,.04)}.actions-right-luxury{display:flex;gap:8px;align-items:center}
-.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
-.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
-.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
-.modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}.modal-body-luxury{padding:18px 22px}.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
-.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}.loading-luxury.small{padding:20px}.empty-luxury{text-align:center;padding:40px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}.empty-luxury.small{padding:24px}.empty-icon-luxury{width:48px;height:48px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.empty-icon-luxury svg{width:24px;height:24px}
-.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}.no-access-luxury .na-icon svg{width:32px;height:32px}
-.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@@media(max-width:992px){.cols-4{grid-template-columns:repeat(2,1fr)}.cols-3{grid-template-columns:repeat(2,1fr)}.source-cards-luxury{grid-template-columns:1fr}}@@media(max-width:600px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}.lh-content{flex-direction:column;align-items:flex-start}.actions-bar-luxury{flex-direction:column;gap:10px}.approval-bar-luxury{flex-direction:column;align-items:flex-start}.totals-grid{flex-direction:column;align-items:stretch}.total-item{flex-direction:row;justify-content:space-between}}
+.totals-bar-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:18px;overflow:hidden}
+.totals-grid{display:flex;justify-content:flex-end;gap:20px;flex-wrap:wrap}
+.total-item{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:100px}
+.total-label{font-size:.72rem;color:#8B95A5;font-weight:600}
+.total-value{font-size:1rem;font-weight:800;color:#0A0F1E;font-family:monospace}
+.t-discount{color:#ef4444}
+.total-grand-luxury{padding:10px 18px;background:linear-gradient(135deg,var(--black2),var(--black3));border-radius:12px;border:1px solid var(--border-gold)}
+.total-grand-luxury .total-label{color:#8B95A5}
+.total-grand-luxury .total-value{color:var(--gold);font-size:1.1rem}
+.total-row-luxury{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)!important;font-weight:800}
+.total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px 14px}
+.status-timeline-luxury{display:flex;flex-direction:column;gap:0}
+.st-step{display:flex;gap:12px;position:relative;padding:12px 0}
+.st-dot{width:14px;height:14px;border-radius:50%;background:#e8e2d0;border:2px solid #fff;box-shadow:0 0 0 2px #e8e2d0;flex-shrink:0;margin-top:2px;z-index:1}
+.st-step.done .st-dot{background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);border-color:#fff}
+.st-step.current .st-dot{background:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);animation:pulse 2s infinite}
+.st-line{position:absolute;right:6px;top:26px;bottom:-12px;width:2px;background:#e8e2d0}
+.st-step.done .st-line{background:var(--gold)}
+.st-content{display:flex;flex-direction:column;gap:2px}
+.st-content strong{font-size:.86rem;color:#0A0F1E}
+.st-content span{font-size:.72rem;color:#8B95A5}
+.timeline-luxury{margin-top:12px;display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1efe8}
+.tl-item:last-child{border:none}
+.tl-dot{width:10px;height:10px;border-radius:50%;background:#e8e2d0;margin-top:4px;flex-shrink:0}
+.tl-dot.gold{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.15)}
+.tl-content{display:flex;flex-direction:column;gap:2px}
+.tl-content strong{font-size:.84rem;color:#0A0F1E}
+.tl-content span{font-size:.72rem;color:#8B95A5}
+.audit-bar-luxury{display:flex;flex-wrap:wrap;gap:16px;padding:12px 16px;background:linear-gradient(135deg,#fcfaf6,#fff);border:1px solid #f1efe8;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+.audit-item-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#6b7280}
+.audit-item-luxury svg{width:14px;height:14px;flex-shrink:0}
+.audit-item-luxury strong{color:#0A0F1E}
+.audit-item-luxury.gold{background:rgba(212,175,55,.08);padding:6px 12px;border-radius:999px;border:1px solid rgba(212,175,55,.15);color:var(--gold-dark)}
+.audit-date{color:#9ca3af;margin-right:4px;font-size:.72rem}
+.actions-bar-luxury{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.actions-right-luxury{display:flex;gap:8px;align-items:center}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
+.modal-header-luxury{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f1efe8}
+.modal-header-luxury h3{font-size:1rem;font-weight:800;color:#0A0F1E;margin:0}
+.ml-footer{display:flex;gap:8px;padding:14px 22px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+.loading-luxury.small{padding:20px}
+.empty-luxury{text-align:center;padding:40px 20px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}
+.empty-luxury.small{padding:24px}
+.empty-icon-luxury{width:48px;height:48px;margin:0 auto 10px;border-radius:12px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.empty-icon-luxury svg{width:24px;height:24px}
+.no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
+.no-access-luxury .na-icon svg{width:32px;height:32px}
 </style>
 
 @code {
@@ -375,7 +498,7 @@ else
     private async Task OnSupplierSelected(SearchableItem? item){if(item==null||item.Id==0){supplierInfo=null;header.SupplierID=0;return;}header.SupplierID=item.Id;try{supplierInfo=await LookupService.GetSupplierQuickInfoAsync(item.Id);if(supplierInfo!=null){if(supplierInfo.PaymentTermID.HasValue)header.PaymentTermID=supplierInfo.PaymentTermID;if(supplierInfo.CurrencyID.HasValue){header.CurrencyID=supplierInfo.CurrencyID;header.ExchangeRate=supplierInfo.ExchangeRate;}}if(details.Any())await RefreshDetailsPrices();}catch(Exception ex){await ShowToastAsync("خطأ في تحميل بيانات المورد: "+ex.Message,false);}}
     private async Task OnCurrencyChanged(){if(header.CurrencyID.HasValue&&header.CurrencyID.Value>0){header.ExchangeRate=await LookupService.GetExchangeRateAsync(header.CurrencyID.Value);StateHasChanged();}}
     private async Task RefreshDetailsPrices(){if(header.SupplierID<=0)return;foreach(var detail in details){var price=await LookupService.GetSupplierItemPriceAsync(header.SupplierID, detail.ItemID);}}
-    private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;}if(header.SupplierID>0){var price=await LookupService.GetSupplierItemPriceAsync(header.SupplierID, item.Id);if(price!=null){editLine.UnitPrice=price.SuggestedPrice;priceSource=price.PriceSource switch{"SupplierPrice"=>"💰 سعر المورد","LastPurchase"=>"📋 آخر شراء","AverageCost"=>"📊 متوسط التكلفة","StandardCost"=>"📐 التكلفة المعيارية",_=>null};}}else if(info!=null&&info.EstimatedPrice>0){editLine.UnitPrice=info.EstimatedPrice;priceSource="📊 سعر تقديري";}StateHasChanged();}
+    private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;}if(header.SupplierID>0){var price=await LookupService.GetSupplierItemPriceAsync(header.SupplierID, item.Id);if(price!=null){editLine.UnitPrice=price.SuggestedPrice;priceSource=price.PriceSource switch{"SupplierPrice"=>"سعر المورد","LastPurchase"=>"آخر شراء","AverageCost"=>"متوسط التكلفة","StandardCost"=>"التكلفة المعيارية",_=>null};}}else if(info!=null&&info.EstimatedPrice>0){editLine.UnitPrice=info.EstimatedPrice;priceSource="سعر تقديري";}StateHasChanged();}
     private async Task SaveOrder()
     {
         if(header.PODate==default){await ShowToastAsync("حدد تاريخ أمر الشراء",false);activeTab=0;return;}
@@ -388,19 +511,19 @@ else
                 OrderId=newId;header.PurchaseOrderID=newId;
                 if(header.POSource==2&&prLines!=null){
                     var selectedIds=prLines.Where(l=>l.IsSelected).Select(l=>l.RequestDetailID).ToList();
-                    if(selectedIds.Any()){var imported=await PoService.ImportLinesFromPRAsync(newId,header.RequestID??0,selectedIds,header.SupplierID,UserSession.UserID);await ShowToastAsync($"تم إنشاء الأمر وتحميل {imported} صنف ✅");}
-                    else{await ShowToastAsync($"تم إنشاء أمر الشراء: {header.PONumber} ✅");}
-                }else{await ShowToastAsync($"تم إنشاء أمر الشراء: {header.PONumber} ✅");}
+                    if(selectedIds.Any()){var imported=await PoService.ImportLinesFromPRAsync(newId,header.RequestID??0,selectedIds,header.SupplierID,UserSession.UserID);await ShowToastAsync($"تم إنشاء الأمر وتحميل {imported} صنف ");}
+                    else{await ShowToastAsync($"تم إنشاء أمر الشراء: {header.PONumber} ");}
+                }else{await ShowToastAsync($"تم إنشاء أمر الشراء: {header.PONumber} ");}
                 isSourceLocked=true;isPRLoaded=true;details=await PoService.GetOrderDetailsAsync(newId);header=await PoService.GetOrderByIdAsync(newId)??header;Navigation.NavigateTo($"/purchase-orders/edit/{newId}", forceLoad:false);
-            }else{await PoService.UpdateOrderAsync(header, UserSession.UserID);header=await PoService.GetOrderByIdAsync(OrderId)??header;details=await PoService.GetOrderDetailsAsync(OrderId);await ShowToastAsync("تم حفظ التعديلات ✅");}
+            }else{await PoService.UpdateOrderAsync(header, UserSession.UserID);header=await PoService.GetOrderByIdAsync(OrderId)??header;details=await PoService.GetOrderDetailsAsync(OrderId);await ShowToastAsync("تم حفظ التعديلات ");}
         }catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}
         finally{isSaving=false;}
     }
-    private async Task SubmitForApproval(){if(!details.Any()){await ShowToastAsync("أضف أصناف أولاً",false);activeTab=2;return;}isSaving=true;StateHasChanged();try{await PoService.SubmitForApprovalAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=2;await ShowToastAsync("تم الإرسال للاعتماد ✅");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
-    private async Task ExecuteApprove(){var confirmed=await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد أمر الشراء؟");if(!confirmed)return;isSaving=true;StateHasChanged();try{await PoService.ApproveAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=3;await ShowToastAsync("تم الاعتماد ✅");await Task.Delay(1500);Navigation.NavigateTo("/purchase-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private async Task SubmitForApproval(){if(!details.Any()){await ShowToastAsync("أضف أصناف أولاً",false);activeTab=2;return;}isSaving=true;StateHasChanged();try{await PoService.SubmitForApprovalAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=2;await ShowToastAsync("تم الإرسال للاعتماد ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private async Task ExecuteApprove(){var confirmed=await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد أمر الشراء؟");if(!confirmed)return;isSaving=true;StateHasChanged();try{await PoService.ApproveAsync(OrderId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=3;await ShowToastAsync("تم الاعتماد ");await Task.Delay(1500);Navigation.NavigateTo("/purchase-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
     private void DoShowReject(){rejectReason="";rejectMsg="";showRejectDialog=true;}
     private async Task ConfirmReject(){if(string.IsNullOrWhiteSpace(rejectReason)){rejectMsg="أدخل سبب الرفض";return;}try{await PoService.RejectAsync(OrderId, rejectReason, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=4;header.RejectionReason=rejectReason;showRejectDialog=false;await ShowToastAsync("تم رفض أمر الشراء",false);await Task.Delay(1500);Navigation.NavigateTo("/purchase-orders");}catch(Exception ex){rejectMsg="خطأ: "+ex.Message;}}
-    private async Task ExecuteMarkAsSent(){isSaving=true;StateHasChanged();try{await PoService.MarkAsSentAsync(OrderId, sentMethod, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=5;await ShowToastAsync("تم إرسال أمر الشراء للمورد ✅");await Task.Delay(1500);Navigation.NavigateTo("/purchase-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
+    private async Task ExecuteMarkAsSent(){isSaving=true;StateHasChanged();try{await PoService.MarkAsSentAsync(OrderId, sentMethod, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);header.POStatus=5;await ShowToastAsync("تم إرسال أمر الشراء للمورد ");await Task.Delay(1500);Navigation.NavigateTo("/purchase-orders");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}finally{isSaving=false;}}
     private void ShowAddLine(){isEditLine=false;editLine=new(){PurchaseOrderID=OrderId,TaxRate=14};lineMsg="";priceSource=null;showLineForm=true;}
     private void ShowEditLine(PurchaseOrderDetailDto line){isEditLine=true;editLine=new(){PODetailID=line.PODetailID,PurchaseOrderID=line.PurchaseOrderID,ItemID=line.ItemID,ItemCode=line.ItemCode,ItemNameAr=line.ItemNameAr,UnitID=line.UnitID,UnitName=line.UnitName,OrderedQty=line.OrderedQty,UnitPrice=line.UnitPrice,DiscountPercent=line.DiscountPercent,TaxRate=line.TaxRate,ExpectedDate=line.ExpectedDate,Notes=line.Notes,RequestDetailID=line.RequestDetailID,PRApprovedQty=line.PRApprovedQty,PRRemainingToOrder=line.PRRemainingToOrder};lineMsg="";priceSource=null;showLineForm=true;}
     private void CloseLineForm(){showLineForm=false;lineMsg="";priceSource=null;}
@@ -411,11 +534,11 @@ else
         isSavingLine=true;StateHasChanged();
         try{
             if(isEditLine)await PoService.UpdateDetailAsync(editLine, UserSession.UserID);else await PoService.InsertDetailAsync(editLine, UserSession.UserID);
-            details=await PoService.GetOrderDetailsAsync(OrderId);header=await PoService.GetOrderByIdAsync(OrderId)??header;showLineForm=false;await ShowToastAsync(isEditLine?"تم التحديث ✅":"تم الإضافة ✅");
+            details=await PoService.GetOrderDetailsAsync(OrderId);header=await PoService.GetOrderByIdAsync(OrderId)??header;showLineForm=false;await ShowToastAsync(isEditLine?"تم التحديث ":"تم الإضافة ");
         }catch(Exception ex){lineMsg="خطأ: "+ex.Message;lineMsgOk=false;}
         finally{isSavingLine=false;}
     }
-    private async Task DeleteLine(int detailId){try{await PoService.DeleteDetailAsync(detailId, UserSession.UserID);details=await PoService.GetOrderDetailsAsync(OrderId);header=await PoService.GetOrderByIdAsync(OrderId)??header;await ShowToastAsync("تم الحذف ✅");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
+    private async Task DeleteLine(int detailId){try{await PoService.DeleteDetailAsync(detailId, UserSession.UserID);details=await PoService.GetOrderDetailsAsync(OrderId);header=await PoService.GetOrderByIdAsync(OrderId)??header;await ShowToastAsync("تم الحذف ");}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
     private async Task PrintDoc(){try{var html=await PoService.GenerateReportHtmlAsync(OrderId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
     private void GoBack()=>Navigation.NavigateTo("/purchase-orders");
     private async Task ShowToastAsync(string message, bool ok=true){toast=message;toastOk=ok;StateHasChanged();await Task.Delay(4000);toast="";StateHasChanged();}

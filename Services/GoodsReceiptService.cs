@@ -524,8 +524,17 @@ namespace YKCoatings.Services
         // ==========================================
         // اعتماد إذن الاستلام
         // ==========================================
-        public async Task ApproveAsync(int grnId, int userId, int? employeeId = null)
+        public async Task ApproveAsync(
+            int grnId,
+            int userId,
+            int? employeeId,
+            int inspectionStatus,
+            int? inspectedBy,
+            string? inspectionNotes)
         {
+            if (inspectionStatus != 2)
+                throw new InvalidOperationException("يجب تسجيل نتيجة فحص مقبولة قبل اعتماد إذن الاستلام.");
+
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -555,16 +564,29 @@ namespace YKCoatings.Services
                 grnNumber = info.GRNNumber;
                 purchaseOrderId = info.PurchaseOrderID;
 
-                // 1) تحديث حالة GRN
-                await connection.ExecuteAsync(
+                // 1) حفظ نتيجة الفحص واعتماد GRN ذرياً حتى لا تضيع النتيجة المحددة في الشاشة
+                var statusUpdated = await connection.ExecuteAsync(
                     @"UPDATE dbo.GoodsReceiptNotes SET
                         GRNStatus = 2,
+                        InspectionStatus = @InspectionStatus,
+                        InspectedBy = NULLIF(@InspectedBy, 0),
+                        InspectionNotes = @InspectionNotes,
                         ApprovedBy = @EmployeeID,
                         ApprovedDate = GETDATE(),
                         ModifiedBy = @UserID,
                         ModifiedDate = GETDATE()
-                      WHERE GRNID = @ID",
-                    new { ID = grnId, EmployeeID = employeeId, UserID = userId }, transaction);
+                      WHERE GRNID = @ID AND GRNStatus = 1",
+                    new
+                    {
+                        ID = grnId,
+                        EmployeeID = employeeId,
+                        UserID = userId,
+                        InspectionStatus = inspectionStatus,
+                        InspectedBy = inspectedBy,
+                        InspectionNotes = inspectionNotes
+                    }, transaction);
+                if (statusUpdated != 1)
+                    throw new InvalidOperationException("تغيرت حالة إذن الاستلام أثناء الاعتماد؛ أُلغيت العملية.");
 
                 // 2) تحديث أمر الشراء (الكميات المستلمة + الحالة)
                 if (purchaseOrderId.HasValue && purchaseOrderId.Value > 0)
@@ -836,7 +858,7 @@ tr:nth-child(even){{background:#f8fafc}}
 .footer{{text-align:center;margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}}
 </style></head><body>
 <div class='header'>
-    <div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div>
+    <div class='company'>مصنع واي كي كوتينج    </div>
     <div class='doc-title'>إذن استلام بضاعة</div>
     <div class='doc-num'>{header.GRNNumber}</div>
 </div>

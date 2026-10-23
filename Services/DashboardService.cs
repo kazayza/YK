@@ -181,9 +181,9 @@ namespace YKCoatings.Services
                                 ELSE 0
                             END AS AlertLevel,
                             CASE
-                                WHEN ib.CurrentQty <= 0 THEN N'نفد ❌'
-                                WHEN i.ReorderLevel > 0 AND ib.CurrentQty <= i.ReorderLevel THEN N'تحت نقطة الطلب ⚠️'
-                                WHEN i.MinStockLevel > 0 AND ib.CurrentQty <= i.MinStockLevel THEN N'أقل من الحد 🔶'
+                                WHEN ib.CurrentQty <= 0 THEN N'نفد'
+                                WHEN i.ReorderLevel > 0 AND ib.CurrentQty <= i.ReorderLevel THEN N'تحت نقطة الطلب'
+                                WHEN i.MinStockLevel > 0 AND ib.CurrentQty <= i.MinStockLevel THEN N'أقل من الحد'
                                 ELSE N'طبيعي'
                             END AS AlertName
                         FROM dbo.InventoryBalance ib
@@ -609,7 +609,7 @@ ORDER BY pb.ProductionOrderID, pbs.StageOrder";
                         });
                     }
                 }
-                catch { /* الجدول أو العمود غير موجود → نتجاهل هذا النوع فقط */ }
+                catch { /* الجدول أو العمود غير موجود <i class=bi-arrow-right></i> نتجاهل هذا النوع فقط */ }
             }
 
             var tasks = new List<Task>();

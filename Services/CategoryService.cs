@@ -192,7 +192,7 @@ namespace YKCoatings.Services
                 num++;
                 ws.Cell(row, 1).Value = num;
                 ws.Cell(row, 2).Value = cat.CategoryCode ?? "";
-                ws.Cell(row, 3).Value = (cat.CategoryLevel > 1 ? "  ↳ " : "") + (cat.CategoryNameAr ?? "");
+                ws.Cell(row, 3).Value = (cat.CategoryLevel > 1 ? "    " : "") + (cat.CategoryNameAr ?? "");
                 ws.Cell(row, 4).Value = cat.CategoryNameEn ?? "";
                 ws.Cell(row, 5).Value = cat.ParentCategoryName ?? "—";
                 ws.Cell(row, 6).Value = cat.CategoryLevel;

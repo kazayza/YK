@@ -665,7 +665,7 @@ namespace YKCoatings.Services
             worksheet.RightToLeft = true;
             worksheet.Style.Font.FontName = "Tajawal";
             worksheet.Style.Font.FontSize = 11;
-            worksheet.Cell(1, 1).Value = "تقرير مرتجعات المبيعات — واي كي كوتينج Gold Edition";
+            worksheet.Cell(1, 1).Value = "تقرير مرتجعات المبيعات — واي كي كوتينج   ";
             worksheet.Range(1, 1, 1, 10).Merge();
             worksheet.Range(1, 1, 1, 10).Style.Font.Bold = true;
             worksheet.Range(1, 1, 1, 10).Style.Font.FontSize = 14;
@@ -744,7 +744,7 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
 .foot{{text-align:center;color:#9ca3af;font-size:10px;border-top:1px solid #e8e2d0;margin-top:26px;padding-top:12px}}
 @media print{{body{{padding:10mm}}}}
 </style></head><body>
-<div class='top'><div class='brand'>واي كي كوتينج لمستحضرات التجميل — YK Coatings</div>
+<div class='top'><div class='brand'>واي كي كوتينج   — YK Coatings</div>
 <div class='title'>إشعار مرتجع مبيعات</div><span class='number'>{WebUtility.HtmlEncode(header.ReturnNumber)}</span></div>
 <div class='grid'>
 <div class='box'><div class='label'>التاريخ</div><div class='value'>{header.ReturnDate:dd/MM/yyyy}</div></div>
@@ -757,7 +757,7 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
 <div class='box'><div class='label'>ملاحظات</div><div class='value'>{WebUtility.HtmlEncode(header.Notes ?? "—")}</div></div></div>
 <table><thead><tr><th>م</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>سعر المرتجع</th><th>الحالة</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>{rows}</tbody></table>
 <div class='totals'><div class='line'><span>قبل الضريبة</span><strong>{header.SubTotal:#,##0.00}</strong></div><div class='line'><span>الضريبة</span><strong>{header.TaxAmount:#,##0.00}</strong></div><div class='line grand'><span>إجمالي الإشعار الدائن</span><span>{header.TotalAmount:#,##0.00} ج.م</span></div></div>
-<div class='foot'>طُبع في {DateTime.Now:dd/MM/yyyy HH:mm} — YK Coatings ERP Gold Edition</div></body></html>";
+<div class='foot'>طُبع في {DateTime.Now:dd/MM/yyyy HH:mm} — YK Coatings ERP   </div></body></html>";
 
             await _audit.WriteAuditLogAsync(userId, 5, "SalesReturns", returnId.ToString(),
                 moduleName: ModuleCode, description: $"طباعة مرتجع مبيعات {header.ReturnNumber}");

@@ -36,7 +36,7 @@ else
                     <img src="/images/yk-icon-gold.png" alt="YK Coatings" class="sb-logo-full" />
                 </div>
                 <div class="sb-brand-text">
-                    <span class="sb-brand-name">واي كي كوتينج</span>
+                    <span class="sb-brand-name"></span>
                     <span class="sb-brand-sub">YK COATINGS ERP</span>
                 </div>
             </div>
@@ -75,8 +75,8 @@ else
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                 </div>
                 <div class="sb-footer-text">
-                    <span>الإصدار 2.0 Gold Edition</span>
-                    <span class="sb-footer-status">● جميع الأنظمة تعمل</span>
+                    <span>الإصدار 2.0   </span>
+                    <span class="sb-footer-status"><i class=bi-circle-fill></i> جميع الأنظمة تعمل</span>
                 </div>
             </div>
         </div>
@@ -99,8 +99,8 @@ else
                 <a href="/dashboard" class="tb-brand" title="الذهاب إلى الرئيسية">
                     <img src="/images/yk-icon-gold.png" alt="YK Coatings" class="tb-brand-icon" />
                     <span class="tb-brand-text">
-                        <span class="tb-brand-name">واي كي كوتينج</span>
-                        <span class="tb-brand-sub">YK COATINGS ERP</span>
+                        <span class="tb-brand-name">YK COATINGS ERP</span>
+                        <span class="tb-brand-sub"></span>
                     </span>
                 </a>
                 <div class="tb-divider hide-sm"></div>
@@ -233,7 +233,7 @@ else
         </div>
 
         <footer class="app-footer">
-            <span>© @DateTime.Now.Year <strong style="color:#D4AF37">YK COATINGS</strong> Gold Edition</span>
+            <span>© @DateTime.Now.Year <strong style="color:#D4AF37">YK COATINGS</strong>   </span>
             <span class="footer-sep">·</span><span>الإصدار 2.0</span>
             <span class="footer-sep">·</span><span class="footer-status"><span class="status-dot"></span>جميع الأنظمة تعمل</span>
             <span class="footer-sep">·</span><span class="footer-dev-main">تصميم وتطوير : أحمد محمد الرفاعى | 01122050119</span>
@@ -645,9 +645,47 @@ html,body{height:100%}
         return uri switch
         {
             "" or "dashboard" => "لوحة التحكم",
-            "suppliers" => "الموردين","items" => "الأصناف","warehouses" => "المخازن",
-            "purchase-requests" => "طلبات الشراء","purchase-orders" => "أوامر الشراء",
-            "stock-balances" => "أرصدة المخزون","users" => "المستخدمين","roles" => "الصلاحيات","audit" => "سجل العمليات",
+            // البيانات الأساسية
+            "suppliers" => "الموردين", "items" => "الأصناف", "warehouses" => "المخازن",
+            "categories" => "التصنيفات", "units" => "وحدات القياس", "currencies" => "العملات",
+            "pricelists" => "قوائم الأسعار", "payment-terms" => "شروط الدفع",
+            "items/import" => "استيراد الأصناف", "settings" => "الإعدادات",
+            "settings/number-sequences" => "تسلسلات الأرقام",
+            // المشتريات
+            "purchase-requests" => "طلبات الشراء", "purchase-orders" => "أوامر الشراء",
+            "goods-receipts" => "إذونات الاستلام", "purchase-invoices" => "فواتير المشتريات",
+            "purchase-returns" => "مرتجعات المشتريات",
+            // التصنيع
+            "boms" => "الوصفات", "production-orders" => "أوامر التصنيع",
+            "material-issues" => "صرف الخامات", "production-batches" => "دفعات الإنتاج",
+            "production-tree" => "شجرة الإنتاج", "manufacturing-dashboard" => "لوحة التصنيع",
+            // المخازن
+            "stock-balances" => "أرصدة المخزون", "stock-movements" => "حركات المخزون",
+            "stock-transfers" => "تحويلات المخزون", "stock-counts" => "الجرد",
+            // المبيعات
+            "quotations" => "عروض الأسعار", "sales-orders" => "أوامر البيع",
+            "sales-invoices" => "فواتير البيع", "sales-returns" => "مرتجعات المبيعات",
+            "customers" => "العملاء",
+            // الخزينة
+            "treasury-dashboard" => "لوحة الخزينة", "treasury" => "الخزينة",
+            "cash-boxes" => "الخزائن", "bank-accounts" => "الحسابات البنكية",
+            "cash-box-statement" => "كشف الصندوق", "cash-transfers" => "تحويلات الخزينة",
+            "receipt-vouchers" => "سندات القبض", "payment-vouchers" => "سندات الصرف",
+            "expenses" => "المصروفات", "cheques" => "الشيكات", "cost-centers" => "مراكز التكلفة",
+            // الحسابات
+            "chart-of-accounts" => "شجرة الحسابات", "journal-entries" => "القيود اليومية",
+            "trial-balance" => "ميزان المراجعة", "account-ledger" => "دفتر الأستاذ",
+            "fiscal-years" => "السنوات المالية",
+            // الموارد البشرية
+            "employees" => "الموظفون", "departments" => "الأقسام", "jobtitles" => "المسميات الوظيفية",
+            "attendance" => "الحضور", "leaves" => "طلبات الإجازة",
+            "leave-balances" => "أرصدة الإجازات", "leavetypes" => "أنواع الإجازات",
+            "loans" => "السلف", "penalties" => "الجزاءات", "holidays" => "العطل الرسمية",
+            "payroll" => "المرتبات", "payroll-details" => "تفاصيل مسير المرتبات",
+            // الأمان
+            "users" => "المستخدمون", "roles" => "الأدوار", "audit" => "سجل العمليات",
+            "audit-log" => "سجل التدقيق", "login-history" => "سجل الدخول",
+            "change-password" => "تغيير كلمة المرور",
             _ => "واي كي كوتينج ERP"
         };
     }

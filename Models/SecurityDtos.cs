@@ -1,4 +1,6 @@
-﻿namespace YKCoatings.Models
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace YKCoatings.Models
 {
     // ══════════════════════════════════════
     // المستخدمين - القائمة
@@ -84,6 +86,38 @@
         public DateTime? CreatedDate { get; set; }
         public int? ModifiedBy { get; set; }
         public DateTime? ModifiedDate { get; set; }
+    }
+
+    // ══════════════════════════════════════
+    // بروفايل المستخدم الحالي - لا يتضمن صلاحيات أو كلمة مرور
+    // ══════════════════════════════════════
+    public class SelfProfileDto
+    {
+        public int UserID { get; set; }
+        public string Username { get; set; } = "";
+
+        [Required(ErrorMessage = "الاسم الكامل مطلوب.")]
+        public string FullName { get; set; } = "";
+
+        [EmailAddress(ErrorMessage = "أدخل بريداً إلكترونياً صحيحاً.")]
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+
+        // معلومات للعرض فقط؛ خدمة الحفظ لا تقبل تعديلها.
+        public string? RoleNameAr { get; set; }
+        public string? EmployeeName { get; set; }
+        public string? EmployeeCode { get; set; }
+    }
+
+    // ══════════════════════════════════════
+    // تفضيلات المستخدم الحالي
+    // ══════════════════════════════════════
+    public class UserPreferencesDto
+    {
+        public int PageSize { get; set; } = 20;
+        // null يعني اتباع إعداد الصوت العام.
+        public bool? PlaySound { get; set; }
+        public bool ShowNotifications { get; set; } = true;
     }
 
     // ══════════════════════════════════════

@@ -141,6 +141,9 @@ namespace YKCoatings.Services
         public async Task<int> InsertInvoiceAsync(PurchaseInvoiceHeaderDto header, int userId)
         {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+
             var sql = @"INSERT INTO dbo.PurchaseInvoices
                         (
                             InvoiceNumber, InvoiceDate, SupplierID,
@@ -163,29 +166,42 @@ namespace YKCoatings.Services
                         );
                         SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+            int newId;
+            try
             {
-                header.InvoiceNumber,
-                header.InvoiceDate,
-                header.SupplierID,
-                header.PurchaseOrderID,
-                header.GRNID,
-                header.SupplierInvoiceNo,
-                header.SupplierInvoiceDate,
-                header.PaymentTermID,
-                header.CurrencyID,
-                ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
-                header.DiscountPercent,
-                header.ShippingCost,
-                header.OtherCosts,
-                InvoiceStatus = 1,
-                InvoiceSource = header.InvoiceSource == 0 ? (header.GRNID > 0 ? 1 : 3) : header.InvoiceSource,
-                header.Notes,
-                UserID = userId
-            });
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    header.InvoiceNumber,
+                    header.InvoiceDate,
+                    header.SupplierID,
+                    header.PurchaseOrderID,
+                    header.GRNID,
+                    header.SupplierInvoiceNo,
+                    header.SupplierInvoiceDate,
+                    header.PaymentTermID,
+                    header.CurrencyID,
+                    ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
+                    header.DiscountPercent,
+                    header.ShippingCost,
+                    header.OtherCosts,
+                    InvoiceStatus = 1,
+                    InvoiceSource = header.InvoiceSource == 0 ? (header.GRNID > 0 ? 1 : 3) : header.InvoiceSource,
+                    header.Notes,
+                    UserID = userId
+                }, transaction);
 
-            // حساب تاريخ الاستحقاق
-            await connection.ExecuteAsync("EXEC dbo.sp_CalcInvoiceDueDate @InvoiceID", new { InvoiceID = newId });
+                // حساب تاريخ الاستحقاق
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_CalcInvoiceDueDate @InvoiceID",
+                    new { InvoiceID = newId }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 1, "PurchaseInvoices", newId.ToString(),
                 moduleName: "SCR_PINV",
@@ -200,13 +216,8 @@ namespace YKCoatings.Services
         public async Task UpdateInvoiceAsync(PurchaseInvoiceHeaderDto header, int userId)
         {
             using var connection = CreateConnection();
-
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT InvoiceStatus FROM dbo.PurchaseInvoices WHERE InvoiceID = @ID",
-                new { ID = header.InvoiceID });
-
-            if (status != 1)
-                throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
             var sql = @"UPDATE dbo.PurchaseInvoices SET
                             InvoiceDate = @InvoiceDate,
@@ -224,25 +235,46 @@ namespace YKCoatings.Services
                             ModifiedDate = GETDATE()
                         WHERE InvoiceID = @InvoiceID";
 
-            await connection.ExecuteAsync(sql, new
+            try
             {
-                header.InvoiceID,
-                header.InvoiceDate,
-                header.SupplierID,
-                header.SupplierInvoiceNo,
-                header.SupplierInvoiceDate,
-                header.PaymentTermID,
-                header.CurrencyID,
-                ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
-                header.DiscountPercent,
-                header.ShippingCost,
-                header.OtherCosts,
-                header.Notes,
-                UserID = userId
-            });
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT InvoiceStatus FROM dbo.PurchaseInvoices WHERE InvoiceID = @ID",
+                    new { ID = header.InvoiceID }, transaction);
 
-            await connection.ExecuteAsync("EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID", new { InvoiceID = header.InvoiceID });
-            await connection.ExecuteAsync("EXEC dbo.sp_CalcInvoiceDueDate @InvoiceID", new { InvoiceID = header.InvoiceID });
+                if (status != 1)
+                    throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
+
+                await connection.ExecuteAsync(sql, new
+                {
+                    header.InvoiceID,
+                    header.InvoiceDate,
+                    header.SupplierID,
+                    header.SupplierInvoiceNo,
+                    header.SupplierInvoiceDate,
+                    header.PaymentTermID,
+                    header.CurrencyID,
+                    ExchangeRate = header.ExchangeRate <= 0 ? 1 : header.ExchangeRate,
+                    header.DiscountPercent,
+                    header.ShippingCost,
+                    header.OtherCosts,
+                    header.Notes,
+                    UserID = userId
+                }, transaction);
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID",
+                    new { InvoiceID = header.InvoiceID }, transaction);
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_CalcInvoiceDueDate @InvoiceID",
+                    new { InvoiceID = header.InvoiceID }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseInvoices", header.InvoiceID.ToString(),
                 moduleName: "SCR_PINV",
@@ -254,60 +286,75 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertDetailAsync(PurchaseInvoiceDetailEditDto detail, int userId)
         {
-            using var connection = CreateConnection();
-
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT InvoiceStatus FROM dbo.PurchaseInvoices WHERE InvoiceID = @ID",
-                new { ID = detail.InvoiceID });
-
-            if (status != 1)
-                throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
-
             if (detail.ItemID <= 0) throw new Exception("اختر الصنف");
             if (detail.UnitID <= 0) throw new Exception("اختر الوحدة");
             if (detail.Quantity <= 0) throw new Exception("أدخل الكمية");
 
-            var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
-                "SELECT ISNULL(MAX(LineNumber), 0) FROM dbo.PurchaseInvoiceDetails WHERE InvoiceID = @ID",
-                new { ID = detail.InvoiceID });
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            detail.LineNumber = maxLine + 1;
-
-            var sql = @"INSERT INTO dbo.PurchaseInvoiceDetails
-                        (
-                            InvoiceID, LineNumber, ItemID, UnitID, WarehouseID,
-                            Quantity, UnitPrice, DiscountPercent, TaxRate,
-                            BatchNumber, ExpiryDate,
-                            GRNDetailID, PODetailID, Notes
-                        )
-                        VALUES
-                        (
-                            @InvoiceID, @LineNumber, @ItemID, @UnitID, NULLIF(@WarehouseID, 0),
-                            @Quantity, @UnitPrice, @DiscountPercent, @TaxRate,
-                            @BatchNumber, @ExpiryDate,
-                            @GRNDetailID, @PODetailID, @Notes
-                        );
-                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+            int newId;
+            try
             {
-                detail.InvoiceID,
-                detail.LineNumber,
-                detail.ItemID,
-                detail.UnitID,
-                detail.WarehouseID,
-                detail.Quantity,
-                detail.UnitPrice,
-                detail.DiscountPercent,
-                TaxRate = detail.TaxRate <= 0 ? 14 : detail.TaxRate,
-                detail.BatchNumber,
-                detail.ExpiryDate,
-                detail.GRNDetailID,
-                detail.PODetailID,
-                detail.Notes
-            });
+                var status = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT InvoiceStatus FROM dbo.PurchaseInvoices WHERE InvoiceID = @ID",
+                    new { ID = detail.InvoiceID }, transaction);
 
-            await connection.ExecuteAsync("EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID", new { InvoiceID = detail.InvoiceID });
+                if (status != 1)
+                    throw new Exception("لا يمكن تعديل فاتورة ليست في حالة مسودة");
+
+                var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
+                    "SELECT ISNULL(MAX(LineNumber), 0) FROM dbo.PurchaseInvoiceDetails WHERE InvoiceID = @ID",
+                    new { ID = detail.InvoiceID }, transaction);
+
+                detail.LineNumber = maxLine + 1;
+
+                var sql = @"INSERT INTO dbo.PurchaseInvoiceDetails
+                            (
+                                InvoiceID, LineNumber, ItemID, UnitID, WarehouseID,
+                                Quantity, UnitPrice, DiscountPercent, TaxRate,
+                                BatchNumber, ExpiryDate,
+                                GRNDetailID, PODetailID, Notes
+                            )
+                            VALUES
+                            (
+                                @InvoiceID, @LineNumber, @ItemID, @UnitID, NULLIF(@WarehouseID, 0),
+                                @Quantity, @UnitPrice, @DiscountPercent, @TaxRate,
+                                @BatchNumber, @ExpiryDate,
+                                @GRNDetailID, @PODetailID, @Notes
+                            );
+                            SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    detail.InvoiceID,
+                    detail.LineNumber,
+                    detail.ItemID,
+                    detail.UnitID,
+                    detail.WarehouseID,
+                    detail.Quantity,
+                    detail.UnitPrice,
+                    detail.DiscountPercent,
+                    TaxRate = detail.TaxRate <= 0 ? 14 : detail.TaxRate,
+                    detail.BatchNumber,
+                    detail.ExpiryDate,
+                    detail.GRNDetailID,
+                    detail.PODetailID,
+                    detail.Notes
+                }, transaction);
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID",
+                    new { InvoiceID = detail.InvoiceID }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 1, "PurchaseInvoiceDetails", newId.ToString(),
                 moduleName: "SCR_PINV",
@@ -322,45 +369,62 @@ namespace YKCoatings.Services
         public async Task UpdateDetailAsync(PurchaseInvoiceDetailEditDto detail, int userId)
         {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                @"SELECT pi.InvoiceStatus FROM dbo.PurchaseInvoices pi
-                  INNER JOIN dbo.PurchaseInvoiceDetails pid ON pi.InvoiceID = pid.InvoiceID
-                  WHERE pid.InvoiceDetailID = @ID",
-                new { ID = detail.InvoiceDetailID });
-
-            if (status != 1)
-                throw new Exception("لا يمكن تعديل سطر في فاتورة ليست مسودة");
-
-            var sql = @"UPDATE dbo.PurchaseInvoiceDetails SET
-                            ItemID = @ItemID, UnitID = @UnitID,
-                            WarehouseID = NULLIF(@WarehouseID, 0),
-                            Quantity = @Quantity, UnitPrice = @UnitPrice,
-                            DiscountPercent = @DiscountPercent, TaxRate = @TaxRate,
-                            BatchNumber = @BatchNumber, ExpiryDate = @ExpiryDate,
-                            Notes = @Notes
-                        WHERE InvoiceDetailID = @InvoiceDetailID";
-
-            await connection.ExecuteAsync(sql, new
+            (int InvoiceID, int InvoiceStatus) invoiceInfo;
+            try
             {
-                detail.InvoiceDetailID,
-                detail.ItemID,
-                detail.UnitID,
-                detail.WarehouseID,
-                detail.Quantity,
-                detail.UnitPrice,
-                detail.DiscountPercent,
-                TaxRate = detail.TaxRate <= 0 ? 14 : detail.TaxRate,
-                detail.BatchNumber,
-                detail.ExpiryDate,
-                detail.Notes
-            });
+                invoiceInfo = await connection.QueryFirstOrDefaultAsync<(int InvoiceID, int InvoiceStatus)>(
+                    @"SELECT pi.InvoiceID, pi.InvoiceStatus FROM dbo.PurchaseInvoices pi
+                      INNER JOIN dbo.PurchaseInvoiceDetails pid ON pi.InvoiceID = pid.InvoiceID
+                      WHERE pid.InvoiceDetailID = @ID",
+                    new { ID = detail.InvoiceDetailID }, transaction);
 
-            await connection.ExecuteAsync("EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID", new { InvoiceID = detail.InvoiceID });
+                if (invoiceInfo.InvoiceID == 0)
+                    throw new Exception("السطر غير موجود");
+                if (invoiceInfo.InvoiceStatus != 1)
+                    throw new Exception("لا يمكن تعديل سطر في فاتورة ليست مسودة");
+
+                var sql = @"UPDATE dbo.PurchaseInvoiceDetails SET
+                                ItemID = @ItemID, UnitID = @UnitID,
+                                WarehouseID = NULLIF(@WarehouseID, 0),
+                                Quantity = @Quantity, UnitPrice = @UnitPrice,
+                                DiscountPercent = @DiscountPercent, TaxRate = @TaxRate,
+                                BatchNumber = @BatchNumber, ExpiryDate = @ExpiryDate,
+                                Notes = @Notes
+                            WHERE InvoiceDetailID = @InvoiceDetailID";
+
+                await connection.ExecuteAsync(sql, new
+                {
+                    detail.InvoiceDetailID,
+                    detail.ItemID,
+                    detail.UnitID,
+                    detail.WarehouseID,
+                    detail.Quantity,
+                    detail.UnitPrice,
+                    detail.DiscountPercent,
+                    TaxRate = detail.TaxRate <= 0 ? 14 : detail.TaxRate,
+                    detail.BatchNumber,
+                    detail.ExpiryDate,
+                    detail.Notes
+                }, transaction);
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID",
+                    new { InvoiceID = invoiceInfo.InvoiceID }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseInvoiceDetails", detail.InvoiceDetailID.ToString(),
                 moduleName: "SCR_PINV",
-                description: $"تعديل سطر في فاتورة مشتريات رقم {detail.InvoiceID}");
+                description: $"تعديل سطر في فاتورة مشتريات رقم {invoiceInfo.InvoiceID}");
         }
 
         // ==========================================
@@ -369,22 +433,38 @@ namespace YKCoatings.Services
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            var info = await connection.QueryFirstOrDefaultAsync<(int InvoiceID, int InvoiceStatus)>(
-                @"SELECT pid.InvoiceID, pi.InvoiceStatus
-                  FROM dbo.PurchaseInvoiceDetails pid
-                  INNER JOIN dbo.PurchaseInvoices pi ON pid.InvoiceID = pi.InvoiceID
-                  WHERE pid.InvoiceDetailID = @ID",
-                new { ID = detailId });
+            (int InvoiceID, int InvoiceStatus) info;
+            try
+            {
+                info = await connection.QueryFirstOrDefaultAsync<(int InvoiceID, int InvoiceStatus)>(
+                    @"SELECT pid.InvoiceID, pi.InvoiceStatus
+                      FROM dbo.PurchaseInvoiceDetails pid
+                      INNER JOIN dbo.PurchaseInvoices pi ON pid.InvoiceID = pi.InvoiceID
+                      WHERE pid.InvoiceDetailID = @ID",
+                    new { ID = detailId }, transaction);
 
-            if (info.InvoiceID == 0) throw new Exception("السطر غير موجود");
-            if (info.InvoiceStatus != 1) throw new Exception("لا يمكن حذف سطر من فاتورة ليست مسودة");
+                if (info.InvoiceID == 0) throw new Exception("السطر غير موجود");
+                if (info.InvoiceStatus != 1) throw new Exception("لا يمكن حذف سطر من فاتورة ليست مسودة");
 
-            await connection.ExecuteAsync(
-                "DELETE FROM dbo.PurchaseInvoiceDetails WHERE InvoiceDetailID = @ID",
-                new { ID = detailId });
+                var deleted = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.PurchaseInvoiceDetails WHERE InvoiceDetailID = @ID",
+                    new { ID = detailId }, transaction);
+                if (deleted != 1) throw new Exception("السطر غير موجود أو تعذر حذفه");
 
-            await connection.ExecuteAsync("EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID", new { InvoiceID = info.InvoiceID });
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID",
+                    new { InvoiceID = info.InvoiceID }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 3, "PurchaseInvoiceDetails", detailId.ToString(),
                 moduleName: "SCR_PINV", description: "حذف سطر من فاتورة مشتريات");
@@ -525,7 +605,8 @@ namespace YKCoatings.Services
                 var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, int? GRNID, int? CreatedBy, int SupplierID, int DetailCount)>(
                     @"SELECT InvoiceNumber, InvoiceStatus, GRNID, CreatedBy, SupplierID,
                         (SELECT COUNT(*) FROM dbo.PurchaseInvoiceDetails d WHERE d.InvoiceID = pi.InvoiceID)
-                      FROM dbo.PurchaseInvoices pi WHERE pi.InvoiceID = @ID",
+                      FROM dbo.PurchaseInvoices pi WITH (UPDLOCK, HOLDLOCK)
+                      WHERE pi.InvoiceID = @ID",
                     new { ID = invoiceId }, transaction);
 
                 if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
@@ -537,20 +618,30 @@ namespace YKCoatings.Services
                 createdBy = info.CreatedBy;
                 supplierId = info.SupplierID;
 
+                var existingJournalCount = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocNumber=@InvoiceNumber",
+                    new { InvoiceNumber = invoiceNumber }, transaction);
+                if (existingJournalCount > 0)
+                    throw new InvalidOperationException("يوجد قيد مرتبط برقم فاتورة المورد مسبقاً؛ أُوقف الاعتماد لمنع القيد المكرر.");
+
                 // 1) إعادة حساب الإجماليات
                 await connection.ExecuteAsync(
                     "EXEC dbo.sp_RecalcPurchaseInvoiceTotals @InvoiceID",
                     new { InvoiceID = invoiceId }, transaction);
 
                 // 2) تحديث حالة الفاتورة
-                await connection.ExecuteAsync(
+                var invoiceStatusUpdated = await connection.ExecuteAsync(
                     @"UPDATE dbo.PurchaseInvoices SET
                         InvoiceStatus = 3,
                         ApprovedBy = @EmployeeID,
                         ApprovedDate = GETDATE(),
                         ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                      WHERE InvoiceID = @ID",
+                      WHERE InvoiceID = @ID AND InvoiceStatus = 2",
                     new { ID = invoiceId, EmployeeID = employeeId, UserID = userId }, transaction);
+                if (invoiceStatusUpdated != 1)
+                    throw new InvalidOperationException("تغيرت حالة الفاتورة؛ أُوقف الاعتماد.");
 
                 // 3) ربط GRN بالفاتورة
                 if (grnId.HasValue && grnId.Value > 0)
@@ -565,26 +656,77 @@ namespace YKCoatings.Services
                     "EXEC dbo.sp_UpdateSupplierBalanceAfterInvoice @SupplierID",
                     new { SupplierID = supplierId }, transaction);
 
-                // 5) إنشاء القيد المحاسبي
-                try
-                {
-                    await connection.ExecuteAsync(
-                        "EXEC dbo.sp_CreatePurchaseInvoiceJournal @InvoiceID, @UserID",
-                        new { InvoiceID = invoiceId, UserID = userId }, transaction);
-                }
-                catch (Exception jex)
-                {
-                    // لو القيد فشل، نكمل الاعتماد ونسجل التحذير
-                    await _audit.WriteAuditLogAsync(userId, 2, "PurchaseInvoices", invoiceId.ToString(),
-                        moduleName: "SCR_PINV",
-                        description: $"تحذير: فشل إنشاء القيد المحاسبي للفاتورة {invoiceNumber}: {jex.Message}");
-                }
+                // 5) إنشاء القيد المحاسبي؛ أي فشل يمنع اعتماد الفاتورة ويُرجع كل آثار المعاملة.
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_CreatePurchaseInvoiceJournal @InvoiceID, @UserID",
+                    new { InvoiceID = invoiceId, UserID = userId }, transaction);
+
+                var linkedJournalIds = (await connection.QueryAsync<int>(
+                    @"SELECT JournalID
+                      FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocID=@InvoiceID AND SourceDocNumber=@InvoiceNumber",
+                    new { InvoiceID = invoiceId, InvoiceNumber = invoiceNumber }, transaction)).ToList();
+                if (linkedJournalIds.Count != 1)
+                    throw new InvalidOperationException(
+                        $"يجب أن ينتج عن اعتماد فاتورة المشتريات قيد واحد مرتبط بها؛ وُجد {linkedJournalIds.Count}. تم إلغاء الاعتماد.");
+
+                var journal = await connection.QueryFirstOrDefaultAsync<(
+                    int JournalStatus, bool IsAutoGenerated, int? FiscalYearID, int? PeriodID,
+                    DateTime JournalDate, decimal TotalDebit, decimal TotalCredit)>(
+                    @"SELECT JournalStatus, ISNULL(IsAutoGenerated,0) AS IsAutoGenerated,
+                             FiscalYearID, PeriodID, JournalDate,
+                             ISNULL(TotalDebit,0) AS TotalDebit, ISNULL(TotalCredit,0) AS TotalCredit
+                      FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE JournalID=@JournalID",
+                    new { JournalID = linkedJournalIds[0] }, transaction);
+
+                if (!journal.IsAutoGenerated)
+                    throw new InvalidOperationException("القيد المرتبط بفاتورة المشتريات ليس قيداً أوتوماتيكياً؛ أُلغي الاعتماد.");
+                if (journal.JournalStatus != 2)
+                    throw new InvalidOperationException("قيد فاتورة المشتريات غير مُرحّل؛ أُلغي الاعتماد.");
+                if (!journal.FiscalYearID.HasValue || journal.FiscalYearID.Value <= 0 ||
+                    !journal.PeriodID.HasValue || journal.PeriodID.Value <= 0)
+                    throw new InvalidOperationException("قيد فاتورة المشتريات غير مرتبط بسنة وفترة مالية؛ أُلغي الاعتماد.");
+
+                var journalLines = await connection.QueryFirstOrDefaultAsync<(int DetailCount, decimal DebitTotal, decimal CreditTotal)>(
+                    @"SELECT COUNT(*) AS DetailCount,
+                             ISNULL(SUM(DebitAmount),0) AS DebitTotal,
+                             ISNULL(SUM(CreditAmount),0) AS CreditTotal
+                      FROM dbo.JournalEntryDetails
+                      WHERE JournalID=@JournalID",
+                    new { JournalID = linkedJournalIds[0] }, transaction);
+                if (journalLines.DetailCount == 0 ||
+                    Math.Abs(journal.TotalDebit - journal.TotalCredit) > 0.01m ||
+                    Math.Abs(journalLines.DebitTotal - journalLines.CreditTotal) > 0.01m ||
+                    Math.Abs(journal.TotalDebit - journalLines.DebitTotal) > 0.01m ||
+                    Math.Abs(journal.TotalCredit - journalLines.CreditTotal) > 0.01m)
+                    throw new InvalidOperationException(
+                        $"قيد فاتورة المشتريات غير متوازن أو لا تطابق تفاصيله رأسه (مدين {journalLines.DebitTotal:#,##0.00} / دائن {journalLines.CreditTotal:#,##0.00}). أُلغي الاعتماد.");
+
+                var journalPeriodIsOpen = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK, HOLDLOCK)
+                        ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.FiscalYearID=@FiscalYearID
+                        AND ap.PeriodID=@PeriodID
+                        AND fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND CONVERT(date,@JournalDate) BETWEEN CONVERT(date,fy.StartDate) AND CONVERT(date,fy.EndDate)
+                        AND CONVERT(date,@JournalDate) BETWEEN CONVERT(date,ap.StartDate) AND CONVERT(date,ap.EndDate)",
+                    new
+                    {
+                        FiscalYearID = journal.FiscalYearID.Value,
+                        PeriodID = journal.PeriodID.Value,
+                        JournalDate = journal.JournalDate.Date
+                    }, transaction);
+                if (journalPeriodIsOpen != 1)
+                    throw new InvalidOperationException("سنة أو فترة قيد فاتورة المشتريات مغلقة أو لا تطابق تاريخ القيد؛ أُلغي الاعتماد.");
 
                 transaction.Commit();
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); } catch { }
                 throw;
             }
 
@@ -831,7 +973,7 @@ tr:nth-child(even){{background:#f8fafc}}
 .footer{{text-align:center;margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}}
 </style></head><body>
 <div class='header'>
-    <div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div>
+    <div class='company'>مصنع واي كي كوتينج  </div>
     <div class='doc-title'>فاتورة مشتريات</div>
     <div class='doc-num'>{header.InvoiceNumber}</div>
 </div>
@@ -855,6 +997,7 @@ tr:nth-child(even){{background:#f8fafc}}
         {(header.DiscountAmount > 0 ? $"<div class='total-line'><span>الخصم</span><span style='color:#ef4444'>- {header.DiscountAmount:#,##0.00}</span></div>" : "")}
         <div class='total-line'><span>الضريبة</span><span>{header.TaxAmount:#,##0.00}</span></div>
         {(header.ShippingCost > 0 ? $"<div class='total-line'><span>الشحن</span><span>{header.ShippingCost:#,##0.00}</span></div>" : "")}
+        {(header.OtherCosts > 0 ? $"<div class='total-line'><span>تكاليف أخرى</span><span>{header.OtherCosts:#,##0.00}</span></div>" : "")}
         <div class='total-line grand'><span>الإجمالي الكلي</span><span>{header.TotalAmount:#,##0.00} {(header.CurrencySymbol ?? "ج.م")}</span></div>
         <div class='total-line'><span>المدفوع</span><span>{header.PaidAmount:#,##0.00}</span></div>
         <div class='total-line' style='color:#dc2626;font-weight:700'><span>المتبقي</span><span>{header.RemainingAmount:#,##0.00}</span></div>

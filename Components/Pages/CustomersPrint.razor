@@ -15,14 +15,14 @@
 @if (!UserSession.IsLoggedIn)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">🔒</div>
+        <div class="no-access-icon"><i class=bi-lock-fill></i></div>
         <h4>يجب تسجيل الدخول أولاً</h4>
     </div>
 }
 else if (permissions == null || !permissions.CanView || !permissions.CanPrint)
 {
     <div class="no-access-card">
-        <div class="no-access-icon">⛔</div>
+        <div class="no-access-icon"><i class=bi-lock-fill></i></div>
         <h4>ليس لديك صلاحية لطباعة التقرير</h4>
         <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/customers")'>
             العودة لقائمة العملاء
@@ -63,7 +63,7 @@ else
             @if (!items.Any())
             {
                 <div class="empty-state">
-                    <div class="empty-icon">👥</div>
+                    <div class="empty-icon"><i class=bi-people></i></div>
                     <h4>لا توجد بيانات للطباعة</h4>
                 </div>
             }
@@ -125,22 +125,20 @@ else
 }
 
 <style>
-    .print-page { padding: 20px; }
-    .print-toolbar { display: flex; gap: 10px; margin-bottom: 20px; }
-    .report-card { background: white; border: 1px solid #e5e7eb; border-radius: 20px; padding: 24px; }
-    .report-header { text-align: center; margin-bottom: 22px; }
-    .report-header h1 { margin: 0 0 6px; font-size: 1.8rem; color: #111827; }
-    .report-subtitle { color: #6b7280; font-weight: 700; margin-bottom: 6px; }
-    .report-date { color: #9ca3af; font-size: .9rem; }
-
-    .filters-summary {
+.print-page{ padding: 20px; }
+.print-toolbar{ display: flex; gap: 10px; margin-bottom: 20px; }
+.report-card{ background: white; border: 1px solid #e5e7eb; border-radius: 20px; padding: 24px; }
+.report-header{ text-align: center; margin-bottom: 22px; }
+.report-header h1{ margin: 0 0 6px; font-size: 1.8rem; color: #111827; }
+.report-subtitle{ color: #6b7280; font-weight: 700; margin-bottom: 6px; }
+.report-date{ color: #9ca3af; font-size: .9rem; }
+.filters-summary{
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 10px;
         margin-bottom: 18px;
     }
-
-    .summary-box {
+.summary-box{
         background: #f9fafb;
         border: 1px solid #eef2f7;
         border-radius: 12px;
@@ -148,40 +146,33 @@ else
         font-size: .88rem;
         color: #374151;
     }
-
-    .table-wrap { overflow-x: auto; }
-
-    .report-table {
+.table-wrap{ overflow-x: auto; }
+.report-table{
         width: 100%;
         border-collapse: collapse;
         min-width: 1100px;
     }
-
-    .report-table th,
-    .report-table td {
+.report-table th,
+    .report-table td{
         border: 1px solid #d1d5db;
         padding: 10px 12px;
         text-align: right;
         font-size: .88rem;
     }
-
-    .report-table thead th {
+.report-table thead th{
         background: #f3f4f6;
         color: #111827;
         font-weight: 800;
     }
-
-    .report-table tfoot td {
+.report-table tfoot td{
         background: #faf5ff;
     }
-
-    .num-cell {
+.num-cell{
         text-align: left;
         font-family: monospace;
         font-weight: 700;
     }
-
-    .btn-modern {
+.btn-modern{
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -194,30 +185,15 @@ else
         cursor: pointer;
         transition: .2s;
     }
-
-    .btn-primary-modern { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; }
-    .btn-secondary-modern { background: #f3f4f6; color: #374151; }
-    .btn-ghost { background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
-
-    .loading-state { text-align: center; padding: 60px 20px; color: #6b7280; }
-    .loader { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
-    .empty-state { text-align: center; padding: 50px 20px; }
-    .empty-icon { font-size: 3rem; margin-bottom: 12px; }
-    .no-access-card { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
-    .no-access-icon { font-size: 3.5rem; margin-bottom: 16px; }
-
-    @@keyframes spin { to { transform: rotate(360deg); } }
-
-    @@media print {
-        .no-print { display: none !important; }
-        body { background: white !important; }
-        .print-page { padding: 0; }
-        .report-card {
-            border: none;
-            box-shadow: none;
-            padding: 0;
-        }
-    }
+.btn-primary-modern{ background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; }
+.btn-secondary-modern{ background: #f3f4f6; color: #374151; }
+.btn-ghost{ background: transparent; color: #6b7280; border: 1.5px solid #e5e7eb; }
+.loading-state{ text-align: center; padding: 60px 20px; color: #6b7280; }
+.loader{ width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #1d4ed8; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+.empty-state{ text-align: center; padding: 50px 20px; }
+.empty-icon{ font-size: 3rem; margin-bottom: 12px; }
+.no-access-card{ text-align: center; padding: 80px 20px; background: white; border-radius: 24px; border: 1px solid #eef2f7; }
+.no-access-icon{ font-size: 3.5rem; margin-bottom: 16px; }
 </style>
 
 @code {

@@ -1,0 +1,290 @@
+/* =============================================================================
+   YK Coatings ERP — CSS المشترك (مستخرج من كتل <style> داخل الصفحات)
+   -----------------------------------------------------------------------------
+   المصدر الوحيد للكتل المكرّرة: الهيرو · الأزرار · التوست · المودال · بلا صلاحية
+   · بطاقات الإحصاء · شريط التصفية · الجداول · رقم المستند · الخط الذهبي
+   · الحالة الفارغة · شارة الحالة · إجراءات المستند · تدفّق الخطوات · الحقول.
+
+   ⚠️ لا تنسخ هذه القواعد داخل صفحاتك — استخدم الأصناف مباشرة.
+   ⚠️ الرموز كلها --yk-* (لا --gold/--black مباشرةً).
+   ========================================================================== */
+
+/* 18 صفحة */
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--yk-black) 0%,var(--yk-black2) 50%,var(--yk-black3) 100%);border-radius:20px;padding:18px 22px;overflow:visible !important;border:1px solid var(--yk-border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:5}
+/* 57 صفحة */
+.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--yk-gold),transparent);opacity:.8}
+/* 42 صفحة */
+.lh-bg-logo{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.04;pointer-events:none}
+/* 38 صفحة */
+.lh-bg-logo img{width:90px;height:90px;object-fit:contain}
+/* 49 صفحة */
+.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;overflow:visible !important}
+/* 57 صفحة */
+.lh-right{display:flex;align-items:center;gap:10px}
+/* 51 صفحة */
+.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}
+/* 36 صفحة */
+.lh-logo{width:26px;height:26px;object-fit:contain;filter:drop-shadow(0 0 6px rgba(212,175,55,.4))}
+/* 25 صفحة */
+.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}
+/* 26 صفحة */
+.lh-subtitle{font-size:.74rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+/* 44 صفحة */
+.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;overflow:visible !important}
+/* 40 صفحة */
+.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--yk-gold)}
+/* 42 صفحة */
+.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--yk-gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}
+/* 33 صفحة */
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:all .2s;font-family:'Tajawal'}
+/* 52 صفحة */
+.btn-luxury svg{width:14px;height:14px}
+/* 25 صفحة */
+.btn-luxury:disabled{opacity:.6;cursor:not-allowed}
+/* 1 صفحة */
+.btn-luxury:hover{filter:brightness(1.05);transform:translateY(-1px)}
+/* 44 صفحة */
+.btn-primary-luxury{background:linear-gradient(135deg,var(--yk-gold),var(--yk-gold-dark));color:var(--yk-black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}
+/* 15 صفحة */
+.btn-primary-luxury:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(212,175,55,.35)}
+/* 16 صفحة */
+.btn-export-luxury{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+/* 52 صفحة */
+.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}
+/* 26 صفحة */
+.btn-ghost-luxury:hover{background:#fcfaf6;border-color:var(--yk-gold)}
+/* 28 صفحة */
+.btn-danger-luxury{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}
+/* 53 صفحة */
+.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+/* 48 صفحة */
+.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}
+/* 49 صفحة */
+.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}
+/* 48 صفحة */
+.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
+/* 1 صفحة */
+.toast-card-luxury button svg{width:12px;height:12px}
+/* 29 صفحة */
+.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+/* 2 صفحة */
+/* MODAL LUXURY */ .modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+/* 13 صفحة */
+.modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0;text-align:center;padding:28px 24px}
+/* 1 صفحة */
+.modal-head-luxury{display:flex;align-items:center;gap:14px;padding:20px 22px;border-bottom:1px solid #f1efe8;text-align:right}
+/* 1 صفحة */
+.modal-head-luxury h4{margin:0;font-weight:800;color:#0A0F1E}
+/* 1 صفحة */
+.modal-head-luxury p{margin:4px 0 0;font-size:.78rem;color:#8B95A5}
+/* 3 صفحة */
+.modal-body-luxury{padding:18px 22px}
+/* 55 صفحة */
+.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+/* 1 صفحة */
+.no-access-luxury h4{color:#0A0F1E;margin:0}
+/* 33 صفحة */
+.stat-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.03);transition:.2s}
+/* 33 صفحة */
+.stat-luxury:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.06);border-color:rgba(212,175,55,.25)}
+/* 33 صفحة */
+.st-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* 33 صفحة */
+.st-icon svg{width:18px;height:18px}
+/* 33 صفحة */
+.st-gold-line{position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--yk-gold),transparent);opacity:0;transition:.2s}
+/* 33 صفحة */
+.stat-luxury:hover .st-gold-line{opacity:.8}
+/* 33 صفحة */
+.filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+/* 1 صفحة */
+/* FILTER */ .filter-luxury{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px}
+/* 17 صفحة */
+.search-luxury{flex:1;min-width:260px;position:relative;display:flex;align-items:center}
+/* 21 صفحة */
+.search-luxury input{width:100%;height:40px;padding:0 40px 0 36px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.86rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}
+/* 34 صفحة */
+.search-luxury input:focus{border-color:var(--yk-gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+/* 34 صفحة */
+.search-luxury svg{position:absolute;right:12px;width:16px;height:16px;color:#9ca3af;pointer-events:none}
+/* 33 صفحة */
+.select-wrap-luxury{position:relative;display:flex;align-items:center}
+/* 15 صفحة */
+.select-wrap-luxury select{height:40px;padding:0 34px 0 28px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.82rem;font-family:'Tajawal';background:#fff;appearance:none;cursor:pointer;outline:none;min-width:130px}
+/* 17 صفحة */
+.select-wrap-luxury select:focus{border-color:var(--yk-gold)}
+/* 17 صفحة */
+.select-wrap-luxury svg:first-child{position:absolute;right:10px;width:14px;height:14px;color:#9ca3af;pointer-events:none;z-index:1}
+/* 12 صفحة */
+.table-luxury{width:100%;border-collapse:collapse;min-width:1100px}
+/* 3 صفحة */
+.table-luxury tbody tr{transition:.15s}
+/* 40 صفحة */
+.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
+/* 38 صفحة */
+.table-luxury td{padding:12px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+/* 28 صفحة */
+.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap}
+/* 39 صفحة */
+.table-luxury thead{background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}
+/* 39 صفحة */
+.th-num{width:45px;text-align:center}
+/* 31 صفحة */
+.th-center{text-align:center}
+/* 11 صفحة */
+.th-actions{text-align:center;width:160px}
+/* 42 صفحة */
+.td-num{text-align:center;color:#9ca3af;font-size:.78rem}
+/* 43 صفحة */
+.td-center{text-align:center}
+/* 27 صفحة */
+.td-muted{color:#9ca3af;font-size:.82rem}
+/* 25 صفحة */
+.td-name{font-weight:700;color:#0A0F1E}
+/* 13 صفحة */
+.doc-num-luxury{color:var(--yk-gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+/* 9 صفحة */
+.doc-num-luxury:hover{background:rgba(212,175,55,.15);border-color:var(--yk-gold)}
+/* 27 صفحة */
+.ml-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--yk-gold),var(--yk-gold-dark),var(--yk-gold),transparent);z-index:2}
+/* 31 صفحة */
+.empty-luxury{text-align:center;padding:60px 20px;background:#fff;border-radius:18px;border:1px solid #e8e2d0}
+/* 1 صفحة */
+.empty-luxury h4{margin:12px 0 0;color:#6b7280}
+/* 16 صفحة */
+.status-badge-luxury{display:inline-block;padding:4px 12px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+/* 7 صفحة */
+.doc-actions-luxury{position:relative;display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden}
+/* 7 صفحة */
+.workflow-mini{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);padding:6px 12px;border-radius:999px}
+/* 1 صفحة */
+.workflow-mini i{width:14px;height:1px;background:rgba(255,255,255,.19)}
+/* 8 صفحة */
+.f-field-luxury{display:flex;flex-direction:column;gap:5px}
+/* 6 صفحة */
+.field-luxury{display:flex;flex-direction:column;gap:6px}
+/* 7 صفحة */
+.fl-label{font-size:.78rem;font-weight:700;color:#374151}
+/* 4 صفحة */
+.fl-hint{font-size:.68rem;color:#9ca3af;font-weight:600}
+/* 2 صفحة */
+.status-badge-luxury.active{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+/* 49 صفحة */
+.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+/* 49 صفحة */
+.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+/* 1 صفحة */
+.workflow-mini span.active{color:var(--yk-gold)}
+
+
+/* =============================================================================
+   توحيد الترويسة (HERO) — صفحات HR والتصنيع
+   -----------------------------------------------------------------------------
+   كانت هذه العائلة برأس أبيض (.page-header) بينما «لوكسري» بالشريط الكحلي.
+   هذه القواعد تمنحها نفس شكل الهيرو — بلا لمس أي HTML.
+   ========================================================================== */
+.items-page .page-header,
+.yk-gold-page .page-header,
+.po-page .page-header {
+  position: relative !important;
+  background: linear-gradient(135deg, var(--yk-black) 0%, var(--yk-black2) 50%, var(--yk-black3) 100%) !important;
+  border-radius: 20px !important;
+  padding: 18px 22px !important;
+  border: 1px solid var(--yk-border-gold) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.25) !important;
+  overflow: visible !important;
+  z-index: 5;
+  margin-bottom: 16px !important;
+  flex-wrap: wrap !important;
+}
+
+/* الخط الذهبي العلوي */
+.items-page .page-header::before,
+.yk-gold-page .page-header::before,
+.po-page .page-header::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--yk-gold), transparent);
+  opacity: .8; pointer-events: none;
+}
+
+/* الشعار المائي في الخلفية */
+.items-page .page-header::after,
+.yk-gold-page .page-header::after,
+.po-page .page-header::after {
+  content: ""; position: absolute; left: 12px; top: 50%;
+  transform: translateY(-50%); width: 90px; height: 90px;
+  opacity: .04; pointer-events: none;
+  background: url('/images/yk-icon-gold.png') center / contain no-repeat;
+}
+
+/* العنوان + العنوان الفرعي */
+.items-page .page-header .page-title,
+.yk-gold-page .page-header .header-title {
+  color: #F5E6C8 !important;
+  font-weight: 900 !important;
+  font-size: 1.2rem !important;
+  margin: 0 !important;
+  display: flex; align-items: center; gap: 8px;
+}
+.items-page .page-header .page-subtitle,
+.yk-gold-page .page-header .header-subtitle {
+  color: #8B95A5 !important;
+  font-size: .74rem !important;
+  font-weight: 600 !important;
+  margin: 3px 0 0 !important;
+}
+.items-page .page-header .page-title i,
+.yk-gold-page .page-header .header-title i,
+.items-page .page-header .page-title svg,
+.yk-gold-page .page-header .header-title svg {
+  color: var(--yk-gold) !important;
+  width: 18px; height: 18px;
+}
+
+/* شارة العدّاد */
+.items-page .page-header .result-badge,
+.yk-gold-page .page-header .result-badge,
+.items-page .page-header .header-badge {
+  background: rgba(212,175,55,.10) !important;
+  border: 1px solid rgba(212,175,55,.15) !important;
+  color: var(--yk-gold) !important;
+  border-radius: 999px !important;
+  padding: 5px 12px !important;
+  font-size: .72rem !important;
+  font-weight: 700 !important;
+  display: inline-flex !important; align-items: center; gap: 5px;
+  box-shadow: none !important;
+}
+
+/* ---- أزرار داخل الترويسة ---- */
+/* الأساسي (إضافة/حفظ) ← ذهبي متدرّج */
+.items-page .page-header .btn-primary-modern,
+.yk-gold-page .page-header .btn-primary-modern,
+.po-page .page-header .btn-primary-modern {
+  background: linear-gradient(135deg, var(--yk-gold), var(--yk-gold-dark)) !important;
+  color: var(--yk-black2) !important;
+  border: none !important;
+  box-shadow: 0 3px 12px rgba(212,175,55,.25) !important;
+}
+/* التصدير (إجراء ثانوي) ← محايد بحدّ ذهبي */
+.items-page .page-header .btn-export,
+.yk-gold-page .page-header .btn-export,
+.yk-gold-page .page-header .btn-success-modern,
+.po-page .page-header .btn-success-modern {
+  background: transparent !important;
+  color: var(--yk-gold-dark) !important;
+  border: 1px solid var(--yk-border-gold) !important;
+  box-shadow: none !important;
+}
+.items-page .page-header .btn-export:hover,
+.yk-gold-page .page-header .btn-export:hover,
+.yk-gold-page .page-header .btn-success-modern:hover {
+  background: rgba(212,175,55,.10) !important;
+}
+/* زر أيقونة (طباعة) */
+.items-page .page-header .btn-icon-only,
+.yk-gold-page .page-header .btn-icon-only {
+  background: transparent !important;
+  color: var(--yk-gold-dark) !important;
+  border: 1px solid var(--yk-border-gold) !important;
+}

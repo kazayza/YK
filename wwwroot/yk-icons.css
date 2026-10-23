@@ -1,0 +1,114 @@
+/* =============================================================================
+   YK Coatings ERP — أيقونات Bootstrap Icons
+   -----------------------------------------------------------------------------
+   الأيقونات تُدرج بصيغة  <i class=bi bi-NAME></i>  (صنف واحد بدون مسافة)
+   لأن مُحدِّد Bootstrap Icons هو  [class^=bi-]::before  — وهو ما يجعل الصيغة
+   صالحة داخل السلاسل الحرفية الحرفية (verbatim) في C# بدون كسر المُحلِّل.
+
+   لماذا ملف منفصل؟  لأن الأيقونة خطّ (font) وليس SVG، فحجمها يُورَث من الأب
+   — بينما الإيموجي الذي استُبدل كان بأحجام متفاوتة (19px – 56px). هذا الملف
+   يثبّت سلّم أحجام موحّداً لكل حاوية.
+   ========================================================================== */
+
+i.bi {
+  display: inline-block;
+  line-height: 1;
+  vertical-align: -0.125em;
+  font-style: normal;
+  flex: none;
+}
+
+/* ---------- نظام «لوكسري» الذهبي ---------- */
+.st-icon i.bi                       { font-size: 18px; }
+.empty-icon-luxury i.bi             { font-size: 32px; }
+.no-access-luxury i.bi             { font-size: 44px; opacity: .85; }
+.modal-icon i.bi                   { font-size: 30px; }
+.action-icon i.bi                  { font-size: 14px; }
+.search-luxury i.bi,
+.search-luxury .bi                 { font-size: 14px; }
+.select-wrap-luxury i.bi           { font-size: 13px; }
+.toast-card-luxury i.bi            { font-size: 14px; }
+.toast-luxury i.bi                 { font-size: 14px; }
+.btn-luxury i.bi                   { font-size: 14px; }
+.trend-arrow i.bi                  { font-size: 9px; }
+.workflow-mini i.bi                { font-size: 12px; }
+.wm-dot i.bi                       { font-size: 10px; }
+.doc-actions-luxury i.bi           { font-size: 14px; }
+.f-label-luxury i.bi,
+.fl-label i.bi                     { font-size: 12px; }
+.conv-arrow-luxury i.bi            { font-size: 12px; }
+.type-badge-luxury i.bi            { font-size: 12px; }
+.status-badge-luxury i.bi          { font-size: 11px; }
+.rating-gold i.bi                  { font-size: 13px; }
+.rating-empty i.bi                 { font-size: 13px; opacity: .3; }
+.rating-chip-luxury i.bi           { font-size: 13px; }
+.code-badge-luxury i.bi            { font-size: 12px; }
+.step-arrow i.bi                  { font-size: 14px; }
+.no-val i.bi                       { font-size: 12px; opacity: .6; }
+.page-header i.bi,
+.lh-content i.bi                   { font-size: 15px; }
+
+/* ---------- نظام الموارد البشرية (items-page) ---------- */
+.stat-icon i.bi                    { font-size: 22px; line-height: 1; }
+.empty-icon i.bi                   { font-size: 40px; opacity: .9; }
+.no-access-icon i.bi              { font-size: 46px; opacity: .85; }
+.modal-icon i.bi                   { font-size: 24px; }
+.action-icon i.bi                  { font-size: 14px; }
+.search-icon i.bi                  { font-size: 14px; }
+.field-icon i.bi                   { font-size: 13px; }
+.toast-close i.bi                  { font-size: 12px; }
+.btn-modern i.bi                   { font-size: 14px; }
+.dropdown-item i.bi                { font-size: 14px; }
+.chips i.bi                        { font-size: 12px; }
+.step-icon i.bi                    { font-size: 18px; }
+.stat-trend i.bi                   { font-size: 10px; }
+.pagination-container i.bi         { font-size: 12px; }
+
+/* ---------- أشرطة وأقسام ---------- */
+.section-title i.bi,
+.sec-head i.bi                     { font-size: 15px; }
+.sb-footer-status i.bi             { font-size: 9px; vertical-align: middle; }
+.notif-panel-title i.bi            { font-size: 14px; }
+.notif-empty-icon i.bi             { font-size: 26px; opacity: .6; }
+.notif-item-time i.bi              { font-size: 11px; opacity: .7; }
+.rc-flag i.bi                      { font-size: 18px; }
+.print-window i.bi                 { font-size: 15px; }
+
+/* ---------- من داخل <button> بلا حاوية مخصّصة ---------- */
+button > i.bi:only-child           { font-size: 1em; }
+
+/* ---------- شاشات الطباعة (نص عادي) ---------- */
+@media print {
+  i.bi { font-size: 12pt; }
+}
+
+
+/* ---------- أيقونات بطاقات الرسالة (تحلّ محلّ الإيموجي داخل النص) ---------- */
+.toast-card-luxury::before,
+.msg-luxury::before,
+.form-msg-luxury::before,
+.msg-success::before,
+.form-msg-luxury.ok::before {
+  content: "\f26a";
+  font-family: bootstrap-icons;
+  display: inline-block;
+  font-size: .95em;
+  line-height: 1;
+  vertical-align: -.12em;
+  margin-inline-end: .5em;
+  opacity: .95;
+}
+.toast-card-luxury.error::before,
+.msg-luxury.msg-error::before,
+.form-msg-luxury.err::before {
+  content: "\f622";
+  font-family: bootstrap-icons;
+  display: inline-block;
+  font-size: .95em;
+  line-height: 1;
+  vertical-align: -.12em;
+  margin-inline-end: .5em;
+  opacity: .95;
+}
+.msg-luxury.msg-error::before,
+.form-msg-luxury.err::before { color: var(--yk-danger, #dc2626); }

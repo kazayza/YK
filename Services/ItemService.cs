@@ -367,7 +367,7 @@ body{{font-family:'Cairo','Segoe UI',sans-serif;background:#fff;padding:30px;col
 .info-label{{font-size:11px;color:#9ca3af;font-weight:600}}.info-value{{font-size:14px;font-weight:700;color:#1f2937;margin-top:2px}}
 .footer{{text-align:center;margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af}}
 </style></head><body>
-<div class='report-header'><div class='company-name'>مصنع واي كي كوتينج لمستحضرات التجميل</div>
+<div class='report-header'><div class='company-name'>مصنع واي كي كوتينج  </div>
 <div class='report-title'>بطاقة صنف</div><div class='item-code'>{item.ItemCode}</div></div>
 <div class='section'><div class='section-title'>البيانات الأساسية</div><div class='info-grid'>
 <div class='info-item'><div class='info-label'>اسم الصنف</div><div class='info-value'>{item.ItemNameAr}</div></div>

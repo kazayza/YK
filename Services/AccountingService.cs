@@ -1038,7 +1038,7 @@ namespace YKCoatings.Services
         }
 
         // ==========================================
-        // المصروفات - OverheadExpenses Gold Edition Pro
+        // المصروفات - OverheadExpenses    Pro
         // مع ربط بمركز تكلفة اختياري + فترة محاسبية + قيد أوتوماتيك
         // ==========================================
         public async Task<List<ExpenseListDto>> GetExpensesAsync(DateTime? from = null, DateTime? to = null, int? costCenterId = null, int? periodId = null, int? expenseId = null)

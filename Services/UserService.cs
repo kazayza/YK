@@ -1,11 +1,150 @@
 ﻿using Dapper;
+using System.ComponentModel.DataAnnotations;
+using System.Data;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class UserService : BaseDbService
     {
-        public UserService(IConfiguration configuration) : base(configuration) { }
+        private readonly UserSessionService _userSession;
+        private readonly AuditService _audit;
+
+        public UserService(
+            IConfiguration configuration,
+            UserSessionService userSession,
+            AuditService audit)
+            : base(configuration)
+        {
+            _userSession = userSession;
+            _audit = audit;
+        }
+
+        public async Task<SelfProfileDto> GetMyProfileAsync(int userId)
+        {
+            EnsureCurrentUser(userId);
+
+            using var connection = CreateConnection();
+            var profile = await connection.QueryFirstOrDefaultAsync<SelfProfileDto>(@"
+SELECT
+    u.UserID,
+    u.Username,
+    u.FullName,
+    u.Email,
+    u.Phone,
+    r.RoleNameAr,
+    e.FullNameAr AS EmployeeName,
+    e.EmployeeCode
+FROM dbo.SystemUsers u
+LEFT JOIN dbo.UserRoles r ON r.RoleID=u.RoleID
+LEFT JOIN dbo.Employees e ON e.EmployeeID=u.EmployeeID
+WHERE u.UserID=@UserID AND u.IsActive=1 AND ISNULL(u.IsLocked,0)=0",
+                new { UserID = userId });
+
+            return profile ?? throw new UnauthorizedAccessException("الحساب غير نشط أو غير متاح حالياً.");
+        }
+
+        public async Task<bool> UpdateMyProfileAsync(SelfProfileDto dto, int userId)
+        {
+            EnsureCurrentUser(userId);
+            ArgumentNullException.ThrowIfNull(dto);
+
+            var fullName = dto.FullName?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(fullName))
+                throw new InvalidOperationException("الاسم الكامل مطلوب.");
+
+            var email = NormalizeOptional(dto.Email);
+            if (email is not null && !new EmailAddressAttribute().IsValid(email))
+                throw new InvalidOperationException("أدخل بريداً إلكترونياً صحيحاً.");
+            var phone = NormalizeOptional(dto.Phone);
+
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+            SelfProfileDto? current;
+            var changedColumns = new List<string>();
+
+            try
+            {
+                current = await connection.QueryFirstOrDefaultAsync<SelfProfileDto>(@"
+SELECT UserID,Username,FullName,Email,Phone
+FROM dbo.SystemUsers WITH (UPDLOCK,HOLDLOCK)
+WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
+                    new { UserID = userId }, transaction);
+                if (current is null)
+                    throw new UnauthorizedAccessException("الحساب غير نشط أو غير متاح حالياً.");
+
+                if (!string.Equals(current.FullName?.Trim(), fullName, StringComparison.Ordinal))
+                    changedColumns.Add("FullName");
+                if (!string.Equals(NormalizeOptional(current.Email), email, StringComparison.Ordinal))
+                    changedColumns.Add("Email");
+                if (!string.Equals(NormalizeOptional(current.Phone), phone, StringComparison.Ordinal))
+                    changedColumns.Add("Phone");
+                if (changedColumns.Count == 0)
+                {
+                    transaction.Commit();
+                    return false;
+                }
+
+                var affected = await connection.ExecuteAsync(@"
+UPDATE dbo.SystemUsers
+SET FullName=@FullName,
+    Email=@Email,
+    Phone=@Phone,
+    ModifiedBy=@ModifiedBy,
+    ModifiedDate=GETDATE()
+WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
+                    new
+                    {
+                        UserID = userId,
+                        FullName = fullName,
+                        Email = email,
+                        Phone = phone,
+                        ModifiedBy = userId
+                    }, transaction);
+                if (affected != 1)
+                    throw new InvalidOperationException("تعذر حفظ الملف الشخصي؛ تحقق من حالة الحساب ثم حاول مرة أخرى.");
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
+
+            await _audit.WriteAuditLogAsync(
+                userId: userId,
+                actionType: 2,
+                tableName: "SystemUsers",
+                recordId: userId.ToString(),
+                oldValues: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    current!.FullName,
+                    current!.Email,
+                    current!.Phone
+                }),
+                newValues: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    FullName = fullName,
+                    Email = email,
+                    Phone = phone
+                }),
+                changedColumns: string.Join(",", changedColumns),
+                moduleName: "USER_PROFILE",
+                description: "تعديل المستخدم لبيانات ملفه الشخصي");
+
+            return true;
+        }
+
+        private void EnsureCurrentUser(int userId)
+        {
+            if (userId <= 0 || !_userSession.IsLoggedIn || _userSession.UserID != userId)
+                throw new UnauthorizedAccessException("يمكنك عرض أو تعديل ملفك الشخصي فقط بعد تسجيل الدخول.");
+        }
+
+        private static string? NormalizeOptional(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
         // ══════════════════════════════════════
         // 1) جلب قائمة المستخدمين مع الفلاتر

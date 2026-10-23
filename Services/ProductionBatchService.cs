@@ -18,6 +18,7 @@ namespace YKCoatings.Services
             public int BatchStatus { get; set; }
             public int OrderStatus { get; set; }
             public int? QCResult { get; set; }
+            public decimal GoodQty { get; set; }
         }
         private sealed class BatchWorkflowGuardDto
         {
@@ -479,7 +480,7 @@ INSERT INTO dbo.ProductionBatches
 (
     BatchNumber,ProductionOrderID,ProductItemID,BatchDate,ExpiryDate,
     PlannedQty,ProducedQty,GoodQty,RejectedQty,WasteQty,SampleQty,
-    UnitID,TargetWarehouseID,MaterialCost,LaborCost,OverheadCost,TotalCost,UnitCost,
+    UnitID,TargetWarehouseID,MaterialCost,LaborCost,OverheadCost,TotalCost,
     BatchStatus,StartTime,EndTime,ProducedBy,SupervisorID,
     QCInspectedBy,QCInspectionDate,QCResult,QCNotes,Notes,CreatedBy,CreatedDate
 )
@@ -487,7 +488,7 @@ VALUES
 (
     @BatchNumber,@ProductionOrderID,@ProductItemID,@BatchDate,@ExpiryDate,
     @PlannedQty,0,0,0,0,0,
-    @UnitID,@TargetWarehouseID,@MaterialCost,@LaborCost,@OverheadCost,@TotalCost,NULL,
+    @UnitID,@TargetWarehouseID,@MaterialCost,@LaborCost,@OverheadCost,@TotalCost,
     1,NULL,NULL,NULLIF(@ProducedBy,0),NULLIF(@SupervisorID,0),
     NULL,NULL,NULL,NULL,@Notes,@UserID,GETDATE()
 );
@@ -669,7 +670,8 @@ WHERE BatchID=@BatchID AND BatchStatus=@CurrentStatus",
             try
             {
                 var batch = await connection.QueryFirstOrDefaultAsync<BatchHeadDbDto>(@"
-SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,pb.QCResult,po.OrderStatus
+SELECT pb.BatchID,pb.BatchNumber,pb.ProductionOrderID,pb.BatchStatus,pb.QCResult,po.OrderStatus,
+       ISNULL(pb.GoodQty,0) AS GoodQty
 FROM dbo.ProductionBatches pb WITH (UPDLOCK,HOLDLOCK)
 INNER JOIN dbo.ProductionOrders po WITH (UPDLOCK,HOLDLOCK)
     ON po.ProductionOrderID=pb.ProductionOrderID
@@ -682,6 +684,8 @@ WHERE pb.BatchID=@BatchID",
                     return (false, "لا تُسجل تكلفة الترحيل إلا بعد قبول الدفعة من الجودة.");
                 if (batch.QCResult != 1)
                     return (false, "لا تُسجل تكلفة ترحيل لدفعة بلا نتيجة قبول جودة صريحة.");
+                if (batch.GoodQty <= 0)
+                    return (false, "لا يمكن اشتقاق تكلفة وحدة الدفعة قبل تحديد كمية صالحة مقبولة من الجودة.");
 
                 var alreadyPosted = await connection.ExecuteScalarAsync<int>(@"
 SELECT COUNT(*) FROM dbo.InventoryTransactions WITH (UPDLOCK,HOLDLOCK)
@@ -690,11 +694,14 @@ WHERE SourceDocType=N'PB' AND SourceDocID=@BatchID AND TransactionType=3",
                 if (alreadyPosted > 0)
                     return (false, "لا يمكن تعديل تكلفة الوحدة بعد ترحيل الدفعة إلى المخزون.");
 
+                // UnitCost عمود مشتق في قاعدة البيانات = TotalCost / GoodQty،
+                // لذلك نحفظ الإجمالي المحسوب من التكلفة اليدوية المطلوبة حتى يظهر المطلوب في UnitCost.
+                var newTotalCost = decimal.Round(unitCost * batch.GoodQty, 2, MidpointRounding.AwayFromZero);
                 var changed = await connection.ExecuteAsync(@"
 UPDATE dbo.ProductionBatches
-SET UnitCost=@UnitCost,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+SET TotalCost=@TotalCost,ModifiedBy=@UserID,ModifiedDate=GETDATE()
 WHERE BatchID=@BatchID AND BatchStatus=5 AND QCResult=1",
-                    new { BatchID = batchId, UnitCost = unitCost, UserID = userId }, transaction);
+                    new { BatchID = batchId, TotalCost = newTotalCost, UserID = userId }, transaction);
                 if (changed != 1)
                     throw new InvalidOperationException("تغيرت حالة الدفعة أثناء حفظ التكلفة؛ أعد تحميلها.");
 
@@ -704,7 +711,7 @@ WHERE BatchID=@BatchID AND BatchStatus=5 AND QCResult=1",
                     actionType: 2,
                     tableName: "ProductionBatches",
                     recordId: batchId.ToString(),
-                    changedColumns: "UnitCost",
+                    changedColumns: "TotalCost",
                     moduleName: "SCR_BATCH",
                     description: $"تحديد يدوي لتكلفة ترحيل وحدة الدفعة: {batch.BatchNumber}"
                 );

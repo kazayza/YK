@@ -3,7 +3,7 @@
    Luxury Dark Sidebar + Gold Line Icons + Tajawal Font
    ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cormorant+Garamond:wght@600;700&display=swap');
+@import url('fonts/tajawal.css?v=2');
 
 :root {
     /* Gold Palette */
@@ -41,6 +41,34 @@
     --yk-shadow:0 4px 16px rgba(0,0,0,.06);
     --yk-shadow-lg:0 12px 32px rgba(0,0,0,.12);
     --yk-transition:.25s cubic-bezier(.4,0,.2,1);
+
+    /* رموز دلالية (نضافها في هذا الإصدار) */
+    --yk-success:#059669;
+    --yk-success-soft:rgba(5,150,105,.10);
+    --yk-warning:#d97706;
+    --yk-warning-soft:rgba(217,119,6,.12);
+    --yk-danger:#dc2626;
+    --yk-danger-soft:rgba(220,38,38,.10);
+    --yk-info:#0284c7;
+    --yk-info-soft:rgba(2,132,199,.10);
+    --yk-shadow-focus:0 0 0 3px var(--yk-primary-ring);
+
+    /* أسماء قديمة (--gold / --black) كأسماء مستعارة — مصدر واحد للحقيقة.
+       صفحات «لوكسري» كانت تعيد تعريفها داخل :root في كل ملف؛ الاستعارة تجعلها
+       متوارثة تلقائياً بلا كسر. */
+    --gold:var(--yk-gold);
+    --gold-light:var(--yk-gold-light);
+    --gold-soft:var(--yk-gold-soft);
+    --gold-dark:var(--yk-gold-dark);
+    --gold-10:var(--yk-gold-10);
+    --gold-15:var(--yk-gold-15);
+    --gold-20:var(--yk-gold-20);
+    --border-gold:var(--yk-border-gold);
+    --black:var(--yk-black);
+    --black2:var(--yk-black2);
+    --black3:var(--yk-black3);
+    --black4:var(--yk-black4);
+    --body-bg:var(--yk-bg);
 
     /* Bootstrap compatibility: route all generic primary utilities through the brand gold. */
     --bs-primary:var(--yk-gold);

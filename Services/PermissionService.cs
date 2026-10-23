@@ -16,6 +16,7 @@ namespace YKCoatings.Services
 
         public bool IsLoaded { get; private set; }
         public IReadOnlyList<ModulePermissionDto> Permissions => _permissions;
+        public event Action? PermissionsChanged;
 
         // المدير العام يملك عرض كشف الخزينة؛ تظل جميع صلاحيات الكتابة مستقلة ومحمية.
         public bool CanViewCashBoxStatement =>
@@ -26,12 +27,14 @@ namespace YKCoatings.Services
         {
             _permissions = await _authService.GetUserModulesAsync(userId);
             IsLoaded = true;
+            PermissionsChanged?.Invoke();
         }
 
         public void Clear()
         {
             _permissions.Clear();
             IsLoaded = false;
+            PermissionsChanged?.Invoke();
         }
 
         public bool CanView(string moduleCode) =>

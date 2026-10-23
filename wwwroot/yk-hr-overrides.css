@@ -1,0 +1,181 @@
+/* =============================================================================
+   YK Coatings ERP — طبقة توحيد الهوية لصفحات الموارد البشرية
+   -----------------------------------------------------------------------------
+   لماذا هذا الملف؟  صفحات الموارد البشرية (عائلة items-page) تحتوي ≈1,390 لوناً
+   مكتوباً يدوياً (1,385 منها داخل كتل <style>) بألوان زرقاء/رمادية من عائلة
+   Tailwind، بينما هوية المشروع ذهبية/كريمية. إعادة كتابة تلك الكتل يدوياً
+   مخاطرة كبيرة، لذا هذا الملف يعيد تلوينها **فوقها** دون المساس بها.
+
+   الكاسكييد: روابط <head> في App.razor تسبق كتل <style> داخل الصفحة، لذلك
+   نحتاج !important هنا ليتقدّم على قواعد الصفحة.
+
+   base: --yk-gold · --yk-gold-dark · --yk-gold-10/15/20 · --yk-text/-2/-3
+         --yk-border · --yk-surface · --yk-bg · --yk-primary
+   ========================================================================== */
+
+/* ======================= 1. الأزرق ➜ الذهبي ======================= */
+
+/* الزر الأساسي (كان #2563eb) */
+.btn-primary-modern,
+.btn-sm-primary,
+.btn-primary {
+  background: linear-gradient(135deg, var(--yk-gold) 0%, var(--yk-gold-dark) 100%) !important;
+  color: #0A0F1E !important;
+  border-color: var(--yk-gold) !important;
+  box-shadow: 0 4px 14px rgba(212,175,55,.28) !important;
+}
+.btn-primary-modern:hover,
+.btn-sm-primary:hover:not(:disabled),
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--yk-gold-light) 0%, var(--yk-gold) 100%) !important;
+  box-shadow: 0 6px 20px rgba(212,175,55,.36) !important;
+}
+.btn-primary-modern:disabled,
+.btn-sm-primary:disabled { opacity: .55 !important; }
+
+/* بطاقات الإحصائية وأيقوناتها */
+.st-icon.blue,
+.st-icon.gold,
+.sec-icon-luxury.blue,
+.sec-icon-luxury.purple,
+.sec-icon-luxury.green {
+  background: var(--yk-gold-10) !important;
+  color: var(--yk-gold-dark) !important;
+}
+
+/* روابط التنقّع والعناوين */
+.crumb-link,
+.section-title,
+.stat-card .stat-label,
+.stat-card .stat-value { color: var(--yk-text) !important; }
+.crumb-link:hover { color: var(--yk-gold-dark) !important; }
+
+/* جداول البيانات */
+.data-table thead th,
+.data-table th,
+.dash .dash-tbl thead th {
+  background: var(--yk-gold-10) !important;
+  color: var(--yk-gold-dark) !important;
+  border-bottom: 2px solid var(--yk-gold) !important;
+  font-weight: 800 !important;
+}
+.data-table tbody tr:hover,
+.dash .dash-tbl tbody tr:hover { background: var(--yk-gold-10) !important; }
+.data-table tbody tr:nth-child(even),
+.dash .dash-tbl tbody tr:nth-child(even) { background: rgba(248,247,244,.55) !important; }
+.data-table td { border-bottom: 1px solid var(--yk-border) !important; }
+.total-row td { background: var(--yk-gold-10) !important; color: var(--yk-text) !important; font-weight: 800 !important; }
+
+/* شارات الأكواد */
+.code-tag-luxury,
+.code-badge,
+.item-code {
+  background: var(--yk-gold-10) !important;
+  color: var(--yk-gold-dark) !important;
+  border-color: var(--yk-border-gold) !important;
+}
+
+/* أزرار الإجراءات */
+.act-btn.view,
+.view-btn,
+.act-btn-luxury.view,
+.edit-btn,
+.act-btn-luxury.edit {
+  color: var(--yk-gold-dark) !important;
+  border-color: var(--yk-border-gold) !important;
+  background: var(--yk-gold-10) !important;
+}
+.act-btn.view:hover,
+.view-btn:hover,
+.act-btn-luxury.view:hover,
+.edit-btn:hover,
+.act-btn-luxury.edit:hover {
+  background: var(--yk-gold) !important;
+  color: #0A0F1E !important;
+}
+
+/* حالات وأنواع */
+.type-1,
+.acc-icon.type-1,
+.type-cust-1 { color: var(--yk-gold-dark) !important; }
+.status-2 { color: var(--yk-gold-dark) !important; }
+
+/* حقول الإدخال والتركيز */
+.field-input:focus,
+.field-select:focus,
+.filter-input:focus,
+.filter-select:focus,
+.search-input:focus,
+.f-input-luxury:focus {
+  border-color: var(--yk-gold) !important;
+  box-shadow: var(--yk-shadow-focus) !important;
+  outline: none !important;
+}
+
+/* البطاقات والحاويات */
+.form-card,
+.table-card,
+.filter-card,
+.stat-card {
+  background: var(--yk-surface) !important;
+  border-color: var(--yk-border) !important;
+  box-shadow: var(--yk-shadow) !important;
+}
+
+/* الحالات الفارغة والبطاقات الخاصة */
+.empty-state { color: var(--yk-text-2) !important; }
+.empty-state .empty-icon,
+.empty-icon { color: var(--yk-gold) !important; }
+.no-access-card {
+  background: var(--yk-surface) !important;
+  border-color: var(--yk-border-gold) !important;
+  color: var(--yk-text) !important;
+}
+.no-access-icon { color: var(--yk-gold) !important; }
+
+/* التحميل */
+.loader { border-top-color: var(--yk-gold) !important; }
+
+/* الترقيم */
+.page-btn:hover:not(:disabled) { background: var(--yk-gold-10) !important; color: var(--yk-gold-dark) !important; }
+.pagination-container { border-top-color: var(--yk-border) !important; }
+
+/* ======================= 2. الرمادي ➜ رمادي الهوية ======================= */
+.filter-bar,
+.readonly-field,
+.f-input-luxury.readonly,
+.f-input-luxury:disabled,
+.field-input.disabled,
+.readonly-input { background: var(--yk-bg) !important; }
+
+/* ======================= 3. محاذاة مع نظام «لوكسري» ======================= */
+.page-header { border-bottom-color: var(--yk-border-gold) !important; }
+.items-page .page-header h1 { color: var(--yk-text) !important; }
+.filter-bar { border-color: var(--yk-border) !important; }
+
+/* أزرار التصدير: إجراء محايد (لا أخضر) */
+.btn-modern.btn-export,
+.btn-export {
+  background: var(--yk-surface) !important;
+  color: var(--yk-gold-dark) !important;
+  border-color: var(--yk-border-gold) !important;
+  box-shadow: none !important;
+}
+.btn-modern.btn-export:hover:not(:disabled) {
+  background: var(--yk-gold-10) !important;
+  color: var(--yk-gold-dark) !important;
+  border-color: var(--yk-gold) !important;
+}
+
+/* أزرار الإجراءات الثانوية (تعديل/عرض) داخل الصفحات المدمجة */
+.btn-modern.btn-ghost,
+.btn-ghost {
+  background: transparent !important;
+  color: var(--yk-text-2) !important;
+  border-color: var(--yk-border) !important;
+}
+.btn-modern.btn-ghost:hover:not(:disabled) {
+  color: var(--yk-gold-dark) !important;
+  border-color: var(--yk-border-gold) !important;
+  background: var(--yk-gold-10) !important;
+}

@@ -6,6 +6,7 @@ namespace YKCoatings.Services
     public class NotificationService : BaseDbService
     {
         private readonly UserSessionService _userSession;
+        private readonly UserPreferencesService _userPreferences;
 
         private const string RecipientPredicate = @"(
             n.TargetUserID = @UserID
@@ -25,9 +26,14 @@ namespace YKCoatings.Services
             )
         )";
 
-        public NotificationService(IConfiguration configuration, UserSessionService userSession) : base(configuration)
+        public NotificationService(
+            IConfiguration configuration,
+            UserSessionService userSession,
+            UserPreferencesService userPreferences)
+            : base(configuration)
         {
             _userSession = userSession;
+            _userPreferences = userPreferences;
         }
 
         private void RequireCurrentSession(int userId, int roleId)
@@ -117,16 +123,8 @@ namespace YKCoatings.Services
             });
         }
 
-        public async Task<bool> IsSoundEnabledAsync()
-        {
-            using var connection = CreateConnection();
-            var value = await connection.QueryFirstOrDefaultAsync<string>(
-                "SELECT SettingValue FROM dbo.SystemSettings WHERE SettingKey = N'NotificationSound'");
-
-            // Keep the existing audible default when the optional setting has not been configured.
-            if (string.IsNullOrWhiteSpace(value)) return true;
-            return value.Trim() == "1" || bool.TryParse(value.Trim(), out var enabled) && enabled;
-        }
+        public Task<bool> IsSoundEnabledAsync()
+            => _userPreferences.GetEffectivePlaySoundAsync(_userSession.UserID);
 
         // Keep the one-argument API safe for existing callers by deriving identity from the active session.
         public Task MarkAsReadAsync(int notificationId)

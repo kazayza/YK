@@ -1,0 +1,320 @@
+@page "/profile"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject UserService UserService
+@inject UserPreferencesService UserPreferencesService
+@inject UserSessionService UserSession
+@inject NavigationManager Navigation
+
+<PageTitle>الملف الشخصي</PageTitle>
+
+@if (!initializationComplete || isLoading)
+{
+    <div class="profile-state" dir="rtl"><span class="profile-spinner"></span><span>جاري تحميل الملف الشخصي...</span></div>
+}
+else if (!UserSession.IsLoggedIn)
+{
+    <div class="profile-state" dir="rtl"><i class="bi bi-lock-fill"></i><strong>انتهت الجلسة</strong><button type="button" @onclick='() => Navigation.NavigateTo("/login")'>تسجيل الدخول</button></div>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="profile-state error" dir="rtl"><i class="bi bi-exclamation-circle-fill"></i><strong>تعذر تحميل الملف الشخصي</strong><span>@loadError</span><button type="button" @onclick="LoadProfileAsync">إعادة المحاولة</button></div>
+}
+else
+{
+    <main class="profile-page yk-gold-page" dir="rtl">
+        <header class="profile-hero">
+            <div class="profile-hero-line"></div>
+            <div class="profile-hero-copy">
+                <span class="profile-eyebrow">حسابي · بياناتي الشخصية</span>
+                <h1><i class="bi bi-person-badge-fill"></i> الملف الشخصي</h1>
+                <p>حدّث بيانات التواصل والاسم الظاهر في النظام. بيانات الدخول والصلاحيات لا تتغير من هذه الصفحة.</p>
+            </div>
+            <button type="button" class="profile-back" @onclick='() => Navigation.NavigateTo("/dashboard")'><i class="bi bi-arrow-right"></i><span>العودة للرئيسية</span></button>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="profile-message @(statusIsError ? "error" : "success")" role="@(statusIsError ? "alert" : "status")">
+                <i class="bi @(statusIsError ? "bi-exclamation-circle-fill" : "bi-check-circle-fill")"></i><span>@statusMessage</span>
+            </div>
+        }
+
+        <div class="profile-layout">
+            <section class="profile-edit-card">
+                <div class="profile-section-head">
+                    <span class="profile-section-icon"><i class="bi bi-pencil-square"></i></span>
+                    <div><h2>بيانات التواصل</h2><p>هذه الحقول فقط قابلة للتعديل ذاتياً.</p></div>
+                </div>
+
+                <EditForm Model="@profile" OnValidSubmit="@SaveProfileAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="profile-validation-summary" />
+
+                    <div class="profile-fields">
+                        <div class="profile-field full-width">
+                            <label for="profile-full-name">الاسم الكامل <b>*</b></label>
+                            <InputText id="profile-full-name" class="profile-input" @bind-Value="profile.FullName" autocomplete="name" disabled="@isSaving" />
+                            <ValidationMessage For="() => profile.FullName" />
+                        </div>
+                        <div class="profile-field">
+                            <label for="profile-email">البريد الإلكتروني</label>
+                            <InputText id="profile-email" type="email" class="profile-input" @bind-Value="profile.Email" autocomplete="email" dir="ltr" disabled="@isSaving" />
+                            <ValidationMessage For="() => profile.Email" />
+                        </div>
+                        <div class="profile-field">
+                            <label for="profile-phone">رقم الهاتف</label>
+                            <InputText id="profile-phone" type="tel" class="profile-input" @bind-Value="profile.Phone" autocomplete="tel" dir="ltr" disabled="@isSaving" />
+                        </div>
+                    </div>
+
+                    <div class="profile-form-note"><i class="bi bi-shield-lock-fill"></i><span>اسم المستخدم والدور والحالة الإدارية محمية، وتغيير كلمة المرور متاح بشكل منفصل من قائمة الحساب.</span></div>
+
+                    <div class="profile-actions">
+                        <button type="submit" class="profile-save" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <span class="profile-button-spinner"></span><span>جارٍ الحفظ...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-check-lg"></i><span>حفظ بياناتي</span>
+                            }
+                        </button>
+                        <button type="button" class="profile-password-link" @onclick='() => Navigation.NavigateTo("/change-password")'><i class="bi bi-key-fill"></i><span>تغيير كلمة المرور</span></button>
+                    </div>
+                </EditForm>
+            </section>
+
+            <aside class="profile-account-card">
+                <div class="profile-account-top">
+                    <div class="profile-avatar">@GetInitials(profile.FullName)</div>
+                    <div><span class="profile-account-label">الحساب الحالي</span><h2>@profile.FullName</h2><p>@(string.IsNullOrWhiteSpace(profile.RoleNameAr) ? "بدون دور مسجل" : profile.RoleNameAr)</p></div>
+                </div>
+                <div class="profile-account-details">
+                    <div class="profile-readonly-row"><span><i class="bi bi-person-fill"></i> اسم المستخدم</span><strong dir="ltr">@profile.Username</strong></div>
+                    <div class="profile-readonly-row"><span><i class="bi bi-briefcase-fill"></i> الموظف المرتبط</span><strong>@(string.IsNullOrWhiteSpace(profile.EmployeeName) ? "غير مرتبط" : profile.EmployeeName)</strong></div>
+                    @if (!string.IsNullOrWhiteSpace(profile.EmployeeCode))
+                    {
+                        <div class="profile-readonly-row"><span><i class="bi bi-upc-scan"></i> كود الموظف</span><strong dir="ltr">@profile.EmployeeCode</strong></div>
+                    }
+                </div>
+                <div class="profile-protection"><i class="bi bi-shield-check"></i><span>الملف يعرض بيانات حسابك أنت فقط. الدور وصلاحيات النظام تُدار من قبل المسؤول.</span></div>
+            </aside>
+        </div>
+
+        <section class="profile-preferences-card">
+            <div class="profile-section-head">
+                <span class="profile-section-icon"><i class="bi bi-sliders2"></i></span>
+                <div><h2>تفضيلاتي</h2><p>تُحفظ هذه القيم لهذا المستخدم فقط، ولا تغيّر إعدادات النظام أو صلاحياته.</p></div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(preferencesLoadError))
+            {
+                <div class="profile-preference-error" role="alert"><i class="bi bi-exclamation-circle-fill"></i><span>تعذر قراءة تفضيلاتك: @preferencesLoadError</span><button type="button" @onclick="LoadPreferencesAsync">إعادة المحاولة</button></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(preferencesMessage))
+            {
+                <div class="profile-message @(preferencesStatusIsError ? "error" : "success")" role="@(preferencesStatusIsError ? "alert" : "status")">
+                    <i class="bi @(preferencesStatusIsError ? "bi-exclamation-circle-fill" : "bi-check-circle-fill")"></i><span>@preferencesMessage</span>
+                </div>
+            }
+
+            <div class="profile-preferences-grid">
+                <div class="profile-preference-control">
+                    <label for="profile-page-size">عدد السجلات في الصفحة</label>
+                    <select id="profile-page-size" class="profile-input" @bind="userPreferences.PageSize" disabled="@(!preferencesLoaded || isSavingPreferences)">
+                        <option value="10">10 سجلات</option>
+                        <option value="20">20 سجلاً</option>
+                        <option value="50">50 سجلاً</option>
+                        <option value="100">100 سجل</option>
+                    </select>
+                    <small>القيمة الافتراضية لقوائم النظام المرقّمة.</small>
+                </div>
+
+                <label class="profile-preference-toggle">
+                    <span><strong>إظهار الإشعارات</strong><small>إخفاء الواجهة وإيقاف الاستطلاع عند التعطيل؛ لا يمنع إنشاء التنبيهات.</small></span>
+                    <input type="checkbox" @bind="userPreferences.ShowNotifications" disabled="@(!preferencesLoaded || isSavingPreferences)" />
+                    <i aria-hidden="true"></i>
+                </label>
+
+                <div class="profile-preference-control">
+                    <label for="profile-play-sound">صوت الإشعارات</label>
+                    <select id="profile-play-sound" class="profile-input" @bind="userPreferences.PlaySound" disabled="@(!preferencesLoaded || isSavingPreferences)">
+                        <option value="">حسب إعداد النظام</option>
+                        <option value="true">تشغيل</option>
+                        <option value="false">إيقاف</option>
+                    </select>
+                    <small>اختيار «حسب إعداد النظام» يتبع الإعداد العام إذا لم يوجد تفضيل شخصي.</small>
+                </div>
+            </div>
+
+            <div class="profile-preference-actions">
+                <button type="button" class="profile-save" @onclick="SavePreferencesAsync" disabled="@(!preferencesLoaded || isSavingPreferences)">
+                    @if (isSavingPreferences)
+                    {
+                        <span class="profile-button-spinner"></span><span>جارٍ الحفظ...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-check-lg"></i><span>حفظ التفضيلات</span>
+                    }
+                </button>
+            </div>
+        </section>
+
+        <footer class="profile-footnote"><i class="bi bi-info-circle-fill"></i><span>حفظ الاسم يحدّث الاسم الظاهر في الجلسة الحالية أيضاً. لن تُغيّر هذه الصفحة اسم الدخول أو الدور أو كلمة المرور.</span></footer>
+    </main>
+}
+
+<style>
+    .profile-page{--profile-gold:#D4AF37;--profile-gold-dark:#92731F;--profile-ink:#0A0F1E;--profile-muted:#788292;display:flex;flex-direction:column;gap:15px;width:100%;max-width:1250px;margin:0 auto;padding:18px 20px;font-family:'Tajawal',sans-serif;color:var(--profile-ink)}
+    .profile-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;overflow:hidden;padding:22px 24px;border:1px solid rgba(212,175,55,.24);border-radius:18px;background:linear-gradient(125deg,#070B14,#111a2b 70%,#182033);color:#F5E6C8}.profile-hero-line{position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,var(--profile-gold),transparent)}.profile-hero-copy{position:relative}.profile-eyebrow{font-size:.72rem;font-weight:800;color:#D8BF69}.profile-hero h1{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:1.35rem;font-weight:900;color:#F5E6C8}.profile-hero h1 i{color:var(--profile-gold)}.profile-hero p{margin:0;color:#AAB3C1;font-size:.83rem;line-height:1.65}.profile-back{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;padding:9px 13px;border:1px solid rgba(212,175,55,.4);border-radius:10px;background:rgba(255,255,255,.06);color:#F5E6C8;font-family:inherit;font-size:.78rem;font-weight:800;white-space:nowrap;cursor:pointer}.profile-back:hover{background:rgba(212,175,55,.13)}
+    .profile-message{display:flex;align-items:center;gap:9px;padding:11px 14px;border:1px solid;border-radius:10px;font-size:.8rem;font-weight:800}.profile-message.success{background:#EAF8EF;border-color:#C9EAD4;color:#17643F}.profile-message.error{background:#FFF0EF;border-color:#F3CECA;color:#9D3128}
+    .profile-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(270px,.75fr);gap:14px;align-items:start}.profile-edit-card,.profile-account-card{min-width:0;border:1px solid #E9E3D5;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(10,15,30,.045)}.profile-edit-card{padding:19px}.profile-section-head{display:flex;align-items:center;gap:10px;margin-bottom:19px}.profile-section-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#F8F2DF;color:#907019;font-size:1.05rem}.profile-section-head h2{margin:0;font-size:.95rem;font-weight:900}.profile-section-head p{margin:3px 0 0;color:var(--profile-muted);font-size:.7rem}.profile-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.profile-field{display:flex;flex-direction:column;gap:6px;min-width:0}.profile-field.full-width{grid-column:1/-1}.profile-field>label{color:#303A4C;font-size:.76rem;font-weight:900}.profile-field>label b{color:#B23C32}.profile-input{width:100%;height:43px;padding:0 12px;border:1px solid #DED9CD;border-radius:10px;background:#FFFEFC;color:#172033;font:500 .82rem 'Tajawal',sans-serif;outline:none;transition:.18s}.profile-input:focus{border-color:var(--profile-gold-dark);box-shadow:0 0 0 3px rgba(212,175,55,.12)}.profile-input:disabled{background:#F6F5F1;color:#8A909A}.profile-field .validation-message{color:#A63E31;font-size:.67rem;font-weight:700}.profile-validation-summary{margin:0 0 12px;padding:10px 12px;border:1px solid #F0C9C1;border-radius:9px;background:#FFF5F2;color:#8A392C;font-size:.7rem;font-weight:700}.profile-validation-summary:empty{display:none}
+    .profile-form-note{display:flex;align-items:flex-start;gap:8px;margin-top:16px;padding:10px 12px;border:1px solid #EEE5C9;border-radius:10px;background:#FFFCF2;color:#705B22;font-size:.69rem;font-weight:700;line-height:1.65}.profile-form-note i{margin-top:2px;color:#A1842D}.profile-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid #F0EDE5}.profile-save,.profile-password-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:8px 14px;border-radius:9px;font-family:inherit;font-size:.75rem;font-weight:900;cursor:pointer}.profile-save{border:1px solid #B99A3A;background:linear-gradient(135deg,#E3C65B,#B5942D);color:#101521;box-shadow:0 4px 12px rgba(156,124,46,.14)}.profile-save:hover:not(:disabled){filter:brightness(1.03);transform:translateY(-1px)}.profile-save:disabled{opacity:.58;cursor:not-allowed}.profile-password-link{border:1px solid #E5E0D4;background:#fff;color:#586273;text-decoration:none}.profile-password-link:hover{border-color:#D7C58D;background:#FFFCF2;color:#745E21}.profile-button-spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(16,21,33,.22);border-top-color:#101521;border-radius:50%;animation:profileSpin .7s linear infinite}
+    .profile-preferences-card{padding:18px;border:1px solid #E9E3D5;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(10,15,30,.045)}.profile-preferences-card .profile-section-head{margin-bottom:14px}.profile-preferences-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.profile-preference-control{display:flex;flex-direction:column;justify-content:center;gap:7px;min-width:0;padding:12px;border:1px solid #EEE9DD;border-radius:11px;background:#FDFCFA}.profile-preference-control>label{color:#303A4C;font-size:.73rem;font-weight:900}.profile-preference-control small{color:#89919E;font-size:.63rem;line-height:1.55}.profile-preference-control .profile-input{background:#fff}.profile-preference-toggle{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:100px;padding:12px;border:1px solid #EEE9DD;border-radius:11px;background:#FDFCFA;cursor:pointer}.profile-preference-toggle>span{display:flex;flex-direction:column;gap:4px}.profile-preference-toggle strong{color:#303A4C;font-size:.73rem;font-weight:900}.profile-preference-toggle small{max-width:220px;color:#89919E;font-size:.63rem;line-height:1.55}.profile-preference-toggle input{position:absolute;width:1px;height:1px;opacity:0}.profile-preference-toggle>i{position:relative;flex:0 0 42px;width:42px;height:23px;border-radius:999px;background:#D7DBE1;transition:.18s}.profile-preference-toggle>i::before{position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);content:"";transition:.18s}.profile-preference-toggle input:checked+i{background:#B99A3A}.profile-preference-toggle input:checked+i::before{transform:translateX(-19px)}.profile-preference-toggle input:focus-visible+i{outline:3px solid rgba(212,175,55,.22)}.profile-preference-toggle input:disabled+i{opacity:.55;cursor:not-allowed}.profile-preference-error{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:10px;border:1px solid #F3CECA;border-radius:9px;background:#FFF5F2;color:#8A392C;font-size:.68rem;font-weight:700}.profile-preference-error button{margin-inline-start:auto;padding:5px 8px;border:1px solid #E4B6AE;border-radius:7px;background:#fff;color:#8A392C;font:inherit;white-space:nowrap;cursor:pointer}.profile-preference-actions{display:flex;justify-content:flex-start;margin-top:13px;padding-top:13px;border-top:1px solid #F0EDE5}
+    .profile-account-card{overflow:hidden}.profile-account-top{display:flex;align-items:center;gap:12px;padding:19px;background:radial-gradient(ellipse at 0 0,rgba(212,175,55,.14),transparent 55%),linear-gradient(145deg,#FCFAF5,#fff);border-bottom:1px solid #EEE9DD}.profile-avatar{display:grid;place-items:center;flex:0 0 54px;width:54px;height:54px;border:1px solid rgba(212,175,55,.42);border-radius:17px;background:linear-gradient(145deg,#141B2B,#070B14);color:#F2D779;font-size:1.05rem;font-weight:900;box-shadow:0 6px 15px rgba(7,11,20,.14)}.profile-account-label{color:#9A7B28;font-size:.62rem;font-weight:900}.profile-account-top h2{max-width:100%;margin:3px 0 2px;color:#172033;font-size:.95rem;font-weight:900;overflow-wrap:anywhere}.profile-account-top p{margin:0;color:#7B8492;font-size:.68rem;font-weight:700}.profile-account-details{display:flex;flex-direction:column;padding:4px 16px}.profile-readonly-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #F1EEE7}.profile-readonly-row:last-child{border-bottom:0}.profile-readonly-row>span{display:flex;align-items:center;gap:6px;color:#7C8491;font-size:.68rem;font-weight:700;white-space:nowrap}.profile-readonly-row>span i{color:#A48631}.profile-readonly-row>strong{color:#283246;font-size:.7rem;font-weight:900;text-align:left;overflow-wrap:anywhere}.profile-protection{display:flex;align-items:flex-start;gap:8px;margin:0 15px 15px;padding:10px;border:1px solid #E5E7EB;border-radius:9px;background:#F8F9FA;color:#687283;font-size:.66rem;font-weight:700;line-height:1.6}.profile-protection i{color:#96791F}.profile-footnote{display:flex;align-items:flex-start;gap:8px;padding:11px 13px;border:1px dashed #D8C98F;border-radius:11px;background:#FFFDF7;color:#66531A;font-size:.72rem;line-height:1.65}.profile-footnote i{margin-top:2px}
+    .profile-state{display:flex;min-height:48vh;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:20px;color:#657083;font-family:'Tajawal',sans-serif;font-size:.82rem;text-align:center}.profile-state>i{font-size:1.7rem;color:#9C7C2E}.profile-state strong{color:#253044;font-size:.95rem}.profile-state>span:not(.profile-spinner){max-width:650px;color:#8A909A;font-size:.74rem}.profile-state button{margin-top:5px;padding:8px 13px;border:1px solid #D8C98F;border-radius:8px;background:#FFFCF2;color:#705B22;font-family:inherit;font-weight:800;cursor:pointer}.profile-state.error>i{color:#A63E31}.profile-spinner{display:inline-block;width:28px;height:28px;border:2px solid #E8E2D2;border-top-color:#92731F;border-radius:50%;animation:profileSpin .7s linear infinite}@@keyframes profileSpin{to{transform:rotate(360deg)}}
+    @@media(max-width:850px){.profile-layout{grid-template-columns:1fr}.profile-account-card{order:-1}.profile-preferences-grid{grid-template-columns:1fr}}
+    @@media(max-width:600px){.profile-page{padding:12px}.profile-hero{align-items:flex-start;flex-direction:column;padding:18px}.profile-hero h1{font-size:1.14rem}.profile-back{align-self:stretch}.profile-edit-card{padding:15px}.profile-fields{grid-template-columns:1fr}.profile-field.full-width{grid-column:auto}.profile-account-top{padding:15px}}
+</style>
+
+@code {
+    private SelfProfileDto profile = new();
+    private UserPreferencesDto userPreferences = new();
+    private bool initializationComplete;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool isSavingPreferences;
+    private bool preferencesLoaded;
+    private bool preferencesStatusIsError;
+    private bool statusIsError;
+    private string loadError = "";
+    private string statusMessage = "";
+    private string preferencesLoadError = "";
+    private string preferencesMessage = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            if (!await UserSession.EnsureRestoredAsync())
+            {
+                initializationComplete = true;
+                isLoading = false;
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            await LoadProfileAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+        finally
+        {
+            initializationComplete = true;
+            isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadProfileAsync()
+    {
+        isLoading = true;
+        loadError = "";
+        try
+        {
+            profile = await UserService.GetMyProfileAsync(UserSession.UserID);
+            await LoadPreferencesAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+            initializationComplete = true;
+        }
+    }
+
+    private async Task LoadPreferencesAsync()
+    {
+        preferencesLoaded = false;
+        preferencesLoadError = "";
+        try
+        {
+            userPreferences = await UserPreferencesService.GetCurrentAsync(UserSession.UserID);
+            preferencesLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            preferencesLoadError = ex.Message;
+        }
+    }
+
+    private async Task SavePreferencesAsync()
+    {
+        if (!preferencesLoaded || isSavingPreferences)
+            return;
+
+        isSavingPreferences = true;
+        preferencesMessage = "";
+        preferencesStatusIsError = false;
+        try
+        {
+            await UserPreferencesService.SaveAsync(userPreferences, UserSession.UserID);
+            preferencesMessage = "تم حفظ تفضيلاتك لهذا المستخدم.";
+        }
+        catch (Exception ex)
+        {
+            preferencesMessage = ex.Message;
+            preferencesStatusIsError = true;
+        }
+        finally
+        {
+            isSavingPreferences = false;
+        }
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        isSaving = true;
+        statusMessage = "";
+        statusIsError = false;
+        try
+        {
+            var changed = await UserService.UpdateMyProfileAsync(profile, UserSession.UserID);
+            if (changed)
+                await UserSession.UpdateFullNameAsync(UserSession.UserID, profile.FullName);
+
+            profile = await UserService.GetMyProfileAsync(UserSession.UserID);
+            statusMessage = changed ? "تم حفظ بيانات ملفك الشخصي." : "لا توجد تغييرات جديدة لحفظها.";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private static string GetInitials(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "YK";
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
+            : parts[0][0].ToString().ToUpperInvariant();
+    }
+}

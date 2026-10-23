@@ -237,7 +237,7 @@ namespace YKCoatings.Services
                 ws.Cell(row, 4).Value = GetWarehouseTypeName(wh.WarehouseType);
                 ws.Cell(row, 5).Value = wh.ManagerName ?? "—";
                 ws.Cell(row, 6).Value = wh.Address ?? "—";
-                ws.Cell(row, 7).Value = wh.IsDefault ? "✅" : "";
+                ws.Cell(row, 7).Value = wh.IsDefault ? "" : "";
 
                 for (int i = 1; i <= 7; i++)
                 {

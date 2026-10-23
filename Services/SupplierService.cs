@@ -303,7 +303,7 @@ namespace YKCoatings.Services
                 ws.Cell(row, 7).Value = s.PaymentTermName ?? "—";
                 ws.Cell(row, 8).Value = s.CreditLimit;
                 ws.Cell(row, 9).Value = s.CurrentBalance;
-                ws.Cell(row, 10).Value = new string('⭐', s.Rating);
+                ws.Cell(row, 10).Value = s.Rating + " / 5";
                 if (n % 2 == 0) ws.Range(row, 1, row, 10).Style.Fill.BackgroundColor = XLColor.FromHtml("#f8fafc");
                 row++;
             }
@@ -342,12 +342,12 @@ namespace YKCoatings.Services
 .section-title{{font-weight:800;font-size:13px;margin:16px 0 8px;padding:6px 12px;background:#f1f5f9;border-radius:6px}}
 table{{width:100%;border-collapse:collapse;margin-bottom:12px}}th{{background:#1e293b;color:white;padding:8px;font-size:10px;text-align:right}}td{{padding:7px 8px;border-bottom:1px solid #e2e8f0;font-size:10px}}tr:nth-child(even){{background:#f8fafc}}
 .footer{{text-align:center;margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8}}</style></head><body>
-<div class='header'><div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div><div class='doc-title'>بطاقة مورد — {sup.SupplierCode}</div></div>
+<div class='header'><div class='company'>مصنع واي كي كوتينج  </div><div class='doc-title'>بطاقة مورد — {sup.SupplierCode}</div></div>
 <div class='info-grid'>
 <div class='info-item'><div class='info-label'>الكود</div><div class='info-value'>{sup.SupplierCode}</div></div>
 <div class='info-item'><div class='info-label'>الاسم</div><div class='info-value'>{sup.SupplierNameAr}</div></div>
 <div class='info-item'><div class='info-label'>النوع</div><div class='info-value'>{GetTypeName(sup.SupplierType)}</div></div>
-<div class='info-item'><div class='info-label'>التقييم</div><div class='info-value'>{new string('⭐', sup.Rating)}</div></div>
+<div class='info-item'><div class='info-label'>التقييم</div><div class='info-value'><i class=bi-star-fill></i> ×{sup.Rating}</div></div>
 <div class='info-item'><div class='info-label'>الهاتف</div><div class='info-value'>{sup.Phone1 ?? "—"}</div></div>
 <div class='info-item'><div class='info-label'>الموبايل</div><div class='info-value'>{sup.Mobile ?? "—"}</div></div>
 <div class='info-item'><div class='info-label'>البريد</div><div class='info-value'>{sup.Email ?? "—"}</div></div>

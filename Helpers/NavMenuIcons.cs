@@ -31,7 +31,7 @@
                 "SCR_PINV"        => Svg("<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z'/><path d='M14 2v6h6'/><path d='M8 13h8'/><path d='M8 17h8'/>"),
                 "SCR_PRET"        => Svg("<path d='M3 12a9 9 0 1 0 9-9'/><path d='M3 3v5h5'/><path d='M9 14 11 12 9 10'/>"),
 
-                // ===== التصنيع - PRO GOLD EDITION - مستوحى من شاشات التصنيع الاحترافية =====
+                // ===== التصنيع - PRO    - مستوحى من شاشات التصنيع الاحترافية =====
                 // BOM - Boxes / Diagram - من BOMList bi-diagram-3-fill -> line version
                 "SCR_BOM"         => Svg("<path d='M12 2 2 7l10 5 10-5-10-5Z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/><path d='M12 12v10'/><path d='M8 10h8'/><path d='M8 14h8'/>"),
                 // PRODORD - FACTORY - كان Bug أيقونة أشخاص - الآن مصنع احترافي من ProductionOrders bi-gear-wide-connected
@@ -62,7 +62,7 @@
                 "SCR_SRET"        => Svg("<path d='M9 14 4 9l5-5'/><path d='M20 20v-7a4 4 0 0 0-4-4H4'/>"),
                 "SCR_RECV"        => Svg("<rect x='2' y='5' width='20' height='14' rx='2'/><path d='M2 10h20'/><circle cx='12' cy='14' r='1'/>"),
 
-                // ===== الحسابات والمالية Gold Edition Pro =====
+                // ===== الحسابات والمالية    Pro =====
                 "SCR_COA"         => Svg("<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
                 "SCR_JV"          => Svg("<path d='M12 7v14'/><path d='M16 12h2'/><path d='M16 8h2'/><path d='M3 7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'/><path d='M21 7a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2Z'/>"),
                 "SCR_JV_NEW"      => Svg("<path d='M12 5v14M5 12h14'/><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>"),

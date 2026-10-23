@@ -565,7 +565,7 @@ namespace YKCoatings.Models
     }
 
     // ==========================================
-    // المصروفات - OverheadExpenses Gold Edition Pro
+    // المصروفات - OverheadExpenses    Pro
     // ==========================================
     public class ExpenseListDto
     {

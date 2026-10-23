@@ -1,4 +1,4 @@
-/* Shared Gold Edition page system for the BOM, production-order, and material-issue screens. */
+/* Shared    page system for the BOM, production-order, and material-issue screens. */
 .yk-gold-page {
     --c-primary: var(--yk-gold);
     --c-primary-lt: var(--yk-gold-10);

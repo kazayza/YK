@@ -1,0 +1,338 @@
+@page "/settings/modules"
+@using YKCoatings.Helpers
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject SystemModuleAdminService ModuleAdminService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>إدارة الوحدات</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="module-admin-access" dir="rtl"><i class="bi bi-lock-fill"></i><h3>يجب تسجيل الدخول أولاً</h3></div>
+}
+else if (permissions is null || !permissions.CanView)
+{
+    <div class="module-admin-access" dir="rtl"><i class="bi bi-shield-lock-fill"></i><h3>ليس لديك صلاحية عرض إعدادات الوحدات</h3></div>
+}
+else
+{
+    <main class="module-admin-page yk-gold-page" dir="rtl">
+        <header class="module-admin-hero">
+            <div class="module-hero-line"></div>
+            <div class="module-hero-copy">
+                <span class="module-eyebrow">الإعدادات · التحكم في شاشات النظام</span>
+                <h1><i class="bi bi-grid-3x3-gap-fill"></i> إدارة الوحدات</h1>
+                <p>فعّل أو عطّل إتاحة الشاشات على مستوى النظام، دون تعديل صلاحيات الأدوار.</p>
+            </div>
+            <button type="button" class="module-back" @onclick='() => Navigation.NavigateTo("/settings")'>
+                <i class="bi bi-arrow-right"></i><span>العودة إلى الإعدادات</span>
+            </button>
+        </header>
+
+        <section class="module-notice">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>التغيير عام على النظام. بعد الحفظ تُعاد قراءة الوحدات الفعالة وتُحدّث قائمة التنقل في الجلسة الحالية؛ صلاحيات الأدوار نفسها لا تتغير. المجموعات الرئيسية للترتيب فقط، ولا يمكن تعطيل شاشة الإعدادات من هنا.</span>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="module-message @(statusIsError ? "error" : "success")" role="@(statusIsError ? "alert" : "status")">
+                <i class="bi @(statusIsError ? "bi-exclamation-circle-fill" : "bi-check-circle-fill")"></i><span>@statusMessage</span>
+            </div>
+        }
+
+        <section class="module-stats">
+            <div class="module-stat"><span class="module-stat-icon"><i class="bi bi-grid"></i></span><div><strong>@modules.Count</strong><small>إجمالي السجلات</small></div></div>
+            <div class="module-stat"><span class="module-stat-icon on"><i class="bi bi-check-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && x.IsActive)</strong><small>شاشات فعالة</small></div></div>
+            <div class="module-stat"><span class="module-stat-icon off"><i class="bi bi-pause-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && !x.IsActive)</strong><small>شاشات متوقفة</small></div></div>
+            <div class="module-stat"><span class="module-stat-icon group"><i class="bi bi-diagram-3"></i></span><div><strong>@modules.Count(x => x.IsMainGroup)</strong><small>مجموعات رئيسية</small></div></div>
+        </section>
+
+        <section class="module-list-card">
+            <div class="module-list-heading">
+                <div class="module-section-title">
+                    <span class="module-section-icon"><i class="bi bi-list-ul"></i></span>
+                    <div><h2>سجل الوحدات والشاشات</h2><p>الاسم والكود والمجموعة والمسار للقراءة؛ الإجراء الوحيد هنا تغيير حالة التفعيل.</p></div>
+                </div>
+                @if (permissions.CanEdit)
+                {
+                    <span class="module-edit-badge"><i class="bi bi-shield-check"></i> تملك صلاحية تغيير الحالة</span>
+                }
+                else
+                {
+                    <span class="module-view-badge"><i class="bi bi-eye"></i> عرض فقط</span>
+                }
+            </div>
+
+            <div class="module-filters">
+                <label class="module-search">
+                    <i class="bi bi-search"></i>
+                    <input type="search" placeholder="ابحث بالاسم أو الكود أو المجموعة أو المسار..." @bind="searchText" @bind:event="oninput" />
+                </label>
+                <label class="module-status-filter">
+                    <span>الحالة</span>
+                    <select @bind="statusFilter">
+                        <option value="all">الكل</option>
+                        <option value="active">الفعالة</option>
+                        <option value="inactive">المتوقفة</option>
+                    </select>
+                </label>
+                <span class="module-result-count">@FilteredModules.Count() نتيجة</span>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="module-empty"><span class="module-spinner"></span><span>جاري تحميل سجل الوحدات...</span></div>
+            }
+            else if (!FilteredModules.Any())
+            {
+                <div class="module-empty"><i class="bi bi-search"></i><strong>لا توجد نتائج مطابقة</strong><span>غيّر كلمات البحث أو مرشح الحالة.</span></div>
+            }
+            else
+            {
+                <div class="module-table-wrap">
+                    <table class="module-table">
+                        <thead>
+                            <tr>
+                                <th>الوحدة</th>
+                                <th>الكود</th>
+                                <th>التصنيف / المجموعة</th>
+                                <th class="center">الترتيب</th>
+                                <th>مسار الشاشة</th>
+                                <th class="center">الحالة</th>
+                                <th class="center">الإجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var module in FilteredModules)
+                            {
+                                var route = ModuleRouteHelper.GetRoute(module.ModuleCode);
+                                var routeIsMapped = !route.StartsWith("/module/", StringComparison.OrdinalIgnoreCase);
+                                var canToggle = CanToggle(module);
+                                <tr class="@(module.IsMainGroup ? "group-row" : "")">
+                                    <td>
+                                        <div class="module-name-cell">
+                                            <span class="module-row-icon @(module.IsMainGroup ? "group" : "screen")"><i class="bi @(module.IsMainGroup ? "bi-folder2-open" : "bi-window")"></i></span>
+                                            <div><strong>@module.ModuleNameAr</strong>
+                                                @if (module.IsMainGroup)
+                                                {
+                                                    <small>مجموعة تنظيمية للعرض</small>
+                                                }
+                                                else if (module.IsSettingsModule)
+                                                {
+                                                    <small class="protected-note">محمي من التعطيل لتجنب فقدان الوصول للإعدادات</small>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><code class="module-code" dir="ltr">@module.ModuleCode</code>
+                                        @if (module.DuplicateCodeCount > 1)
+                                        {
+                                            <span class="issue-badge" title="عدد السجلات بهذا الكود: @module.DuplicateCodeCount"><i class="bi bi-exclamation-triangle-fill"></i> كود مكرر</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (module.IsMainGroup)
+                                        {
+                                            <span class="module-type-badge group-type">مجموعة رئيسية</span>
+                                        }
+                                        else if (module.ParentModuleID is null)
+                                        {
+                                            <span class="module-type-badge">شاشة مستقلة</span>
+                                        }
+                                        else if (!module.ParentExists)
+                                        {
+                                            <span class="module-type-badge orphan-type">قسم رئيسي مفقود</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="module-parent"><i class="bi bi-arrow-return-left"></i> @module.ParentModuleName</span>
+                                            @if (!module.ParentIsActive)
+                                            {
+                                                <small class="parent-inactive-note">المجموعة الرئيسية متوقفة</small>
+                                            }
+                                        }
+                                    </td>
+                                    <td class="center"><span class="module-order-badge">@module.SortOrder</span></td>
+                                    <td>
+                                        <div class="module-route-cell">
+                                            <code dir="ltr">@route</code>
+                                            @if (!routeIsMapped)
+                                            {
+                                                <small class="route-fallback"><i class="bi bi-exclamation-triangle"></i> لا يوجد ربط معروف في ModuleRouteHelper</small>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td class="center"><span class="module-state @(module.IsActive ? "active" : "inactive")"><i class="bi @(module.IsActive ? "bi-check-circle-fill" : "bi-pause-circle-fill")"></i>@(module.IsActive ? "فعالة" : "متوقفة")</span></td>
+                                    <td class="center">
+                                        @if (module.IsMainGroup)
+                                        {
+                                            <span class="read-only-action" title="المجموعات الرئيسية لا تُعدّل من هذه الشاشة"><i class="bi bi-dash-circle"></i> هيكلية</span>
+                                        }
+                                        else if (module.IsSettingsModule)
+                                        {
+                                            <span class="read-only-action protected" title="لا يمكن تعطيل شاشة الإعدادات من داخلها"><i class="bi bi-shield-lock"></i> محمية</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button"
+                                                    class="module-toggle @(module.IsActive ? "deactivate" : "activate")"
+                                                    disabled="@(!canToggle || isSavingModuleId.HasValue)"
+                                                    title="@ToggleBlockReason(module)"
+                                                    @onclick="() => ToggleModuleAsync(module)">
+                                                @if (isSavingModuleId == module.ModuleID)
+                                                {
+                                                    <span class="module-button-spinner"></span><span>جارٍ الحفظ</span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi @(module.IsActive ? "bi-pause-fill" : "bi-play-fill")"></i>
+                                                    <span>@(module.IsActive ? "تعطيل" : "تفعيل")</span>
+                                                }
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <footer class="module-footnote"><i class="bi bi-arrow-repeat"></i><span>بعد الحفظ تُعاد قراءة قائمة الوحدات والصلاحيات في الجلسة الحالية دون إعادة تحميل المتصفح. تُسجل الحالة الجديدة في سجل التدقيق.</span></footer>
+    </main>
+}
+
+<style>
+    .module-admin-page{--mod-gold:#D4AF37;--mod-gold-dark:#92731f;--mod-ink:#0A0F1E;--mod-muted:#788292;display:flex;flex-direction:column;gap:15px;width:100%;max-width:1550px;margin:0 auto;padding:18px 20px;font-family:'Tajawal',sans-serif;color:var(--mod-ink)}
+    .module-admin-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;overflow:hidden;padding:22px 24px;border:1px solid rgba(212,175,55,.24);border-radius:18px;background:linear-gradient(125deg,#070B14,#111a2b 70%,#182033);color:#F5E6C8}
+    .module-hero-line{position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,var(--mod-gold),transparent)}.module-hero-copy{position:relative}.module-eyebrow{font-size:.72rem;font-weight:800;color:#D8BF69}.module-admin-hero h1{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:1.35rem;font-weight:900;color:#F5E6C8}.module-admin-hero h1 i{color:var(--mod-gold)}.module-admin-hero p{margin:0;color:#AAB3C1;font-size:.83rem}
+    .module-back{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;padding:9px 13px;border:1px solid rgba(212,175,55,.4);border-radius:10px;background:rgba(255,255,255,.06);color:#F5E6C8;font-family:inherit;font-size:.78rem;font-weight:800;white-space:nowrap;cursor:pointer}.module-back:hover{background:rgba(212,175,55,.13)}
+    .module-notice{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid #eee1b4;border-radius:12px;background:#FFFAF0;color:#6D5713;font-size:.78rem;line-height:1.75}.module-notice i{margin-top:3px;color:#B08B1F;flex:0 0 auto}
+    .module-message{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-size:.82rem;font-weight:800}.module-message.error{background:#FFF0EF;color:#9D3128;border:1px solid #F3CECA}.module-message.success{background:#EAF8EF;color:#17643F;border:1px solid #C9EAD4}
+    .module-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}.module-stat{display:flex;align-items:center;gap:11px;min-width:0;padding:13px 15px;border:1px solid #ECE6D7;border-radius:14px;background:#fff;box-shadow:0 5px 16px rgba(10,15,30,.035)}.module-stat-icon{display:grid;place-items:center;flex:0 0 39px;width:39px;height:39px;border-radius:11px;background:#F8F2DF;color:#8A6C18;font-size:1.05rem}.module-stat-icon.on{background:#EAF8EF;color:#18804C}.module-stat-icon.off{background:#F1F2F4;color:#777F8D}.module-stat-icon.group{background:#F2EFFB;color:#6851A7}.module-stat strong{display:block;font-size:1.1rem;font-weight:900;line-height:1.1}.module-stat small{display:block;margin-top:4px;color:var(--mod-muted);font-size:.7rem;font-weight:700}
+    .module-list-card{min-width:0;overflow:hidden;border:1px solid #E9E3D5;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(10,15,30,.045)}.module-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;border-bottom:1px solid #EEE9DD;background:linear-gradient(120deg,#FFFDF7,#F8F5EC)}.module-section-title{display:flex;align-items:center;gap:10px;min-width:0}.module-section-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#F8F2DF;color:#907019;font-size:1.05rem}.module-section-title h2{margin:0;font-size:.95rem;font-weight:900}.module-section-title p{margin:3px 0 0;color:var(--mod-muted);font-size:.7rem;line-height:1.5}.module-edit-badge,.module-view-badge{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:6px 10px;border-radius:999px;background:#EAF8EF;border:1px solid #C9EAD4;color:#17643F;font-size:.68rem;font-weight:800}.module-view-badge{background:#F3F4F6;border-color:#E5E7EB;color:#656D7A}
+    .module-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 15px;border-bottom:1px solid #F0EDE5;background:#fff}.module-search{position:relative;display:flex;align-items:center;flex:1 1 300px;min-width:220px}.module-search i{position:absolute;right:12px;color:#9AA2AE;font-size:.85rem;pointer-events:none}.module-search input{width:100%;height:40px;padding:0 37px 0 12px;border:1px solid #E4DFD3;border-radius:10px;background:#FCFAF6;font:inherit;font-size:.78rem;outline:none}.module-search input:focus{border-color:var(--mod-gold-dark);box-shadow:0 0 0 3px rgba(212,175,55,.11)}.module-status-filter{display:flex;align-items:center;gap:8px;color:#657083;font-size:.72rem;font-weight:800}.module-status-filter select{height:39px;min-width:105px;padding:0 10px;border:1px solid #E4DFD3;border-radius:9px;background:#fff;color:#313B4D;font:inherit;font-size:.75rem;outline:none}.module-result-count{margin-inline-start:auto;color:#7C8491;font-size:.7rem;font-weight:800;white-space:nowrap}
+    .module-table-wrap{width:100%;overflow:auto}.module-table{width:100%;min-width:970px;border-collapse:collapse}.module-table th,.module-table td{padding:11px 12px;border-bottom:1px solid #F0EDE5;text-align:right;vertical-align:middle;font-size:.73rem}.module-table th{position:sticky;top:0;background:#FBFAF6;color:#657083;font-size:.7rem;font-weight:900;white-space:nowrap;z-index:1}.module-table td{color:#263043}.module-table tr:last-child td{border-bottom:0}.module-table tbody tr:hover{background:#FFFEFB}.module-table .center{text-align:center}.module-table tr.group-row{background:#FAF8F0}.module-table tr.group-row td{font-weight:800}
+    .module-name-cell{display:flex;align-items:center;gap:9px;min-width:180px}.module-name-cell>div{display:flex;flex-direction:column;gap:3px}.module-name-cell strong{font-size:.76rem;font-weight:900;color:#172033}.module-name-cell small{color:#87909D;font-size:.65rem;font-weight:700}.module-name-cell small.protected-note{color:#8A6C18}.module-row-icon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:9px;background:#F8F2DF;color:#92731F}.module-row-icon.group{background:#EFEAFB;color:#6D58A4}.module-row-icon.screen{background:#F5F6F8;color:#566276}
+    .module-code,.module-route-cell code{display:inline-block;padding:4px 7px;border:1px solid #ECE8DE;border-radius:6px;background:#F8F7F3;color:#354054;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.68rem;white-space:nowrap}.module-order-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:4px 7px;border:1px solid #EEE4C5;border-radius:7px;background:#FBF7E9;color:#806619;font-size:.68rem;font-weight:900}.issue-badge{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:3px 6px;border-radius:999px;background:#FFF3E8;color:#A35015;font-size:.62rem;font-weight:800;white-space:nowrap}.module-type-badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#F1F3F6;color:#657083;font-size:.65rem;font-weight:800;white-space:nowrap}.module-type-badge.group-type{background:#EFEAFB;color:#6D58A4}.module-type-badge.orphan-type{background:#FFF0EF;color:#9D3128}.module-parent{display:inline-flex;align-items:center;gap:5px;color:#566276;font-size:.7rem;font-weight:700;white-space:nowrap}.module-parent i{color:#A68A3A}.parent-inactive-note{display:block;margin-top:5px;color:#A35015;font-size:.63rem;font-weight:700}.module-route-cell{display:flex;flex-direction:column;align-items:flex-start;gap:4px}.module-route-cell code{direction:ltr}.route-fallback{display:flex;align-items:center;gap:4px;color:#A35015;font-size:.62rem;font-weight:700;white-space:nowrap}
+    .module-state{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 8px;border-radius:999px;font-size:.66rem;font-weight:900;white-space:nowrap}.module-state.active{background:#EAF8EF;color:#18804C}.module-state.inactive{background:#F0F1F3;color:#697282}.module-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:78px;padding:7px 9px;border:1px solid;border-radius:8px;font-family:inherit;font-size:.68rem;font-weight:900;white-space:nowrap;cursor:pointer;transition:.15s}.module-toggle.activate{background:#EDF9F1;border-color:#BEE3CA;color:#197348}.module-toggle.deactivate{background:#FFF6E9;border-color:#F0D6A6;color:#946016}.module-toggle:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 3px 9px rgba(10,15,30,.08)}.module-toggle:disabled{opacity:.4;cursor:not-allowed}.read-only-action{display:inline-flex;align-items:center;justify-content:center;gap:5px;color:#7D8591;font-size:.66rem;font-weight:800;white-space:nowrap}.read-only-action.protected{color:#8A6C18}.module-empty{display:flex;min-height:190px;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#788292;font-size:.76rem}.module-empty>i{font-size:1.55rem;color:#AAA181}.module-empty strong{color:#303A4C}.module-spinner,.module-button-spinner{display:inline-block;width:20px;height:20px;border:2px solid #E4E0D5;border-top-color:#92731F;border-radius:50%;animation:moduleSpin .7s linear infinite}.module-button-spinner{width:13px;height:13px;border-color:rgba(25,115,72,.25);border-top-color:#197348}@@keyframes moduleSpin{to{transform:rotate(360deg)}}
+    .module-footnote{display:flex;align-items:flex-start;gap:8px;padding:11px 13px;border:1px dashed #D8C98F;border-radius:11px;background:#FFFDF7;color:#66531A;font-size:.73rem;line-height:1.65}.module-footnote i{margin-top:2px}.module-admin-access{display:flex;min-height:60vh;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#6A7280}.module-admin-access i{font-size:2rem;color:#9C7C2E}.module-admin-access h3{margin:0;font-size:1rem}
+    @@media(max-width:900px){.module-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @@media(max-width:600px){.module-admin-page{padding:12px}.module-admin-hero{align-items:flex-start;flex-direction:column;padding:18px}.module-admin-hero h1{font-size:1.14rem}.module-back{align-self:stretch}.module-stats{grid-template-columns:1fr 1fr;gap:8px}.module-stat{padding:10px}.module-list-heading{align-items:flex-start;flex-direction:column}.module-result-count{margin-inline-start:0}}
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private List<SystemModuleAdminDto> modules = new();
+    private string searchText = "";
+    private string statusFilter = "all";
+    private bool isLoading = true;
+    private bool statusIsError;
+    private int? isSavingModuleId;
+    private string statusMessage = "";
+
+    private IEnumerable<SystemModuleAdminDto> FilteredModules => modules
+        .Where(module => statusFilter == "all"
+            || (statusFilter == "active" && module.IsActive)
+            || (statusFilter == "inactive" && !module.IsActive))
+        .Where(module => string.IsNullOrWhiteSpace(searchText)
+            || Contains(module.ModuleNameAr, searchText)
+            || Contains(module.ModuleCode, searchText)
+            || Contains(module.ParentModuleName, searchText)
+            || Contains(ModuleRouteHelper.GetRoute(module.ModuleCode), searchText));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_SETTINGS");
+        if (permissions?.CanView == true)
+            await LoadModulesAsync();
+        else
+            isLoading = false;
+    }
+
+    private async Task LoadModulesAsync()
+    {
+        isLoading = true;
+        try
+        {
+            modules = await ModuleAdminService.GetAllAsync();
+            statusMessage = "";
+            statusIsError = false;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private bool CanToggle(SystemModuleAdminDto module)
+    {
+        if (permissions?.CanEdit != true || module.IsMainGroup || module.IsSettingsModule || module.DuplicateCodeCount != 1)
+            return false;
+        return module.IsActive ? module.CanDisable : module.CanEnable;
+    }
+
+    private string ToggleBlockReason(SystemModuleAdminDto module)
+    {
+        if (permissions?.CanEdit != true) return "لا تملك صلاحية تعديل إعدادات النظام.";
+        if (module.DuplicateCodeCount != 1) return "الكود مكرر؛ عالج التكرار قبل تغيير الحالة.";
+        if (!module.IsActive && module.ParentModuleID.HasValue && !module.ParentExists) return "القسم الرئيسي المرتبط غير موجود.";
+        if (!module.IsActive && module.ParentModuleID.HasValue && !module.ParentIsActive) return "المجموعة الرئيسية متوقفة؛ يجب تفعيلها أولاً.";
+        return module.IsActive ? "تعطيل هذه الشاشة على مستوى النظام" : "تفعيل هذه الشاشة على مستوى النظام";
+    }
+
+    private async Task ToggleModuleAsync(SystemModuleAdminDto module)
+    {
+        if (!CanToggle(module) || isSavingModuleId.HasValue)
+            return;
+
+        var activating = !module.IsActive;
+        var action = activating ? "تفعيل" : "تعطيل";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"هل تريد {action} الوحدة «{module.ModuleNameAr}»؟\n\nهذا التغيير عام على النظام ولا يغيّر صلاحيات الأدوار.");
+        if (!confirmed)
+            return;
+
+        isSavingModuleId = module.ModuleID;
+        statusMessage = "";
+        statusIsError = false;
+        try
+        {
+            await ModuleAdminService.SetActiveAsync(module.ModuleID, activating, UserSession.UserID);
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            modules = await ModuleAdminService.GetAllAsync();
+            statusMessage = $"تم {(activating ? "تفعيل" : "تعطيل")} الوحدة «{module.ModuleNameAr}». حُدّثت قائمة التنقل وصلاحيات الجلسة الحالية.";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
+        finally
+        {
+            isSavingModuleId = null;
+        }
+    }
+
+    private static bool Contains(string? value, string search) =>
+        !string.IsNullOrEmpty(value) && value.Contains(search, StringComparison.OrdinalIgnoreCase);
+}

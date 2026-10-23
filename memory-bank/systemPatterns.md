@@ -24,7 +24,7 @@ namespace YKCoatings.Services
 ## 3. نموذج الصفحات (Razor Pages)
 - `@page "/route"` + `<PageTitle>... - واي كي كوتينج</PageTitle>`.
 - أنماط الصفحة داخل `<style>` في الملف نفسه (مع `@@` للهروب في Razor) — **مع نظام `yk-theme.css` الموحد يُفضَّل** استخدام كلاساته بدل تكرار CSS.
-- **نمط الصفحات الجديدة (Gold):** حاوية `luxury-page` + ترويسة `luxury-header-hybrid` (`lh-*`) + أزرار `btn-luxury` + حالات `no-access-luxury`/`loading-luxury` + `<PageTitle>… - واي كي كوتينج Gold Edition</PageTitle>` — ملاحظة: فئة `.luxury-page` معرّفة داخل `<style>` في **44 صفحة** (توحيدُها في `yk-theme-gold.css` معلّق).
+- **نمط الصفحات الجديدة (Gold):** حاوية `luxury-page` + ترويسة `luxury-header-hybrid` (`lh-*`) + أزرار `btn-luxury` + حالات `no-access-luxury`/`loading-luxury` + `<PageTitle>… - واي كي كوتينج   </PageTitle>` — ملاحظة: فئة `.luxury-page` معرّفة داخل `<style>` في **44 صفحة** (توحيدُها في `yk-theme-gold.css` معلّق).
 - دورة نموذجية: `OnInitializedAsync` ← تحميل + صلاحيات ← `isLoading` skeleton ← عرض.
 - حقن نموذجي: `UserSessionService`, `PermissionService`, `NavigationManager`, `IJSRuntime`, خدمة المجال.
 

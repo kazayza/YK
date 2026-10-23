@@ -267,7 +267,6 @@ namespace YKCoatings.Services
                             @"UPDATE dbo.MaterialIssueDetails
                               SET IssuedQty=@IssuedQty,
                                   UnitCost=@UnitCost,
-                                  LineCost=@LineCost,
                                   BatchNumber=@BatchNumber,
                                   ExpiryDate=@ExpiryDate
                               WHERE IssueDetailID=@IssueDetailID AND IssueID=@IssueID",
@@ -275,7 +274,6 @@ namespace YKCoatings.Services
                             {
                                 IssuedQty = consumption.IssueUnitQuantity,
                                 UnitCost = unitCost,
-                                LineCost = consumption.LineCost,
                                 consumption.Layer.BatchNumber,
                                 consumption.Layer.ExpiryDate,
                                 consumption.Prepared.Detail.IssueDetailID,
@@ -290,9 +288,9 @@ namespace YKCoatings.Services
                         nextLineNumber++;
                         consumption.IssueDetailID = await connection.ExecuteScalarAsync<int>(
                             @"INSERT INTO dbo.MaterialIssueDetails
-                              (IssueID,LineNumber,POMaterialID,ItemID,UnitID,IssuedQty,UnitCost,LineCost,BatchNumber,ExpiryDate,Notes)
+                              (IssueID,LineNumber,POMaterialID,ItemID,UnitID,IssuedQty,UnitCost,BatchNumber,ExpiryDate,Notes)
                               VALUES
-                              (@IssueID,@LineNumber,@POMaterialID,@ItemID,@UnitID,@IssuedQty,@UnitCost,@LineCost,@BatchNumber,@ExpiryDate,@Notes);
+                              (@IssueID,@LineNumber,@POMaterialID,@ItemID,@UnitID,@IssuedQty,@UnitCost,@BatchNumber,@ExpiryDate,@Notes);
                               SELECT CAST(SCOPE_IDENTITY() AS INT);",
                             new
                             {
@@ -303,7 +301,6 @@ namespace YKCoatings.Services
                                 consumption.Prepared.Detail.UnitID,
                                 IssuedQty = consumption.IssueUnitQuantity,
                                 UnitCost = unitCost,
-                                LineCost = consumption.LineCost,
                                 consumption.Layer.BatchNumber,
                                 consumption.Layer.ExpiryDate,
                                 consumption.Prepared.Detail.Notes

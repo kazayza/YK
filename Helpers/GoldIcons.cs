@@ -1,7 +1,7 @@
 namespace YKCoatings.Helpers
 {
     /// <summary>
-    /// Gold Edition Professional Icon Library
+    ///    Professional Icon Library
     /// مزيج من أيقونات التصنيع الاحترافية + Line Gold Thin 1.5px
     /// الأساس الموحد لكل المشروع - بدون إيموجي نهائياً
     /// </summary>

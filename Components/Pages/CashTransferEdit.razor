@@ -145,7 +145,8 @@ else
 
 <style>
 .ct-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:20px}
-.ct-field{min-width:0}.ct-field-full{grid-column:1/-1}
+.ct-field{min-width:0}
+.ct-field-full{grid-column:1/-1}
 .ct-state-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:180px;padding:28px;text-align:center;color:var(--yk-text-2);background:var(--yk-surface);border:1px solid var(--yk-border);border-radius:16px;box-shadow:var(--yk-shadow)}
 .ct-state-card h4,.ct-state-card p{margin:0;color:var(--yk-text)}
 .ct-note{margin:0 20px 18px;padding:12px 14px;border:1px solid var(--yk-border-gold);border-radius:12px;background:var(--yk-gold-10);color:var(--yk-text-2);font-size:.84rem}
@@ -154,8 +155,6 @@ else
 .ct-message.success{border-color:rgba(4,120,87,.28);background:rgba(4,120,87,.06);color:#065f46}
 .ct-message.warning{margin:0;border-color:var(--yk-border-gold);background:var(--yk-gold-10);color:var(--yk-text-2)}
 .ct-spinner{width:14px;height:14px;border:2px solid currentColor;border-left-color:transparent;border-radius:50%;animation:ct-spin .7s linear infinite}
-@@keyframes ct-spin{to{transform:rotate(360deg)}}
-@@media(max-width:700px){.ct-form-grid{grid-template-columns:1fr;padding:16px}.ct-field-full{grid-column:auto}.ct-note,.ct-message{margin-left:16px;margin-right:16px}}
 </style>
 
 @code {

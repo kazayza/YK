@@ -14,11 +14,11 @@
 
 @if (!UserSession.IsLoggedIn)
 {
-    <div class="no-access-card"><div class="no-access-icon">🔒</div><h4>يجب تسجيل الدخول أولاً</h4></div>
+    <div class="no-access-card"><div class="no-access-icon"><i class=bi-lock-fill></i></div><h4>يجب تسجيل الدخول أولاً</h4></div>
 }
 else if (permissions == null || !HasAccess())
 {
-    <div class="no-access-card"><div class="no-access-icon">⛔</div><h4>ليس لديك صلاحية</h4>
+    <div class="no-access-card"><div class="no-access-icon"><i class=bi-lock-fill></i></div><h4>ليس لديك صلاحية</h4>
         <button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/leaves")'>العودة</button>
     </div>
 }
@@ -160,7 +160,7 @@ else
                 <div class="section-title">بيانات الاعتماد</div>
                 <div class="approval-grid">
                     <div class="approval-step @(model.RequestStatus >= 2 ? "step-done" : model.RequestStatus == 1 ? "step-current" : "step-pending")">
-                        <div class="step-icon">@(model.RequestStatus >= 2 ? "✅" : model.RequestStatus == 4 ? "❌" : "⏳")</div>
+                        <div class="step-icon">@(model.RequestStatus >= 2 ? "" : model.RequestStatus == 4 ? "" : "")</div>
                         <div class="step-info">
                             <div class="step-title">اعتماد المدير</div>
                             @if (approvalInfo?.ApprovedByManagerName != null)
@@ -175,10 +175,10 @@ else
                         </div>
                     </div>
 
-                    <div class="step-arrow">→</div>
+                    <div class="step-arrow"><i class=bi-arrow-right></i></div>
 
                     <div class="approval-step @(model.RequestStatus >= 3 ? "step-done" : model.RequestStatus == 2 ? "step-current" : "step-pending")">
-                        <div class="step-icon">@(model.RequestStatus >= 3 ? "✅" : "⏳")</div>
+                        <div class="step-icon">@if(model.RequestStatus >= 3){<i class=bi-check-circle-fill></i>}else{<i class=bi-hourglass-split></i>}</div>
                         <div class="step-info">
                             <div class="step-title">اعتماد HR</div>
                             @if (approvalInfo?.ApprovedByHRName != null)
@@ -241,7 +241,7 @@ else
     {
         <div class="modal-overlay" @onclick="CloseActionDialog">
             <div class="modal-card" @onclick:stopPropagation="true">
-                <div class="modal-icon @GetActionIconClass()">@GetActionIcon()</div>
+                <div class="modal-icon @GetActionIconClass()"><i class=bi @GetActionIcon()></i></div>
                 <h4>@GetActionTitle()</h4>
                 <p class="confirm-msg">@GetActionMessage()</p>
 
@@ -275,103 +275,90 @@ else
         <div class="toast-container">
             <div class="toast-card @(resultSuccess ? "toast-success" : "toast-error")">
                 <span class="toast-text">@resultMessage</span>
-                <button class="toast-close" @onclick='() => resultMessage = ""'>✕</button>
+                <button class="toast-close" @onclick='() => resultMessage = ""'><i class=bi-x-lg></i></button>
             </div>
         </div>
     }
 }
 
 <style>
-    .form-page{display:flex;flex-direction:column;gap:18px}
-    .page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
-    .page-title{margin:0;color:#1f2937;font-weight:800}
-    .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .breadcrumb-line{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem}
-    .crumb-link{color:#1d4ed8;font-weight:700;cursor:pointer}
-    .crumb-sep{color:#9ca3af}.crumb-current{color:#6b7280}
-
-    .status-badge{display:inline-block;padding:6px 16px;border-radius:999px;font-size:.82rem;font-weight:800}
-    .status-1{background:#fef3c7;color:#d97706}
-    .status-2{background:#dbeafe;color:#2563eb}
-    .status-3{background:#ecfdf5;color:#059669}
-    .status-4{background:#fef2f2;color:#dc2626}
-    .status-5{background:#f3f4f6;color:#6b7280}
-
-    .form-card{background:#fff;border-radius:24px;padding:24px;border:1px solid #eef2f7;box-shadow:0 8px 22px rgba(15,23,42,.05)}
-    .section-title{font-size:.95rem;font-weight:800;color:#1d4ed8;margin-bottom:16px}
-    .form-grid{display:grid;gap:14px}.cols-3{grid-template-columns:repeat(3,1fr)}
-    .form-field{display:flex;flex-direction:column;gap:6px}
-    .full-span{grid-column:1/-1}
-    .field-label{font-size:.82rem;font-weight:700;color:#374151}
-    .required-field::after{content:" *";color:#ef4444}
-    .field-input,.field-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none;transition:.2s}
-    .field-input:focus,.field-select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-    .readonly-input{background:#f9fafb;color:#6b7280}
-
-    .approval-grid{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;padding:20px 0}
-    .approval-step{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:16px 20px;min-width:200px}
-    .step-done{background:#ecfdf5;border-color:#a7f3d0}
-    .step-current{background:#eff6ff;border-color:#93c5fd}
-    .step-pending{background:#f9fafb;border-color:#e5e7eb;opacity:.6}
-    .step-icon{font-size:1.6rem}
-    .step-info{flex:1}
-    .step-title{font-weight:800;color:#1f2937;font-size:.88rem}
-    .step-detail{font-size:.82rem;color:#374151;margin-top:4px}
-    .step-date{font-size:.76rem;color:#6b7280;margin-top:2px}
-    .step-detail.muted{color:#9ca3af;font-style:italic}
-    .step-arrow{font-size:1.4rem;color:#9ca3af;font-weight:800}
-
-    .rejection-box{background:#fef2f2;border:1px solid #fecaca;border-radius:14px;padding:14px;margin-top:16px;color:#991b1b;font-size:.88rem}
-
-    .balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-    .balance-card{background:#f8f9fc;border:1px solid #eef2f7;border-radius:16px;padding:16px}
-    .balance-type{font-weight:800;color:#1f2937;margin-bottom:10px;font-size:.9rem}
-    .balance-nums{display:flex;gap:12px;justify-content:space-around}
-    .bal-item{text-align:center}
-    .bal-label{display:block;font-size:.72rem;color:#6b7280;font-weight:700}
-    .bal-val{display:block;font-size:1rem;font-weight:800;color:#1f2937}
-    .bal-val.used{color:#d97706}
-    .bal-val.pending{color:#2563eb}
-    .bal-val.remain{color:#059669}
-
-    .form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
-    .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-    .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
-
-    .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
-    .btn-modern:disabled{opacity:.6;cursor:not-allowed}
-    .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
-    .btn-secondary-modern{background:#f3f4f6;color:#374151}
-    .btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
-    .btn-approve{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
-    .btn-reject-btn{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff}
-    .btn-cancel-btn{background:#f3f4f6;color:#6b7280;border:1.5px solid #e5e7eb}
-    .btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
-
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
-    .modal-card{background:#fff;border-radius:24px;padding:30px;max-width:500px;width:92%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,.15)}
-    .modal-icon{width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:1.8rem}
-    .icon-approve{background:#ecfdf5;color:#059669}
-    .icon-reject{background:#fef2f2;color:#dc2626}
-    .icon-cancel{background:#f3f4f6;color:#6b7280}
-    .confirm-msg{color:#6b7280;font-size:.92rem;line-height:1.7;margin:8px 0 0}
-    .modal-buttons-row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
-
-    .toast-container{position:fixed;bottom:24px;left:24px;z-index:1050;animation:toastIn .4s ease}
-    .toast-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.12);min-width:320px}
-    .toast-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
-    .toast-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
-    .toast-text{flex:1;font-weight:600;font-size:.88rem}
-    .toast-close{background:transparent;border:none;font-size:1rem;cursor:pointer;color:inherit;opacity:.6}
-
-    .loading-state{text-align:center;padding:60px 20px;color:#6b7280}
-    .loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
-    .no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
-    .no-access-icon{font-size:3.5rem;margin-bottom:16px}
-
-    @@keyframes spin{to{transform:rotate(360deg)}}
-    @@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-    @@media(max-width:768px){.cols-3{grid-template-columns:1fr}.page-header{flex-direction:column}.btn-modern{width:100%}.approval-grid{flex-direction:column}.step-arrow{transform:rotate(90deg)}}
+.form-page{display:flex;flex-direction:column;gap:18px}
+.page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.page-title{margin:0;color:#1f2937;font-weight:800}
+.header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.breadcrumb-line{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem}
+.crumb-link{color:#1d4ed8;font-weight:700;cursor:pointer}
+.crumb-sep{color:#9ca3af}
+.crumb-current{color:#6b7280}
+.status-badge{display:inline-block;padding:6px 16px;border-radius:999px;font-size:.82rem;font-weight:800}
+.status-1{background:#fef3c7;color:#d97706}
+.status-2{background:#dbeafe;color:#2563eb}
+.status-3{background:#ecfdf5;color:#059669}
+.status-4{background:#fef2f2;color:#dc2626}
+.status-5{background:#f3f4f6;color:#6b7280}
+.form-card{background:#fff;border-radius:24px;padding:24px;border:1px solid #eef2f7;box-shadow:0 8px 22px rgba(15,23,42,.05)}
+.section-title{font-size:.95rem;font-weight:800;color:#1d4ed8;margin-bottom:16px}
+.form-grid{display:grid;gap:14px}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.form-field{display:flex;flex-direction:column;gap:6px}
+.full-span{grid-column:1/-1}
+.field-label{font-size:.82rem;font-weight:700;color:#374151}
+.required-field::after{content:" *";color:#ef4444}
+.field-input,.field-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:.9rem;outline:none;transition:.2s}
+.field-input:focus,.field-select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.readonly-input{background:#f9fafb;color:#6b7280}
+.approval-grid{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;padding:20px 0}
+.approval-step{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:16px 20px;min-width:200px}
+.step-done{background:#ecfdf5;border-color:#a7f3d0}
+.step-current{background:#eff6ff;border-color:#93c5fd}
+.step-pending{background:#f9fafb;border-color:#e5e7eb;opacity:.6}
+.step-icon{font-size:1.6rem}
+.step-info{flex:1}
+.step-title{font-weight:800;color:#1f2937;font-size:.88rem}
+.step-detail{font-size:.82rem;color:#374151;margin-top:4px}
+.step-date{font-size:.76rem;color:#6b7280;margin-top:2px}
+.step-detail.muted{color:#9ca3af;font-style:italic}
+.step-arrow{font-size:1.4rem;color:#9ca3af;font-weight:800}
+.rejection-box{background:#fef2f2;border:1px solid #fecaca;border-radius:14px;padding:14px;margin-top:16px;color:#991b1b;font-size:.88rem}
+.balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.balance-card{background:#f8f9fc;border:1px solid #eef2f7;border-radius:16px;padding:16px}
+.balance-type{font-weight:800;color:#1f2937;margin-bottom:10px;font-size:.9rem}
+.balance-nums{display:flex;gap:12px;justify-content:space-around}
+.bal-item{text-align:center}
+.bal-label{display:block;font-size:.72rem;color:#6b7280;font-weight:700}
+.bal-val{display:block;font-size:1rem;font-weight:800;color:#1f2937}
+.bal-val.used{color:#d97706}
+.bal-val.pending{color:#2563eb}
+.bal-val.remain{color:#059669}
+.form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
+.btn-modern:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
+.btn-secondary-modern{background:#f3f4f6;color:#374151}
+.btn-ghost{background:transparent;color:#6b7280;border:1.5px solid #e5e7eb}
+.btn-approve{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+.btn-reject-btn{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff}
+.btn-cancel-btn{background:#f3f4f6;color:#6b7280;border:1.5px solid #e5e7eb}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.modal-card{background:#fff;border-radius:24px;padding:30px;max-width:500px;width:92%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,.15)}
+.modal-icon{width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:1.8rem}
+.icon-approve{background:#ecfdf5;color:#059669}
+.icon-reject{background:#fef2f2;color:#dc2626}
+.icon-cancel{background:#f3f4f6;color:#6b7280}
+.confirm-msg{color:#6b7280;font-size:.92rem;line-height:1.7;margin:8px 0 0}
+.modal-buttons-row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+.toast-container{position:fixed;bottom:24px;left:24px;z-index:1050;animation:toastIn .4s ease}
+.toast-card{display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.12);min-width:320px}
+.toast-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.toast-error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.toast-text{flex:1;font-weight:600;font-size:.88rem}
+.toast-close{background:transparent;border:none;font-size:1rem;cursor:pointer;color:inherit;opacity:.6}
+.loading-state{text-align:center;padding:60px 20px;color:#6b7280}
+.loader{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+.no-access-card{text-align:center;padding:80px 20px;background:#fff;border-radius:24px;border:1px solid #eef2f7}
+.no-access-icon{font-size:3.5rem;margin-bottom:16px}
 </style>
 
 @code {
@@ -547,12 +534,12 @@ else
             {
                 case "approve_manager":
                     await LeaveRequestService.ApproveByManagerAsync(LeaveRequestId, UserSession.UserID);
-                    resultMessage = "تم اعتماد المدير بنجاح ✅";
+                    resultMessage = "تم اعتماد المدير بنجاح ";
                     break;
 
                 case "approve_hr":
                     await LeaveRequestService.ApproveByHRAsync(LeaveRequestId, UserSession.UserID);
-                    resultMessage = "تم اعتماد HR النهائي وخصم الرصيد ✅";
+                    resultMessage = "تم اعتماد HR النهائي وخصم الرصيد ";
                     break;
 
                 case "reject":
@@ -640,10 +627,10 @@ else
 
     private string GetActionIcon() => pendingAction switch
     {
-        "approve_manager" or "approve_hr" => "✅",
-        "reject" => "❌",
-        "cancel" => "⚪",
-        _ => "❔"
+        "approve_manager" or "approve_hr" => "check-circle-fill",
+        "reject" => "x-circle-fill",
+        "cancel" => "circle",
+        _ => "question-circle"
     };
     private void OnSubstituteChanged(ChangeEventArgs e)
 {

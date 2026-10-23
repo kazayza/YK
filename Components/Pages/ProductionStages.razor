@@ -1,0 +1,359 @@
+@page "/production-stages"
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject ProductionStageService StageService
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>إدارة مراحل التصنيع - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="stage-access" dir="rtl"><i class="bi bi-lock-fill"></i><h3>يجب تسجيل الدخول أولاً</h3></div>
+}
+else if (permissions is null || !permissions.CanView)
+{
+    <div class="stage-access" dir="rtl"><i class="bi bi-shield-lock-fill"></i><h3>ليس لديك صلاحية عرض مراحل التصنيع</h3></div>
+}
+else
+{
+    <main class="stage-page yk-gold-page" dir="rtl">
+        <header class="stage-hero">
+            <div class="stage-hero-line"></div>
+            <div class="stage-hero-copy">
+                <span class="stage-eyebrow">التصنيع · البيانات الأساسية</span>
+                <h1><i class="bi bi-list-ol"></i> إدارة مراحل التصنيع</h1>
+                <p>أضف أسماء المراحل التي ستربطها بوصفات التصنيع؛ ترتيب التنفيذ يُحدّد داخل كل وصفة.</p>
+            </div>
+            <button type="button" class="stage-back" @onclick='() => Navigation.NavigateTo("/boms")'>
+                <i class="bi bi-arrow-right"></i> العودة إلى الوصفات
+            </button>
+        </header>
+
+        <section class="stage-summary">
+            <div class="summary-card"><span class="summary-icon"><i class="bi bi-list-check"></i></span><div><strong>@stages.Count</strong><small>إجمالي المراحل</small></div></div>
+            <div class="summary-card"><span class="summary-icon active"><i class="bi bi-check-circle"></i></span><div><strong>@stages.Count(x => x.IsActive)</strong><small>مراحل فعالة</small></div></div>
+            <div class="summary-card"><span class="summary-icon muted"><i class="bi bi-pause-circle"></i></span><div><strong>@stages.Count(x => !x.IsActive)</strong><small>مراحل متوقفة</small></div></div>
+        </section>
+
+        <section class="stage-notice">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>تعطيل المرحلة لا يحذفها. لا يمكن تغيير اسم أو تعطيل مرحلة مرتبطة بوصفة أو دفعة حتى لا تتغير السجلات التاريخية.</span>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <div class="stage-message @(messageIsError ? "error" : "success")" role="status">
+                <i class="bi @(messageIsError ? "bi-exclamation-circle-fill" : "bi-check-circle-fill")"></i>
+                @message
+            </div>
+        }
+
+        <section class="stage-content-grid">
+            <div class="stage-form-card">
+                <div class="section-heading">
+                    <span class="section-icon"><i class="bi @(editingStageId.HasValue ? "bi-pencil-square" : "bi-plus-lg")"></i></span>
+                    <div>
+                        <h2>@(editingStageId.HasValue ? "تعديل اسم المرحلة" : "إضافة مرحلة جديدة")</h2>
+                        <p>@(editingStageId.HasValue ? "التعديل متاح للمراحل غير المستخدمة فقط." : "سيُضاف ترتيب افتراضي؛ ترتيب التنفيذ الفعلي تحدده الوصفة.")</p>
+                    </div>
+                </div>
+
+                <label for="stage-name">اسم المرحلة بالعربية</label>
+                <input id="stage-name" class="stage-input" type="text" maxlength="200"
+                       placeholder="مثال: الخلط أو التعبئة"
+                       @bind="stageName" @bind:event="oninput" disabled="@isSaving" />
+
+                <div class="form-actions">
+                    @if (editingStageId.HasValue)
+                    {
+                        <button type="button" class="btn-stage-primary" @onclick="SaveStage" disabled="@(isSaving || permissions?.CanEdit != true)">
+                            @if (isSaving){<span class="stage-spinner"></span>}else{<i class="bi bi-check-lg"></i>}
+                            حفظ التعديل
+                        </button>
+                        <button type="button" class="btn-stage-secondary" @onclick="CancelEdit" disabled="@isSaving">إلغاء</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-stage-primary" @onclick="SaveStage" disabled="@(isSaving || permissions?.CanAdd != true)">
+                            @if (isSaving){<span class="stage-spinner"></span>}else{<i class="bi bi-plus-lg"></i>}
+                            إضافة المرحلة
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="stage-list-card">
+                <div class="stage-list-header">
+                    <div class="section-heading compact">
+                        <span class="section-icon"><i class="bi bi-diagram-3"></i></span>
+                        <div><h2>قائمة المراحل</h2><p>المراحل الفعالة تظهر للاختيار في الوصفات.</p></div>
+                    </div>
+                    <label class="inactive-toggle"><input type="checkbox" @bind="showInactive" /> إظهار المتوقفة</label>
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="stage-empty"><span class="stage-spinner dark"></span><span>جاري تحميل المراحل...</span></div>
+                }
+                else if (!VisibleStages.Any())
+                {
+                    <div class="stage-empty"><i class="bi bi-inbox"></i><strong>لا توجد مراحل للعرض</strong><span>أضف أسماء المراحل من النموذج.</span></div>
+                }
+                else
+                {
+                    <div class="stage-table-wrap">
+                        <table class="stage-table">
+                            <thead><tr><th class="num">#</th><th>اسم المرحلة</th><th class="center">ترتيب القائمة</th><th class="center">الاستخدام</th><th class="center">الحالة</th><th class="center">الإجراءات</th></tr></thead>
+                            <tbody>
+                                @foreach (var stage in VisibleStages)
+                                {
+                                    <tr>
+                                        <td class="num">@stage.StageID</td>
+                                        <td><strong>@stage.StageNameAr</strong></td>
+                                        <td class="center"><span class="order-badge">@stage.StageOrder</span></td>
+                                        <td class="center"><span class="usage-badge">@stage.BOMReferenceCount وصفة · @stage.BatchReferenceCount دفعة</span></td>
+                                        <td class="center"><span class="state-badge @(stage.IsActive ? "on" : "off")">@(stage.IsActive ? "فعالة" : "متوقفة")</span></td>
+                                        <td class="center">
+                                            <div class="row-actions">
+                                                @if (permissions?.CanEdit == true)
+                                                {
+                                                    <button type="button" class="row-action edit" title="تعديل الاسم" disabled="@(stage.IsReferenced || isSaving)" @onclick="() => BeginEdit(stage)">
+                                                        <i class="bi bi-pencil-fill"></i>
+                                                    </button>
+                                                    <button type="button" class="row-action @(stage.IsActive ? "deactivate" : "activate")"
+                                                            title="@(stage.IsActive ? "تعطيل المرحلة" : "تفعيل المرحلة")"
+                                                            disabled="@(stage.IsReferenced || isSaving)"
+                                                            @onclick="() => ToggleActive(stage)">
+                                                        <i class="bi @(stage.IsActive ? "bi-pause-fill" : "bi-play-fill")"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <footer class="stage-footnote"><i class="bi bi-arrow-left-right"></i> بعد إضافة المرحلة هنا: افتح الوصفة من <b>إدارة وصفات التصنيع</b>، ثم تبويب <b>المراحل</b> لربطها وترتيبها.</footer>
+    </main>
+}
+
+<style>
+.stage-page{--gold:#D4AF37;--gold-dark:#9C7C2E;--ink:#0A0F1E;--muted:#768091;display:flex;flex-direction:column;gap:16px;width:100%;max-width:1500px;margin:0 auto;padding:18px 20px;font-family:'Tajawal',sans-serif;color:var(--ink)}
+.stage-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;overflow:hidden;padding:22px 24px;border:1px solid rgba(212,175,55,.22);border-radius:18px;background:linear-gradient(125deg,#070B14,#111a2b 70%,#182033);color:#f5e6c8}
+.stage-hero-line{position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.stage-hero-copy{position:relative}
+.stage-eyebrow{font-size:.72rem;font-weight:800;color:#d8bf69}
+.stage-hero h1{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:1.35rem;font-weight:900;color:#F5E6C8!important}
+.stage-hero h1 i{color:var(--gold)}
+.stage-hero p{margin:0;color:#aab3c1;font-size:.83rem}
+.stage-back{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;padding:10px 14px;border:1px solid rgba(212,175,55,.4);border-radius:10px;background:rgba(255,255,255,.06);color:#f5e6c8;font-family:inherit;font-weight:800;cursor:pointer}
+.stage-back:hover{background:rgba(212,175,55,.13)}
+.stage-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.summary-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #ece6d7;border-radius:14px;background:#fff;box-shadow:0 5px 16px rgba(10,15,30,.035)}
+.summary-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#f8f2df;color:#8a6c18;font-size:1.15rem}
+.summary-icon.active{background:#eaf8ef;color:#18804c}
+.summary-icon.muted{background:#f1f2f4;color:#777f8d}
+.summary-card strong{display:block;font-size:1.15rem;font-weight:900}
+.summary-card small{display:block;margin-top:2px;color:var(--muted);font-size:.72rem;font-weight:700}
+.stage-notice{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid #eee1b4;border-radius:12px;background:#fffaf0;color:#6d5713;font-size:.78rem;line-height:1.7}
+.stage-notice i{margin-top:2px;color:#b08b1f}
+.stage-message{display:flex;align-items:center;gap:8px;padding:11px 14px;border-radius:10px;font-size:.83rem;font-weight:800}
+.stage-message.success{background:#eaf8ef;color:#17643f;border:1px solid #c9ead4}
+.stage-message.error{background:#fff0ef;color:#9d3128;border:1px solid #f3ceca}
+.stage-content-grid{display:grid;grid-template-columns:minmax(280px,.7fr) minmax(0,1.8fr);gap:14px;align-items:start}
+.stage-form-card,.stage-list-card{min-width:0;border:1px solid #e9e3d5;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(10,15,30,.045)}
+.stage-form-card{padding:18px}
+.section-heading{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.section-heading.compact{margin:0}
+.section-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#f8f2df;color:#907019;font-size:1.05rem}
+.section-heading h2{margin:0;font-size:.95rem;font-weight:900}
+.section-heading p{margin:3px 0 0;color:var(--muted);font-size:.7rem;line-height:1.5}
+.stage-form-card label{display:block;margin:0 0 7px;font-size:.78rem;font-weight:800}
+.stage-input{width:100%;height:43px;padding:0 12px;border:1px solid #ddd8ca;border-radius:10px;background:#fffefa;font:inherit;font-size:.85rem;outline:none}
+.stage-input:focus{border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(212,175,55,.13)}
+.stage-input:disabled{opacity:.65}
+.form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn-stage-primary,.btn-stage-secondary{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:39px;padding:8px 13px;border-radius:9px;font-family:inherit;font-weight:800;cursor:pointer}
+.btn-stage-primary{border:0;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#101521}
+.btn-stage-primary:disabled,.btn-stage-secondary:disabled{opacity:.55;cursor:not-allowed}
+.btn-stage-secondary{border:1px solid #ded9cd;background:#fff;color:#535c6c}
+.stage-list-card{overflow:hidden}
+.stage-list-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;border-bottom:1px solid #eee9dd;background:linear-gradient(120deg,#fffdf7,#f8f5ec)}
+.inactive-toggle{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;color:#606979;font-size:.72rem;font-weight:800}
+.inactive-toggle input{accent-color:#9C7C2E}
+.stage-table-wrap{overflow:auto}
+.stage-table{width:100%;border-collapse:collapse;min-width:680px}
+.stage-table th,.stage-table td{padding:11px 12px;border-bottom:1px solid #f0ede5;text-align:right;font-size:.75rem}
+.stage-table th{background:#fbfaf6;color:#657083;font-weight:900;white-space:nowrap}
+.stage-table td{color:#263043}
+.stage-table tr:last-child td{border-bottom:0}
+.stage-table .center{text-align:center}
+.stage-table .num{width:55px;text-align:center;color:#7d8490}
+.order-badge,.usage-badge,.state-badge{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border-radius:999px;font-size:.66rem;font-weight:800}
+.order-badge{min-width:28px;padding:4px 8px;background:#f7f0d7;color:#705812}
+.usage-badge{padding:5px 8px;background:#f3f5f8;color:#626c7b}
+.state-badge{padding:5px 9px}
+.state-badge.on{background:#eaf8ef;color:#18804c}
+.state-badge.off{background:#eff0f2;color:#687182}
+.row-actions{display:flex;justify-content:center;gap:6px}
+.row-action{display:grid;place-items:center;width:31px;height:31px;border:1px solid #e4dfd3;border-radius:8px;background:#fff;color:#6a7483;cursor:pointer}
+.row-action.edit{color:#98751a}
+.row-action.activate{color:#18804c}
+.row-action.deactivate{color:#a55d16}
+.row-action:disabled{opacity:.35;cursor:not-allowed}
+.stage-empty{display:flex;min-height:155px;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#737d8b;font-size:.78rem}
+.stage-empty>i{font-size:1.7rem;color:#b7ad91}
+.stage-empty strong{color:#303a4c}
+.stage-footnote{display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px dashed #d8c98f;border-radius:11px;background:#fffdf7;color:#66531a;font-size:.77rem}
+.stage-footnote b{color:#3e3418}
+.stage-access{display:flex;min-height:60vh;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#6a7280}
+.stage-access i{font-size:2rem;color:#9c7c2e}
+.stage-access h3{margin:0;font-size:1rem}
+.stage-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(16,21,33,.25);border-top-color:#101521;border-radius:50%;animation:stageSpin .7s linear infinite}
+.stage-spinner.dark{width:22px;height:22px;border-color:#ddd5be;border-top-color:#9c7c2e}
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private List<ProductionStageAdminDto> stages = new();
+    private string stageName = "";
+    private int? editingStageId;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool showInactive;
+    private bool messageIsError;
+    private string message = "";
+
+    private IEnumerable<ProductionStageAdminDto> VisibleStages =>
+        showInactive ? stages : stages.Where(x => x.IsActive);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (!PermissionService.IsLoaded)
+            await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+        permissions = PermissionService.GetModule("SCR_BOM");
+        if (permissions?.CanView == true)
+            await LoadStages();
+        else
+            isLoading = false;
+    }
+
+    private async Task LoadStages()
+    {
+        isLoading = true;
+        try
+        {
+            stages = await StageService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageIsError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveStage()
+    {
+        if (isSaving) return;
+        if (string.IsNullOrWhiteSpace(stageName))
+        {
+            ShowMessage("أدخل اسم المرحلة.", true);
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            if (editingStageId.HasValue)
+            {
+                await StageService.UpdateNameAsync(editingStageId.Value, stageName, UserSession.UserID);
+                ShowMessage("تم تعديل اسم المرحلة.", false);
+            }
+            else
+            {
+                await StageService.AddAsync(stageName, UserSession.UserID);
+                ShowMessage("تمت إضافة المرحلة. اربطها الآن بالوصفة المطلوبة.", false);
+            }
+
+            stageName = "";
+            editingStageId = null;
+            await LoadStages();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(ex.Message, true);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void BeginEdit(ProductionStageAdminDto stage)
+    {
+        if (stage.IsReferenced || permissions?.CanEdit != true) return;
+        editingStageId = stage.StageID;
+        stageName = stage.StageNameAr;
+        message = "";
+    }
+
+    private void CancelEdit()
+    {
+        editingStageId = null;
+        stageName = "";
+        message = "";
+    }
+
+    private async Task ToggleActive(ProductionStageAdminDto stage)
+    {
+        if (stage.IsReferenced || permissions?.CanEdit != true) return;
+        var targetActive = !stage.IsActive;
+        if (!targetActive)
+        {
+            var confirmed = await JS.InvokeAsync<bool>("confirm", $"هل تريد إيقاف المرحلة «{stage.StageNameAr}»؟");
+            if (!confirmed) return;
+        }
+
+        isSaving = true;
+        try
+        {
+            await StageService.SetActiveAsync(stage.StageID, targetActive, UserSession.UserID);
+            ShowMessage(targetActive ? "تم تفعيل المرحلة." : "تم إيقاف المرحلة.", false);
+            if (editingStageId == stage.StageID) CancelEdit();
+            await LoadStages();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(ex.Message, true);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ShowMessage(string text, bool isError)
+    {
+        message = text;
+        messageIsError = isError;
+    }
+}

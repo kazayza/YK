@@ -7,7 +7,7 @@
 @inject UserSessionService UserSession
 @inject NavigationManager Navigation
 
-<PageTitle>قيد يومية يدوي - Gold Edition</PageTitle>
+<PageTitle>قيد يومية يدوي -   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -90,9 +90,9 @@ else
                             <td><span class="amount-luxury" style="background:#eff6ff;color:#2563eb;border-color:#dbeafe">@journalDto.Details.Sum(d=>d.DebitAmount).ToString("#,##0.00")</span></td>
                             <td><span class="amount-luxury" style="background:#fef3c7;color:#d97706;border-color:#fde68a">@journalDto.Details.Sum(d=>d.CreditAmount).ToString("#,##0.00")</span></td>
                             <td colspan="3">
-                                @if(!IsBalanced){<span style="color:#dc2626;font-size:.78rem;font-weight:800">⚠️ الفرق: @Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount) - journalDto.Details.Sum(d=>d.CreditAmount)).ToString("#,##0.00") — يجب أن يتساوى المدين والدائن</span>}
-                                else if(journalDto.Details.Sum(d=>d.DebitAmount)==0){<span style="color:#dc2626;font-size:.78rem">⚠️ لا يمكن حفظ قيد صفري</span>}
-                                else{<span style="color:#059669;font-size:.78rem">✅ متوازن — جاهز للحفظ</span>}
+                                @if(!IsBalanced){<span style="color:#dc2626;font-size:.78rem;font-weight:800"><i class=bi-exclamation-triangle-fill></i> الفرق: @Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount) - journalDto.Details.Sum(d=>d.CreditAmount)).ToString("#,##0.00") — يجب أن يتساوى المدين والدائن</span>}
+                                else if(journalDto.Details.Sum(d=>d.DebitAmount)==0){<span style="color:#dc2626;font-size:.78rem"><i class=bi-exclamation-triangle-fill></i> لا يمكن حفظ قيد صفري</span>}
+                                else{<span style="color:#059669;font-size:.78rem"><i class=bi-check-circle-fill></i> متوازن — جاهز للحفظ</span>}
                             </td>
                         </tr>
                     </tbody>
@@ -103,7 +103,7 @@ else
         @if(!string.IsNullOrEmpty(msg)){<div class="msg-luxury @(msgOk?"msg-success":"msg-error")">@msg</div>}
         else if(!IsBalanced && journalDto.Details.Any(d=>d.AccountID>0 && (d.DebitAmount>0 || d.CreditAmount>0)))
         {
-            <div class="msg-luxury msg-error">⚠️ القيد غير متوازن — مدين: @(journalDto.Details.Sum(d=>d.DebitAmount).ToString("#,##0.00")) — دائن: @(journalDto.Details.Sum(d=>d.CreditAmount).ToString("#,##0.00")) — الفرق: @(Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount)-journalDto.Details.Sum(d=>d.CreditAmount)).ToString("#,##0.00"))</div>
+            <div class="msg-luxury msg-error"><i class=bi-exclamation-triangle-fill></i> القيد غير متوازن — مدين: @(journalDto.Details.Sum(d=>d.DebitAmount).ToString("#,##0.00")) — دائن: @(journalDto.Details.Sum(d=>d.CreditAmount).ToString("#,##0.00")) — الفرق: @(Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount)-journalDto.Details.Sum(d=>d.CreditAmount)).ToString("#,##0.00"))</div>
         }
 
         <div class="actions-bar-luxury">
@@ -113,44 +113,56 @@ else
             <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">إلغاء</button>
             <div style="margin-right:auto;display:flex;gap:8px;align-items:center">
                 <span style="font-size:.75rem;color:#6b7280">الحسابات المتاحة: @accounts.Count</span>
-                @if(accounts.Count==0){<span style="font-size:.75rem;color:#dc2626;font-weight:800">⚠️ لا توجد حسابات - تأكد من شجرة الحسابات</span>}
+                @if(accounts.Count==0){<span style="font-size:.75rem;color:#dc2626;font-weight:800"><i class=bi-exclamation-triangle-fill></i> لا توجد حسابات - تأكد من شجرة الحسابات</span>}
             </div>
         </div>
     }
 </div>
 
-@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'>✕</button></div></div>}
+@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'><i class=bi-x-lg></i></button></div></div>}
 }
 
 <style>
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
 .luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1200px;margin:0 auto}
 .luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
-.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:radial-gradient(ellipse at center,rgba(212,175,55,.15) 0%,transparent 70%);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px;object-fit:contain}
-.lh-title{font-size:1.2rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
-.lh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.lh-badge{display:flex;align-items:center;gap:5px;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.15);padding:5px 12px;border-radius:999px;font-size:.72rem;font-weight:700;color:var(--gold)}.lh-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15);animation:pulse 2s infinite}@@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:12px;font-weight:700;font-size:.84rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);box-shadow:0 3px 12px rgba(212,175,55,.25)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-luxury svg{width:14px;height:14px}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
-.form-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.form-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:12px;font-weight:700;font-size:.84rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}
+.form-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.form-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
 .fc-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
-.fc-header{padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.fc-header h3{margin:0;font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px}.fc-header h3 svg{width:16px;height:16px;color:var(--gold-dark)}
-.fc-body{padding:20px}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid-luxury .fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:42px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}.fg textarea{height:auto;padding:12px}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
-.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
-.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
-.table-responsive{overflow-x:auto}.table-luxury{width:100%;border-collapse:collapse;min-width:900px}.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap;background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}.table-luxury td{padding:10px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}.table-luxury tbody tr:hover{background:rgba(212,175,55,.03)}
-.th-num{width:45px;text-align:center}.th-actions{text-align:center;width:60px}.td-num{text-align:center;color:#9ca3af;font-size:.78rem}
-.doc-num-luxury{color:var(--gold-dark);font-weight:800;font-size:.82rem;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.15);padding:4px 10px;border-radius:8px}
+.fc-header{padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}
+.fc-header h3{margin:0;font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px}
+.fc-header h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.fc-body{padding:20px}
+.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid-luxury .fg.full{grid-column:1/-1}
+.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}
+.fg input,.fg select,.fg textarea{width:100%;height:42px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:12px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6;transition:.2s}
+.fg textarea{height:auto;padding:12px}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(212,175,55,.08)}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}
+.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}
+.card-head-luxury h3 svg{width:16px;height:16px;color:var(--gold-dark)}
+.table-responsive{overflow-x:auto}
+.table-luxury{width:100%;border-collapse:collapse;min-width:900px}
+.table-luxury th{padding:12px 14px;font-size:.76rem;font-weight:800;color:#6b7280;text-align:right;border-bottom:2px solid #e8e2d0;white-space:nowrap;background:linear-gradient(135deg,#fcfaf6,#f8f6f0)}
+.table-luxury td{padding:10px 14px;font-size:.84rem;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+.th-actions{text-align:center;width:60px}
 .amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}
-.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc) 15%,transparent)}
-.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}.act-btn svg{width:13px;height:13px}
+.status-badge-luxury{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--sc);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc) 15%,transparent)}
+.act-btn{width:30px;height:30px;border-radius:9px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}
+.act-btn svg{width:13px;height:13px}
 .actions-bar-luxury{display:flex;gap:10px;justify-content:flex-end;align-items:center;background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px 18px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
-.msg-luxury{padding:12px 16px;border-radius:12px;font-size:.84rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
-.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
-.toast-luxury{position:fixed;bottom:20px;left:20px;z-index:1050;animation:toastIn .35s ease}.toast-card-luxury{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;min-width:280px;font-weight:600;font-size:.84rem;box-shadow:0 12px 32px rgba(0,0,0,.12)}.toast-card-luxury.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}.toast-card-luxury.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.toast-card-luxury button{background:none;border:none;cursor:pointer;color:inherit;opacity:.6;margin-right:auto}
-@@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.msg-luxury{padding:12px 16px;border-radius:12px;font-size:.84rem;font-weight:600}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
 </style>
 
 @code {
@@ -215,16 +227,16 @@ else
     {
         msg=""; msgOk=true;
         // Validation مفصل
-        if (string.IsNullOrWhiteSpace(journalDto.Description)){ msg="⚠️ أدخل البيان / الوصف - حقل مطلوب"; msgOk=false; StateHasChanged(); return; }
-        if (accounts.Count==0){ msg="⚠️ لا توجد حسابات محاسبية - تأكد من إنشاء شجرة حسابات أولاً"; msgOk=false; StateHasChanged(); return; }
+        if (string.IsNullOrWhiteSpace(journalDto.Description)){ msg=" أدخل البيان / الوصف - حقل مطلوب"; msgOk=false; StateHasChanged(); return; }
+        if (accounts.Count==0){ msg=" لا توجد حسابات محاسبية - تأكد من إنشاء شجرة حسابات أولاً"; msgOk=false; StateHasChanged(); return; }
         var validLines = journalDto.Details.Where(d=>d.AccountID>0).ToList();
-        if (validLines.Count<2){ msg=$"⚠️ أدخل حسابين على الأقل - الحالي: {validLines.Count} حساب فقط - اختر حساب من القائمة المنسدلة"; msgOk=false; StateHasChanged(); return; }
+        if (validLines.Count<2){ msg=$" أدخل حسابين على الأقل - الحالي: {validLines.Count} حساب فقط - اختر حساب من القائمة المنسدلة"; msgOk=false; StateHasChanged(); return; }
         var emptyAmount = validLines.Where(d=>d.DebitAmount==0 && d.CreditAmount==0).ToList();
-        if (emptyAmount.Any()){ msg=$"⚠️ يوجد {emptyAmount.Count} سطر بحساب بدون مبلغ - أدخل مدين أو دائن"; msgOk=false; StateHasChanged(); return; }
+        if (emptyAmount.Any()){ msg=$" يوجد {emptyAmount.Count} سطر بحساب بدون مبلغ - أدخل مدين أو دائن"; msgOk=false; StateHasChanged(); return; }
         var bothSides = validLines.Where(d=>d.DebitAmount>0 && d.CreditAmount>0).ToList();
-        if (bothSides.Any()){ msg="⚠️ لا يمكن أن يكون نفس السطر مدين ودائن معاً - اختر جانب واحد فقط"; msgOk=false; StateHasChanged(); return; }
-        if (!IsBalanced){ var diff=Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount)-journalDto.Details.Sum(d=>d.CreditAmount)); msg=$"⚠️ القيد غير متوازن - الفرق: {diff:#,##0.00} - مدين: {journalDto.Details.Sum(d=>d.DebitAmount):#,##0.00} ≠ دائن: {journalDto.Details.Sum(d=>d.CreditAmount):#,##0.00}"; msgOk=false; StateHasChanged(); return; }
-        if (journalDto.Details.Sum(d=>d.DebitAmount)==0){ msg="⚠️ لا يمكن حفظ قيد صفري - أدخل مبالغ"; msgOk=false; StateHasChanged(); return; }
+        if (bothSides.Any()){ msg=" لا يمكن أن يكون نفس السطر مدين ودائن معاً - اختر جانب واحد فقط"; msgOk=false; StateHasChanged(); return; }
+        if (!IsBalanced){ var diff=Math.Abs(journalDto.Details.Sum(d=>d.DebitAmount)-journalDto.Details.Sum(d=>d.CreditAmount)); msg=$" القيد غير متوازن - الفرق: {diff:#,##0.00} - مدين: {journalDto.Details.Sum(d=>d.DebitAmount):#,##0.00} ≠ دائن: {journalDto.Details.Sum(d=>d.CreditAmount):#,##0.00}"; msgOk=false; StateHasChanged(); return; }
+        if (journalDto.Details.Sum(d=>d.DebitAmount)==0){ msg=" لا يمكن حفظ قيد صفري - أدخل مبالغ"; msgOk=false; StateHasChanged(); return; }
 
         isSaving=true; StateHasChanged();
         try
@@ -232,7 +244,7 @@ else
             if (JournalId==0)
             {
                 var newId = await AccountingService.InsertJournalAsync(journalDto, UserSession.UserID);
-                toast=$"تم حفظ القيد {journalDto.JournalNumber} كمسودة ✅ ID={newId}"; toastOk=true;
+                toast=$"تم حفظ القيد {journalDto.JournalNumber} كمسودة  ID={newId}"; toastOk=true;
                 Navigation.NavigateTo("/journal-entries");
             }
             else
@@ -240,11 +252,11 @@ else
                 await AccountingService.DeleteJournalAsync(JournalId, UserSession.UserID);
                 journalDto.JournalID=0;
                 var newId = await AccountingService.InsertJournalAsync(journalDto, UserSession.UserID);
-                toast=$"تم تحديث القيد {journalDto.JournalNumber} ✅ ID={newId}"; toastOk=true;
+                toast=$"تم تحديث القيد {journalDto.JournalNumber}  ID={newId}"; toastOk=true;
                 Navigation.NavigateTo("/journal-entries");
             }
         }
-        catch(Exception ex){ msg="❌ خطأ: "+ex.Message; msgOk=false; toast="❌ "+ex.Message; toastOk=false; }
+        catch(Exception ex){ msg=" خطأ: "+ex.Message; msgOk=false; toast=" "+ex.Message; toastOk=false; }
         finally{ isSaving=false; StateHasChanged(); }
     }
 
@@ -262,7 +274,7 @@ else
                 if (latest!=null)
                 {
                     await AccountingService.PostJournalAsync(latest.JournalID, UserSession.UserID);
-                    toast="تم حفظ وترحيل القيد ✅"; toastOk=true;
+                    toast="تم حفظ وترحيل القيد "; toastOk=true;
                 }
             }
             catch(Exception ex){ toast=ex.Message; toastOk=false; }

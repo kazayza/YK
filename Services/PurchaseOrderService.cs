@@ -1243,7 +1243,7 @@ tr:nth-child(even){{background:#f8fafc}}
 .footer{{text-align:center;margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}}
 </style></head><body>
 <div class='header'>
-    <div class='company'>مصنع واي كي كوتينج لمستحضرات التجميل</div>
+    <div class='company'>مصنع واي كي كوتينج  </div>
     <div class='doc-title'>أمر شراء</div>
     <div class='doc-num'>{header.PONumber}</div>
 </div>

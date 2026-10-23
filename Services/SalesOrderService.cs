@@ -608,7 +608,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             ws.Style.Font.FontName = "Tajawal";
             ws.Style.Font.FontSize = 11;
 
-            ws.Cell(1, 1).Value = "تقرير أوامر البيع - واي كي كوتينج Gold Edition";
+            ws.Cell(1, 1).Value = "تقرير أوامر البيع - واي كي كوتينج   ";
             ws.Range(1, 1, 1, 10).Merge().Style.Font.Bold = true;
             ws.Range(1, 1, 1, 10).Style.Font.FontSize = 14;
             ws.Range(1, 1, 1, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -696,7 +696,7 @@ tr:nth-child(even){{background:#fcfaf6}}
 .footer{{text-align:center;margin-top:30px;padding-top:12px;border-top:1px solid #e8e2d0;font-size:10px;color:#9ca3af}}
 </style></head><body>
 <div class='header'>
-    <div class='company'>واي كي كوتينج لمستحضرات التجميل - YK Coatings</div>
+    <div class='company'>واي كي كوتينج   - YK Coatings</div>
     <div class='doc-title'>أمر بيع</div>
     <div class='doc-num'>{header.OrderNumber}</div>
 </div>
@@ -724,7 +724,7 @@ tr:nth-child(even){{background:#fcfaf6}}
     </div>
 </div>
 {(string.IsNullOrWhiteSpace(header.Notes) ? "" : $"<div style='margin-top:16px'><strong>ملاحظات:</strong> {header.Notes}</div>")}
-<div class='footer'>تم الطباعة: {DateTime.Now:dd/MM/yyyy hh:mm tt} - واي كي كوتينج ERP Gold Edition</div>
+<div class='footer'>تم الطباعة: {DateTime.Now:dd/MM/yyyy hh:mm tt} - واي كي كوتينج ERP   </div>
 </body></html>";
 
             await _audit.WriteAuditLogAsync(userId, 5, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"طباعة أمر بيع: {header.OrderNumber}");

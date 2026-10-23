@@ -8,7 +8,7 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
-<PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف") - Gold Edition Pro</PageTitle>
+<PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف") -    Pro</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -26,7 +26,7 @@ else
                 <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
                 <div class="lh-text">
                     <h2 class="lh-title">@(Id==0?"مصروف جديد":"تعديل مصروف")</h2>
-                    <p class="lh-subtitle">Gold Edition Pro — مركز تكلفة اختياري + فترة محاسبية + قيد أوتوماتيك</p>
+                    <p class="lh-subtitle">   Pro — مركز تكلفة اختياري + فترة محاسبية + قيد أوتوماتيك</p>
                 </div>
             </div>
             <div class="lh-actions">
@@ -58,7 +58,7 @@ else
                             <option value="0">— اختر الفترة —</option>
                             @foreach(var p in filteredPeriods){<option value="@p.PeriodID">@p.PeriodName (@p.StartDate.ToString("MMM yyyy"))</option>}
                         </select>
-                        <small style="color:@(filteredPeriods.Any()? "#8B95A5" : "#dc2626")">@(filteredPeriods.Any() ? $"{filteredPeriods.Count} فترة متاحة" : "⚠️ لا توجد فترات - تأكد من السنة المالية")</small>
+                        <small style="color:@(filteredPeriods.Any()? "#8B95A5" : "#dc2626")">@(filteredPeriods.Any() ? $"{filteredPeriods.Count} فترة متاحة" : " لا توجد فترات - تأكد من السنة المالية")</small>
                     </div>
 
                     <div class="fg full" style="grid-column:1/-1;height:1px;background:#e8e2d0;margin:8px 0"></div>
@@ -68,7 +68,7 @@ else
                             <option value="0">— اختر حساب —</option>
                             @foreach(var acc in expenseAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr (@acc.AccountTypeName)</option>}
                         </select>
-                        @if(!expenseAccounts.Any()){<small style="color:#dc2626">⚠️ لا توجد حسابات - @allAccounts.Count حساب كلي. راجع شجرة الحسابات</small>}
+                        @if(!expenseAccounts.Any()){<small style="color:#dc2626"><i class=bi-exclamation-triangle-fill></i> لا توجد حسابات - @allAccounts.Count حساب كلي. راجع شجرة الحسابات</small>}
                     </div>
                     <div class="fg"><label>حساب الدائن (خزينة/بنك)</label>
                         <select @bind="creditSelected">
@@ -147,19 +147,32 @@ else
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E}
 .luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1100px;margin:0 auto}
 .luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid rgba(212,175,55,.18)}
-.lh-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-.lh-content{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.lh-right{display:flex;align-items:center;gap:10px}.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}.lh-logo{width:26px;height:26px}
-.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
-.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2)}.btn-ghost-luxury{background:#fff;border:1.5px solid #e8e2d0;color:#6b7280}.btn-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@@keyframes spin{to{transform:rotate(360deg)}}
-.form-card-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.06)}.fc-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
-.fc-header{padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}.fc-header h3{margin:0;font-size:.92rem;font-weight:800;color:#0A0F1E}
-.fc-body{padding:20px}.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fg.full{grid-column:1/-1}.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6}.fg textarea{height:auto;padding:10px 12px}.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff}.fg input.readonly{background:#f3f4f6;color:#6b7280}
-.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}.type-3{background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}
+.lh-logo-wrap{width:42px;height:42px;border-radius:12px;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.18);display:flex;align-items:center;justify-content:center}
+.lh-logo{width:26px;height:26px}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;font-family:'Tajawal'}
+.btn-primary-luxury{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2)}
+.form-card-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.06)}
+.fc-gold-line{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),var(--gold-dark),var(--gold),transparent)}
+.fc-header{padding:16px 20px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8}
+.fc-header h3{margin:0;font-size:.92rem;font-weight:800;color:#0A0F1E}
+.fc-body{padding:20px}
+.form-grid-luxury{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fg.full{grid-column:1/-1}
+.fg label{font-size:.78rem;font-weight:700;color:#374151;margin-bottom:6px;display:block}
+.fg input,.fg select,.fg textarea{width:100%;height:40px;padding:0 12px;border:1.5px solid #e8e2d0;border-radius:10px;font-size:.84rem;font-family:'Tajawal';outline:none;background:#fcfaf6}
+.fg textarea{height:auto;padding:10px 12px}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold);background:#fff}
+.fg input.readonly{background:#f3f4f6;color:#6b7280}
+.coa-type{font-size:.68rem;padding:3px 8px;border-radius:6px;font-weight:800;border:1px solid}
+.type-3{background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}
 .fc-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end;flex-wrap:wrap}
-.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
-.no-access-luxury{text-align:center;padding:80px 20px;background:#fff;border-radius:20px;border:1px solid #e8e2d0}
+.msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
+.msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
 </style>
 
 @code {
@@ -390,7 +403,7 @@ else
             else
             {
                 await AccountingService.UpdateExpenseAsync(dto, UserSession.UserID);
-                msg = "تم تحديث المصروف ✅"; isError = false;
+                msg = "تم تحديث المصروف "; isError = false;
             }
         }
         catch (Exception ex) { msg = ex.Message; isError = true; }

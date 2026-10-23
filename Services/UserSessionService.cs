@@ -95,6 +95,20 @@ await _storage.SetAsync("s_rcode", roleCode);
             NotifyStateChanged();
         }
 
+        public async Task UpdateFullNameAsync(int userId, string fullName)
+        {
+            if (userId <= 0 || !IsLoggedIn || UserID != userId)
+                throw new UnauthorizedAccessException("لا يمكن تحديث اسم جلسة مستخدم آخر.");
+
+            var normalizedName = fullName?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(normalizedName))
+                throw new ArgumentException("الاسم الكامل مطلوب.", nameof(fullName));
+
+            FullName = normalizedName;
+            await _storage.SetAsync("s_fname", FullName);
+            NotifyStateChanged();
+        }
+
         // === توافق مع الكود القديم ===
         public void Login(
             int userId, string username, string fullName,

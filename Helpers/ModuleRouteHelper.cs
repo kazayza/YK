@@ -47,7 +47,7 @@
                 "SCR_SRET" => "/sales-returns",
                 "SCR_RECV" => "/receipt-vouchers",
 
-                // الخزينة - Gold Edition
+                // الخزينة -   
                 "SCR_CASHBOX"    => "/cash-boxes",
                 "SCR_CASHBOXES"  => "/cash-boxes",
                 "SCR_BANKS"      => "/cash-boxes",
@@ -58,7 +58,7 @@
                 "SCR_DAILYCLOSE" => "/daily-closing",
                 "SCR_TREASURY"   => "/treasury-dashboard",
 
-                // الحسابات - Gold Edition Pro
+                // الحسابات -    Pro
                 "SCR_COA"      => "/chart-of-accounts",
                 "SCR_JV"       => "/journal-entries",
                 "SCR_JV_NEW"   => "/journal-entries/new",

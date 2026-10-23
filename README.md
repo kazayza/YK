@@ -10,8 +10,9 @@
 | الوصول للبيانات | Dapper + Microsoft.Data.SqlClient (SQL parameterized) |
 | قاعدة البيانات | SQL Server (سحابية) |
 | Excel | ClosedXML |
-| الواجهة | عربية RTL · خط Cairo · Bootstrap 5 + Bootstrap Icons |
-| الشعارات | `wwwroot/images/yk-logo.svg` · `yk-icon.svg` |
+| الواجهة | عربية RTL · خط **Tajawal** (محلي) · Bootstrap 5 + **Bootstrap Icons 1.11.3 (محلي)** |
+| الهوية | ذهبي `#D4AF37` على كحلي `#070B14` — `wwwroot/yk-theme-gold.css` |
+| الشعارات | `wwwroot/images/yk-logo-gold.png` · `yk-logo-white.png` · `yk-icon-gold.png` |
 
 ---
 
@@ -44,16 +45,19 @@ YkWeb/
 ├── Components/
 │   ├── App.razor · Routes.razor · _Imports.razor
 │   ├── Layout/   MainLayout · EmptyLayout · NavMenu (+css)
-│   └── Pages/    ~80 صفحة (قوائم + نماذج إدخال + تقارير)
-├── Services/     47 خدمة — كلها ترث BaseDbService
-├── Models/       23 ملف DTO (List / Edit / Audit)
+│   └── Pages/    122 صفحة (قوائم + نماذج إدخال + تقارير)
+├── Services/     60 خدمة — كلها ترث BaseDbService
+├── Models/       31 ملف DTO (List / Edit / Audit)
 ├── Helpers/      ArabicSearchHelper · ModuleRouteHelper · NavMenuIcons
 ├── wwwroot/
-│   ├── yk-theme.css   ← نظام التصميم الموحد (أزرق #2563eb / برتقالي #f97316)
-│   ├── app.css · js/app.js · images/ · sounds/
+│   ├── yk-theme-gold.css  ← **مصدر الحقيقة** (ذهبي #D4AF37 / كحلي #070B14)
+│   ├── yk-hr-overrides.css ← توحيد هوية صفحات الموارد البشرية
+│   ├── yk-icons.css · bootstrap-icons/ · fonts/ · js/ · images/
+├── database/     ← schema + seed + سكربت تنظيف بيانات الاختبار
+├── tests/e2e/    ← حزمة اختبار E2E في المتصفح (Playwright)
 ├── memory-bank/  ← بنك الذاكرة (اقرأه أولاً)
 ├── skills/       ← مهارات جاهزة للمهام المتكررة
-└── docs/         ← المراجعة الاحترافية الشاملة
+└── docs/         ← التقارير + ICON-MAPPING.md
 ```
 
 ---

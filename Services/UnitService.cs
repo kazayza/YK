@@ -200,7 +200,7 @@ namespace YKCoatings.Services
 
             await _audit.WriteAuditLogAsync(userId, 1, "UnitConversions", newId.ToString(),
                 moduleName: "SCR_UNITS",
-                description: $"إضافة تحويل وحدة: {fromUnitId} → {toUnitId} (×{factor})");
+                description: $"إضافة تحويل وحدة: {fromUnitId}  {toUnitId} (×{factor})");
 
             return newId;
         }

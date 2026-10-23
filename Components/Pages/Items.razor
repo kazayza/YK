@@ -40,7 +40,7 @@ else
                     <div class="ph-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="ph-logo" /></div>
                     <div class="ph-text">
                         <h2 class="page-title-hybrid">المواد والمنتجات</h2>
-                        <p class="page-subtitle-hybrid">إدارة الأصناف والخامات والمنتجات التامة - @filteredItems.Count صنف متاح حسب صلاحياتك</p>
+                        <p class="page-subtitle-hybrid">إدارة الأصناف والخامات والمنتجات التامة - @filteredItems.Count صنف متاح</p>
                     </div>
                 </div>
                 <div class="header-actions-hybrid">
@@ -108,7 +108,7 @@ else
             <div class="filter-row-luxury">
                 <div class="filter-field-luxury search-field-luxury">
                     <svg class="ff-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
-                    <input type="text" class="filter-input-luxury" placeholder="بحث بالاسم أو الكود... (حسب صلاحياتك)"
+                    <input type="text" class="filter-input-luxury" placeholder="بحث بالاسم أو الكود... "
                            @bind="searchText" @bind:event="oninput" @bind:after="Search" />
                     @if (!string.IsNullOrEmpty(searchText))
                     {
@@ -318,8 +318,6 @@ else
 :root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--black3:#121A2E;--border-gold:rgba(212,175,55,.18);--card-radius:16px}
 .items-page{display:flex;flex-direction:column;gap:14px;padding:0 2px;font-family:'Tajawal',sans-serif}
 .luxury-animate>*{animation:fadeUp .5s cubic-bezier(.4,0,.2,1) both}
-@@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-
 /* HEADER HYBRID DARK + LOGO */
 .page-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,var(--black3) 100%);border-radius:20px;padding:20px 24px;overflow:hidden;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25),inset 0 1px 0 rgba(212,175,55,.08)}
 .ph-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
@@ -345,7 +343,6 @@ else
 .btn-export-hybrid{background:rgba(255,255,255,.06);color:#cbd5e1;border:1px solid rgba(212,175,55,.12)}
 .btn-export-hybrid:hover{background:rgba(255,255,255,.1);color:#F5E6C8}
 .btn-modern svg{width:14px;height:14px}
-
 /* STATS COMPACT LIGHT */
 .stats-section-compact{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:12px;box-shadow:0 1px 8px rgba(0,0,0,.03)}
 .stats-grid-compact{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
@@ -357,7 +354,6 @@ else
 .scc-icon svg{width:14px;height:14px}
 .scc-count{font-size:1.15rem;font-weight:900;color:#0A0F1E}
 .scc-label{font-size:.66rem;color:#8B95A5;font-weight:700;margin-top:4px}
-
 /* FILTER LUXURY */
 .filter-bar-luxury{position:relative;background:#fff;border:1px solid #e8e2d0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 8px rgba(0,0,0,.03);overflow:hidden}
 .fb-gold-line{position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
@@ -377,7 +373,6 @@ else
 .btn-sm-luxury.danger{background:#fef2f2;color:#dc2626;border-color:#fecaca}
 .btn-sm-luxury.danger-outline{background:#fff;color:#dc2626;border-color:#fecaca}
 .btn-sm-luxury.ghost{background:transparent;border-color:#e8e2d0;color:#64748b}
-
 /* CHIPS */
 .chips-bar-luxury{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .chip-luxury{display:flex;align-items:center;gap:6px;background:#fcfaf6;border:1px solid #e8e2d0;border-radius:999px;padding:4px 10px;font-size:.72rem;font-weight:600;color:#475569}
@@ -385,13 +380,11 @@ else
 .chip-remove-luxury{width:18px;height:18px;border:none;background:#f1efe8;border-radius:50%;color:#8B95A5;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .chip-remove-luxury svg{width:8px;height:8px}
 .chip-clear-all-luxury{background:none;border:none;color:#dc2626;font-size:.7rem;font-weight:700;cursor:pointer;text-decoration:underline;font-family:'Tajawal'}
-
 /* BULK */
 .bulk-actions-bar-luxury{background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.04));border:1px solid rgba(212,175,55,.15);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .bulk-count-luxury{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--gold-dark)}
 .bulk-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.15)}
 .bulk-buttons-luxury{display:flex;gap:6px}
-
 /* TABLE LUXURY - DRIBBBLE INSPIRED */
 .table-wrapper-luxury.dribbble-inspired{background:#ffffff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 1px 12px rgba(0,0,0,.04)}
 .table-responsive-luxury{overflow-x:auto}
@@ -414,7 +407,6 @@ else
 .col-status-luxury{width:90px;text-align:center}
 .col-actions-luxury{width:50px;text-align:center}
 .cb-gold{accent-color:var(--gold);width:16px;height:16px;cursor:pointer}
-
 /* PRODUCT THUMB - DRIBBBLE */
 .product-thumb{position:relative;width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;overflow:hidden;transition:all .2s}
 .product-thumb.large{width:100%;height:88px;border-radius:12px}
@@ -435,7 +427,6 @@ else
 .category-badge.type-pkg{background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
 .category-badge.type-semi{background:#fffbeb;color:#b45309;border-color:#fde68a}
 .category-badge.type-fin{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
-
 /* INVENTORY STATUS - DRIBBBLE STYLE */
 .inv-status{display:flex;align-items:center;gap:6px}
 .inv-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
@@ -456,7 +447,6 @@ else
 .availability-badge.active{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
 .availability-badge.archived{background:#f4f4f5;color:#6b7280;border-color:#e5e7eb}
 .availability-badge.small{padding:2px 8px;font-size:.64rem}
-
 /* DROPDOWN LUXURY */
 .dropdown-luxury{position:relative;display:inline-block}
 .dropdown-btn-luxury{width:28px;height:28px;border:1px solid #e5e7eb;background:#fff;border-radius:8px;color:#6b7280;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
@@ -464,13 +454,11 @@ else
 .dropdown-btn-luxury svg{width:14px;height:14px}
 .dropdown-menu-luxury{position:absolute;left:0;top:calc(100% + 6px);background:#fff;border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.04);min-width:160px;z-index:100;display:none;overflow:hidden;border:1px solid #e5e7eb}
 .dropdown-menu-luxury.show{display:block;animation:dropIn .2s}
-@@keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 .dropdown-item-luxury{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:transparent;text-align:right;cursor:pointer;font-size:.78rem;font-weight:600;color:#374151;transition:all .15s;font-family:'Tajawal'}
 .dropdown-item-luxury:hover{background:#f9fafb}
 .dropdown-item-luxury.danger{color:#dc2626}
 .dropdown-item-luxury svg{width:14px;height:14px}
 .dropdown-divider-luxury{height:1px;background:#f4f4f5;margin:4px 0}
-
 /* GRID VIEW LUXURY - DRIBBBLE */
 .grid-view-luxury.dribbble-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
 .grid-card-luxury.dribbble-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:14px;position:relative;overflow:hidden;transition:all .3s;box-shadow:0 1px 8px rgba(0,0,0,.03)}
@@ -496,17 +484,12 @@ else
 .gc-btn:hover{background:#f9fafb;border-color:var(--gold);color:var(--gold-dark)}
 .gc-btn.primary{background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);border-color:var(--gold)}
 .gc-btn.primary:hover{filter:brightness(1.05);transform:translateY(-1px)}
-
 /* LOADING & EMPTY */
 .loading-state-luxury{text-align:center;padding:40px;background:#fff;border-radius:16px;border:1px solid #e8e2d0}
 .loader-luxury{width:32px;height:32px;border:2px solid rgba(212,175,55,.15);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px}
-@@keyframes spin{to{transform:rotate(360deg)}}
 .empty-state-luxury{text-align:center;padding:40px;background:#fff;border-radius:16px;border:1px dashed #e8e2d0}
 .empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold)}
 .empty-icon-luxury svg{width:28px;height:28px}
-
-/* MODAL LUXURY */
-.modal-overlay-luxury{position:fixed;inset:0;background:rgba(7,11,20,.55);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal-card-luxury{position:relative;background:#fff;border-radius:20px;padding:24px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.2);border:1px solid rgba(212,175,55,.12);animation:modalIn .25s}
 .modal-gold-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
 .modal-icon-luxury{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
@@ -524,22 +507,15 @@ else
 .btn-warning-modern{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff}
 .btn-danger-modern{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}
 .btn-secondary-modern{background:#f1f5f9;color:#475569}
-@@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
-
 /* TOAST LUXURY */
 .toast-notification-luxury{position:fixed;bottom:20px;left:20px;padding:12px 16px;border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.12);display:flex;align-items:center;gap:10px;font-size:.84rem;font-weight:600;z-index:1050;animation:slideIn .3s}
 .toast-notification-luxury.toast-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .toast-notification-luxury.toast-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
 .toast-close-luxury{width:20px;height:20px;border:none;background:rgba(0,0,0,.06);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit}
 .toast-close-luxury svg{width:10px;height:10px}
-@@keyframes slideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
-
 .no-access-card{text-align:center;padding:50px;background:#fff;border-radius:20px;border:1px solid #e8e2d0;box-shadow:0 4px 20px rgba(0,0,0,.04)}
 .no-access-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.12);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
 .no-access-icon svg{width:32px;height:32px}
-
-@@media(max-width:900px){.stats-grid-compact{grid-template-columns:repeat(3,1fr)}.grid-view-luxury{grid-template-columns:repeat(2,1fr)}.ph-content{flex-direction:column;align-items:flex-start}}
-@@media(max-width:600px){.stats-grid-compact{grid-template-columns:repeat(2,1fr)}.grid-view-luxury{grid-template-columns:1fr}.filter-row-luxury{flex-direction:column;align-items:stretch}}
 </style>
 
 @code {
@@ -622,11 +598,14 @@ else
         Search();
     }
 
-    private string SortIcon(string column)
+    private RenderFragment SortIcon(string column) => builder =>
     {
-        if (sortColumn != column) return "";
-        return sortAsc ? "▲" : "▼";
-    }
+        if (sortColumn != column) return;
+        builder.OpenElement(0, "i");
+        builder.AddAttribute(1, "class", "bi " + (sortAsc ? "bi-chevron-up" : "bi-chevron-down"));
+        builder.AddAttribute(2, "aria-hidden", "true");
+        builder.CloseElement();
+    };
 
     private void ClearSearch(){searchText = ""; Search();}
     private void ClearAllFilters(){searchText = ""; filterType = 0; Search();}
