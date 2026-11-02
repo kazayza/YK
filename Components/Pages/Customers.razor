@@ -8,8 +8,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Customers> Logger
 
-<PageTitle>العملاء - واي كي كوتينج   </PageTitle>
+<PageTitle>العملاء - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -41,12 +42,46 @@ else
         </div>
 
         <div class="stats-luxury">
-            <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="st-info"><span class="st-value">@stats.Total</span><span class="st-label">إجمالي العملاء</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalActive</span><span class="st-label">نشط</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalWholesale</span><span class="st-label">جملة</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalRetail</span><span class="st-label">تجزئة</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalBalance.ToString("#,##0")</span><span class="st-label">إجمالي الأرصدة</span></div><div class="st-gold-line"></div></div>
+            @if (!string.IsNullOrWhiteSpace(statsLoadError))
+            {
+                <div class="msg-luxury msg-error" role="alert" style="grid-column:1/-1">
+                    @statsLoadError
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="LoadStats" disabled="@isLoadingStats">
+                        @(isLoadingStats ? "جاري إعادة المحاولة..." : "إعادة تحميل الإحصائيات")
+                    </button>
+                </div>
+            }
+            @if (!hasLoadedStats && isLoadingStats && string.IsNullOrWhiteSpace(statsLoadError))
+            {
+                <div class="msg-luxury" role="status" style="grid-column:1/-1;background:#eff6ff;color:#1e3a8a;border:1px solid #bfdbfe">
+                    جاري تحميل إحصائيات العملاء...
+                </div>
+            }
+            @if (hasLoadedStats)
+            {
+                @if (isLoadingStats && string.IsNullOrWhiteSpace(statsLoadError))
+                {
+                    <div class="msg-luxury" role="status" style="grid-column:1/-1;background:#eff6ff;color:#1e3a8a;border:1px solid #bfdbfe">
+                        جاري تحديث إحصائيات العملاء...
+                    </div>
+                }
+                <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="st-info"><span class="st-value">@stats.Total</span><span class="st-label">إجمالي العملاء</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalActive</span><span class="st-label">نشط</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalWholesale</span><span class="st-label">جملة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalRetail</span><span class="st-label">تجزئة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@stats.TotalBalance.ToString("#,##0")</span><span class="st-label">إجمالي الأرصدة</span></div><div class="st-gold-line"></div></div>
+            }
         </div>
+
+        @if (!string.IsNullOrWhiteSpace(lookupsLoadError))
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                @lookupsLoadError
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadLookups" disabled="@isLoadingLookups">
+                    @(isLoadingLookups ? "جاري إعادة المحاولة..." : "إعادة تحميل الخيارات")
+                </button>
+            </div>
+        }
 
         <div class="filter-card-luxury">
             <div class="filter-grid-luxury">
@@ -66,10 +101,25 @@ else
 
         @if (isLoading)
         {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل العملاء...</p></div>}
+        else if (!string.IsNullOrWhiteSpace(loadError) && !pagedResult.Items.Any())
+        {
+            <div class="empty-luxury" role="alert">
+                <h4>تعذر تحميل قائمة العملاء</h4>
+                <p class="empty-sub">@loadError</p>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">إعادة المحاولة</button>
+            </div>
+        }
         else if (!pagedResult.Items.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا توجد بيانات مطابقة</h4></div>}
         else
         {
+            @if (!string.IsNullOrWhiteSpace(loadError))
+            {
+                <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                    @loadError
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">إعادة المحاولة</button>
+                </div>
+            }
             <div class="table-card-luxury">
                 <div class="table-responsive">
                     <table class="table-luxury">
@@ -219,6 +269,9 @@ else
     private string statusFilter = "1";
     private CustomerPagedResult pagedResult = new();
     private CustomerStatsDto stats = new();
+    private bool hasLoadedStats = false;
+    private bool isLoadingStats = false;
+    private string statsLoadError = string.Empty;
     private List<LookupDto>? customerGroups;
     private List<LookupDto>? salesReps;
     private bool isLoading = true;
@@ -228,6 +281,9 @@ else
     private CustomerListDto? selectedCustomer;
     private string dialogMessage = "";
     private string resultMessage = "";
+    private string loadError = string.Empty;
+    private string lookupsLoadError = string.Empty;
+    private bool isLoadingLookups = false;
     private bool resultSuccess = true;
 
     protected override async Task OnInitializedAsync()
@@ -236,16 +292,77 @@ else
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
         permissions = PermissionService.GetModule("SCR_CUSTOMERS");
         if (permissions == null || !permissions.CanView) return;
-        await LoadLookups();await LoadStats();await LoadData();
+        await LoadLookups();
+        await LoadStats();
+        await LoadData();
     }
-    private async Task LoadLookups(){customerGroups = await LookupService.GetCustomerGroupsAsync();salesReps = await LookupService.GetSalesRepsAsync();}
-    private async Task LoadStats(){stats = await CustomerService.GetCustomerStatsAsync();}
+
+    private async Task LoadLookups()
+    {
+        if (isLoadingLookups) return;
+        isLoadingLookups = true;
+
+        try
+        {
+            customerGroups = await LookupService.GetCustomerGroupsAsync();
+            salesReps = await LookupService.GetSalesRepsAsync();
+            lookupsLoadError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer group and sales representative lookups.");
+            lookupsLoadError = "تعذر تحميل بعض خيارات تصفية العملاء. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoadingLookups = false;
+        }
+    }
+
+    private async Task LoadStats()
+    {
+        isLoadingStats = true;
+
+        try
+        {
+            var loadedStats = await CustomerService.GetCustomerStatsAsync();
+            stats = loadedStats;
+            hasLoadedStats = true;
+            statsLoadError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer statistics.");
+            statsLoadError = hasLoadedStats
+                ? "تعذر تحديث إحصائيات العملاء؛ المعروض آخر قيم ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل إحصائيات العملاء. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoadingStats = false;
+        }
+    }
     private async Task LoadData()
     {
-        isLoading = true;ApplyStatusFilter();
-        try{pagedResult = await CustomerService.GetCustomersPagedAsync(filters);}
-        catch (Exception ex){resultMessage="خطأ أثناء تحميل البيانات: "+ex.Message;resultSuccess=false;}
-        finally{isLoading=false;}
+        isLoading = true;
+        loadError = string.Empty;
+        ApplyStatusFilter();
+
+        try
+        {
+            pagedResult = await CustomerService.GetCustomersPagedAsync(filters);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load paged customer list.");
+            loadError = pagedResult.Items.Any()
+                ? "تعذر تحديث قائمة العملاء؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل قائمة العملاء. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
     private void ApplyStatusFilter(){filters.IsActive = statusFilter switch{"1"=>true,"0"=>false,_=>null};}
     private async Task SearchData(){filters.PageNumber=1;await LoadData();}

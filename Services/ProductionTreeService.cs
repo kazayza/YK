@@ -15,12 +15,13 @@ public sealed class ProductionTreeService : BaseDbService
         _authorization = authorization;
     }
 
-    public async Task<List<ProductionTreeBOMOptionDto>> GetApprovedActiveBomsAsync(int userId)
+    public async Task<List<ProductionTreeBOMOptionDto>> GetApprovedActiveBomsAsync(int userId, DateTime? asOfDate = null)
     {
         await _authorization.RequireUserPermissionAsync(
             userId, "SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض وصفات التصنيع.");
 
         using var connection = CreateConnection();
+        var effectiveDate = (asOfDate ?? DateTime.Today).Date;
         var rows = await connection.QueryAsync<ProductionTreeBOMOptionDto>(@"
 SELECT b.BOMID, b.BOMCode, b.BOMName,
        b.ProductItemID, i.ItemCode AS ProductCode, i.ItemNameAr AS ProductName,
@@ -33,11 +34,14 @@ INNER JOIN dbo.Items i ON i.ItemID = b.ProductItemID
 INNER JOIN dbo.Units bu ON bu.UnitID = b.BatchUnitID
 INNER JOIN dbo.Units ou ON ou.UnitID = b.OutputUnitID
 WHERE b.BOMStatus = 2 AND ISNULL(b.IsActive, 1) = 1
-ORDER BY i.ItemCode, b.BOMVersion DESC, b.BOMID DESC");
+  AND (b.EffectiveFrom IS NULL OR CAST(b.EffectiveFrom AS date) <= @AsOfDate)
+  AND (b.EffectiveTo IS NULL OR CAST(b.EffectiveTo AS date) >= @AsOfDate)
+ORDER BY i.ItemCode, b.BOMVersion DESC, b.BOMID DESC",
+            new { AsOfDate = effectiveDate });
         return rows.ToList();
     }
 
-    public async Task<ProductionTreeResult> GetTreeAsync(int bomId, int userId)
+    public async Task<ProductionTreeResult> GetTreeAsync(int bomId, int userId, DateTime? asOfDate = null)
     {
         await _authorization.RequireUserPermissionAsync(
             userId, "SCR_BOM", p => p.CanView, "لا تملك صلاحية عرض شجرة الإنتاج.");
@@ -46,6 +50,7 @@ ORDER BY i.ItemCode, b.BOMVersion DESC, b.BOMID DESC");
             throw new ArgumentOutOfRangeException(nameof(bomId), "اختر وصفة صحيحة.");
 
         using var connection = CreateConnection();
+        var effectiveDate = (asOfDate ?? DateTime.Today).Date;
         var rootBom = await connection.QueryFirstOrDefaultAsync<ProductionTreeBOMOptionDto>(@"
 SELECT b.BOMID, b.BOMCode, b.BOMName,
        b.ProductItemID, i.ItemCode AS ProductCode, i.ItemNameAr AS ProductName,
@@ -59,8 +64,10 @@ INNER JOIN dbo.Units bu ON bu.UnitID = b.BatchUnitID
 INNER JOIN dbo.Units ou ON ou.UnitID = b.OutputUnitID
 WHERE b.BOMID = @BOMID
   AND b.BOMStatus = 2
-  AND ISNULL(b.IsActive, 1) = 1",
-            new { BOMID = bomId });
+  AND ISNULL(b.IsActive, 1) = 1
+  AND (b.EffectiveFrom IS NULL OR CAST(b.EffectiveFrom AS date) <= @AsOfDate)
+  AND (b.EffectiveTo IS NULL OR CAST(b.EffectiveTo AS date) >= @AsOfDate)",
+            new { BOMID = bomId, AsOfDate = effectiveDate });
 
         if (rootBom is null)
             throw new InvalidOperationException("الوصفة المختارة ليست نشطة ومعتمدة حالياً. حدّث القائمة واختر وصفة أخرى.");
@@ -70,7 +77,7 @@ WHERE b.BOMID = @BOMID
         var headerCache = new Dictionary<int, ProductionTreeBOMOptionDto?>();
         var detailCache = new Dictionary<int, List<TreeLine>>();
 
-        await ExpandAsync(connection, root, rootBom.BOMID, path, headerCache, detailCache, depth: 0);
+        await ExpandAsync(connection, root, rootBom.BOMID, path, headerCache, detailCache, effectiveDate, depth: 0);
 
         return new ProductionTreeResult
         {
@@ -86,6 +93,7 @@ WHERE b.BOMID = @BOMID
         HashSet<int> currentPath,
         Dictionary<int, ProductionTreeBOMOptionDto?> headerCache,
         Dictionary<int, List<TreeLine>> detailCache,
+        DateTime asOfDate,
         int depth)
     {
         if (!detailCache.TryGetValue(bomId, out var lines))
@@ -162,8 +170,10 @@ INNER JOIN dbo.Units ou ON ou.UnitID = b.OutputUnitID
 WHERE b.ProductItemID = @ProductItemID
   AND b.BOMStatus = 2
   AND ISNULL(b.IsActive, 1) = 1
+  AND (b.EffectiveFrom IS NULL OR CAST(b.EffectiveFrom AS date) <= @AsOfDate)
+  AND (b.EffectiveTo IS NULL OR CAST(b.EffectiveTo AS date) >= @AsOfDate)
 ORDER BY b.BOMVersion DESC, b.BOMID DESC",
-                    new { ProductItemID = line.ItemID });
+                    new { ProductItemID = line.ItemID, AsOfDate = asOfDate });
                 headerCache[line.ItemID] = childBom;
             }
 
@@ -175,7 +185,7 @@ ORDER BY b.BOMVersion DESC, b.BOMID DESC",
 
             ApplyBomMetadata(child, childBom);
             currentPath.Add(line.ItemID);
-            await ExpandAsync(connection, child, childBom.BOMID, currentPath, headerCache, detailCache, depth + 1);
+            await ExpandAsync(connection, child, childBom.BOMID, currentPath, headerCache, detailCache, asOfDate, depth + 1);
             currentPath.Remove(line.ItemID);
         }
     }

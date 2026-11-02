@@ -9,8 +9,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<PriceLists> Logger
 
-<PageTitle>قوائم الأسعار - واي كي كوتينج   </PageTitle>
+<PageTitle>قوائم الأسعار - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -54,7 +55,10 @@ else
                             جدول
                         </button>
                     </div>
-                    <span class="lh-badge"><span class="lh-dot"></span>@priceLists.Count قائمة</span>
+                    @if (hasLoadedPriceLists)
+                    {
+                        <span class="lh-badge"><span class="lh-dot"></span>@priceLists.Count قائمة</span>
+                    }
                     @if (permissions.CanAdd)
                     {
                         <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddDialog">
@@ -65,12 +69,57 @@ else
                 </div>
             </div>
         </div>
+        @if (isLoadingPriceListEdit)
+        {
+            <div class="msg-luxury" role="status">جاري تحميل بيانات قائمة الأسعار للتعديل...</div>
+        }
+        else if (priceListEditReadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>تعذر تحميل بيانات القائمة للتعديل. لم يُفتح النموذج.</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPriceListEditAsync" disabled="@isLoadingPriceListEdit">إعادة المحاولة</button>
+            </div>
+        }
+        else if (priceListEditReadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert">ليس لديك صلاحية قراءة بيانات قائمة الأسعار للتعديل.</div>
+        }
+        else if (priceListEditNotFound)
+        {
+            <div class="msg-luxury msg-error" role="alert">قائمة الأسعار غير موجودة.</div>
+        }
         @if (isLoading)
         {
             <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل قوائم الأسعار...</p></div>
         }
+        else if (!hasLoadedPriceLists && isLoadingPriceLists)
+        {
+            <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل قوائم الأسعار...</p></div>
+        }
+        else if (!hasLoadedPriceLists && priceListsReadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>تعذر تحميل قوائم الأسعار. لم تُحمّل بيانات سابقة.</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPriceListsAsync" disabled="@isLoadingPriceLists">إعادة المحاولة</button>
+            </div>
+        }
+        else if (priceListsReadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert">ليس لديك صلاحية قراءة قوائم الأسعار.</div>
+        }
         else
         {
+            @if (isLoadingPriceLists)
+            {
+                <div class="msg-luxury" role="status">جاري تحديث قوائم الأسعار...</div>
+            }
+            else if (priceListsReadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                    <span>تعذر تحديث قوائم الأسعار. المعروض آخر تحميل ناجح.</span>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPriceListsAsync" disabled="@isLoadingPriceLists">إعادة المحاولة</button>
+                </div>
+            }
             <!-- ===== الإحصائيات ===== -->
             <div class="stats-luxury luxury-animate">
                 <div class="stat-luxury">
@@ -254,7 +303,7 @@ else
                 </div>
             }
             <!-- ===== أسعار أصناف القائمة المختارة (تظهر في كلا العرضين) ===== -->
-            @if (selectedPriceListId != 0 && details != null)
+            @if (selectedPriceListId != 0)
             {
                 var selectedList = priceLists.FirstOrDefault(x => x.PriceListID == selectedPriceListId);
                 <div class="table-card-luxury">
@@ -274,66 +323,84 @@ else
                             </button>
                         </div>
                     </div>
-                    @if (!details.Any())
+                    @if (isLoadingPriceListDetails)
                     {
-                        <div class="empty-luxury inline">
-                            <div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div>
-                            <p class="empty-sub">لا توجد أسعار أصناف في هذه القائمة بعد</p>
+                        <div class="msg-luxury" role="status">جاري تحميل أسعار أصناف القائمة...</div>
+                    }
+                    else if (priceListDetailsReadFailed)
+                    {
+                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                            <span>تعذر تحميل أسعار أصناف القائمة.@(hasLoadedPriceListDetails ? " المعروض آخر تحميل ناجح." : " لم تُحمّل تفاصيل سابقة.")</span>
+                            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPriceListDetailsAsync" disabled="@isLoadingPriceListDetails">إعادة المحاولة</button>
                         </div>
                     }
-                    else
+                    else if (priceListDetailsReadDenied)
                     {
-                        <div class="table-responsive">
-                            <table class="table-luxury">
-                                <thead>
-                                    <tr>
-                                        <th class="th-num">#</th>
-                                        <th>الصنف</th>
-                                        <th>الوحدة</th>
-                                        <th class="th-num">السعر</th>
-                                        <th class="th-num">أقل كمية</th>
-                                        <th class="th-num">خصم %</th>
-                                        <th class="th-num">أقل سعر بيع</th>
-                                        <th class="th-actions">إجراءات</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{ var dIdx = 0; }
-                                    @foreach (var d in details)
-                                    {
-                                        dIdx++;
+                        <div class="msg-luxury msg-error" role="alert">ليس لديك صلاحية عرض تفاصيل قوائم الأسعار.</div>
+                    }
+                    @if (hasLoadedPriceListDetails && details != null)
+                    {
+                        @if (!details.Any())
+                        {
+                            <div class="empty-luxury inline">
+                                <div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div>
+                                <p class="empty-sub">@(priceListDetailsReadFailed ? "آخر تحميل ناجح لم يتضمن أسعار أصناف." : "لا توجد أسعار أصناف في هذه القائمة بعد")</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table-luxury">
+                                    <thead>
                                         <tr>
-                                            <td class="td-num">@dIdx</td>
-                                            <td>
-                                                <b>@d.ItemNameAr</b>
-                                                <code class="doc-num-luxury" style="margin-right:6px;font-size:.7rem">@d.ItemCode</code>
-                                            </td>
-                                            <td class="td-muted">@d.UnitName</td>
-                                            <td class="td-center"><span class="amount-luxury">@d.UnitPrice.ToString("N2")</span></td>
-                                            <td class="td-center">@d.MinQty</td>
-                                            <td class="td-center">@d.DiscountPercent%</td>
-                                            <td class="td-center">@(d.MinSellingPrice > 0 ? d.MinSellingPrice.ToString("N2") : "—")</td>
-                                            <td class="td-center">
-                                                <div class="actions-wrap-luxury">
-                                                    @if (permissions.CanEdit)
-                                                    {
-                                                        <button class="act-btn edit" title="تعديل" @onclick="() => ShowEditDetailDialog(d)">
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></svg>
-                                                        </button>
-                                                    }
-                                                    @if (permissions.CanDelete)
-                                                    {
-                                                        <button class="act-btn del" title="حذف" @onclick="() => DeleteDetail(d.PriceDetailID)">
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                                                        </button>
-                                                    }
-                                                </div>
-                                            </td>
+                                            <th class="th-num">#</th>
+                                            <th>الصنف</th>
+                                            <th>الوحدة</th>
+                                            <th class="th-num">السعر</th>
+                                            <th class="th-num">أقل كمية</th>
+                                            <th class="th-num">خصم %</th>
+                                            <th class="th-num">أقل سعر بيع</th>
+                                            <th class="th-actions">إجراءات</th>
                                         </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        @{ var dIdx = 0; }
+                                        @foreach (var d in details)
+                                        {
+                                            dIdx++;
+                                            <tr>
+                                                <td class="td-num">@dIdx</td>
+                                                <td>
+                                                    <b>@d.ItemNameAr</b>
+                                                    <code class="doc-num-luxury" style="margin-right:6px;font-size:.7rem">@d.ItemCode</code>
+                                                </td>
+                                                <td class="td-muted">@d.UnitName</td>
+                                                <td class="td-center"><span class="amount-luxury">@d.UnitPrice.ToString("N2")</span></td>
+                                                <td class="td-center">@d.MinQty</td>
+                                                <td class="td-center">@d.DiscountPercent%</td>
+                                                <td class="td-center">@(d.MinSellingPrice > 0 ? d.MinSellingPrice.ToString("N2") : "—")</td>
+                                                <td class="td-center">
+                                                    <div class="actions-wrap-luxury">
+                                                        @if (permissions.CanEdit)
+                                                        {
+                                                            <button class="act-btn edit" title="تعديل" @onclick="() => ShowEditDetailDialog(d)">
+                                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></svg>
+                                                            </button>
+                                                        }
+                                                        @if (permissions.CanDelete)
+                                                        {
+                                                            <button class="act-btn del" title="حذف" @onclick="() => DeleteDetail(d.PriceDetailID)">
+                                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
                     }
                 </div>
             }
@@ -393,7 +460,7 @@ else
                             </div>
                             <div class="fg">
                                 <label>العملة</label>
-                                <select @bind="editItem.CurrencyID">
+                                <select @bind="editItem.CurrencyID" disabled="@(!hasLoadedCurrencies || isLoadingCurrencies || currenciesReadDenied)">
                                     <option value="0">-- اختر العملة --</option>
                                     @if (currencies != null)
                                     {
@@ -403,6 +470,25 @@ else
                                         }
                                     }
                                 </select>
+                                @if (isLoadingCurrencies)
+                                {
+                                    <div class="empty-sub" role="status">جاري تحميل العملات...</div>
+                                }
+                                else if (currenciesReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                                        <span>@(hasLoadedCurrencies ? "تعذر تحديث العملات. المعروض آخر تحميل ناجح." : "تعذر تحميل العملات. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCurrenciesAsync" disabled="@isLoadingCurrencies">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (currenciesReadDenied)
+                                {
+                                    <div class="empty-sub" role="alert">ليس لديك صلاحية قراءة العملات لهذه العملية.</div>
+                                }
+                                else if (hasLoadedCurrencies && currencies?.Count == 0)
+                                {
+                                    <div class="empty-sub" role="status">لا توجد عملات نشطة.</div>
+                                }
                             </div>
                             <div class="fg">
                                 <label>خصم عام %</label>
@@ -453,7 +539,7 @@ else
                         <div class="form-grid-luxury">
                             <div class="fg">
                                 <label>الصنف <span class="req">*</span></label>
-                                <select @bind="editDetail.ItemID" disabled="@isEditDetail">
+                                <select @bind="editDetail.ItemID" disabled="@(isEditDetail || !hasLoadedFinishedItems || isLoadingFinishedItems || finishedItemsReadDenied)">
                                     <option value="0">-- اختر الصنف --</option>
                                     @if (finishedItems != null)
                                     {
@@ -463,10 +549,29 @@ else
                                         }
                                     }
                                 </select>
+                                @if (isLoadingFinishedItems)
+                                {
+                                    <div class="empty-sub" role="status">جاري تحميل الأصناف التامة...</div>
+                                }
+                                else if (finishedItemsReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                                        <span>@(hasLoadedFinishedItems ? "تعذر تحديث الأصناف التامة. المعروض آخر تحميل ناجح." : "تعذر تحميل الأصناف التامة. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryFinishedItemsAsync" disabled="@isLoadingFinishedItems">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (finishedItemsReadDenied)
+                                {
+                                    <div class="empty-sub" role="alert">ليس لديك صلاحية قراءة الأصناف التامة لهذه العملية.</div>
+                                }
+                                else if (hasLoadedFinishedItems && finishedItems?.Count == 0)
+                                {
+                                    <div class="empty-sub" role="status">لا توجد أصناف تامة نشطة.</div>
+                                }
                             </div>
                             <div class="fg">
                                 <label>الوحدة <span class="req">*</span></label>
-                                <select @bind="editDetail.UnitID">
+                                <select @bind="editDetail.UnitID" disabled="@(!hasLoadedUnits || isLoadingUnits || unitsReadDenied)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @if (unitsList != null)
                                     {
@@ -476,6 +581,25 @@ else
                                         }
                                     }
                                 </select>
+                                @if (isLoadingUnits)
+                                {
+                                    <div class="empty-sub" role="status">جاري تحميل الوحدات...</div>
+                                }
+                                else if (unitsReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                                        <span>@(hasLoadedUnits ? "تعذر تحديث الوحدات. المعروض آخر تحميل ناجح." : "تعذر تحميل الوحدات. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryUnitsAsync" disabled="@isLoadingUnits">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (unitsReadDenied)
+                                {
+                                    <div class="empty-sub" role="alert">ليس لديك صلاحية قراءة الوحدات لهذه العملية.</div>
+                                }
+                                else if (hasLoadedUnits && unitsList?.Count == 0)
+                                {
+                                    <div class="empty-sub" role="status">لا توجد وحدات نشطة.</div>
+                                }
                             </div>
                             <div class="fg">
                                 <label>السعر <span class="req">*</span></label>
@@ -686,12 +810,29 @@ else
     private ModulePermissionDto? permissions;
     private List<PriceListHeaderDto> priceLists = new();
     private bool isLoading = true;
+    private long priceListsLoadVersion;
+    private bool isLoadingPriceLists;
+    private bool hasLoadedPriceLists;
+    private bool priceListsReadFailed;
+    private bool priceListsReadDenied;
+    private int? priceListEditRetryId;
+    private long priceListEditLoadVersion;
+    private bool isLoadingPriceListEdit;
+    private bool priceListEditReadFailed;
+    private bool priceListEditReadDenied;
+    private bool priceListEditNotFound;
     private string searchText = "";
     private int filterType = 0;
     private int viewMode = 0; // 0 = بطاقات (الطريقة الحالية) · 1 = جدول (طريقة جديدة)
 
     private int selectedPriceListId = 0;
     private List<PriceListDetailDto>? details;
+    private int? priceListDetailsForId;
+    private long priceListDetailsLoadVersion;
+    private bool isLoadingPriceListDetails;
+    private bool hasLoadedPriceListDetails;
+    private bool priceListDetailsReadFailed;
+    private bool priceListDetailsReadDenied;
 
     private bool showFormDialog = false;
     private bool isEditMode = false;
@@ -701,8 +842,23 @@ else
     private bool formSuccess = true;
 
     private List<LookupDto>? currencies;
+    private long currenciesLoadVersion;
+    private bool isLoadingCurrencies;
+    private bool hasLoadedCurrencies;
+    private bool currenciesReadFailed;
+    private bool currenciesReadDenied;
     private List<LookupDto>? finishedItems;
+    private long finishedItemsLoadVersion;
+    private bool isLoadingFinishedItems;
+    private bool hasLoadedFinishedItems;
+    private bool finishedItemsReadFailed;
+    private bool finishedItemsReadDenied;
     private List<LookupDto>? unitsList;
+    private long unitsLoadVersion;
+    private bool isLoadingUnits;
+    private bool hasLoadedUnits;
+    private bool unitsReadFailed;
+    private bool unitsReadDenied;
 
     private bool showDetailDialog = false;
     private bool isEditDetail = false;
@@ -742,29 +898,263 @@ else
 
     private async Task LoadData()
     {
-        priceLists = await PriceListService.GetPriceListsAsync();
-        currencies = await LookupService.GetCurrenciesAsync();
-        finishedItems = await PriceListService.GetFinishedItemsAsync();
-        unitsList = await LookupService.GetUnitsAsync();
+        await LoadPriceListsAsync();
+        await LoadCurrenciesAsync();
+        await LoadFinishedItemsAsync();
+        await LoadUnitsAsync();
         isLoading = false;
+    }
+
+    private async Task RetryPriceListsAsync()
+    {
+        if (isLoadingPriceLists) return;
+        await LoadPriceListsAsync();
+    }
+
+    private async Task LoadPriceListsAsync()
+    {
+        var loadVersion = ++priceListsLoadVersion;
+        isLoadingPriceLists = true;
+        priceListsReadFailed = false;
+        priceListsReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedPriceLists = await PriceListService.GetPriceListsAsync();
+            if (loadVersion != priceListsLoadVersion) return;
+
+            priceLists = loadedPriceLists;
+            hasLoadedPriceLists = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != priceListsLoadVersion) return;
+
+            priceLists = new();
+            hasLoadedPriceLists = false;
+            priceListsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load price lists.");
+            if (loadVersion != priceListsLoadVersion) return;
+
+            priceListsReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == priceListsLoadVersion)
+                isLoadingPriceLists = false;
+        }
+    }
+
+    private async Task RetryCurrenciesAsync()
+    {
+        if (isLoadingCurrencies) return;
+        await LoadCurrenciesAsync();
+    }
+
+    private async Task LoadCurrenciesAsync()
+    {
+        var loadVersion = ++currenciesLoadVersion;
+        isLoadingCurrencies = true;
+        currenciesReadFailed = false;
+        currenciesReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedCurrencies = await LookupService.GetCurrenciesAsync();
+            if (loadVersion != currenciesLoadVersion) return;
+
+            currencies = loadedCurrencies;
+            hasLoadedCurrencies = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != currenciesLoadVersion) return;
+
+            currencies = new();
+            hasLoadedCurrencies = false;
+            currenciesReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load currencies for price lists.");
+            if (loadVersion != currenciesLoadVersion) return;
+
+            currenciesReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == currenciesLoadVersion)
+                isLoadingCurrencies = false;
+        }
+    }
+
+    private async Task RetryFinishedItemsAsync()
+    {
+        if (isLoadingFinishedItems) return;
+        await LoadFinishedItemsAsync();
+    }
+
+    private async Task LoadFinishedItemsAsync()
+    {
+        var loadVersion = ++finishedItemsLoadVersion;
+        isLoadingFinishedItems = true;
+        finishedItemsReadFailed = false;
+        finishedItemsReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedFinishedItems = await PriceListService.GetFinishedItemsAsync();
+            if (loadVersion != finishedItemsLoadVersion) return;
+
+            finishedItems = loadedFinishedItems;
+            hasLoadedFinishedItems = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != finishedItemsLoadVersion) return;
+
+            finishedItems = new();
+            hasLoadedFinishedItems = false;
+            finishedItemsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load finished items for price lists.");
+            if (loadVersion != finishedItemsLoadVersion) return;
+
+            finishedItemsReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == finishedItemsLoadVersion)
+                isLoadingFinishedItems = false;
+        }
+    }
+
+    private async Task RetryUnitsAsync()
+    {
+        if (isLoadingUnits) return;
+        await LoadUnitsAsync();
+    }
+
+    private async Task LoadUnitsAsync()
+    {
+        var loadVersion = ++unitsLoadVersion;
+        isLoadingUnits = true;
+        unitsReadFailed = false;
+        unitsReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedUnits = await LookupService.GetUnitsAsync();
+            if (loadVersion != unitsLoadVersion) return;
+
+            unitsList = loadedUnits;
+            hasLoadedUnits = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != unitsLoadVersion) return;
+
+            unitsList = new();
+            hasLoadedUnits = false;
+            unitsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load units for price lists.");
+            if (loadVersion != unitsLoadVersion) return;
+
+            unitsReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == unitsLoadVersion)
+                isLoadingUnits = false;
+        }
     }
 
     private async Task SelectPriceList(int priceListId)
     {
         if (selectedPriceListId == priceListId)
         {
-            selectedPriceListId = 0;
-            details = null;
+            CloseDetails();
             return;
         }
+
         selectedPriceListId = priceListId;
-        details = await PriceListService.GetPriceListDetailsAsync(priceListId);
+        if (priceListDetailsForId != priceListId)
+        {
+            details = null;
+            priceListDetailsForId = priceListId;
+            hasLoadedPriceListDetails = false;
+            priceListDetailsReadFailed = false;
+            priceListDetailsReadDenied = false;
+        }
+
+        await LoadPriceListDetailsAsync(priceListId);
     }
 
     private void CloseDetails()
     {
         selectedPriceListId = 0;
         details = null;
+        priceListDetailsForId = null;
+        hasLoadedPriceListDetails = false;
+        isLoadingPriceListDetails = false;
+        priceListDetailsReadFailed = false;
+        priceListDetailsReadDenied = false;
+        priceListDetailsLoadVersion++;
+    }
+
+    private async Task RetryPriceListDetailsAsync()
+    {
+        if (selectedPriceListId == 0 || isLoadingPriceListDetails) return;
+        await LoadPriceListDetailsAsync(selectedPriceListId);
+    }
+
+    private async Task LoadPriceListDetailsAsync(int priceListId)
+    {
+        if (priceListId <= 0) return;
+
+        var loadVersion = ++priceListDetailsLoadVersion;
+        isLoadingPriceListDetails = true;
+        priceListDetailsReadFailed = false;
+        priceListDetailsReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedDetails = await PriceListService.GetPriceListDetailsAsync(priceListId);
+            if (loadVersion != priceListDetailsLoadVersion || selectedPriceListId != priceListId) return;
+
+            details = loadedDetails;
+            priceListDetailsForId = priceListId;
+            hasLoadedPriceListDetails = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != priceListDetailsLoadVersion || selectedPriceListId != priceListId) return;
+
+            details = null;
+            priceListDetailsForId = priceListId;
+            hasLoadedPriceListDetails = false;
+            priceListDetailsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load price list details.");
+            if (loadVersion != priceListDetailsLoadVersion || selectedPriceListId != priceListId) return;
+
+            priceListDetailsReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == priceListDetailsLoadVersion)
+                isLoadingPriceListDetails = false;
+        }
     }
 
     // ===== القائمة =====
@@ -773,8 +1163,63 @@ else
 
     private async Task ShowEditDialog(int id)
     {
-        var loaded = await PriceListService.GetPriceListByIdAsync(id);
-        if (loaded != null) { isEditMode = true; editItem = loaded; formMessage = ""; showFormDialog = true; }
+        await LoadPriceListForEditAsync(id);
+    }
+
+    private async Task RetryPriceListEditAsync()
+    {
+        if (priceListEditRetryId is int priceListId && !isLoadingPriceListEdit)
+            await LoadPriceListForEditAsync(priceListId);
+    }
+
+    private async Task LoadPriceListForEditAsync(int priceListId)
+    {
+        if (priceListId <= 0) return;
+
+        var loadVersion = ++priceListEditLoadVersion;
+        priceListEditRetryId = priceListId;
+        isLoadingPriceListEdit = true;
+        priceListEditReadFailed = false;
+        priceListEditReadDenied = false;
+        priceListEditNotFound = false;
+        StateHasChanged();
+        try
+        {
+            var loaded = await PriceListService.GetPriceListByIdAsync(priceListId);
+            if (loadVersion != priceListEditLoadVersion) return;
+
+            if (loaded == null)
+            {
+                priceListEditRetryId = null;
+                priceListEditNotFound = true;
+                return;
+            }
+
+            isEditMode = true;
+            editItem = loaded;
+            formMessage = "";
+            showFormDialog = true;
+            priceListEditRetryId = null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != priceListEditLoadVersion) return;
+
+            priceListEditRetryId = null;
+            priceListEditReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load price list for editing.");
+            if (loadVersion != priceListEditLoadVersion) return;
+
+            priceListEditReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == priceListEditLoadVersion)
+                isLoadingPriceListEdit = false;
+        }
     }
 
     private void CloseDialog() { showFormDialog = false; }
@@ -834,7 +1279,7 @@ else
             else await PriceListService.InsertPriceDetailAsync(editDetail, UserSession.UserID);
             resultMessage = "تم حفظ سعر الصنف بنجاح"; resultSuccess = true;
             showDetailDialog = false;
-            details = await PriceListService.GetPriceListDetailsAsync(selectedPriceListId);
+            await LoadPriceListDetailsAsync(selectedPriceListId);
             await LoadData();
         }
         catch (Exception ex) { detailMessage = "خطأ: " + ex.Message; detailSuccess = false; }
@@ -845,7 +1290,7 @@ else
     {
         await PriceListService.DeletePriceDetailAsync(detailId, UserSession.UserID);
         resultMessage = "تم حذف السعر بنجاح"; resultSuccess = true;
-        details = await PriceListService.GetPriceListDetailsAsync(selectedPriceListId);
+        await LoadPriceListDetailsAsync(selectedPriceListId);
         await LoadData();
     }
 
@@ -869,18 +1314,3 @@ else
         catch (Exception ex) { deleteMessage = "خطأ: " + ex.Message; }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

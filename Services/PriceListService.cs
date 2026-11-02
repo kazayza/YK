@@ -1,19 +1,29 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class PriceListService : BaseDbService
     {
+        private const string ModuleCode = "SCR_PRICELISTS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public PriceListService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public PriceListService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequirePriceListPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentPriceListPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<PriceListHeaderDto>> GetPriceListsAsync()
         {
+            await RequireCurrentPriceListPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض قوائم الأسعار.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             pl.PriceListID, pl.PriceListCode, pl.PriceListNameAr, pl.PriceListNameEn,
@@ -31,6 +41,7 @@ namespace YKCoatings.Services
 
         public async Task<PriceListEditDto?> GetPriceListByIdAsync(int priceListId)
         {
+            await RequireCurrentPriceListPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض قوائم الأسعار.");
             using var connection = CreateConnection();
             var sql = @"SELECT PriceListID, PriceListCode, PriceListNameAr, PriceListNameEn,
                                PriceListType, CurrencyID, ISNULL(DiscountPercent, 0) AS DiscountPercent,
@@ -41,6 +52,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertPriceListAsync(PriceListEditDto pl, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة قوائم الأسعار.");
             using var connection = CreateConnection();
 
             if (pl.IsDefault)
@@ -69,6 +81,7 @@ namespace YKCoatings.Services
 
         public async Task UpdatePriceListAsync(PriceListEditDto pl, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل قوائم الأسعار.");
             using var connection = CreateConnection();
 
             if (pl.IsDefault)
@@ -98,6 +111,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeletePriceListAsync(int priceListId, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف قوائم الأسعار.");
             using var connection = CreateConnection();
 
             var custCount = await connection.QueryFirstOrDefaultAsync<int>(
@@ -131,6 +145,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<PriceListDetailDto>> GetPriceListDetailsAsync(int priceListId)
         {
+            await RequireCurrentPriceListPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض تفاصيل قوائم الأسعار.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             d.PriceDetailID, d.PriceListID, d.ItemID,
@@ -150,6 +165,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertPriceDetailAsync(PriceListDetailEditDto detail, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أسعار إلى القائمة.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.PriceListDetails 
                         (PriceListID, ItemID, UnitID, UnitPrice, MinQty, DiscountPercent, MinSellingPrice, IsActive, CreatedDate)
@@ -167,6 +183,7 @@ namespace YKCoatings.Services
 
         public async Task UpdatePriceDetailAsync(PriceListDetailEditDto detail, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أسعار القائمة.");
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.PriceListDetails SET
                             UnitPrice=@UnitPrice, MinQty=@MinQty,
@@ -182,6 +199,7 @@ namespace YKCoatings.Services
 
         public async Task DeletePriceDetailAsync(int priceDetailId, int userId)
         {
+            await RequirePriceListPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أسعار القائمة.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(
                 "UPDATE dbo.PriceListDetails SET IsActive=0 WHERE PriceDetailID=@ID",
@@ -196,6 +214,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<LookupDto>> GetFinishedItemsAsync()
         {
+            await RequireCurrentPriceListPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض بيانات قوائم الأسعار.");
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID AS Id, ItemNameAr + ' (' + ItemCode + ')' AS Name
                         FROM dbo.Items WHERE IsActive = 1 AND ItemType = 4

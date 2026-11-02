@@ -7,18 +7,31 @@ namespace YKCoatings.Services
 {
     public class UserService : BaseDbService
     {
+        private const string ModuleCode = "SCR_USERS";
         private readonly UserSessionService _userSession;
         private readonly AuditService _audit;
+
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<UserService> _logger;
 
         public UserService(
             IConfiguration configuration,
             UserSessionService userSession,
-            AuditService audit)
+            AuditService audit,
+            ModuleAuthorizationService authorization,
+            ILogger<UserService> logger)
             : base(configuration)
         {
             _userSession = userSession;
             _audit = audit;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequireUserAdminPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentUserAdminPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<SelfProfileDto> GetMyProfileAsync(int userId)
         {
@@ -109,7 +122,13 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                    "Rollback failed after {Operation} failed for user {UserID} with {ChangedFieldCount} changed fields.",
+                    "self-profile update", userId, changedColumns.Count);
+                }
                 throw;
             }
 
@@ -151,6 +170,9 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<List<UserListDto>> GetAllAsync(UserFilterDto? filter = null)
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync("ليس لديك صلاحية عرض المستخدمين أو سجل العمليات.",
+                ("SCR_USERS", p => p.CanView),
+                ("SCR_AUDIT", p => p.CanView));
             using var connection = CreateConnection();
 
             var sql = @"
@@ -236,6 +258,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<UserEditDto?> GetByIdAsync(int userId)
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanEdit, "ليس لديك صلاحية تعديل المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -278,6 +301,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<int> CreateAsync(UserEditDto dto, string password, int createdBy)
         {
+            await RequireUserAdminPermissionAsync(createdBy, p => p.CanAdd, "ليس لديك صلاحية إضافة المستخدمين.");
             using var connection = CreateConnection();
 
             // التحقق من عدم تكرار اسم المستخدم
@@ -339,6 +363,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<bool> UpdateAsync(UserEditDto dto, int modifiedBy)
         {
+            await RequireUserAdminPermissionAsync(modifiedBy, p => p.CanEdit, "ليس لديك صلاحية تعديل المستخدمين.");
             using var connection = CreateConnection();
 
             // التحقق من عدم تكرار اسم المستخدم مع مستخدم آخر
@@ -399,6 +424,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<bool> ToggleActiveAsync(int userId, bool isActive, int modifiedBy)
         {
+            await RequireUserAdminPermissionAsync(modifiedBy, p => p.CanEdit, "ليس لديك صلاحية تفعيل أو تعطيل المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -423,6 +449,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<bool> UnlockAsync(int userId, int modifiedBy)
         {
+            await RequireUserAdminPermissionAsync(modifiedBy, p => p.CanEdit, "ليس لديك صلاحية فك حظر المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -448,6 +475,11 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<bool> ResetPasswordAsync(UserPasswordDto dto, int modifiedBy)
         {
+            ArgumentNullException.ThrowIfNull(dto);
+            if (dto.UserID == modifiedBy)
+                EnsureCurrentUser(modifiedBy);
+            else
+                await RequireUserAdminPermissionAsync(modifiedBy, p => p.CanEdit, "ليس لديك صلاحية إعادة تعيين كلمة مرور مستخدم آخر.");
             if (dto.NewPassword != dto.ConfirmPassword)
                 throw new Exception("كلمة المرور وتأكيدها غير متطابقتين");
 
@@ -486,6 +518,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<bool> IsDefaultAdminAsync(int userId)
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanEdit, "ليس لديك صلاحية إدارة المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -505,6 +538,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<List<LookupDto>> GetRolesLookupAsync()
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanView || p.CanAdd || p.CanEdit, "ليس لديك صلاحية عرض بيانات إدارة المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -525,6 +559,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<List<LookupDto>> GetAvailableEmployeesLookupAsync(int? currentEmployeeId = null)
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إضافة أو تعديل المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -552,6 +587,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<List<LookupDto>> GetWarehousesLookupAsync()
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إدارة المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -572,6 +608,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
         // ══════════════════════════════════════
         public async Task<List<LookupDto>> GetCashBoxesLookupAsync()
         {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إدارة المستخدمين.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -591,6 +628,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
 // ══════════════════════════════════════
 public async Task<List<UserPermissionEditDto>> GetUserPermissionsAsync(int userId)
 {
+    await RequireCurrentUserAdminPermissionAsync(p => p.CanEdit, "ليس لديك صلاحية عرض أو تعديل صلاحيات المستخدمين.");
     using var connection = CreateConnection();
 
     // جلب RoleID للمستخدم
@@ -649,6 +687,7 @@ public async Task<List<UserPermissionEditDto>> GetUserPermissionsAsync(int userI
 // ══════════════════════════════════════
 public async Task SaveUserPermissionsAsync(int userId, List<UserPermissionEditDto> permissions)
 {
+    await RequireCurrentUserAdminPermissionAsync(p => p.CanEdit, "ليس لديك صلاحية حفظ صلاحيات المستخدمين.");
     using var connection = CreateConnection();
     using var transaction = connection.BeginTransaction();
 
@@ -702,7 +741,13 @@ public async Task SaveUserPermissionsAsync(int userId, List<UserPermissionEditDt
     }
     catch
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); }
+        catch (Exception rollbackException)
+        {
+            _logger.LogError(rollbackException,
+                "Rollback failed after {Operation} failed for user {UserID}.",
+                    "user-permission override save", userId);
+        }
         throw;
     }
 }
@@ -712,6 +757,7 @@ public async Task SaveUserPermissionsAsync(int userId, List<UserPermissionEditDt
 // ══════════════════════════════════════
 public async Task ClearUserPermissionsAsync(int userId)
 {
+    await RequireCurrentUserAdminPermissionAsync(p => p.CanEdit, "ليس لديك صلاحية مسح صلاحيات المستخدمين.");
     using var connection = CreateConnection();
     await connection.ExecuteAsync(
         "DELETE FROM dbo.UserPermissions WHERE UserID = @UserID",

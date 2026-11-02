@@ -23,14 +23,17 @@ public sealed class ItemImportService : BaseDbService
 
     private readonly AuditService _audit;
     private readonly ModuleAuthorizationService _authorization;
+    private readonly ILogger<ItemImportService> _logger;
 
     public ItemImportService(
         IConfiguration configuration,
         AuditService audit,
-        ModuleAuthorizationService authorization) : base(configuration)
+        ModuleAuthorizationService authorization,
+        ILogger<ItemImportService> logger) : base(configuration)
     {
         _audit = audit;
         _authorization = authorization;
+        _logger = logger;
     }
 
     public async Task<ItemImportPreview> PreviewWorkbookAsync(Stream source, int userId)
@@ -261,7 +264,13 @@ WHERE ItemID=@ItemID",
         }
         catch
         {
-            try { transaction.Rollback(); } catch { }
+            try { transaction.Rollback(); }
+            catch (Exception rollbackException)
+            {
+                _logger.LogError(rollbackException,
+                    "Rollback failed after item import batch failed for {SelectedRowCount} selected rows.",
+                    selected.Count);
+            }
             throw;
         }
 

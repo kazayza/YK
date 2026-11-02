@@ -1,22 +1,32 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class WarehouseService : BaseDbService
     {
+        private const string ModuleCode = "SCR_WAREHOUSES";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public WarehouseService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public WarehouseService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequireWarehousePermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentWarehousePermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة المخازن
         // ==========================================
         public async Task<List<WarehouseListDto>> GetWarehousesListAsync()
         {
+            await RequireCurrentWarehousePermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض المخازن.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             w.WarehouseID,
@@ -43,6 +53,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<WarehouseEditDto?> GetWarehouseByIdAsync(int warehouseId)
         {
+            await RequireCurrentWarehousePermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض المخازن.");
             using var connection = CreateConnection();
             var sql = @"SELECT WarehouseID, WarehouseCode, WarehouseNameAr, WarehouseNameEn,
                                WarehouseType, Address, Phone, ManagerID, IsDefault, IsActive
@@ -55,6 +66,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertWarehouseAsync(WarehouseEditDto wh, int userId)
         {
+            await RequireWarehousePermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة المخازن.");
             using var connection = CreateConnection();
 
             if (wh.IsDefault)
@@ -97,6 +109,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateWarehouseAsync(WarehouseEditDto wh, int userId)
         {
+            await RequireWarehousePermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل المخازن.");
             using var connection = CreateConnection();
 
             var oldWh = await connection.QueryFirstOrDefaultAsync<WarehouseEditDto>(
@@ -164,6 +177,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteWarehouseAsync(int warehouseId, int userId)
         {
+            await RequireWarehousePermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف المخازن.");
             using var connection = CreateConnection();
 
             var userCount = await connection.QueryFirstOrDefaultAsync<int>(
@@ -197,6 +211,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportWarehousesToExcelAsync(List<WarehouseListDto> warehouses, int userId)
         {
+            await RequireWarehousePermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير المخازن.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("المخازن");
             ws.RightToLeft = true;

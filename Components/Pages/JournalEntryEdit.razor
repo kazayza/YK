@@ -6,8 +6,9 @@
 @inject LookupService LookupService
 @inject UserSessionService UserSession
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<JournalEntryEdit> Logger
 
-<PageTitle>قيد يومية يدوي -   </PageTitle>
+<PageTitle>قيد يومية يدوي</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -33,6 +34,31 @@ else
 
     @if (isLoading)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+    else if (JournalId != 0 && isLoadingJournalDetail)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل تفاصيل القيد...</p></div>}
+    else if (JournalId != 0 && journalDetailReadFailed)
+    {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <p style="margin:0">تعذر تحميل بيانات القيد. لم يُفتح نموذج التعديل.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryJournalDetailLoadAsync" disabled="@isLoadingJournalDetail">
+                @(isLoadingJournalDetail ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل القيد")
+            </button>
+        </div>
+    }
+    else if (JournalId != 0 && journalDetailReadDenied)
+    {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <p style="margin:0">ليس لديك صلاحية عرض تفاصيل هذا القيد.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة إلى قائمة القيود</button>
+        </div>
+    }
+    else if (JournalId != 0 && journalDetailNotFound)
+    {
+        <div class="msg-luxury msg-error" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <p style="margin:0">القيد غير موجود.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة إلى قائمة القيود</button>
+        </div>
+    }
     else
     {
         <div class="form-card-luxury">
@@ -40,7 +66,7 @@ else
             <div class="fc-header"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>بيانات القيد الأساسية</h3></div>
             <div class="fc-body">
                 <div class="form-grid-luxury">
-                    <div class="fg"><label>رقم القيد</label><input type="text" @bind="journalDto.JournalNumber" placeholder="تلقائي JV-..." readonly style="background:#f3f4f6" /></div>
+                    <div class="fg"><label>رقم القيد</label><input type="text" @bind="journalDto.JournalNumber" placeholder="يُخصص عند الحفظ" readonly style="background:#f3f4f6" /></div>
                     <div class="fg"><label>تاريخ القيد *</label><input type="date" @bind="journalDto.JournalDate" /></div>
                     <div class="fg"><label>المرجع</label><input type="text" @bind="journalDto.Reference" placeholder="رقم مرجعي اختياري" /></div>
                     <div class="fg"><label>نوع القيد</label><select @bind="journalDto.JournalType"><option value="1">يومية عامة</option><option value="2">افتتاحي</option><option value="3">تسوية</option><option value="4">إقفال</option></select></div>
@@ -48,6 +74,42 @@ else
                 </div>
             </div>
         </div>
+
+        @if (journalAccountOptionsReadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>تعذر تحميل حسابات القيد.@(hasLoadedJournalAccounts ? " الخيارات المعروضة آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryJournalAccountOptionsAsync" disabled="@isLoadingJournalAccounts">
+                    @(isLoadingJournalAccounts ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الحسابات")
+                </button>
+            </div>
+        }
+        else if (journalAccountOptionsReadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert">ليس لديك صلاحية عرض حسابات القيد.</div>
+        }
+        else if (hasLoadedJournalAccounts && !accounts.Any())
+        {
+            <div class="msg-luxury msg-error" role="status">لا توجد حسابات ترحيل متاحة للقيد.</div>
+        }
+
+        @if (journalCostCenterOptionsReadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>تعذر تحميل مراكز التكلفة.@(hasLoadedJournalCostCenters ? " الخيارات المعروضة آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryJournalCostCenterOptionsAsync" disabled="@isLoadingJournalCostCenters">
+                    @(isLoadingJournalCostCenters ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل مراكز التكلفة")
+                </button>
+            </div>
+        }
+        else if (journalCostCenterOptionsReadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert">ليس لديك صلاحية عرض مراكز التكلفة.</div>
+        }
+        else if (hasLoadedJournalCostCenters && !costCenters.Any())
+        {
+            <div class="msg-luxury msg-error" role="status">لا توجد مراكز تكلفة نشطة؛ يمكن ترك الحقل بدون مركز.</div>
+        }
 
         <div class="table-card-luxury">
             <div class="card-head-luxury">
@@ -68,7 +130,7 @@ else
                             <tr @key="line">
                                 <td class="td-num">@idx</td>
                                 <td>
-                                    <select @bind="line.AccountID" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:'Tajawal';font-size:.82rem;background:#fcfaf6">
+                                    <select @bind="line.AccountID" disabled="@(isLoadingJournalAccounts || journalAccountOptionsReadDenied)" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:'Tajawal';font-size:.82rem;background:#fcfaf6">
                                         <option value="0">— اختر حساب —</option>
                                         @foreach(var acc in accounts){<option value="@acc.Id">@acc.Code - @acc.Name</option>}
                                     </select>
@@ -77,7 +139,7 @@ else
                                 <td><input type="number" @bind="line.CreditAmount" @bind:after="()=>OnAmountChanged(line, false)" step="0.01" min="0" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:monospace;font-size:.84rem;background:#fef3c7" placeholder="0.00" /></td>
                                 <td><input type="text" @bind="line.Description" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:'Tajawal';font-size:.82rem;background:#fcfaf6" placeholder="بيان السطر" /></td>
                                 <td>
-                                    <select @bind="line.CostCenterID" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:'Tajawal';font-size:.82rem;background:#fff">
+                                    <select @bind="line.CostCenterID" disabled="@(isLoadingJournalCostCenters || journalCostCenterOptionsReadDenied)" style="width:100%;height:38px;border:1.5px solid #e8e2d0;border-radius:10px;padding:0 10px;font-family:'Tajawal';font-size:.82rem;background:#fff">
                                         <option value="0">— بدون —</option>
                                         @foreach(var cc in costCenters){<option value="@cc.Id">@cc.Name</option>}
                                     </select>
@@ -112,8 +174,7 @@ else
             else if(JournalId==0){<button class="btn-luxury" style="background:#10b981;color:#fff" @onclick="SaveAndPost" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>حفظ وترحيل مباشر</button>}
             <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">إلغاء</button>
             <div style="margin-right:auto;display:flex;gap:8px;align-items:center">
-                <span style="font-size:.75rem;color:#6b7280">الحسابات المتاحة: @accounts.Count</span>
-                @if(accounts.Count==0){<span style="font-size:.75rem;color:#dc2626;font-weight:800"><i class=bi-exclamation-triangle-fill></i> لا توجد حسابات - تأكد من شجرة الحسابات</span>}
+                <span style="font-size:.75rem;color:#6b7280">الحسابات المتاحة: @(hasLoadedJournalAccounts ? accounts.Count.ToString() : "غير متاحة")</span>
             </div>
         </div>
     }
@@ -171,6 +232,18 @@ else
     private List<SearchableItem> accounts = new();
     private List<LookupDto> costCenters = new();
     private bool isLoading = true;
+    private bool isLoadingJournalAccounts;
+    private bool hasLoadedJournalAccounts;
+    private bool journalAccountOptionsReadFailed;
+    private bool journalAccountOptionsReadDenied;
+    private bool isLoadingJournalCostCenters;
+    private bool hasLoadedJournalCostCenters;
+    private bool journalCostCenterOptionsReadFailed;
+    private bool journalCostCenterOptionsReadDenied;
+    private bool isLoadingJournalDetail;
+    private bool journalDetailReadFailed;
+    private bool journalDetailReadDenied;
+    private bool journalDetailNotFound;
     private bool isSaving = false;
     private string msg = "";
     private bool msgOk = true;
@@ -184,25 +257,137 @@ else
         isLoading=true;
         try
         {
-            accounts = await LookupService.GetChartOfAccountsSearchableAsync();
-            costCenters = await LookupService.GetCostCentersAsync();
+            await LoadJournalAccountOptionsAsync();
+            await LoadJournalCostCenterOptionsAsync();
             if (JournalId!=0)
             {
-                var existing = await AccountingService.GetJournalByIdAsync(JournalId);
-                if (existing!=null)
-                {
-                    if (existing.JournalStatus!=1){ toast="لا يمكن تعديل قيد مرحل - مرحل بالفعل"; toastOk=false; Navigation.NavigateTo($"/journal-entries/{JournalId}"); return; }
-                    if (existing.IsAutoGenerated){ toast="هذا قيد أوتوماتيك - عدل المستند الأصلي بدلاً من القيد"; toastOk=false; Navigation.NavigateTo($"/journal-entries/{JournalId}"); return; }
-                    journalDto = existing;
-                }
+                await LoadJournalDetailAsync();
             }
             else
             {
-                journalDto.JournalNumber = await AccountingService.GenerateJournalNoAsync(UserSession.UserID);
+                // يُخصص رقم القيد داخل معاملة الحفظ؛ فتح النموذج أو إلغاؤه لا يستهلك رقمًا.
+                journalDto.JournalNumber = null;
             }
         }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }
         finally{ isLoading=false; }
+    }
+
+    private Task RetryJournalAccountOptionsAsync() => LoadJournalAccountOptionsAsync();
+
+    private async Task LoadJournalAccountOptionsAsync()
+    {
+        if (isLoadingJournalAccounts) return;
+
+        isLoadingJournalAccounts = true;
+        journalAccountOptionsReadDenied = false;
+        try
+        {
+            var loadedAccounts = await LookupService.GetJournalPostingAccountsSearchableAsync();
+            accounts = loadedAccounts;
+            hasLoadedJournalAccounts = true;
+            journalAccountOptionsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            accounts = new();
+            hasLoadedJournalAccounts = false;
+            journalAccountOptionsReadFailed = false;
+            journalAccountOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load journal posting-account options.");
+            journalAccountOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingJournalAccounts = false;
+        }
+    }
+
+    private Task RetryJournalCostCenterOptionsAsync() => LoadJournalCostCenterOptionsAsync();
+
+    private async Task LoadJournalCostCenterOptionsAsync()
+    {
+        if (isLoadingJournalCostCenters) return;
+
+        isLoadingJournalCostCenters = true;
+        journalCostCenterOptionsReadDenied = false;
+        try
+        {
+            var loadedCostCenters = await LookupService.GetCostCentersForJournalEntryAsync();
+            costCenters = loadedCostCenters;
+            hasLoadedJournalCostCenters = true;
+            journalCostCenterOptionsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            costCenters = new();
+            hasLoadedJournalCostCenters = false;
+            journalCostCenterOptionsReadFailed = false;
+            journalCostCenterOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center options for the journal-entry editor.");
+            journalCostCenterOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingJournalCostCenters = false;
+        }
+    }
+
+    private Task RetryJournalDetailLoadAsync() => LoadJournalDetailAsync();
+
+    private async Task LoadJournalDetailAsync()
+    {
+        if (JournalId == 0 || isLoadingJournalDetail) return;
+
+        isLoadingJournalDetail = true;
+        journalDetailReadFailed = false;
+        journalDetailReadDenied = false;
+        journalDetailNotFound = false;
+        try
+        {
+            var existing = await AccountingService.GetJournalByIdAsync(JournalId);
+            if (existing is null)
+            {
+                journalDetailNotFound = true;
+                return;
+            }
+
+            if (existing.JournalStatus != 1)
+            {
+                toast = "لا يمكن تعديل قيد مرحل - مرحل بالفعل";
+                toastOk = false;
+                Navigation.NavigateTo($"/journal-entries/{JournalId}");
+                return;
+            }
+            if (existing.IsAutoGenerated)
+            {
+                toast = "هذا قيد أوتوماتيك - عدل المستند الأصلي بدلاً من القيد";
+                toastOk = false;
+                Navigation.NavigateTo($"/journal-entries/{JournalId}");
+                return;
+            }
+
+            journalDto = existing;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            journalDetailReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load journal {JournalID} for editing.", JournalId);
+            journalDetailReadFailed = true;
+        }
+        finally
+        {
+            isLoadingJournalDetail = false;
+        }
     }
 
     private void AddLine()

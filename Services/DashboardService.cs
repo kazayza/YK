@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
@@ -6,17 +7,26 @@ namespace YKCoatings.Services
     public class DashboardService : BaseDbService
     {
         private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<DashboardService> _logger;
 
-        public DashboardService(IConfiguration configuration, ModuleAuthorizationService authorization) : base(configuration)
+        public DashboardService(
+            IConfiguration configuration,
+            ModuleAuthorizationService authorization,
+            ILogger<DashboardService> logger) : base(configuration)
         {
             _authorization = authorization;
+            _logger = logger;
         }
+
+        private static bool HasViewPermission(HashSet<string> viewModuleCodes, params string[] moduleCodes) =>
+            moduleCodes.Any(viewModuleCodes.Contains);
 
         // ==========================================
         // إحصائيات عامة
         // ==========================================
         public async Task<DashboardStatsDto> GetStatsAsync()
         {
+            var viewModuleCodes = await _authorization.GetCurrentUserViewModuleCodesAsync();
             using var connection = CreateConnection();
 
             var sql = @"
@@ -33,7 +43,23 @@ namespace YKCoatings.Services
                     (SELECT ISNULL(SUM(CurrentBalance), 0) FROM dbo.Suppliers WHERE IsActive = 1) AS SuppliersBalance,
                     (SELECT ISNULL(SUM(CurrentBalance), 0) FROM dbo.Customers WHERE IsActive = 1) AS CustomersBalance";
 
-            return await connection.QueryFirstOrDefaultAsync<DashboardStatsDto>(sql) ?? new DashboardStatsDto();
+            var stats = await connection.QueryFirstOrDefaultAsync<DashboardStatsDto>(sql) ?? new DashboardStatsDto();
+            if (!HasViewPermission(viewModuleCodes, "SCR_ITEMS")) stats.TotalItems = 0;
+            if (!HasViewPermission(viewModuleCodes, "SCR_SUPPLIERS")) stats.TotalSuppliers = 0;
+            if (!HasViewPermission(viewModuleCodes, "SCR_CUSTOMERS")) stats.TotalCustomers = 0;
+            if (!HasViewPermission(viewModuleCodes, "SCR_WAREHOUSES")) stats.TotalWarehouses = 0;
+            if (!HasViewPermission(viewModuleCodes, "SCR_EMP", "SCR_DEPARTMENTS")) stats.TotalEmployees = 0;
+            if (!HasViewPermission(viewModuleCodes, "SCR_COA", "SCR_JV", "SCR_PINV"))
+            {
+                stats.SuppliersBalance = 0;
+                stats.CustomersBalance = 0;
+            }
+
+            // These fields are not part of the current dashboard UI permission map.
+            stats.TotalCategories = 0;
+            stats.TotalUsers = 0;
+            stats.TodayLogins = 0;
+            return stats;
         }
 
         // ==========================================
@@ -41,6 +67,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<RecentActivityDto>> GetRecentActivitiesAsync(int take = 10)
         {
+            _authorization.RequireCurrentUserSession();
             using var connection = CreateConnection();
             var sql = @"SELECT TOP (@Take)
                             AuditDate, Username,
@@ -58,6 +85,12 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<DashboardPendingDto> GetPendingApprovalsAsync()
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync(
+                "لا تملك صلاحية عرض مؤشرات المشتريات في لوحة التحكم.",
+                ("SCR_PR", permission => permission.CanView),
+                ("SCR_PO", permission => permission.CanView),
+                ("SCR_PINV", permission => permission.CanView));
+
             using var connection = CreateConnection();
             var sql = @"
                 SELECT
@@ -76,6 +109,11 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<DashboardInventoryAlertsDto> GetInventoryAlertsAsync()
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync(
+                "لا تملك صلاحية عرض مؤشرات المخزون في لوحة التحكم.",
+                ("SCR_STOCK", permission => permission.CanView),
+                ("SCR_WAREHOUSES", permission => permission.CanView));
+
             using var connection = CreateConnection();
             var sql = @"
                 SELECT
@@ -110,6 +148,12 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<DashboardOverdueDto> GetOverdueInfoAsync()
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync(
+                "لا تملك صلاحية عرض مؤشرات مالية في لوحة التحكم.",
+                ("SCR_COA", permission => permission.CanView),
+                ("SCR_JV", permission => permission.CanView),
+                ("SCR_PINV", permission => permission.CanView));
+
             using var connection = CreateConnection();
             var sql = @"
                 SELECT
@@ -135,6 +179,12 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<DashboardPurchaseStatsDto> GetMonthlyPurchaseStatsAsync()
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync(
+                "لا تملك صلاحية عرض مؤشرات المشتريات في لوحة التحكم.",
+                ("SCR_PR", permission => permission.CanView),
+                ("SCR_PO", permission => permission.CanView),
+                ("SCR_PINV", permission => permission.CanView));
+
             using var connection = CreateConnection();
             var sql = @"
                 DECLARE @MonthStart DATE = DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1);
@@ -165,6 +215,10 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<DashboardItemAlertDto>> GetTopItemAlertsAsync(int take = 5)
         {
+            await _authorization.RequireAnyCurrentUserPermissionAsync(
+                "لا تملك صلاحية عرض تنبيهات المخزون في لوحة التحكم.",
+                ("SCR_STOCK", permission => permission.CanView),
+                ("SCR_WAREHOUSES", permission => permission.CanView));
             using var connection = CreateConnection();
             var sql = @"SELECT TOP (@Take)
                             i.ItemID, i.ItemCode, i.ItemNameAr,
@@ -205,6 +259,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<DashboardDeltasDto> GetStatsDeltasAsync()
         {
+            var viewModuleCodes = await _authorization.GetCurrentUserViewModuleCodesAsync();
             try
             {
                 using var connection = CreateConnection();
@@ -222,39 +277,130 @@ namespace YKCoatings.Services
                         (SELECT COUNT(*) FROM dbo.Employees WHERE IsActive = 1 AND EmployeeStatus = 1 AND CAST(HireDate AS DATE) >= {prevStart} AND CAST(HireDate AS DATE) < {monthStart}) AS PrevEmployees,
                         (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {monthStart}) AS NewPOs,
                         (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {prevStart} AND CAST(OrderDate AS DATE) < {monthStart}) AS PrevPOs";
-                return await connection.QueryFirstOrDefaultAsync<DashboardDeltasDto>(sql) ?? new DashboardDeltasDto();
+                var deltas = await connection.QueryFirstOrDefaultAsync<DashboardDeltasDto>(sql) ?? new DashboardDeltasDto();
+                if (!HasViewPermission(viewModuleCodes, "SCR_ITEMS"))
+                    deltas.NewItems = deltas.PrevItems = 0;
+                if (!HasViewPermission(viewModuleCodes, "SCR_SUPPLIERS"))
+                    deltas.NewSuppliers = deltas.PrevSuppliers = 0;
+                if (!HasViewPermission(viewModuleCodes, "SCR_CUSTOMERS"))
+                    deltas.NewCustomers = deltas.PrevCustomers = 0;
+                if (!HasViewPermission(viewModuleCodes, "SCR_EMP", "SCR_DEPARTMENTS"))
+                    deltas.NewEmployees = deltas.PrevEmployees = 0;
+                if (!HasViewPermission(viewModuleCodes, "SCR_PR", "SCR_PO", "SCR_PINV"))
+                    deltas.NewPOs = deltas.PrevPOs = 0;
+                return deltas;
             }
-            catch { return new DashboardDeltasDto(); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to load dashboard statistics deltas; returning empty deltas.");
+                return new DashboardDeltasDto();
+            }
         }
         // ==========================================
-        // مشتريات آخر N شهر (للرسم البياني) — 6 أو 12
+        // المشتريات والمبيعات لآخر N شهر بالجنيه، مرتبة من الأقدم إلى الأحدث
         // ==========================================
-public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync(int months = 6)
-{
-    if (months < 1) months = 6;
-    if (months > 12) months = 12;
-    using var connection = CreateConnection();
-    var sql = @"
-        ;WITH Months AS (
-            SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2
-            UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
-            UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8
-            UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
-        )
-        SELECT
-            FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM') AS MonthKey,
-            DATENAME(MONTH, DATEADD(MONTH, -m.N, GETDATE())) AS MonthName,
-            ISNULL(SUM(pi.TotalAmount), 0) AS Amount
-        FROM Months m
-        LEFT JOIN dbo.PurchaseInvoices pi
-            ON FORMAT(pi.InvoiceDate, 'yyyy-MM') = FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM')
-            AND pi.InvoiceStatus NOT IN (7)
-        WHERE m.N < @Months
-        GROUP BY m.N, FORMAT(DATEADD(MONTH, -m.N, GETDATE()), 'yyyy-MM'),
-                 DATENAME(MONTH, DATEADD(MONTH, -m.N, GETDATE()))
-        ORDER BY MonthKey ASC";
-    return (await connection.QueryAsync<MonthlyChartDto>(sql, new { Months = months })).ToList();
-}
+        public Task<List<MonthlyChartDto>> GetMonthlyPurchaseChartAsync(int months = 6) =>
+            GetMonthlyPurchaseSalesChartAsync(months, includePurchases: true, includeSales: false);
+
+        public async Task<List<MonthlyChartDto>> GetMonthlyPurchaseSalesChartAsync(
+            int months = 6,
+            bool includePurchases = true,
+            bool includeSales = true)
+        {
+            if (months < 1) months = 6;
+            if (months > 12) months = 12;
+            if (!includePurchases && !includeSales) return new List<MonthlyChartDto>();
+
+            if (includePurchases)
+            {
+                await _authorization.RequireAnyCurrentUserPermissionAsync(
+                    "لا تملك صلاحية عرض مؤشرات المشتريات في لوحة التحكم.",
+                    ("SCR_PR", permission => permission.CanView),
+                    ("SCR_PO", permission => permission.CanView),
+                    ("SCR_PINV", permission => permission.CanView));
+            }
+
+            if (includeSales)
+            {
+                await _authorization.RequireCurrentUserPermissionAsync(
+                    "SCR_SINV",
+                    permission => permission.CanView,
+                    "لا تملك صلاحية عرض مؤشرات المبيعات في لوحة التحكم.");
+            }
+
+            var ctes = new List<string>
+            {
+                @"MonthOffsets AS (
+                    SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2
+                    UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+                    UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8
+                    UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
+                )",
+                @"Months AS (
+                    SELECT
+                        DATEADD(MONTH, -m.N, @CurrentMonthStart) AS MonthStart,
+                        CONVERT(char(7), DATEADD(MONTH, -m.N, @CurrentMonthStart), 126) AS MonthKey,
+                        DATENAME(MONTH, DATEADD(MONTH, -m.N, @CurrentMonthStart)) AS MonthName
+                    FROM MonthOffsets m
+                    WHERE m.N < @Months
+                )"
+            };
+            var joins = new List<string>();
+            var purchaseAmount = "CAST(0 AS DECIMAL(19,2))";
+            var salesAmount = "CAST(0 AS DECIMAL(19,2))";
+
+            if (includePurchases)
+            {
+                ctes.Add(@"PurchaseMonthly AS (
+                    SELECT
+                        DATEFROMPARTS(YEAR(pi.InvoiceDate), MONTH(pi.InvoiceDate), 1) AS MonthStart,
+                        SUM(ISNULL(pi.TotalAmount, 0) *
+                            CASE WHEN ISNULL(pi.ExchangeRate, 0) > 0 THEN pi.ExchangeRate ELSE 1 END) AS PurchaseAmount
+                    FROM dbo.PurchaseInvoices pi
+                    WHERE pi.InvoiceDate >= @StartMonth
+                      AND pi.InvoiceDate < @EndMonth
+                      AND (pi.InvoiceStatus IS NULL OR pi.InvoiceStatus <> 7)
+                    GROUP BY DATEFROMPARTS(YEAR(pi.InvoiceDate), MONTH(pi.InvoiceDate), 1)
+                )");
+                joins.Add("LEFT JOIN PurchaseMonthly p ON p.MonthStart = m.MonthStart");
+                purchaseAmount = "ISNULL(p.PurchaseAmount, 0)";
+            }
+
+            if (includeSales)
+            {
+                ctes.Add(@"SalesMonthly AS (
+                    SELECT
+                        DATEFROMPARTS(YEAR(si.InvoiceDate), MONTH(si.InvoiceDate), 1) AS MonthStart,
+                        SUM(ISNULL(si.TotalAmount, 0) *
+                            CASE WHEN ISNULL(si.ExchangeRate, 0) > 0 THEN si.ExchangeRate ELSE 1 END) AS SalesAmount
+                    FROM dbo.SalesInvoices si
+                    WHERE si.InvoiceDate >= @StartMonth
+                      AND si.InvoiceDate < @EndMonth
+                      AND (si.InvoiceStatus IS NULL OR si.InvoiceStatus <> 6)
+                    GROUP BY DATEFROMPARTS(YEAR(si.InvoiceDate), MONTH(si.InvoiceDate), 1)
+                )");
+                joins.Add("LEFT JOIN SalesMonthly s ON s.MonthStart = m.MonthStart");
+                salesAmount = "ISNULL(s.SalesAmount, 0)";
+            }
+
+            using var connection = CreateConnection();
+            var sql = $@"
+                DECLARE @CurrentMonthStart DATE = DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1);
+                DECLARE @StartMonth DATE = DATEADD(MONTH, 1 - @Months, @CurrentMonthStart);
+                DECLARE @EndMonth DATE = DATEADD(MONTH, 1, @CurrentMonthStart);
+                ;WITH {string.Join("," + Environment.NewLine, ctes)}
+                SELECT
+                    m.MonthKey,
+                    m.MonthName,
+                    {purchaseAmount} AS Amount,
+                    {salesAmount} AS SalesAmount
+                FROM Months m
+                {string.Join(Environment.NewLine, joins)}
+                ORDER BY m.MonthStart ASC";
+
+            return (await connection.QueryAsync<MonthlyChartDto>(sql, new { Months = months })).ToList();
+        }
         // ==========================================
         // ملخص لوحة التصنيع - قراءة فقط
         // ==========================================
@@ -587,6 +733,16 @@ ORDER BY pb.ProductionOrderID, pbs.StageOrder";
             var results = new List<GlobalSearchResultDto>();
             var t = (term ?? "").Trim();
             if (t.Length < 2) return results;
+
+            var viewModuleCodes = await _authorization.GetCurrentUserViewModuleCodesAsync();
+            items &= HasViewPermission(viewModuleCodes, "SCR_ITEMS");
+            customers &= HasViewPermission(viewModuleCodes, "SCR_CUSTOMERS");
+            suppliers &= HasViewPermission(viewModuleCodes, "SCR_SUPPLIERS");
+            employees &= HasViewPermission(viewModuleCodes, "SCR_EMP");
+            users &= HasViewPermission(viewModuleCodes, "SCR_USERS");
+            invoices &= HasViewPermission(viewModuleCodes, "SCR_PINV");
+            pos &= HasViewPermission(viewModuleCodes, "SCR_PO");
+            prs &= HasViewPermission(viewModuleCodes, "SCR_PR");
 
             using var connection = CreateConnection();
             var p = "%" + t + "%";

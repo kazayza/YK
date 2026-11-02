@@ -75,7 +75,7 @@ else
                         <i class="bi bi-arrow-right"></i>
                         <span>رجوع</span>
                     </button>
-                    @if (CanEditHeader && perms.CanEdit)
+                    @if (CanEditHeader && CanEditHeaderByPermission)
                     {
                         <button class="btn-act btn-primary-act" @onclick="SaveHeaderAsync" title="حفظ">
                             <i class="bi bi-floppy-fill"></i>
@@ -89,7 +89,7 @@ else
                             <span>تحديث التكاليف</span>
                         </button>
                     }
-                    @if (!IsNew && CanActivate && perms.CanEdit)
+                    @if (!IsNew && CanActivate && perms.CanApprove)
                     {
                         <button class="btn-act btn-success-act" @onclick="ActivateAsync">
                             <i class="bi bi-check-circle-fill"></i>
@@ -172,14 +172,14 @@ else
                                 <label class="flabel required">اسم الوصفة</label>
                                 <input type="text" class="finput"
                                        @bind="bom.BOMName"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)"
                                        placeholder="أدخل اسم الوصفة" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">المنتج النهائي</label>
                                 <select class="fselect"
                                         @bind="bom.ProductItemID"
-                                        disabled="@(!CanEditHeader || IsProductLocked || !perms.CanEdit)">
+                                        disabled="@(!CanEditHeader || IsProductLocked || !CanEditHeaderByPermission)">
                                     <option value="0">-- اختر المنتج --</option>
                                     @foreach (var item in productLookup)
                                     {
@@ -198,13 +198,13 @@ else
                                 <label class="flabel required">حجم الدفعة</label>
                                 <input type="number" step="0.0001" class="finput"
                                        @bind="bom.BatchSize"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">وحدة الدفعة</label>
                                 <select class="fselect"
                                         @bind="bom.BatchUnitID"
-                                        disabled="@(!CanEditHeader || !perms.CanEdit)">
+                                        disabled="@(!CanEditHeader || !CanEditHeaderByPermission)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @foreach (var unit in unitLookup)
                                     {
@@ -217,14 +217,14 @@ else
                                 <input type="number" step="0.0001" class="finput"
                                        @bind="bom.OutputQty"
                                        @bind:after="OnOutputQuantityChanged"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel required">وحدة الناتج</label>
                                 <select class="fselect"
                                         @bind="bom.OutputUnitID"
                                         @bind:after="OnOutputUnitChanged"
-                                        disabled="@(!CanEditHeader || !perms.CanEdit)">
+                                        disabled="@(!CanEditHeader || !CanEditHeaderByPermission)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @foreach (var unit in unitLookup)
                                     {
@@ -242,27 +242,27 @@ else
                                 <label class="flabel">نسبة الهالك %</label>
                                 <input type="number" step="0.01" class="finput"
                                        @bind="bom.WastePercent"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">الوقت المقدر (ساعة)</label>
                                 <input type="number" step="0.01" class="finput"
                                        @bind="bom.EstimatedTime"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">تاريخ السريان من</label>
                                 <input type="date" class="finput"
                                        value="@EffectiveFromText"
                                        @oninput="(ChangeEventArgs e) => EffectiveFromText = e.Value?.ToString() ?? string.Empty"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">تاريخ السريان إلى</label>
                                 <input type="date" class="finput"
                                        value="@EffectiveToText"
                                        @oninput="(ChangeEventArgs e) => EffectiveToText = e.Value?.ToString() ?? string.Empty"
-                                       disabled="@(!CanEditHeader || !perms.CanEdit)" />
+                                       disabled="@(!CanEditHeader || !CanEditHeaderByPermission)" />
                             </div>
                         </div>
                     </div>
@@ -308,7 +308,7 @@ else
                             <div class="form-group-modern">
                                 <label class="flabel required">الوحدة</label>
                                 <select class="fselect" @bind="detailModel.UnitID"
-                                        @bind:after="OnUnitChanged"
+                                        @bind:after="OnBOMDetailUnitChanged"
                                         disabled="@(!CanEditLines || !perms.CanEdit)">
                                     <option value="0">-- اختر الوحدة --</option>
                                     @foreach (var unit in unitLookup)
@@ -401,14 +401,22 @@ else
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">بديل الصنف</label>
-                                <select class="fselect" @bind="SubstituteItemIdValue"
-                                        disabled="@(!CanEditLines || !perms.CanEdit)">
-                                    <option value="0">-- لا يوجد --</option>
-                                    @foreach (var item in filteredMaterialLookup)
-                                    {
-                                        <option value="@item.Id">@item.Name</option>
-                                    }
-                                </select>
+                                <SearchableSelect Items="@filteredSubstituteLookup"
+                                                  @bind-SelectedId="SubstituteItemIdValue"
+                                                  Placeholder="ابحث بالعربي أو الإنجليزي أو كود الصنف..."
+                                                  IsDisabled="@(!CanEditLines || !perms.CanEdit)" />
+                                @if (HasUnavailableSubstituteSelection)
+                                {
+                                    <span class="field-hint warning">
+                                        البديل المحفوظ (@(detailModel.SubstituteItemName ?? "غير معروف")) لم يعد متوافقًا مع النوع/الوحدة أو أصبح غير نشط.
+                                    </span>
+                                    <button type="button" class="btn-clear-invalid-substitute"
+                                            @onclick="ClearUnavailableSubstituteSelection"
+                                            disabled="@(!CanEditLines || !perms.CanEdit)">
+                                        إزالة البديل غير المتوافق
+                                    </button>
+                                }
+                                <span class="field-hint">البديل من نفس نوع المكوّن وبنفس الوحدة الأساسية فقط؛ الكمية 1:1، ولا يوجد تبديل تلقائي.</span>
                             </div>
                             <div class="form-group-modern">
                                 <label class="flabel">الترتيب</label>
@@ -488,6 +496,7 @@ else
                                         <th>#</th>
                                         <th>النوع</th>
                                         <th>الصنف</th>
+                                        <th>البديل</th>
                                         <th class="tc">الوحدة</th>
                                         <th class="tc">الكمية</th>
                                         <th class="tc">طريقة الإدخال</th>
@@ -518,6 +527,20 @@ else
                                                     <div class="item-name">@row.ItemName</div>
                                                     <div class="item-code">@row.ItemCode</div>
                                                 </td>
+                                                <td>
+                                                    @if (row.SubstituteItemID.HasValue)
+                                                    {
+                                                        <div class="item-name">@(row.SubstituteItemName ?? "بديل غير متاح")</div>
+                                                        @if (!string.IsNullOrWhiteSpace(row.SubstituteItemCode))
+                                                        {
+                                                            <div class="item-code">@row.SubstituteItemCode</div>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">—</span>
+                                                    }
+                                                </td>
                                                 <td class="tc">@row.UnitName</td>
                                                 <td class="tc fw-600">@row.Quantity.ToString("N4")</td>
                                                 <td class="tc">
@@ -546,21 +569,24 @@ else
                                                     }
                                                 </td>
                                                 <td class="tc">
-                                                    @if (CanEditLines && perms.CanEdit)
-                                                    {
-                                                        <div class="row-actions">
+                                                    <div class="row-actions">
+                                                        @if (CanEditLines && perms.CanEdit)
+                                                        {
                                                             <button class="row-btn edit-row-btn"
                                                                     title="تعديل"
                                                                     @onclick="() => EditDetail(row)">
                                                                 <i class="bi bi-pencil-fill"></i>
                                                             </button>
+                                                        }
+                                                        @if (CanEditLines && perms.CanDelete)
+                                                        {
                                                             <button class="row-btn delete-row-btn"
                                                                     title="حذف"
                                                                     @onclick="() => DeleteDetailAsync(row.BOMDetailID)">
                                                                 <i class="bi bi-trash-fill"></i>
                                                             </button>
-                                                        </div>
-                                                    }
+                                                        }
+                                                    </div>
                                                 </td>
                                             </tr>
                                         }
@@ -568,7 +594,7 @@ else
                                     else
                                     {
                                         <tr>
-                                            <td colspan="14" class="empty-row">
+                                            <td colspan="15" class="empty-row">
                                                 <i class="bi bi-inbox" style="font-size:1.5rem; display:block; margin-bottom:.5rem;"></i>
                                                 لا توجد مكونات بعد
                                             </td>
@@ -750,21 +776,24 @@ else
                                                     }
                                                 </td>
                                                 <td class="tc">
-                                                    @if (CanEditLines && perms.CanEdit)
-                                                    {
-                                                        <div class="row-actions">
+                                                    <div class="row-actions">
+                                                        @if (CanEditLines && perms.CanEdit)
+                                                        {
                                                             <button class="row-btn edit-row-btn"
                                                                     title="تعديل"
                                                                     @onclick="() => EditStage(row)">
                                                                 <i class="bi bi-pencil-fill"></i>
                                                             </button>
+                                                        }
+                                                        @if (CanEditLines && perms.CanDelete)
+                                                        {
                                                             <button class="row-btn delete-row-btn"
                                                                     title="حذف"
                                                                     @onclick="() => DeleteStageAsync(row.BOMStageID)">
                                                                 <i class="bi bi-trash-fill"></i>
                                                             </button>
-                                                        </div>
-                                                    }
+                                                        }
+                                                    </div>
                                                 </td>
                                             </tr>
                                         }
@@ -899,7 +928,7 @@ else
                                 </label>
                                 <textarea rows="3" class="ftextarea"
                                           @bind="bom.Instructions"
-                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          disabled="@(!CanEditHeader || !CanEditHeaderByPermission)"
                                           placeholder="أدخل تعليمات التصنيع..."></textarea>
                             </div>
                             <div class="form-group-modern">
@@ -909,7 +938,7 @@ else
                                 </label>
                                 <textarea rows="3" class="ftextarea"
                                           @bind="bom.SafetyNotes"
-                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          disabled="@(!CanEditHeader || !CanEditHeaderByPermission)"
                                           placeholder="أدخل ملاحظات السلامة..."></textarea>
                             </div>
                             <div class="form-group-modern">
@@ -919,7 +948,7 @@ else
                                 </label>
                                 <textarea rows="3" class="ftextarea"
                                           @bind="bom.QualityNotes"
-                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          disabled="@(!CanEditHeader || !CanEditHeaderByPermission)"
                                           placeholder="أدخل ملاحظات الجودة..."></textarea>
                             </div>
                             <div class="form-group-modern">
@@ -929,7 +958,7 @@ else
                                 </label>
                                 <textarea rows="3" class="ftextarea"
                                           @bind="bom.Notes"
-                                          disabled="@(!CanEditHeader || !perms.CanEdit)"
+                                          disabled="@(!CanEditHeader || !CanEditHeaderByPermission)"
                                           placeholder="أدخل أي ملاحظات إضافية..."></textarea>
                             </div>
                         </div>
@@ -1365,6 +1394,11 @@ else
         gap: .3rem;
     }
 .field-hint.warning{ color: #d97706; }
+.btn-clear-invalid-substitute{
+        align-self:flex-start;border:1px solid #f59e0b;border-radius:7px;padding:.3rem .6rem;
+        background:#fffbeb;color:#92400e;font-size:.74rem;font-weight:700;cursor:pointer;
+    }
+.btn-clear-invalid-substitute:disabled{opacity:.55;cursor:not-allowed;}
 .toggle-check{
         display: inline-flex;
         align-items: center;
@@ -1717,6 +1751,7 @@ else
     private bool IsNew         => BOMID == 0;
     private bool IsReadOnly    => !IsNew && (bom.BOMStatus == 2 || bom.BOMStatus == 4);
     private bool CanEditHeader => IsNew || bom.BOMStatus == 1 || bom.BOMStatus == 3;
+    private bool CanEditHeaderByPermission => IsNew ? perms?.CanAdd == true : perms?.CanEdit == true;
     private bool CanEditLines  => !IsNew && (bom.BOMStatus == 1 || bom.BOMStatus == 3);
     private bool CanActivate   => !IsNew && (bom.BOMStatus == 1 || bom.BOMStatus == 3);
     private bool CanStop       => !IsNew && bom.BOMStatus == 2;
@@ -1754,9 +1789,18 @@ else
 
     private int SubstituteItemIdValue
     {
-        get => detailModel.SubstituteItemID ?? 0;
+        get => detailModel.SubstituteItemID.HasValue &&
+               filteredSubstituteLookup.Any(item => item.Id == detailModel.SubstituteItemID.Value)
+            ? detailModel.SubstituteItemID.Value
+            : 0;
         set => detailModel.SubstituteItemID = value == 0 ? null : value;
     }
+
+    private bool HasUnavailableSubstituteSelection =>
+        detailModel.SubstituteItemID.HasValue &&
+        !filteredSubstituteLookup.Any(item => item.Id == detailModel.SubstituteItemID.Value);
+
+    private void ClearUnavailableSubstituteSelection() => detailModel.SubstituteItemID = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1873,6 +1917,8 @@ else
         if (bom.BatchUnitID   <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الدفعة");          return false; }
         if (bom.OutputQty     <= 0)                   { currentTab = 1; await Alert("يجب إدخال كمية ناتجة أكبر من صفر"); return false; }
         if (bom.OutputUnitID  <= 0)                   { currentTab = 1; await Alert("يجب اختيار وحدة الناتج");          return false; }
+        if (bom.EffectiveFrom.HasValue && bom.EffectiveTo.HasValue && bom.EffectiveTo.Value.Date < bom.EffectiveFrom.Value.Date)
+        { currentTab = 1; await Alert("تاريخ نهاية السريان لا يمكن أن يسبق تاريخ بدايته"); return false; }
 
         if (HasIncompatiblePercentageLines)
         {
@@ -1996,6 +2042,7 @@ else
             LineCost          = row.LineCost,
             IsOptional        = row.IsOptional,
             SubstituteItemID  = row.SubstituteItemID,
+            SubstituteItemCode = row.SubstituteItemCode,
             SubstituteItemName = row.SubstituteItemName,
             Sequence          = row.Sequence,
             StageNumber       = row.StageNumber,
@@ -2055,6 +2102,11 @@ else
 
     private void RefreshFilteredMaterialLookup() =>
         filteredMaterialLookup = materialLookup.Where(item => item.ItemType == SelectedItemType).ToList();
+
+    private List<SearchableItem> filteredSubstituteLookup =>
+        filteredMaterialLookup
+            .Where(item => item.Id != detailModel.ItemID && item.PrimaryUnitID == detailModel.UnitID)
+            .ToList();
 
     private bool IsCompositionMaterialType(int materialType) => materialType is 1 or 3;
 
@@ -2132,6 +2184,7 @@ else
     private Task OnMaterialSelected(SearchableItem? selected)
     {
         detailModel.UnitID = selected?.PrimaryUnitID ?? 0;
+        detailModel.SubstituteItemID = null;
         detailModel.Quantity = 0;
         detailModel.Percentage = 0;
         detailModel.InputPercentage = null;
@@ -2154,6 +2207,12 @@ else
             detailModel.InputPercentage = null;
             UpdatePercentagePreview();
         }
+    }
+
+    private void OnBOMDetailUnitChanged()
+    {
+        detailModel.SubstituteItemID = null;
+        OnUnitChanged();
     }
 
     private void OnUnitChanged()
@@ -2296,11 +2355,14 @@ else
     {
         if (IsNew) { await Alert("يجب حفظ الوصفة أولاً"); return; }
         if (!await ValidateHeaderAsync()) return;
-        await BomService.UpdateBOMAsync(bom, CurrentUserId);
-        outputBasisDirty = false;
-        await ReloadDetailsAsync();
-        await ReloadCostsAsync();
-        await ReloadAuditAsync();
+        if (perms?.CanEdit == true)
+        {
+            await BomService.UpdateBOMAsync(bom, CurrentUserId);
+            outputBasisDirty = false;
+            await ReloadDetailsAsync();
+            await ReloadCostsAsync();
+            await ReloadAuditAsync();
+        }
         var existing = await BomService.CheckActiveVersionExistsAsync(bom.ProductItemID, bom.BOMID);
         if (existing.Exists)
         {

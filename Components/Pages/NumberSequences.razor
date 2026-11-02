@@ -6,8 +6,9 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<NumberSequences> Logger
 
-<PageTitle>إدارة تسلسلات الأرقام -   </PageTitle>
+<PageTitle>إدارة تسلسلات الأرقام</PageTitle>
 
 @if (!initializationComplete || isLoading)
 {
@@ -73,7 +74,7 @@ else
             </div>
         }
 
-        @if (loadError)
+        @if (loadError && !hasLoaded)
         {
             <section class="sequence-warning" role="alert">
                 <div><strong>تعذر تحميل التسلسلات</strong><p>@loadErrorMessage</p></div>
@@ -82,6 +83,14 @@ else
         }
         else
         {
+            @if (loadError && hasLoaded)
+            {
+                <section class="sequence-warning" role="alert">
+                    <div><strong>تعذر تحديث التسلسلات؛ المعروض آخر نتائج ناجحة</strong><p>@loadErrorMessage</p></div>
+                    <button class="sequence-button secondary" @onclick="() => ReloadSequencesAsync()" disabled="@isLoading">إعادة المحاولة</button>
+                </section>
+            }
+
             @if (!sequences.Any(s => string.Equals(s.SequenceCode, "SQ", StringComparison.OrdinalIgnoreCase)))
             {
                 <section class="sequence-warning sq-notice">
@@ -385,6 +394,7 @@ else
     private bool canAdd;
     private bool canEdit;
     private bool loadError;
+    private bool hasLoaded;
     private bool showEditor;
     private bool isEditing;
     private bool isSaving;
@@ -460,7 +470,9 @@ else
         loadErrorMessage = null;
         try
         {
-            sequences = await SequenceService.GetManagedSequencesAsync(UserSession.UserID);
+            var loadedSequences = await SequenceService.GetManagedSequencesAsync(UserSession.UserID);
+            sequences = loadedSequences;
+            hasLoaded = true;
             if (showSuccess) SetStatus("تم تحديث قائمة التسلسلات دون استهلاك أي رقم.", isError: false);
         }
         catch (UnauthorizedAccessException)
@@ -471,8 +483,11 @@ else
         }
         catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Failed to load managed number sequences.");
             loadError = true;
-            loadErrorMessage = $"تعذر تحميل البيانات. تحقق من مخطط dbo.NumberSequences. التفاصيل: {ex.GetBaseException().Message}";
+            loadErrorMessage = hasLoaded
+                ? "تعذر تحديث قائمة التسلسلات؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل قائمة التسلسلات. يرجى إعادة المحاولة.";
         }
         finally
         {

@@ -9,6 +9,7 @@
 @inject LeaveTypeService LeaveTypeService
 @inject LookupService LookupService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<LeaveRequestForm> Logger
 
 <PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
 
@@ -74,7 +75,13 @@ else
 
         @if (!string.IsNullOrWhiteSpace(formMessage))
         {
-            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
+            <div class="form-message @(formSuccess ? "msg-success" : "msg-error")" role="alert">
+                @formMessage
+                @if (isPageLoadError)
+                {
+                    <button type="button" class="btn-modern btn-secondary-modern" @onclick="RetryLoadPageAsync" disabled="@isLoading">إعادة محاولة تحميل الطلب</button>
+                }
+            </div>
         }
 
         <div class="form-card">
@@ -200,6 +207,18 @@ else
                         <strong>سبب الرفض:</strong> @approvalInfo.RejectionReason
                     </div>
                 }
+            </div>
+        }
+
+        @if (isLoadingBalances)
+        {
+            <div class="form-message" role="status">جاري تحميل أرصدة الإجازات...</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(balanceLookupError))
+        {
+            <div class="form-message msg-error" role="alert">
+                @balanceLookupError
+                <button class="btn-modern btn-secondary-modern" @onclick="RetryLoadBalancesAsync" disabled="@isLoadingBalances">إعادة محاولة تحميل الرصيد</button>
             </div>
         }
 
@@ -370,6 +389,9 @@ else
     private List<LookupDto>? employees;
     private List<LeaveTypeListDto>? leaveTypes;
     private List<LeaveBalanceDto> balances = new();
+    private string balanceLookupError = string.Empty;
+    private bool isLoadingBalances = false;
+    private int balanceRequestVersion = 0;
 
     private bool isLoading = true;
     private bool isSaving = false;
@@ -380,6 +402,7 @@ else
 
     private string formMessage = "";
     private bool formSuccess = true;
+    private bool isPageLoadError = false;
 
     private bool showActionDialog = false;
     private string pendingAction = "";
@@ -418,6 +441,7 @@ else
     {
         isLoading = true;
         formMessage = "";
+        isPageLoadError = false;
 
         try
         {
@@ -451,8 +475,11 @@ else
         }
         catch (Exception ex)
         {
-            formMessage = "خطأ: " + ex.Message;
+            Logger.LogWarning(ex,
+                "Failed to load leave-request page data.");
+            formMessage = "تعذر تحميل بيانات طلب الإجازة. أعد المحاولة.";
             formSuccess = false;
+            isPageLoadError = true;
         }
         finally
         {
@@ -460,20 +487,64 @@ else
         }
     }
 
+    private async Task RetryLoadPageAsync()
+    {
+        if (isLoading) return;
+        await LoadPageAsync();
+    }
+
     private async Task OnEmployeeChanged()
     {
         if (model.EmployeeID > 0)
         {
-            try
-            {
-                balances = await LeaveRequestService.GetLeaveBalancesAsync(model.EmployeeID);
-            }
-            catch { balances = new(); }
+            await LoadEmployeeBalancesAsync();
         }
         else
         {
+            balanceRequestVersion++;
             balances = new();
+            balanceLookupError = string.Empty;
+            isLoadingBalances = false;
         }
+    }
+
+    private async Task LoadEmployeeBalancesAsync()
+    {
+        var employeeId = model.EmployeeID;
+        if (employeeId <= 0) return;
+
+        var requestVersion = ++balanceRequestVersion;
+        isLoadingBalances = true;
+        balanceLookupError = string.Empty;
+        balances = new();
+
+        try
+        {
+            var loadedBalances = await LeaveRequestService.GetLeaveBalancesAsync(employeeId);
+            if (requestVersion == balanceRequestVersion && model.EmployeeID == employeeId)
+                balances = loadedBalances;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load leave balances after employee selection.");
+            if (requestVersion == balanceRequestVersion && model.EmployeeID == employeeId)
+            {
+                balances = new();
+                balanceLookupError = "تعذر تحميل أرصدة الإجازات للموظف. أعد المحاولة.";
+            }
+        }
+        finally
+        {
+            if (requestVersion == balanceRequestVersion)
+                isLoadingBalances = false;
+        }
+    }
+
+    private async Task RetryLoadBalancesAsync()
+    {
+        if (isLoadingBalances || model.EmployeeID <= 0) return;
+        await LoadEmployeeBalancesAsync();
     }
 
     private async Task SaveItem()

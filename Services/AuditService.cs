@@ -1,14 +1,20 @@
 ﻿using Dapper;
+using Microsoft.Extensions.Logging;
 
 namespace YKCoatings.Services
 {
     public class AuditService : BaseDbService
     {
         private readonly UserSessionService _session;
+        private readonly ILogger<AuditService> _logger;
 
-        public AuditService(IConfiguration configuration, UserSessionService session) : base(configuration)
+        public AuditService(
+            IConfiguration configuration,
+            UserSessionService session,
+            ILogger<AuditService> logger) : base(configuration)
         {
             _session = session;
+            _logger = logger;
         }
 
         public async Task WriteAuditLogAsync(
@@ -24,30 +30,14 @@ namespace YKCoatings.Services
         {
             try
             {
-                using var connection = CreateConnection();
+                // لا ننسب سجل التدقيق لمستخدم احتياطي عند غياب هوية الجلسة أو عدم تطابقها.
+                if (userId <= 0 || !_session.IsLoggedIn || _session.UserID != userId)
+                    return;
 
-                // تحقق من وجود المستخدم - لو غير موجود استخدم أول مستخدم نشط كـ fallback
-                // لمنع خطأ FK__AuditLog__UserID
-                int effectiveUserId = userId;
-                if (userId <= 0)
-                {
-                    var fallback = await connection.ExecuteScalarAsync<int?>(
-                        "SELECT TOP 1 UserID FROM dbo.SystemUsers WHERE IsActive=1 ORDER BY UserID");
-                    if (fallback == null) return; // لا يوجد مستخدمين - تخطي التدقيق
-                    effectiveUserId = fallback.Value;
-                }
-                else
-                {
-                    var exists = await connection.ExecuteScalarAsync<int>(
-                        "SELECT COUNT(1) FROM dbo.SystemUsers WHERE UserID=@ID", new { ID = userId });
-                    if (exists == 0)
-                    {
-                        var fallback = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 UserID FROM dbo.SystemUsers WHERE IsActive=1 ORDER BY UserID");
-                        if (fallback == null) return;
-                        effectiveUserId = fallback.Value;
-                    }
-                }
+                using var connection = CreateConnection();
+                var userExists = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dbo.SystemUsers WHERE UserID=@ID", new { ID = userId });
+                if (userExists == 0) return;
 
                 // محاولة الإدراج مع معالجة آمنة لأسماء الأعمدة المتغيرة
                 var hasUserName = await connection.ExecuteScalarAsync<int>(
@@ -84,7 +74,7 @@ namespace YKCoatings.Services
 
                 await connection.ExecuteAsync(sql, new
                 {
-                    UserID = effectiveUserId,
+                    UserID = userId,
                     ActionType = actionType,
                     TableName = tableName,
                     RecordID = recordId,
@@ -97,10 +87,16 @@ namespace YKCoatings.Services
                     MachineName = _session.MachineName ?? ""
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                // التدقيق لا يجب أن يكسر العملية الأساسية أبداً
-                // Swallow exception - audit failure should never break business flow
+                // Preserve the committed business result, but do not hide the audit failure from operators.
+                _logger.LogError(
+                    ex,
+                    "Failed to write audit event. Module={Module}, Table={Table}, Record={Record}, Action={ActionType}.",
+                    moduleName,
+                    tableName,
+                    recordId,
+                    actionType);
             }
         }
     }

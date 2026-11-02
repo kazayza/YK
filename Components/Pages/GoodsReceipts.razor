@@ -9,11 +9,24 @@
 @inject GoodsReceiptService GrnService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<GoodsReceipts> Logger
 
-<PageTitle>أذونات الاستلام - واي كي كوتينج   </PageTitle>
+<PageTitle>أذونات الاستلام - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
+else if (isReceiptPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات أذونات الاستلام...</p></div>
+}
+else if (receiptPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg></div><h4>@receiptPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadGoodsReceiptsPermissionsAsync" disabled="@isReceiptPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (receiptPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>@receiptPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
@@ -28,7 +41,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">أذونات الاستلام</h2><p class="lh-subtitle">استلام البضائع من الموردين وفحص الجودة</p></div>
                 </div>
                 <div class="lh-actions" style="overflow:visible !important">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count إذن</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(receiptsLoaded ? filtered.Count.ToString() : "—") إذن</span>
                     @if (permissions.CanExport)
                     {
                         <button class="btn-luxury btn-export-luxury" @onclick="ExportExcel" disabled="@isExporting">
@@ -68,6 +81,19 @@ else
             <div class="wf-step"><span class="wf-num">5</span><span>مرتجع</span></div>
         </div>
 
+        @if (isReceiptsLoading && receiptsLoaded)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تحديث الأذونات؛ البيانات الناجحة السابقة ما زالت معروضة.</div>
+        }
+        else if (receiptsLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@receiptsLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadDataAsync" disabled="@isReceiptsLoading">إعادة المحاولة</button></div>
+        }
+        else if (receiptsLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@receiptsLoadError</div>
+        }
+
         @if (receipts != null)
         {
             <div class="stats-luxury">
@@ -82,14 +108,27 @@ else
         <div class="filter-luxury">
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم الإذن أو المورد أو أمر الشراء..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">معتمد</option><option value="3">مرتبط بفاتورة</option><option value="4">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
-            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isReceiptsLoading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>@(isReceiptsLoading ? "جارٍ التحديث..." : "تحديث")</button>
         </div>
 
-        @if (receipts == null)
-        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
-        else if (!filtered.Any())
+        @if (isPrintingReceipt)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تجهيز تقرير إذن الاستلام للطباعة...</div>
+        }
+        else if (printReceiptLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@printReceiptLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryPrintReceiptAsync" disabled="@isPrintingReceipt">إعادة المحاولة</button></div>
+        }
+        else if (printReceiptLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@printReceiptLoadError</div>
+        }
+
+        @if (receipts == null && isReceiptsLoading)
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else if (receipts != null && !filtered.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أذونات استلام</h4></div>}
-        else
+        else if (receipts != null)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -114,7 +153,7 @@ else
                                     <td class="td-center"><div class="actions-wrap-luxury">
                                         @if (permissions.CanEdit && grn.GRNStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         else{<button class="act-btn view" title="عرض" @onclick="() => ViewReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
-                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
+                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReceipt(grn.GRNID)" disabled="@isPrintingReceipt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
                                         @if (permissions.CanApprove && grn.GRNStatus == 1){<button class="act-btn approve" title="اعتماد" @onclick="() => EditReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
                                         @if (permissions.CanDelete && grn.GRNStatus == 1){<button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(grn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                     </div></td>
@@ -224,6 +263,15 @@ else
     private List<GoodsReceiptListDto>? receipts;
     private List<GoodsReceiptListDto> filtered = new();
     private ModulePermissionDto? permissions;
+    private int receiptPermissionsLoadVersion;
+    private bool isReceiptPermissionsLoading, receiptPermissionsLoadFailed, receiptPermissionsLoadDenied;
+    private string receiptPermissionsLoadError = string.Empty;
+    private int receiptsLoadVersion;
+    private bool isReceiptsLoading, receiptsLoaded, receiptsLoadFailed, receiptsLoadDenied;
+    private string receiptsLoadError = string.Empty;
+    private int printReceiptRequestVersion, printingReceiptId, failedPrintReceiptId;
+    private bool isPrintingReceipt, printReceiptLoadFailed, printReceiptLoadDenied;
+    private string printReceiptLoadError = string.Empty;
     private string searchText = "";
     private int filterStatus = 0;
     private bool isExporting = false;
@@ -236,16 +284,137 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_GRN");
-        if (permissions != null && permissions.CanView) await LoadData();
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadGoodsReceiptsPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
     }
+
+    private async Task<bool> LoadGoodsReceiptsPermissionsAsync()
+    {
+        if (isReceiptPermissionsLoading) return false;
+
+        var requestVersion = ++receiptPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        isReceiptPermissionsLoading = true;
+        receiptPermissionsLoadFailed = false;
+        receiptPermissionsLoadDenied = false;
+        receiptPermissionsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentGoodsReceiptsPermissionRequest(requestVersion, userId)) return false;
+            permissions = PermissionService.GetModule("SCR_GRN");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading goods receipt list permissions for user {UserID}.", userId);
+            if (!IsCurrentGoodsReceiptsPermissionRequest(requestVersion, userId)) return false;
+            receiptPermissionsLoadDenied = true;
+            receiptPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load goods receipt list permissions for user {UserID}.", userId);
+            if (!IsCurrentGoodsReceiptsPermissionRequest(requestVersion, userId)) return false;
+            receiptPermissionsLoadFailed = true;
+            receiptPermissionsLoadError = "تعذر تحميل صلاحيات أذونات الاستلام. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == receiptPermissionsLoadVersion)
+            {
+                isReceiptPermissionsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentGoodsReceiptsPermissionRequest(int requestVersion, int userId) =>
+        requestVersion == receiptPermissionsLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadGoodsReceiptsPermissionsAsync()
+    {
+        if (isReceiptPermissionsLoading) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadGoodsReceiptsPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private void GoToLogin() => Navigation.NavigateTo("/login", forceLoad: true);
 
     private async Task LoadData()
     {
-        receipts = await GrnService.GetReceiptsListAsync();
-        Filter();
+        if (isReceiptsLoading) return;
+
+        var requestVersion = ++receiptsLoadVersion;
+        var userId = UserSession.UserID;
+        isReceiptsLoading = true;
+        receiptsLoadFailed = false;
+        receiptsLoadDenied = false;
+        receiptsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedReceipts = await GrnService.GetReceiptsListAsync();
+            if (!IsCurrentReceiptsLoad(requestVersion, userId)) return;
+            receipts = loadedReceipts ?? new List<GoodsReceiptListDto>();
+            receiptsLoaded = true;
+            Filter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading goods receipt list for user {UserID}.", userId);
+            if (!IsCurrentReceiptsLoad(requestVersion, userId)) return;
+            receipts = null;
+            filtered = new List<GoodsReceiptListDto>();
+            receiptsLoaded = false;
+            receiptsLoadDenied = true;
+            receiptsLoadError = "ليس لديك صلاحية عرض أذونات الاستلام.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load goods receipt list for user {UserID}.", userId);
+            if (!IsCurrentReceiptsLoad(requestVersion, userId)) return;
+            receiptsLoadFailed = true;
+            receiptsLoadError = receiptsLoaded
+                ? "تعذر تحديث الأذونات؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل أذونات الاستلام. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == receiptsLoadVersion)
+            {
+                isReceiptsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentReceiptsLoad(int requestVersion, int userId) =>
+        requestVersion == receiptsLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadDataAsync()
+    {
+        if (isReceiptsLoading) return;
+        await LoadData();
     }
 
     private void Filter()
@@ -289,12 +458,59 @@ else
 
     private async Task PrintReceipt(int id)
     {
+        if (id <= 0 || isPrintingReceipt) return;
+
+        var requestVersion = ++printReceiptRequestVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        printingReceiptId = id;
+        isPrintingReceipt = true;
+        printReceiptLoadFailed = false;
+        printReceiptLoadDenied = false;
+        printReceiptLoadError = string.Empty;
+        failedPrintReceiptId = 0;
+        StateHasChanged();
+
         try
         {
-            var html = await GrnService.GenerateReportHtmlAsync(id, UserSession.UserID);
+            var html = await GrnService.GenerateReportHtmlAsync(id, userId);
+            if (!IsCurrentPrintReceiptRequest(requestVersion, id, userId, pageUri)) return;
             await JS.InvokeVoidAsync("printHtml", html);
         }
-        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied printing goods receipt {GoodsReceiptID} for user {UserID}.", id, userId);
+            if (!IsCurrentPrintReceiptRequest(requestVersion, id, userId, pageUri)) return;
+            printReceiptLoadDenied = true;
+            printReceiptLoadError = "ليس لديك صلاحية طباعة إذن الاستلام.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to prepare goods receipt printout {GoodsReceiptID}.", id);
+            if (!IsCurrentPrintReceiptRequest(requestVersion, id, userId, pageUri)) return;
+            printReceiptLoadFailed = true;
+            printReceiptLoadError = "تعذر تجهيز تقرير إذن الاستلام. أعد المحاولة.";
+            failedPrintReceiptId = id;
+        }
+        finally
+        {
+            if (requestVersion == printReceiptRequestVersion)
+            {
+                isPrintingReceipt = false;
+                printingReceiptId = 0;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPrintReceiptRequest(int requestVersion, int receiptId, int userId, string pageUri) =>
+        requestVersion == printReceiptRequestVersion && printingReceiptId == receiptId &&
+        UserSession.IsLoggedIn && UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryPrintReceiptAsync()
+    {
+        if (isPrintingReceipt || !printReceiptLoadFailed || failedPrintReceiptId <= 0) return;
+        await PrintReceipt(failedPrintReceiptId);
     }
 
     private async Task ExportExcel()

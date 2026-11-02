@@ -1,7 +1,22 @@
-﻿<Router AppAssembly="typeof(Program).Assembly">
+﻿@inject NavigationManager Navigation
+
+<Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        <ErrorBoundary>
+            <ChildContent>
+                <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            </ChildContent>
+            <ErrorContent>
+                <div class="alert alert-danger m-3" dir="rtl" role="alert">
+                    <h2 class="h5">تعذر عرض الصفحة</h2>
+                    <p>حدث خطأ غير متوقع. لم نعرض تفاصيل تقنية أو بيانات حساسة.</p>
+                    <button class="btn btn-primary" type="button" @onclick="ReloadCurrentPage">
+                        إعادة تحميل الصفحة
+                    </button>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
     </Found>
     <NotFound>
         <LayoutView Layout="typeof(Layout.MainLayout)">
@@ -9,3 +24,7 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    private void ReloadCurrentPage() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+}

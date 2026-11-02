@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 using SqlTransaction = Microsoft.Data.SqlClient.SqlTransaction;
@@ -10,15 +11,59 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<InventoryService> _logger;
 
-        public InventoryService(IConfiguration configuration, AuditService audit, NotificationService notif)
-            : base(configuration) { _audit = audit; _notif = notif; }
+        public InventoryService(
+            IConfiguration configuration,
+            AuditService audit,
+            NotificationService notif,
+            ModuleAuthorizationService authorization,
+            ILogger<InventoryService> logger)
+            : base(configuration)
+        {
+            _audit = audit;
+            _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
+        }
+
+        private Task RequireInventoryPermissionAsync(
+            int userId, string moduleCode, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, moduleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentInventoryPermissionAsync(
+            string moduleCode, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(moduleCode, predicate, deniedMessage);
+
+        private sealed class TransferBalanceSnapshot
+        {
+            public TransferBalanceSnapshot() { }
+            public decimal CurrentQty { get; set; }
+            public decimal AvailableQty { get; set; }
+            public decimal AverageCost { get; set; }
+        }
+
+        private sealed class TransferBatchSnapshot
+        {
+            public TransferBatchSnapshot() { }
+            public int BatchBalanceID { get; set; }
+            public string? BatchNumber { get; set; }
+            public decimal CurrentQty { get; set; }
+            public decimal? UnitCost { get; set; }
+            public DateTime? ExpiryDate { get; set; }
+            public DateTime? ManufactureDate { get; set; }
+            public DateTime? ReceiptDate { get; set; }
+            public int? SourceType { get; set; }
+            public string? SourceDocNumber { get; set; }
+        }
 
         // ==========================================
         // إحصائيات المخزون
         // ==========================================
         public async Task<InventoryDashboardDto> GetDashboardAsync()
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_STOCK", p => p.CanView, "ليس لديك صلاحية عرض لوحة المخزون.");
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<InventoryDashboardDto>(
                 "SELECT * FROM dbo.vw_InventoryDashboard") ?? new InventoryDashboardDto();
@@ -29,6 +74,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<StockBalanceDto>> GetStockBalancesAsync(int? warehouseId = null, int? itemType = null, int? alertLevel = null)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_STOCK", p => p.CanView, "ليس لديك صلاحية عرض أرصدة المخزون.");
             using var connection = CreateConnection();
             var sql = @"SELECT * FROM dbo.vw_StockBalances
                         WHERE (@WarehouseID IS NULL OR WarehouseID = @WarehouseID)
@@ -44,6 +90,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<BatchBalanceDto>> GetBatchBalancesAsync(int? itemId = null, int? warehouseId = null, int? expiryAlert = null)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_STOCK", p => p.CanView, "ليس لديك صلاحية عرض أرصدة الباتشات.");
             using var connection = CreateConnection();
             var sql = @"SELECT * FROM dbo.vw_BatchBalances
                         WHERE (@ItemID IS NULL OR ItemID = @ItemID)
@@ -61,6 +108,7 @@ namespace YKCoatings.Services
             int? itemId = null, int? warehouseId = null, int? transType = null,
             DateTime? fromDate = null, DateTime? toDate = null)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_TRANS", p => p.CanView, "ليس لديك صلاحية عرض حركات المخزون.");
             using var connection = CreateConnection();
             var sql = @"SELECT * FROM dbo.vw_StockMovements
                         WHERE (@ItemID IS NULL OR ItemID = @ItemID)
@@ -86,6 +134,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<StockTransferListDto>> GetTransfersListAsync()
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_TRANSFER", p => p.CanView, "ليس لديك صلاحية عرض التحويلات المخزنية.");
             using var connection = CreateConnection();
             return (await connection.QueryAsync<StockTransferListDto>(
                 "SELECT * FROM dbo.vw_StockTransferSummary ORDER BY TransferDate DESC, TransferID DESC")).ToList();
@@ -93,6 +142,7 @@ namespace YKCoatings.Services
 
         public async Task<StockTransferHeaderDto?> GetTransferByIdAsync(int transferId)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_TRANSFER", p => p.CanView, "ليس لديك صلاحية عرض التحويلات المخزنية.");
             using var connection = CreateConnection();
             var sql = @"SELECT st.TransferID, st.TransferNumber, st.TransferDate, st.TransferStatus,
                             st.FromWarehouseID, fw.WarehouseNameAr AS FromWarehouseName,
@@ -109,6 +159,7 @@ namespace YKCoatings.Services
 
         public async Task<List<StockTransferDetailDto>> GetTransferDetailsAsync(int transferId)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_TRANSFER", p => p.CanView, "ليس لديك صلاحية عرض التحويلات المخزنية.");
             using var connection = CreateConnection();
             var sql = @"SELECT std.TransferDetailID, std.TransferID, std.LineNumber,
                             std.ItemID, i.ItemCode, i.ItemNameAr,
@@ -126,6 +177,7 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateTransferNumberAsync()
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_TRANSFER", p => p.CanAdd, "ليس لديك صلاحية إنشاء تحويل مخزني.");
             using var connection = CreateConnection();
             try
             {
@@ -145,6 +197,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertTransferAsync(StockTransferHeaderDto header, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanAdd, "ليس لديك صلاحية إنشاء تحويل مخزني.");
             using var connection = CreateConnection();
             var newId = await connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO dbo.StockTransfers (TransferNumber, TransferDate, FromWarehouseID, ToWarehouseID,
@@ -161,48 +214,218 @@ namespace YKCoatings.Services
 
         public async Task UpdateTransferAsync(StockTransferHeaderDto header, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanEdit, "ليس لديك صلاحية تعديل تحويل مخزني.");
+            if (header.FromWarehouseID <= 0 || header.ToWarehouseID <= 0 || header.FromWarehouseID == header.ToWarehouseID)
+                throw new Exception("اختر مخزنين مختلفين صالحين للتحويل.");
+
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT TransferStatus FROM dbo.StockTransfers WHERE TransferID = @ID", new { ID = header.TransferID });
-            if (status != 1) throw new Exception("لا يمكن تعديل تحويل ليس في حالة مسودة");
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.StockTransfers SET TransferDate=@TransferDate, FromWarehouseID=@FromWarehouseID,
-                    ToWarehouseID=@ToWarehouseID, TransferReason=@TransferReason, Notes=@Notes,
-                    ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE TransferID=@TransferID",
-                new { header.TransferID, header.TransferDate, header.FromWarehouseID, header.ToWarehouseID,
-                    header.TransferReason, header.Notes, UserID = userId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            var transferNumber = string.Empty;
+            try
+            {
+                var existing = await connection.QueryFirstOrDefaultAsync<
+                    (string TransferNumber, int Status, int FromWarehouseID, int ToWarehouseID)>(
+                    @"SELECT TransferNumber, TransferStatus, FromWarehouseID, ToWarehouseID
+                      FROM dbo.StockTransfers WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@ID",
+                    new { ID = header.TransferID }, transaction);
+                if (string.IsNullOrWhiteSpace(existing.TransferNumber)) throw new Exception("التحويل غير موجود");
+                if (existing.Status != 1) throw new Exception("لا يمكن تعديل تحويل ليس في حالة مسودة");
+
+                var detailCount = await connection.QueryFirstOrDefaultAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.StockTransferDetails WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@ID",
+                    new { ID = header.TransferID }, transaction);
+                if (detailCount > 0 &&
+                    (existing.FromWarehouseID != header.FromWarehouseID || existing.ToWarehouseID != header.ToWarehouseID))
+                    throw new Exception("لا يمكن تغيير المخزنين بعد إضافة أصناف؛ احذف الأسطر أولًا ثم عدّل المخازن.");
+
+                var updated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.StockTransfers SET TransferDate=@TransferDate, FromWarehouseID=@FromWarehouseID,
+                        ToWarehouseID=@ToWarehouseID, TransferReason=@TransferReason, Notes=@Notes,
+                        ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE TransferID=@TransferID AND TransferStatus=1",
+                    new { header.TransferID, header.TransferDate, header.FromWarehouseID, header.ToWarehouseID,
+                        header.TransferReason, header.Notes, UserID = userId }, transaction);
+                if (updated != 1) throw new InvalidOperationException("تغيرت حالة التحويل أثناء التعديل؛ أُلغيت العملية.");
+
+                transferNumber = existing.TransferNumber;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating stock transfer {TransferID}.",
+                        header.TransferID);
+                }
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "StockTransfers", header.TransferID.ToString(),
-                moduleName: "SCR_TRANSFER", description: $"تعديل تحويل: {header.TransferNumber}");
+                moduleName: "SCR_TRANSFER", description: $"تعديل تحويل: {transferNumber}");
         }
 
         public async Task<int> InsertTransferDetailAsync(StockTransferDetailEditDto detail, int userId)
         {
-            using var connection = CreateConnection();
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanAdd, "ليس لديك صلاحية إضافة تفاصيل تحويل مخزني.");
             if (detail.ItemID <= 0) throw new Exception("اختر الصنف");
             if (detail.Quantity <= 0) throw new Exception("أدخل الكمية");
 
-            var available = await connection.QueryFirstOrDefaultAsync<decimal>(
-                @"SELECT ISNULL(ib.AvailableQty, 0) FROM dbo.InventoryBalance ib
-                  INNER JOIN dbo.StockTransfers st ON ib.WarehouseID = st.FromWarehouseID
-                  WHERE ib.ItemID = @ItemID AND st.TransferID = @TransferID",
-                new { detail.ItemID, detail.TransferID });
-            if (detail.Quantity > available)
-                throw new Exception($"الكمية المطلوبة ({detail.Quantity:#,##0.##}) أكبر من المتاح ({available:#,##0.##})");
+            var batchNumber = string.IsNullOrWhiteSpace(detail.BatchNumber)
+                ? null
+                : detail.BatchNumber.Trim();
+            if (batchNumber?.Length > 100) throw new Exception("رقم الباتش يتجاوز الحد المسموح وهو 100 حرف.");
 
-            var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
-                "SELECT ISNULL(MAX(LineNumber),0) FROM dbo.StockTransferDetails WHERE TransferID=@ID", new { ID = detail.TransferID });
-            detail.LineNumber = maxLine + 1;
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            int newId;
+            try
+            {
+                var header = await connection.QueryFirstOrDefaultAsync<
+                    (string TransferNumber, int Status, int FromWarehouseID, int ToWarehouseID)>(
+                    @"SELECT TransferNumber, TransferStatus, FromWarehouseID, ToWarehouseID
+                      FROM dbo.StockTransfers WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@TransferID",
+                    new { detail.TransferID }, transaction);
+                if (string.IsNullOrWhiteSpace(header.TransferNumber)) throw new Exception("التحويل غير موجود");
+                if (header.Status != 1) throw new Exception("لا يمكن إضافة سطر إلى تحويل ليس مسودة");
+                if (header.FromWarehouseID <= 0 || header.ToWarehouseID <= 0 || header.FromWarehouseID == header.ToWarehouseID)
+                    throw new Exception("حدد مخزنين مختلفين صالحين قبل إضافة الأصناف.");
 
-            var avgCost = await connection.QueryFirstOrDefaultAsync<decimal>(
-                "SELECT ISNULL(AverageCost, 0) FROM dbo.Items WHERE ItemID = @ID", new { ID = detail.ItemID });
+                var primaryUnitId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT PrimaryUnitID FROM dbo.Items WITH (HOLDLOCK) WHERE ItemID=@ItemID AND IsActive=1",
+                    new { detail.ItemID }, transaction);
+                if (!primaryUnitId.HasValue) throw new Exception("الصنف غير موجود أو غير نشط.");
+                if (detail.UnitID != primaryUnitId.Value)
+                    throw new Exception("تحويل المخزون يقبل الوحدة الأساسية للصنف فقط؛ اختر الصنف مجددًا لتحديث الوحدة.");
 
-            var newId = await connection.ExecuteScalarAsync<int>(
-                @"INSERT INTO dbo.StockTransferDetails (TransferID, LineNumber, ItemID, UnitID, Quantity, UnitCost, BatchNumber, ExpiryDate, Notes)
-                  VALUES (@TransferID, @LineNumber, @ItemID, @UnitID, @Quantity, @UnitCost, @BatchNumber, @ExpiryDate, @Notes);
-                  SELECT CAST(SCOPE_IDENTITY() AS INT);",
-                new { detail.TransferID, detail.LineNumber, detail.ItemID, detail.UnitID, detail.Quantity,
-                    UnitCost = detail.UnitCost > 0 ? detail.UnitCost : avgCost,
-                    detail.BatchNumber, detail.ExpiryDate, detail.Notes });
+                var balance = await connection.QueryFirstOrDefaultAsync<TransferBalanceSnapshot>(
+                    @"SELECT CurrentQty, ISNULL(AvailableQty,0) AS AvailableQty, ISNULL(AverageCost,0) AS AverageCost
+                      FROM dbo.InventoryBalance WITH (UPDLOCK, HOLDLOCK)
+                      WHERE ItemID=@ItemID AND WarehouseID=@WarehouseID",
+                    new { detail.ItemID, WarehouseID = header.FromWarehouseID }, transaction);
+                if (balance is null) throw new Exception("لا يوجد رصيد للصنف في المخزن المصدر.");
+                if (balance.CurrentQty < 0 || balance.AvailableQty < 0 || balance.AvailableQty > balance.CurrentQty)
+                    throw new Exception("رصيد الصنف أو المحجوز منه غير متزن؛ أوقفنا إضافة السطر.");
+
+                var alreadyOnTransfer = await connection.QueryFirstOrDefaultAsync<decimal>(
+                    @"SELECT ISNULL(SUM(Quantity),0)
+                      FROM dbo.StockTransferDetails WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@TransferID AND ItemID=@ItemID",
+                    new { detail.TransferID, detail.ItemID }, transaction);
+                if (alreadyOnTransfer < 0 || detail.Quantity > balance.AvailableQty - alreadyOnTransfer)
+                {
+                    var remaining = Math.Max(0m, balance.AvailableQty - alreadyOnTransfer);
+                    throw new Exception($"الكمية تتجاوز المتاح بعد احتساب أسطر هذا التحويل. المتاح المتبقي {remaining:#,##0.####}.");
+                }
+
+                var batches = (await connection.QueryAsync<TransferBatchSnapshot>(
+                    @"SELECT BatchBalanceID, BatchNumber, CurrentQty, UnitCost, ExpiryDate,
+                             ManufactureDate, ReceiptDate, SourceType, SourceDocNumber
+                      FROM dbo.InventoryBatchBalance WITH (UPDLOCK, HOLDLOCK)
+                      WHERE ItemID=@ItemID AND WarehouseID=@WarehouseID
+                      ORDER BY BatchBalanceID",
+                    new { detail.ItemID, WarehouseID = header.FromWarehouseID }, transaction)).ToList();
+
+                decimal unitCost;
+                DateTime? expiryDate;
+                if (batches.Count > 0)
+                {
+                    if (batchNumber is null)
+                        throw new Exception("هذا الصنف متتبع بالباتش؛ اختر رقم باتش موجودًا في المخزن المصدر.");
+
+                    if (batches.Any(x => x.CurrentQty < 0 || string.IsNullOrWhiteSpace(x.BatchNumber) ||
+                        (x.CurrentQty > 0 && x.UnitCost.GetValueOrDefault() <= 0)))
+                        throw new Exception("توجد طبقة باتش سالبة أو بلا رقم/تكلفة موجبة؛ أوقفنا إضافة السطر.");
+                    var batchTotal = batches.Sum(x => x.CurrentQty);
+                    if (Math.Abs(batchTotal - balance.CurrentQty) > 0.0001m)
+                        throw new Exception("مجموع أرصدة الباتش لا يطابق الرصيد الإجمالي؛ سوِّ الفرق قبل إنشاء التحويل.");
+                    var layerValue = batches.Sum(x => x.CurrentQty * x.UnitCost.GetValueOrDefault());
+                    var layerAverage = batchTotal > 0 ? decimal.Round(layerValue / batchTotal, 4, MidpointRounding.AwayFromZero) : 0m;
+                    if (Math.Abs(layerAverage - balance.AverageCost) > 0.0001m)
+                        throw new Exception("متوسط تكلفة الرصيد لا يطابق تكلفة طبقات الباتش؛ سوِّ الفرق قبل إنشاء التحويل.");
+
+                    var selected = batches.Where(x => string.Equals(
+                        x.BatchNumber?.Trim(), batchNumber, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (selected.Count != 1)
+                        throw new Exception("رقم الباتش غير موجود مرة واحدة فقط في المخزن المصدر.");
+                    var sourceBatch = selected[0];
+                    var pendingBatchQty = await connection.QueryFirstOrDefaultAsync<decimal>(
+                        @"SELECT ISNULL(SUM(Quantity),0)
+                          FROM dbo.StockTransferDetails WITH (UPDLOCK, HOLDLOCK)
+                          WHERE TransferID=@TransferID AND ItemID=@ItemID
+                            AND UPPER(LTRIM(RTRIM(BatchNumber)))=UPPER(@BatchNumber)",
+                        new { detail.TransferID, detail.ItemID, BatchNumber = batchNumber }, transaction);
+                    if (pendingBatchQty < 0 || detail.Quantity > sourceBatch.CurrentQty - pendingBatchQty)
+                    {
+                        var remaining = Math.Max(0m, sourceBatch.CurrentQty - pendingBatchQty);
+                        throw new Exception($"الكمية تتجاوز رصيد الباتش المتبقي بعد احتساب أسطر التحويل: {remaining:#,##0.####}.");
+                    }
+                    var sourceBatchUnitCost = sourceBatch.UnitCost.GetValueOrDefault();
+                    if (sourceBatchUnitCost <= 0)
+                        throw new Exception("تكلفة الباتش المصدر غير موجبة؛ أوقفنا التحويل.");
+                    if (detail.ExpiryDate.HasValue && detail.ExpiryDate.Value.Date != sourceBatch.ExpiryDate?.Date)
+                        throw new Exception("تاريخ الصلاحية المدخل لا يطابق تاريخ الباتش في المخزن المصدر.");
+
+                    unitCost = sourceBatchUnitCost;
+                    expiryDate = sourceBatch.ExpiryDate;
+                }
+                else
+                {
+                    if (batchNumber is not null || detail.ExpiryDate.HasValue)
+                        throw new Exception("لا يمكن تحديد باتش أو صلاحية لصنف لا يملك رصيد باتش في المخزن المصدر.");
+                    if (balance.CurrentQty > 0 && balance.AverageCost <= 0)
+                        throw new Exception("متوسط تكلفة رصيد المخزن المصدر غير موجب؛ أوقفنا التحويل.");
+
+                    unitCost = balance.AverageCost;
+                    expiryDate = null;
+                }
+
+                var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
+                    @"SELECT ISNULL(MAX(LineNumber),0)
+                      FROM dbo.StockTransferDetails WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@TransferID",
+                    new { detail.TransferID }, transaction);
+                detail.LineNumber = maxLine + 1;
+
+                newId = await connection.ExecuteScalarAsync<int>(
+                    @"INSERT INTO dbo.StockTransferDetails
+                        (TransferID, LineNumber, ItemID, UnitID, Quantity, UnitCost, BatchNumber, ExpiryDate, Notes)
+                      VALUES
+                        (@TransferID, @LineNumber, @ItemID, @UnitID, @Quantity, @UnitCost, @BatchNumber, @ExpiryDate, @Notes);
+                      SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                    new
+                    {
+                        detail.TransferID,
+                        detail.LineNumber,
+                        detail.ItemID,
+                        detail.UnitID,
+                        detail.Quantity,
+                        UnitCost = unitCost,
+                        BatchNumber = batchNumber,
+                        ExpiryDate = expiryDate,
+                        detail.Notes
+                    }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after inserting stock transfer detail for transfer {TransferID}.",
+                        detail.TransferID);
+                }
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 1, "StockTransferDetails", newId.ToString(),
                 moduleName: "SCR_TRANSFER", description: $"إضافة سطر في تحويل رقم {detail.TransferID}");
             return newId;
@@ -210,35 +433,99 @@ namespace YKCoatings.Services
 
         public async Task DeleteTransferDetailAsync(int detailId, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanDelete, "ليس لديك صلاحية حذف تفاصيل تحويل مخزني.");
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(int TransferID, int Status)>(
-                @"SELECT std.TransferID, st.TransferStatus FROM dbo.StockTransferDetails std
-                  INNER JOIN dbo.StockTransfers st ON std.TransferID=st.TransferID WHERE std.TransferDetailID=@ID",
-                new { ID = detailId });
-            if (info.Status != 1) throw new Exception("لا يمكن حذف سطر من تحويل ليس مسودة");
-            await connection.ExecuteAsync("DELETE FROM dbo.StockTransferDetails WHERE TransferDetailID=@ID", new { ID = detailId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            var transferId = 0;
+            var transferNumber = string.Empty;
+            try
+            {
+                var parentId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT TransferID FROM dbo.StockTransferDetails WHERE TransferDetailID=@ID",
+                    new { ID = detailId }, transaction);
+                if (!parentId.HasValue) throw new Exception("سطر التحويل غير موجود.");
+                transferId = parentId.Value;
+
+                var header = await connection.QueryFirstOrDefaultAsync<(string TransferNumber, int Status)>(
+                    @"SELECT TransferNumber, TransferStatus
+                      FROM dbo.StockTransfers WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@TransferID",
+                    new { TransferID = transferId }, transaction);
+                if (string.IsNullOrWhiteSpace(header.TransferNumber)) throw new Exception("التحويل غير موجود.");
+                if (header.Status != 1) throw new Exception("لا يمكن حذف سطر من تحويل ليس مسودة.");
+
+                var deleted = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.StockTransferDetails WHERE TransferDetailID=@ID AND TransferID=@TransferID",
+                    new { ID = detailId, TransferID = transferId }, transaction);
+                if (deleted != 1) throw new InvalidOperationException("تغير سطر التحويل أثناء الحذف؛ أُلغيت العملية.");
+
+                transferNumber = header.TransferNumber;
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting stock transfer detail {TransferDetailID}.",
+                        detailId);
+                }
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 3, "StockTransferDetails", detailId.ToString(),
-                moduleName: "SCR_TRANSFER", description: "حذف سطر من تحويل مخزني");
+                moduleName: "SCR_TRANSFER", description: $"حذف سطر من التحويل {transferNumber}");
         }
 
         public async Task ApproveAndExecuteTransferAsync(int transferId, int userId, int? employeeId = null)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanApprove, "ليس لديك صلاحية اعتماد التحويل المخزني.");
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string TransferNumber, int Status, int DetailCount)>(
-                @"SELECT TransferNumber, TransferStatus,
-                    (SELECT COUNT(*) FROM dbo.StockTransferDetails WHERE TransferID=st.TransferID)
-                  FROM dbo.StockTransfers st WHERE TransferID=@ID", new { ID = transferId });
-            if (string.IsNullOrWhiteSpace(info.TransferNumber)) throw new Exception("التحويل غير موجود");
-            if (info.Status != 1) throw new Exception("لا يمكن اعتماد تحويل ليس مسودة");
-            if (info.DetailCount == 0) throw new Exception("لا يمكن اعتماد تحويل بدون أصناف");
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.StockTransfers SET TransferStatus=2, ApprovedBy=@EmpID, ApprovedDate=GETDATE(),
-                    ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE TransferID=@ID",
-                new { ID = transferId, EmpID = employeeId, UserID = userId });
+            (string TransferNumber, int Status, int DetailCount) info;
+            try
+            {
+                // Keep the draft header locked while approval and stock execution are atomic.
+                info = await connection.QueryFirstOrDefaultAsync<(string TransferNumber, int Status, int DetailCount)>(
+                    @"SELECT st.TransferNumber, st.TransferStatus,
+                        (SELECT COUNT(*) FROM dbo.StockTransferDetails WITH (UPDLOCK, HOLDLOCK)
+                         WHERE TransferID=st.TransferID) AS DetailCount
+                      FROM dbo.StockTransfers st WITH (UPDLOCK, HOLDLOCK)
+                      WHERE st.TransferID=@ID",
+                    new { ID = transferId }, transaction);
+                if (string.IsNullOrWhiteSpace(info.TransferNumber)) throw new Exception("التحويل غير موجود");
+                if (info.Status != 1) throw new Exception("لا يمكن اعتماد تحويل ليس مسودة");
+                if (info.DetailCount == 0) throw new Exception("لا يمكن اعتماد تحويل بدون أصناف");
 
-            await connection.ExecuteAsync("EXEC dbo.sp_ExecuteStockTransfer @TransferID, @UserID",
-                new { TransferID = transferId, UserID = userId });
+                var statusUpdated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.StockTransfers SET TransferStatus=2, ApprovedBy=@EmpID, ApprovedDate=GETDATE(),
+                        ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE TransferID=@ID AND TransferStatus=1",
+                    new { ID = transferId, EmpID = employeeId, UserID = userId }, transaction);
+                if (statusUpdated != 1)
+                    throw new InvalidOperationException("تغيرت حالة التحويل أثناء الاعتماد؛ أُلغيت العملية.");
+
+                // If the posting procedure fails, the status change is rolled back too.
+                await connection.ExecuteAsync("EXEC dbo.sp_ExecuteStockTransfer @TransferID, @UserID",
+                    new { TransferID = transferId, UserID = userId }, transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after stock-transfer approval failed for transfer {TransferID}.",
+                        transferId);
+                }
+                throw;
+            }
 
             try
             {
@@ -253,7 +540,11 @@ namespace YKCoatings.Services
                     relatedRecordId: transferId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // Posting is already committed; keep it successful but make the lost notification observable.
+                _logger.LogWarning(ex, "Stock transfer was committed, but its notification could not be created.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "StockTransfers", transferId.ToString(),
                 moduleName: "SCR_TRANSFER", description: $"اعتماد وتنفيذ تحويل: {info.TransferNumber}");
@@ -261,24 +552,68 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteTransferAsync(int transferId, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANSFER", p => p.CanDelete, "ليس لديك صلاحية حذف تحويل مخزني.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
+            var transferNumber = string.Empty;
             try
             {
                 var info = await connection.QueryFirstOrDefaultAsync<(string TransferNumber, int Status)>(
-                    "SELECT TransferNumber, TransferStatus FROM dbo.StockTransfers WHERE TransferID=@ID",
+                    @"SELECT TransferNumber, TransferStatus
+                      FROM dbo.StockTransfers WITH (UPDLOCK, HOLDLOCK)
+                      WHERE TransferID=@ID",
                     new { ID = transferId }, transaction);
-                if (string.IsNullOrWhiteSpace(info.TransferNumber)) return (false, "التحويل غير موجود");
-                if (info.Status != 1) return (false, "لا يمكن حذف تحويل غير مسودة");
-                await connection.ExecuteAsync("DELETE FROM dbo.StockTransferDetails WHERE TransferID=@ID", new { ID = transferId }, transaction);
-                await connection.ExecuteAsync("DELETE FROM dbo.StockTransfers WHERE TransferID=@ID", new { ID = transferId }, transaction);
+                if (string.IsNullOrWhiteSpace(info.TransferNumber))
+                {
+                    try { transaction.Rollback(); }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogError(rollbackException,
+                            "Rollback failed while returning not-found result for stock transfer {TransferID}.",
+                            transferId);
+                    }
+                    return (false, "التحويل غير موجود");
+                }
+                if (info.Status != 1)
+                {
+                    try { transaction.Rollback(); }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogError(rollbackException,
+                            "Rollback failed while rejecting deletion of non-draft stock transfer {TransferID}.",
+                            transferId);
+                    }
+                    return (false, "لا يمكن حذف تحويل غير مسودة");
+                }
+
+                await connection.ExecuteAsync(
+                    "DELETE FROM dbo.StockTransferDetails WHERE TransferID=@ID",
+                    new { ID = transferId }, transaction);
+                var deletedHeader = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.StockTransfers WHERE TransferID=@ID AND TransferStatus=1",
+                    new { ID = transferId }, transaction);
+                if (deletedHeader != 1)
+                    throw new InvalidOperationException("تغيرت حالة التحويل أثناء الحذف؛ أُلغيت العملية.");
+
+                transferNumber = info.TransferNumber;
                 transaction.Commit();
-                await _audit.WriteAuditLogAsync(userId, 3, "StockTransfers", transferId.ToString(),
-                    moduleName: "SCR_TRANSFER", description: $"حذف تحويل: {info.TransferNumber}");
-                return (true, "تم الحذف بنجاح");
             }
-            catch (Exception ex) { transaction.Rollback(); return (false, ex.Message); }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after stock-transfer deletion failed for transfer {TransferID}.",
+                        transferId);
+                }
+                return (false, ex.Message);
+            }
+
+            await _audit.WriteAuditLogAsync(userId, 3, "StockTransfers", transferId.ToString(),
+                moduleName: "SCR_TRANSFER", description: $"حذف تحويل: {transferNumber}");
+            return (true, "تم الحذف بنجاح");
         }
 
         // ==========================================
@@ -286,6 +621,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<StockCountListDto>> GetCountsListAsync()
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_COUNT", p => p.CanView, "ليس لديك صلاحية عرض أوامر الجرد.");
             using var connection = CreateConnection();
             return (await connection.QueryAsync<StockCountListDto>(
                 "SELECT * FROM dbo.vw_StockCountSummary ORDER BY CountDate DESC, CountID DESC")).ToList();
@@ -293,6 +629,7 @@ namespace YKCoatings.Services
 
         public async Task<StockCountHeaderDto?> GetCountByIdAsync(int countId)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_COUNT", p => p.CanView, "ليس لديك صلاحية عرض أوامر الجرد.");
             using var connection = CreateConnection();
             var sql = @"SELECT sc.CountID, sc.CountNumber, sc.CountDate, sc.CountStatus, sc.CountType,
                             sc.WarehouseID, w.WarehouseNameAr, sc.CategoryID, cat.CategoryNameAr,
@@ -307,6 +644,7 @@ namespace YKCoatings.Services
 
         public async Task<List<StockCountDetailDto>> GetCountDetailsAsync(int countId)
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_COUNT", p => p.CanView, "ليس لديك صلاحية عرض أوامر الجرد.");
             using var connection = CreateConnection();
             var sql = @"SELECT scd.CountDetailID, scd.CountID, scd.LineNumber,
                             scd.ItemID, i.ItemCode, i.ItemNameAr,
@@ -324,6 +662,7 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateCountNumberAsync()
         {
+            await RequireCurrentInventoryPermissionAsync("SCR_COUNT", p => p.CanAdd, "ليس لديك صلاحية إنشاء أمر جرد.");
             using var connection = CreateConnection();
             try
             {
@@ -343,19 +682,45 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertCountAsync(StockCountHeaderDto header, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_COUNT", p => p.CanAdd, "ليس لديك صلاحية إنشاء أمر جرد.");
             using var connection = CreateConnection();
-            var newId = await connection.ExecuteScalarAsync<int>(
-                @"INSERT INTO dbo.StockCounts (CountNumber, CountDate, WarehouseID, CountType, CategoryID,
-                    CountStatus, CountedBy, SupervisorID, Notes, CreatedBy, CreatedDate)
-                  VALUES (@CountNumber, @CountDate, @WarehouseID, @CountType, NULLIF(@CategoryID, 0),
-                    1, NULLIF(@CountedBy, 0), NULLIF(@SupervisorID, 0), @Notes, @UserID, GETDATE());
-                  SELECT CAST(SCOPE_IDENTITY() AS INT);",
-                new { header.CountNumber, header.CountDate, header.WarehouseID,
-                    CountType = header.CountType == 0 ? 1 : header.CountType,
-                    header.CategoryID, header.CountedBy, header.SupervisorID, header.Notes, UserID = userId });
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            await connection.ExecuteAsync("EXEC dbo.sp_LoadItemsForStockCount @CountID, @WarehouseID, @CategoryID",
-                new { CountID = newId, header.WarehouseID, header.CategoryID });
+            int newId;
+            try
+            {
+                newId = await connection.ExecuteScalarAsync<int>(
+                    @"INSERT INTO dbo.StockCounts (CountNumber, CountDate, WarehouseID, CountType, CategoryID,
+                        CountStatus, CountedBy, SupervisorID, Notes, CreatedBy, CreatedDate)
+                      VALUES (@CountNumber, @CountDate, @WarehouseID, @CountType, NULLIF(@CategoryID, 0),
+                        1, NULLIF(@CountedBy, 0), NULLIF(@SupervisorID, 0), @Notes, @UserID, GETDATE());
+                      SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                    new { header.CountNumber, header.CountDate, header.WarehouseID,
+                        CountType = header.CountType == 0 ? 1 : header.CountType,
+                        header.CategoryID, header.CountedBy, header.SupervisorID, header.Notes, UserID = userId },
+                    transaction);
+
+                // Version argument is a fail-closed handshake: an older loader rejects
+                // the extra parameter, so an item-only count cannot be created by mistake.
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_LoadItemsForStockCount @CountID=@CountID, @WarehouseID=@WarehouseID, @CategoryID=@CategoryID, @BatchAwareVersion=@BatchAwareVersion",
+                    new { CountID = newId, header.WarehouseID, header.CategoryID, BatchAwareVersion = (byte)1 },
+                    transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating stock count {CountNumber}.",
+                        header.CountNumber);
+                }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(userId, 1, "StockCounts", newId.ToString(),
                 moduleName: "SCR_COUNT", description: $"إنشاء أمر جرد: {header.CountNumber}");
@@ -364,6 +729,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateCountedQtyAsync(int countDetailId, decimal? countedQty, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_COUNT", p => p.CanEdit, "ليس لديك صلاحية تعديل كميات الجرد.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(
                 "UPDATE dbo.StockCountDetails SET CountedQty=@Qty WHERE CountDetailID=@ID",
@@ -372,6 +738,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateCountedQtiesBulkAsync(int countId, List<(int DetailID, decimal? CountedQty)> items, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_COUNT", p => p.CanEdit, "ليس لديك صلاحية تعديل كميات الجرد.");
             using var connection = CreateConnection();
             foreach (var item in items)
                 await connection.ExecuteAsync(
@@ -388,19 +755,114 @@ namespace YKCoatings.Services
 
         public async Task ApproveAdjustmentsAsync(int countId, List<int> approvedDetailIds, int userId, int? employeeId = null)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_COUNT", p => p.CanApprove, "ليس لديك صلاحية اعتماد تسويات الجرد.");
+            var detailIds = (approvedDetailIds ?? new List<int>()).Distinct().ToList();
+            if (detailIds.Count == 0) throw new Exception("حدد تسوية واحدة على الأقل لاعتمادها.");
+
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string CountNumber, int Status)>(
-                "SELECT CountNumber, CountStatus FROM dbo.StockCounts WHERE CountID=@ID", new { ID = countId });
-            if (string.IsNullOrWhiteSpace(info.CountNumber)) throw new Exception("أمر الجرد غير موجود");
-            if (info.Status != 3) throw new Exception("لا يمكن اعتماد جرد غير مكتمل");
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            (string CountNumber, int Status) info;
 
-            foreach (var detailId in approvedDetailIds)
+            try
+            {
+                info = await connection.QueryFirstOrDefaultAsync<(string CountNumber, int Status)>(
+                    "SELECT CountNumber, CountStatus FROM dbo.StockCounts WITH (UPDLOCK,HOLDLOCK) WHERE CountID=@ID",
+                    new { ID = countId }, transaction);
+                if (string.IsNullOrWhiteSpace(info.CountNumber)) throw new Exception("أمر الجرد غير موجود");
+                if (info.Status != 3) throw new Exception("لا يمكن اعتماد جرد غير مكتمل");
+
+                var validVarianceCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.StockCountDetails AS scd WITH (UPDLOCK,HOLDLOCK)
+WHERE scd.CountID=@CountID
+  AND scd.CountDetailID IN @DetailIDs
+  AND scd.SystemQty IS NOT NULL
+  AND scd.CountedQty IS NOT NULL
+  AND scd.CountedQty >= 0
+  AND scd.CountedQty <> scd.SystemQty",
+                    new { CountID = countId, DetailIDs = detailIds }, transaction);
+                if (validVarianceCount != detailIds.Count)
+                    throw new InvalidOperationException("بعض أسطر التسوية لا تنتمي للجرد أو لا تحتوي فرقًا صالحًا؛ أعد تحميل الجرد قبل الاعتماد.");
+
+                var unmappedBatchCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.StockCountDetails AS scd
+INNER JOIN dbo.StockCounts AS sc ON sc.CountID=scd.CountID
+WHERE scd.CountID=@CountID
+  AND scd.CountDetailID IN @DetailIDs
+  AND
+  (
+      (
+          EXISTS
+          (
+              SELECT 1 FROM dbo.InventoryBatchBalance AS bb
+              WHERE bb.ItemID=scd.ItemID AND bb.WarehouseID=sc.WarehouseID
+          )
+          AND
+          (
+              scd.BatchNumber IS NULL
+              OR NOT EXISTS
+              (
+                  SELECT 1 FROM dbo.InventoryBatchBalance AS bb
+                  WHERE bb.ItemID=scd.ItemID
+                    AND bb.WarehouseID=sc.WarehouseID
+                    AND bb.BatchNumber=scd.BatchNumber
+              )
+          )
+      )
+      OR
+      (
+          NOT EXISTS
+          (
+              SELECT 1 FROM dbo.InventoryBatchBalance AS bb
+              WHERE bb.ItemID=scd.ItemID AND bb.WarehouseID=sc.WarehouseID
+          )
+          AND scd.BatchNumber IS NOT NULL
+      )
+  )",
+                    new { CountID = countId, DetailIDs = detailIds }, transaction);
+                if (unmappedBatchCount > 0)
+                    throw new InvalidOperationException("تعذر اعتماد التسوية: سطر الصنف لا يحدد باتشًا قائمًا، أو أن رقم الباتش لم يعد مطابقًا للمخزون.");
+
                 await connection.ExecuteAsync(
-                    "UPDATE dbo.StockCountDetails SET AdjustmentApproved=1 WHERE CountDetailID=@ID",
-                    new { ID = detailId });
+                    "UPDATE dbo.StockCountDetails SET AdjustmentApproved=0 WHERE CountID=@CountID",
+                    new { CountID = countId }, transaction);
 
-            await connection.ExecuteAsync("EXEC dbo.sp_ExecuteStockCountAdjustments @CountID, @UserID",
-                new { CountID = countId, UserID = userId });
+                var approvedCount = await connection.ExecuteAsync(@"
+UPDATE dbo.StockCountDetails
+SET AdjustmentApproved=1
+WHERE CountID=@CountID
+  AND CountDetailID IN @DetailIDs
+  AND SystemQty IS NOT NULL
+  AND CountedQty IS NOT NULL
+  AND CountedQty >= 0
+  AND CountedQty<>SystemQty",
+                    new { CountID = countId, DetailIDs = detailIds }, transaction);
+                if (approvedCount != detailIds.Count)
+                    throw new InvalidOperationException("تعذر تثبيت اعتماد كل أسطر التسوية؛ لم يتم تطبيق الجرد.");
+
+                // The version argument makes an updated application fail closed against
+                // the old aggregate-only procedure signature. The SQL procedure performs
+                // the batch and aggregate updates atomically.
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_ExecuteStockCountAdjustments @CountID=@CountID, @UserID=@UserID, @BatchAwareVersion=@BatchAwareVersion",
+                    new { CountID = countId, UserID = userId, BatchAwareVersion = (byte)1 },
+                    transaction);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after stock-count adjustments approval failed for count {CountID}.",
+                        countId);
+                }
+                throw;
+            }
 
             try
             {
@@ -415,7 +877,10 @@ namespace YKCoatings.Services
                     relatedRecordId: countId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the notification after approving a stock count.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "StockCounts", countId.ToString(),
                 moduleName: "SCR_COUNT", description: $"اعتماد جرد وتطبيق تسويات: {info.CountNumber}");
@@ -423,6 +888,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteCountAsync(int countId, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_COUNT", p => p.CanDelete, "ليس لديك صلاحية حذف أمر جرد.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -439,7 +905,17 @@ namespace YKCoatings.Services
                     moduleName: "SCR_COUNT", description: $"حذف جرد: {info.CountNumber}");
                 return (true, "تم الحذف بنجاح");
             }
-            catch (Exception ex) { transaction.Rollback(); return (false, ex.Message); }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after stock-count deletion failed for count {CountID}.",
+                        countId);
+                }
+                return (false, ex.Message);
+            }
         }
 
         // ==========================================
@@ -447,6 +923,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportBalancesToExcelAsync(List<StockBalanceDto> balances, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_STOCK", p => p.CanExport, "ليس لديك صلاحية تصدير أرصدة المخزون.");
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("أرصدة المخزون");
             ws.RightToLeft = true; ws.Style.Font.FontName = "Cairo";
@@ -472,6 +949,7 @@ namespace YKCoatings.Services
 
         public async Task<byte[]> ExportMovementsToExcelAsync(List<StockMovementDto> movements, int userId)
         {
+            await RequireInventoryPermissionAsync(userId, "SCR_TRANS", p => p.CanExport, "ليس لديك صلاحية تصدير حركات المخزون.");
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("حركات المخزون");
             ws.RightToLeft = true; ws.Style.Font.FontName = "Cairo";
@@ -497,6 +975,7 @@ namespace YKCoatings.Services
 // ==========================================
 public async Task<int> CheckAndSendStockAlertsAsync(int userId)
 {
+            await RequireInventoryPermissionAsync(userId, "SCR_STOCK", p => p.CanView, "ليس لديك صلاحية عرض تنبيهات المخزون.");
     using var connection = CreateConnection();
     var alertCount = 0;
 
@@ -524,7 +1003,10 @@ public async Task<int> CheckAndSendStockAlertsAsync(int userId)
                     createdBy: userId);
                 if (created > 0) alertCount++;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create an out-of-stock inventory alert.");
+            }
         }
 
         var belowMin = (await connection.QueryAsync<(int ItemID, string ItemCode, string ItemNameAr, string WarehouseNameAr, decimal CurrentQty, decimal MinStockLevel)>(
@@ -550,7 +1032,10 @@ public async Task<int> CheckAndSendStockAlertsAsync(int userId)
                     createdBy: userId);
                 if (created > 0) alertCount++;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create a low-stock inventory alert.");
+            }
         }
 
         var nearExpiry = (await connection.QueryAsync<(string ItemNameAr, string ItemCode, string BatchNumber, DateTime ExpiryDate, string WarehouseNameAr, int DaysToExpiry)>(
@@ -578,7 +1063,10 @@ public async Task<int> CheckAndSendStockAlertsAsync(int userId)
                     createdBy: userId);
                 if (created > 0) alertCount++;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create a near-expiry inventory alert.");
+            }
         }
 
         var expired = (await connection.QueryAsync<(string ItemNameAr, string ItemCode, string BatchNumber, DateTime ExpiryDate, string WarehouseNameAr)>(
@@ -604,10 +1092,16 @@ public async Task<int> CheckAndSendStockAlertsAsync(int userId)
                     createdBy: userId);
                 if (created > 0) alertCount++;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create an expired-stock inventory alert.");
+            }
         }
     }
-    catch { }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Stock alert scan failed; returning the number of alerts created before failure.");
+    }
 
     return alertCount;
 }
@@ -616,6 +1110,7 @@ public async Task<int> CheckAndSendStockAlertsAsync(int userId)
 // ==========================================
 public async Task SetOpeningBalanceAsync(int itemId, int warehouseId, decimal qty, decimal unitCost, int userId)
 {
+            await RequireInventoryPermissionAsync(userId, "SCR_STOCK", p => p.CanAdd, "ليس لديك صلاحية إدخال أرصدة افتتاحية للمخزون.");
     using var connection = CreateConnection();
 
     if (await ExistsBalanceAsync(connection, itemId, warehouseId))
@@ -661,6 +1156,8 @@ private async Task<bool> ExistsBalanceAsync(SqlConnection conn, int itemId, int 
 // ==========================================
 public async Task SetOpeningBalancesBulkAsync(List<OpeningBalanceDto> balances, int userId)
 {
+    await RequireInventoryPermissionAsync(userId, "SCR_STOCK", p => p.CanAdd, "ليس لديك صلاحية إدخال أرصدة افتتاحية للمخزون.");
+
     foreach (var b in balances)
     {
         try

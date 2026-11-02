@@ -7,6 +7,7 @@ namespace YKCoatings.Services
     {
         private readonly UserSessionService _userSession;
         private readonly UserPreferencesService _userPreferences;
+        private readonly ILogger<NotificationService> _logger;
 
         private const string RecipientPredicate = @"(
             n.TargetUserID = @UserID
@@ -29,11 +30,13 @@ namespace YKCoatings.Services
         public NotificationService(
             IConfiguration configuration,
             UserSessionService userSession,
-            UserPreferencesService userPreferences)
+            UserPreferencesService userPreferences,
+            ILogger<NotificationService> logger)
             : base(configuration)
         {
             _userSession = userSession;
             _userPreferences = userPreferences;
+            _logger = logger;
         }
 
         private void RequireCurrentSession(int userId, int roleId)
@@ -206,7 +209,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after {Operation} failed for permission module {PermissionModule}, related module {RelatedModule}, record {RelatedRecordID}.",
+                        "permission-holders notification creation", permissionModuleCode, relatedModule, relatedRecordId);
+                }
                 throw;
             }
         }
@@ -335,7 +344,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after {Operation} failed for permission module {PermissionModule}, related module {RelatedModule}, record {RelatedRecordID}.",
+                        "permission-holder alert creation", permissionModuleCode, relatedModule, relatedRecordId);
+                }
                 throw;
             }
         }
@@ -416,7 +431,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after {Operation} failed for target user {TargetUserID}, permission module {PermissionModule}, related module {RelatedModule}, record {RelatedRecordID}.",
+                        "authorized-user notification creation", targetUserId, permissionModuleCode, relatedModule, relatedRecordId);
+                }
                 throw;
             }
         }

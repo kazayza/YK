@@ -5,12 +5,21 @@
 @inject NavigationManager Navigation
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
+@inject Microsoft.Extensions.Logging.ILogger<CashBoxStatement> Logger
 
-<PageTitle>كشف حساب خزينة -    (فعلي)</PageTitle>
+<PageTitle>كشف حساب خزينة(فعلي)</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
     <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (permissionLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@permissionLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPagePermissionsAsync" disabled="@isLoadingPermissions">إعادة المحاولة</button></div>
+}
+else if (permissionLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@permissionLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToCashBoxStatementLogin">تسجيل الدخول مجددًا</button></div>
 }
 else if (!permissionChecked)
 {
@@ -27,35 +36,62 @@ else
         <div class="lh-gold-line"></div>
         <div class="lh-content">
             <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">كشف حساب خزينة —    شامل المصروفات</h2><p class="lh-subtitle">سند قبض + سند صرف + مصروف + تحويل خزينة — الرصيد يبدأ من OpeningBalance</p></div></div>
-            <div class="lh-actions"><span class="lh-badge"><span class="lh-dot"></span>@(statements?.Count ?? 0) حركة</span></div>
+            <div class="lh-actions"><span class="lh-badge"><span class="lh-dot"></span>@StatementCountText</span></div>
         </div>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    @if (cashBoxLookupsLoadFailed)
+    {
+        <div class="statement-load-alert" role="alert">
+            <span>@cashBoxLookupsLoadError</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCashBoxLookupsAsync" disabled="@isLoadingCashBoxLookups">@(isLoadingCashBoxLookups ? "جارٍ..." : "إعادة محاولة تحميل خيارات الخزائن")</button>
+        </div>
+    }
+    else if (isLoadingCashBoxLookups)
+    {
+        <div class="statement-lookup-loading" role="status">جارٍ تحميل خيارات الخزائن...</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage) && !statementLoadFailed)
     {
         <div style="padding:12px 16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font-weight:700">@errorMessage</div>
     }
+    @if (statementLoadFailed)
+    {
+        <div class="statement-load-alert" role="alert">
+            <span>@errorMessage</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadStatementAsync" disabled="@isLoadingStatement">@(isLoadingStatement ? "جارٍ..." : "إعادة محاولة تحميل الكشف")</button>
+        </div>
+    }
 
     <div class="filter-luxury">
-        <label class="filter-field"><span>الخزينة</span><select @bind="cashBoxId" @bind:after="Load"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name</option>}</select></label>
-        <label class="filter-field"><span>من تاريخ <small>(اتركه فارغاً لعرض كل الحركات)</small></span><input type="date" @bind="fromDate" @bind:after="Load" /></label>
-        <label class="filter-field"><span>إلى تاريخ</span><input type="date" @bind="toDate" @bind:after="Load" /></label>
-        <button class="btn-luxury btn-ghost-luxury" @onclick="Load">تحديث الكشف</button>
+        <label class="filter-field"><span>الخزينة</span><select @bind="cashBoxId" @bind:after="Load" disabled="@(!cashBoxLookupsLoaded || isLoadingCashBoxLookups)"><option value="0">— اختر الخزينة —</option>@foreach(var cb in cashBoxes){<option value="@cb.Id">@cb.Name</option>}</select></label>
+        <label class="filter-field"><span>من تاريخ <small>(اتركه فارغاً لعرض كل الحركات)</small></span><input type="date" @bind="fromDate" @bind:after="Load" disabled="@(!cashBoxLookupsLoaded || isLoadingCashBoxLookups)" /></label>
+        <label class="filter-field"><span>إلى تاريخ</span><input type="date" @bind="toDate" @bind:after="Load" disabled="@(!cashBoxLookupsLoaded || isLoadingCashBoxLookups)" /></label>
+        <button class="btn-luxury btn-ghost-luxury" @onclick="Load" disabled="@(!cashBoxLookupsLoaded || isLoadingCashBoxLookups)">تحديث الكشف</button>
     </div>
 
     @if (isLoadingStatement)
     {
         <div class="loading-luxury"><div class="loader-luxury"></div><p>جارٍ تحميل الحركات من السجلات المالية...</p></div>
     }
-    else if (statements == null && cashBoxId == 0 && string.IsNullOrWhiteSpace(errorMessage))
+    else if (cashBoxLookupsLoaded && statements == null && cashBoxId == 0 && string.IsNullOrWhiteSpace(errorMessage))
     {
         <div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لعرض حركاتها خلال الفترة المحددة</p></div>
     }
-    else if (statements == null && string.IsNullOrWhiteSpace(errorMessage))
+    else if (cashBoxLookupsLoaded && statements == null && string.IsNullOrWhiteSpace(errorMessage))
     {
         <div class="loading-luxury"><div class="loader-luxury"></div><p>اختر خزينة لبدء عرض الكشف</p></div>
     }
-    else if (statements is not null && statements.Count == 0)
+    else if (statementLoaded && statements is not null && statements.Count == 0 && !IsStatementForCurrentFilters)
+    {
+        <div class="empty-statement" role="status">
+            <div class="empty-statement-mark" aria-hidden="true">—</div>
+            <h3>آخر كشف ناجح لا يحتوي على حركات</h3>
+            <p>تعذر تحميل الاختيارات الحالية؛ هذه النتيجة الفارغة تخص آخر معايير ناجحة، وليست تأكيدًا لعدم وجود حركات في الاختيار الحالي.</p>
+        </div>
+    }
+    else if (statementLoaded && statements is not null && statements.Count == 0)
     {
         <div class="empty-statement" role="status">
             <div class="empty-statement-mark" aria-hidden="true">—</div>
@@ -63,7 +99,7 @@ else
             <p>لم يُعثر على سندات قبض أو صرف أو مصروفات أو تحويلات لهذه الخزينة ضمن نطاق التاريخ الحالي.</p>
         </div>
     }
-    else if (statements is not null)
+    else if (statementLoaded && statements is not null)
     {
         <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury">
             <thead><tr><th>#</th><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>البيان</th><th>مقبوض</th><th>مدفوع</th><th>الرصيد</th></tr></thead>
@@ -132,6 +168,8 @@ else
 .amount-luxury.remaining{background:#fef2f2;color:#dc2626;border-color:#fecaca}
 .source-badge-luxury{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.7rem;font-weight:800;background:color-mix(in srgb,var(--sc) 12%,white);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 25%,white)}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.statement-load-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font-weight:700}
+.statement-lookup-loading{padding:12px 16px;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;color:#92400e;font-weight:700}
 .loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
 </style>
 
@@ -146,10 +184,33 @@ else
     private DateTime? toDate = DateTime.Today;
     private List<CashBoxStatementDto>? statements;
     private List<SearchableItem> cashBoxes = new();
+    private bool cashBoxLookupsLoaded;
+    private bool isLoadingCashBoxLookups;
+    private bool cashBoxLookupsLoadFailed;
+    private string cashBoxLookupsLoadError = string.Empty;
     private bool permissionChecked;
     private bool isAuthorized;
+    private bool isLoadingPermissions;
+    private bool permissionLoadFailed, permissionLoadDenied;
+    private long permissionRequestVersion;
+    private string permissionLoadError = string.Empty;
     private bool isLoadingStatement;
+    private bool statementLoaded;
+    private bool statementLoadFailed;
+    private long statementRequestVersion;
+    private int? loadedStatementCashBoxId;
+    private DateTime? loadedStatementFromDate;
+    private DateTime? loadedStatementToDate;
     private string? errorMessage;
+    private string StatementCountText => isLoadingStatement
+        ? "جارٍ التحميل"
+        : statementLoaded ? $"{statements?.Count ?? 0} حركة"
+        : statementLoadFailed ? "العدد غير متاح"
+        : cashBoxId == 0 ? "اختر خزينة" : "جارٍ التحميل";
+    private bool IsStatementForCurrentFilters => statementLoaded
+        && loadedStatementCashBoxId == cashBoxId
+        && loadedStatementFromDate == fromDate
+        && loadedStatementToDate == toDate;
 
     protected override async Task OnInitializedAsync()
     {
@@ -160,18 +221,114 @@ else
             return;
         }
 
+        if (await LoadPagePermissionsAsync() && isAuthorized)
+            await LoadAuthorizedPageDataAsync();
+    }
+
+    private async Task<bool> LoadPagePermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+        if (isLoadingPermissions) return false;
+
+        var requestVersion = ++permissionRequestVersion;
+        var userId = UserSession.UserID;
+        isLoadingPermissions = true;
+        permissionChecked = false;
+        isAuthorized = false;
+        permissionLoadFailed = false;
+        permissionLoadDenied = false;
+        permissionLoadError = string.Empty;
+        StateHasChanged();
+
         try
         {
             if (!PermissionService.IsLoaded)
-                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                await PermissionService.LoadPermissionsAsync(userId);
 
-            permissionChecked = true;
+            if (!IsCurrentPagePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+
             isAuthorized = PermissionService.CanViewCashBoxStatement;
-            if (!isAuthorized) return;
+            permissionChecked = true;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied while loading cash-box statement page permissions for user {UserID}.", userId);
+            if (!IsCurrentPagePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadDenied = true;
+            permissionLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cash-box statement page permissions for user {UserID}.", userId);
+            if (!IsCurrentPagePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadFailed = true;
+            permissionLoadError = "تعذر تحميل صلاحيات كشف الخزينة. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == permissionRequestVersion)
+            {
+                isLoadingPermissions = false;
+                StateHasChanged();
+            }
+        }
+    }
 
-            cashBoxes = (await TreasuryService.GetCashBoxStatementLookupsAsync())
-                .Select(cb => new SearchableItem { Id = cb.CashBoxID, Name = cb.CashBoxNameAr ?? string.Empty, Code = cb.CashBoxCode })
-                .ToList();
+    private bool IsCurrentPagePermissionRequest(long requestVersion, int userId) =>
+        requestVersion == permissionRequestVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadPagePermissionsAsync()
+    {
+        if (isLoadingPermissions || !permissionLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadPagePermissionsAsync() && isAuthorized)
+            await LoadAuthorizedPageDataAsync();
+    }
+
+    private void GoToCashBoxStatementLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private async Task LoadAuthorizedPageDataAsync()
+    {
+        try
+        {
+            await LoadCashBoxLookupsAsync();
+            if (!cashBoxLookupsLoaded) return;
 
             var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
             var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
@@ -194,17 +351,27 @@ else
         }
     }
 
-    private async Task Load()
+    private async Task RetryLoadCashBoxLookupsAsync()
     {
-        if (!isAuthorized) return;
-        if (cashBoxId == 0) { statements = null; errorMessage = null; return; }
+        await LoadCashBoxLookupsAsync();
+    }
 
-        isLoadingStatement = true;
-        statements = null;
-        errorMessage = null;
+    private async Task LoadCashBoxLookupsAsync()
+    {
+        if (isLoadingCashBoxLookups) return;
+
+        isLoadingCashBoxLookups = true;
+        cashBoxLookupsLoadFailed = false;
         try
         {
-            statements = await TreasuryService.GetCashBoxStatementAsync(cashBoxId, fromDate, toDate);
+            var loaded = await TreasuryService.GetCashBoxStatementLookupsAsync();
+            var loadedCashBoxes = loaded
+                .Select(cb => new SearchableItem { Id = cb.CashBoxID, Name = cb.CashBoxNameAr ?? string.Empty, Code = cb.CashBoxCode })
+                .ToList();
+            cashBoxes = loadedCashBoxes;
+            cashBoxLookupsLoaded = true;
+            cashBoxLookupsLoadFailed = false;
+            cashBoxLookupsLoadError = string.Empty;
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -213,11 +380,81 @@ else
         }
         catch (Exception ex)
         {
-            errorMessage = ex.Message;
+            Logger.LogWarning(ex, "Failed to load cash-box statement lookups.");
+            cashBoxLookupsLoadFailed = true;
+            cashBoxLookupsLoadError = cashBoxLookupsLoaded
+                ? "تعذر تحديث خيارات الخزائن؛ ما زالت آخر الخيارات الناجحة متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات الخزائن لكشف الحركات. أعد المحاولة.";
         }
         finally
         {
+            isLoadingCashBoxLookups = false;
+        }
+    }
+
+    private async Task RetryLoadStatementAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (!isAuthorized) return;
+        if (cashBoxId == 0)
+        {
+            statementRequestVersion++;
             isLoadingStatement = false;
+            statements = null;
+            statementLoaded = false;
+            statementLoadFailed = false;
+            loadedStatementCashBoxId = null;
+            loadedStatementFromDate = null;
+            loadedStatementToDate = null;
+            errorMessage = null;
+            return;
+        }
+
+        var requestVersion = ++statementRequestVersion;
+        var requestedCashBoxId = cashBoxId;
+        var requestedFromDate = fromDate;
+        var requestedToDate = toDate;
+        isLoadingStatement = true;
+        statementLoadFailed = false;
+        errorMessage = null;
+        try
+        {
+            var loaded = await TreasuryService.GetCashBoxStatementAsync(
+                requestedCashBoxId, requestedFromDate, requestedToDate);
+            if (requestVersion != statementRequestVersion) return;
+
+            statements = loaded;
+            statementLoaded = true;
+            loadedStatementCashBoxId = requestedCashBoxId;
+            loadedStatementFromDate = requestedFromDate;
+            loadedStatementToDate = requestedToDate;
+            statementLoadFailed = false;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            if (requestVersion != statementRequestVersion) return;
+            isAuthorized = false;
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            if (requestVersion != statementRequestVersion) return;
+            Logger.LogWarning(ex, "Failed to load cash-box statement.");
+            statementLoadFailed = true;
+            errorMessage = !statementLoaded
+                ? "تعذر تحميل كشف الخزينة. أعد المحاولة."
+                : IsStatementForCurrentFilters
+                    ? "تعذر تحديث كشف الخزينة؛ ما زالت آخر نتيجة ناجحة معروضة. أعد المحاولة."
+                    : "تعذر تحميل الكشف للاختيارات الحالية؛ ما زالت آخر نتيجة ناجحة لمعايير سابقة معروضة. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == statementRequestVersion)
+                isLoadingStatement = false;
         }
     }
 
@@ -237,8 +474,8 @@ else
 
     private static string GetReferenceUrl(CashBoxStatementDto movement) => movement.TransactionType switch
     {
-        "Receipt" => $"/receipt-vouchers/view/{movement.TransactionID}",
-        "Payment" => $"/payment-vouchers/view/{movement.TransactionID}",
+        "Receipt" => $"/accounting-vouchers/receipt/view/{movement.TransactionID}",
+        "Payment" => $"/accounting-vouchers/payment/view/{movement.TransactionID}",
         "Expense" => $"/expenses/view/{movement.TransactionID}",
         "Transfer" => $"/cash-transfers?transferId={movement.TransactionID}",
         _ => "/cash-box-statement"

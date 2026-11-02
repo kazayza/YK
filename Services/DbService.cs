@@ -6,6 +6,7 @@
         public string? ItemCode { get; set; }
         public string? ItemNameAr { get; set; }
         public string? ItemNameEn { get; set; }
+        public int CategoryID { get; set; }
         public int ItemType { get; set; }
         public string? UnitName { get; set; }
         public decimal AverageCost { get; set; }
@@ -485,6 +486,7 @@ public class MonthlyChartDto
     public string? MonthKey { get; set; }
     public string? MonthName { get; set; }
     public decimal Amount { get; set; }
+    public decimal SalesAmount { get; set; }
 }
  // ==========================================
 // العملات

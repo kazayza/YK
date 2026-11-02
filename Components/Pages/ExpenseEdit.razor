@@ -7,8 +7,9 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<ExpenseEdit> Logger
 
-<PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف") -    Pro</PageTitle>
+<PageTitle>@(Id==0?"مصروف جديد":"تعديل مصروف")</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -37,69 +38,217 @@ else
 
     @if (isLoading)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+    else if (Id != 0 && isLoadingExpenseDetail)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل تفاصيل المصروف...</p></div>}
+    else if (Id != 0 && expenseDetailReadFailed)
+    {
+        <div class="expense-detail-read-state" role="alert">
+            <p>تعذر تحميل بيانات المصروف. لم يُفتح نموذج التعديل.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryExpenseDetailLoadAsync" disabled="@isLoadingExpenseDetail">
+                @(isLoadingExpenseDetail ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل المصروف")
+            </button>
+        </div>
+    }
+    else if (Id != 0 && expenseDetailReadDenied)
+    {
+        <div class="expense-detail-read-state" role="alert">
+            <p>ليس لديك صلاحية عرض بيانات هذا المصروف.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/expenses")'>العودة إلى قائمة المصروفات</button>
+        </div>
+    }
+    else if (Id != 0 && expenseDetailNotFound)
+    {
+        <div class="expense-detail-read-state" role="status">
+            <p>المصروف غير موجود.</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/expenses")'>العودة إلى قائمة المصروفات</button>
+        </div>
+    }
     else
     {
         <div class="form-card-luxury">
             <div class="fc-gold-line"></div>
-            <div class="fc-header"><h3>بيانات المصروف — @expenseAccounts.Count حساب متاح</h3></div>
+            <div class="fc-header"><h3>بيانات المصروف — @(hasLoadedExpenseAccounts ? $"{expenseAccounts.Count} حساب متاح" : "خيارات الحسابات غير متاحة")</h3></div>
             <div class="fc-body">
                 <div class="form-grid-luxury">
-                    <div class="fg"><label>رقم المصروف (تلقائي)</label><input type="text" @bind="dto.ExpenseNumber" readonly class="readonly" /></div>
+                    <div class="fg"><label>رقم المصروف (تلقائي)</label><input type="text" @bind="dto.ExpenseNumber" readonly class="readonly" placeholder="يُخصص عند الحفظ" /></div>
                     <div class="fg"><label>تاريخ المصروف *</label><input type="date" @bind="dto.ExpenseDate" @bind:after="OnDateChanged" /></div>
                     <div class="fg"><label>السنة المالية</label>
-                        <select @bind="fiscalYearSelected" @bind:after="OnFiscalYearChanged">
+                        <select @bind="fiscalYearSelected" @bind:after="OnFiscalYearChanged" disabled="@(isLoadingFiscalYearOptions || fiscalYearOptionsReadDenied)">
                             <option value="0">— تلقائي من التاريخ —</option>
                             @foreach(var fy in fiscalYears){<option value="@fy.FiscalYearID">@fy.YearName (@fy.StartDate.ToString("yyyy") ) - @fy.StatusName</option>}
                         </select>
-                        @if(!fiscalYears.Any()){<small style="color:#dc2626;font-weight:700">لا توجد سنة مالية. أنشئها من شاشة إدارة السنوات المالية ثم أعد تحميل الصفحة.</small>}
+                        @if (fiscalYearOptionsReadFailed)
+                        {
+                            <div class="expense-lookup-read-alert" role="alert">
+                                <span>تعذر تحميل خيارات السنوات المالية.@(hasLoadedFiscalYearOptions ? " المعروض هو آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryFiscalYearOptionsAsync" disabled="@isLoadingFiscalYearOptions">
+                                    @(isLoadingFiscalYearOptions ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل السنوات")
+                                </button>
+                            </div>
+                        }
+                        else if (fiscalYearOptionsReadDenied)
+                        {
+                            <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض السنوات المالية.</small>
+                        }
+                        else if (hasLoadedFiscalYearOptions && !fiscalYears.Any())
+                        {
+                            <small style="color:#dc2626;font-weight:700">لا توجد سنة مالية. أنشئها من شاشة إدارة السنوات المالية ثم أعد تحميل الصفحة.</small>
+                        }
                     </div>
                     <div class="fg"><label>الفترة المحاسبية *</label>
-                        <select @bind="dto.PeriodID">
+                        <select @bind="dto.PeriodID" disabled="@(isLoadingAccountingPeriods || accountingPeriodsReadDenied)">
                             <option value="0">— اختر الفترة —</option>
                             @foreach(var p in filteredPeriods){<option value="@p.PeriodID">@p.PeriodName (@p.StartDate.ToString("MMM yyyy"))</option>}
                         </select>
-                        <small style="color:@(filteredPeriods.Any()? "#8B95A5" : "#dc2626")">@(filteredPeriods.Any() ? $"{filteredPeriods.Count} فترة متاحة" : " لا توجد فترات - تأكد من السنة المالية")</small>
+                        @if (accountingPeriodsReadFailed)
+                        {
+                            <div class="expense-lookup-read-alert" role="alert">
+                                <span>تعذر تحميل خيارات الفترات المحاسبية.@(hasLoadedAccountingPeriods ? " المعروض هو آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryAccountingPeriodOptionsAsync" disabled="@isLoadingAccountingPeriods">
+                                    @(isLoadingAccountingPeriods ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الفترات")
+                                </button>
+                            </div>
+                        }
+                        else if (accountingPeriodsReadDenied)
+                        {
+                            <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض الفترات المحاسبية.</small>
+                        }
+                        else if (hasLoadedAccountingPeriods)
+                        {
+                            <small style="color:@(filteredPeriods.Any()? "#8B95A5" : "#dc2626")">@(filteredPeriods.Any() ? $"{filteredPeriods.Count} فترة متاحة" : " لا توجد فترات - تأكد من السنة المالية")</small>
+                        }
                     </div>
 
                     <div class="fg full" style="grid-column:1/-1;height:1px;background:#e8e2d0;margin:8px 0"></div>
 
-                    <div class="fg"><label>حساب المصروف (مدين) * — @expenseAccounts.Count متاح من @allAccounts.Count</label>
-                        <select @bind="dto.AccountID">
+                    <div class="fg"><label>حساب المصروف (مدين) * — @(hasLoadedExpenseAccounts ? $"{expenseAccounts.Count} متاح من {allAccounts.Count}" : "خيارات الحسابات غير متاحة")</label>
+                        <select @bind="dto.AccountID" disabled="@(isLoadingExpenseAccountOptions || expenseAccountOptionsReadDenied)">
                             <option value="0">— اختر حساب —</option>
                             @foreach(var acc in expenseAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr (@acc.AccountTypeName)</option>}
                         </select>
-                        @if(!expenseAccounts.Any()){<small style="color:#dc2626"><i class=bi-exclamation-triangle-fill></i> لا توجد حسابات - @allAccounts.Count حساب كلي. راجع شجرة الحسابات</small>}
+                        @if (expenseAccountOptionsReadFailed)
+                        {
+                            <div class="expense-lookup-read-alert" role="alert">
+                                <span>تعذر تحميل خيارات حسابات المصروف.@(hasLoadedExpenseAccounts ? " المعروض آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryExpenseAccountOptionsAsync" disabled="@isLoadingExpenseAccountOptions">
+                                    @(isLoadingExpenseAccountOptions ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الحسابات")
+                                </button>
+                            </div>
+                        }
+                        else if (expenseAccountOptionsReadDenied)
+                        {
+                            <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض حسابات المصروفات.</small>
+                        }
+                        else if (hasLoadedExpenseAccounts && !expenseAccounts.Any())
+                        {
+                            <small style="color:#dc2626;font-weight:700"><i class=bi-exclamation-triangle-fill></i> لا توجد حسابات مصروف نشطة ضمن النتائج المحمّلة. راجع شجرة الحسابات.</small>
+                        }
                     </div>
-                    <div class="fg"><label>حساب الدائن (خزينة/بنك)</label>
-                        <select @bind="creditSelected">
-                            <option value="0">— تلقائي —</option>
-                            @foreach(var acc in creditAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}
-                        </select>
-                    </div>
+                    @if (dto.PaymentMethod == 3)
+                    {
+                        <div class="fg"><label>حساب الالتزام (آجل) *</label>
+                            <select @bind="creditSelected" disabled="@(isLoadingExpenseAccountOptions || expenseAccountOptionsReadDenied)">
+                                <option value="0">— اختر حساب التزام تفصيلي —</option>
+                                @foreach(var acc in creditAccounts){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}
+                            </select>
+                        </div>
+                    }
 
-                    <div class="fg"><label>مركز التكلفة (اختياري)</label>
-                        <select @bind="costCenterSelected">
+                    <div class="fg"><label>مركز التكلفة (إذا كان مطلوبًا للحساب)</label>
+                        <select @bind="costCenterSelected" disabled="@(isLoadingCostCenters || costCenterOptionsReadDenied)">
                             <option value="0">— بدون —</option>
                             @foreach(var cc in costCenters){<option value="@cc.CostCenterID">@cc.CostCenterCode - @cc.CostCenterNameAr</option>}
                         </select>
+                        @if (costCenterOptionsReadFailed)
+                        {
+                            <div class="expense-lookup-read-alert" role="alert">
+                                <span>تعذر تحميل خيارات مراكز التكلفة.@(hasLoadedCostCenters ? " المعروض آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCostCenterOptionsAsync" disabled="@isLoadingCostCenters">
+                                    @(isLoadingCostCenters ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل مراكز التكلفة")
+                                </button>
+                            </div>
+                        }
+                        else if (costCenterOptionsReadDenied)
+                        {
+                            <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض خيارات مراكز التكلفة.</small>
+                        }
+                        else if (hasLoadedCostCenters && !costCenters.Any())
+                        {
+                            <small style="color:#8B95A5">لا توجد مراكز تكلفة متاحة؛ يظل هذا الحقل اختياريًا.</small>
+                        }
                     </div>
                     <div class="fg"><label>المبلغ *</label><input type="number" step="0.01" @bind="dto.Amount" /></div>
 
                     <div class="fg"><label>طريقة الدفع</label>
-                        <select @bind="dto.PaymentMethod">
+                        <select @bind="dto.PaymentMethod" @bind:after="OnPaymentMethodChanged">
+                            <option value="">— اختر طريقة الدفع —</option>
                             <option value="1">نقدي - خزينة</option>
                             <option value="2">بنك</option>
                             <option value="3">آجل - مستحق</option>
                         </select>
                     </div>
-                    <div class="fg"><label>الخزينة * (يخصم منها الرصيد)</label>
-                        <select @bind="cashBoxSelected" style="border-color:@(cashBoxSelected==0 && dto.PaymentMethod==1 ? "#ef4444" : "#e8e2d0")">
-                            <option value="0">— اختر الخزينة —</option>
-                            @foreach(var cb in cashBoxes){<option value="@cb.CashBoxID">@GetCashBoxOptionLabel(cb)</option>}
-                        </select>
-                        <small style="color:@(canViewCashBoxBalances ? "#059669" : "#8B95A5")">@(canViewCashBoxBalances ? "الرصيد الحالي معروض؛ سيُعكس المبلغ القديم ويُطبّق الجديد عند التعديل." : "الرصيد غير متاح لهذا المستخدم؛ لن يُعرض الصفر على أنه رصيد فعلي.")</small>
-                        @if(!string.IsNullOrWhiteSpace(cashBalanceLoadMessage)){<small style="display:block;color:#b45309;margin-top:4px">@cashBalanceLoadMessage</small>}
-                    </div>
+                    @if (dto.PaymentMethod == 1)
+                    {
+                        <div class="fg"><label>الخزينة * (مصدر الدفع)</label>
+                            <select @bind="cashBoxSelected" disabled="@(isLoadingCashBoxOptions || cashBoxOptionsReadDenied)" style="border-color:@(cashBoxSelected==0 ? "#ef4444" : "#e8e2d0")">
+                                <option value="0">— اختر الخزينة —</option>
+                                @foreach(var cb in cashBoxes){<option value="@cb.CashBoxID">@GetCashBoxOptionLabel(cb)</option>}
+                            </select>
+                            @if (cashBoxOptionsReadFailed)
+                            {
+                                <div class="expense-lookup-read-alert" role="alert">
+                                    <span>تعذر تحميل خيارات الخزائن.@(hasLoadedCashBoxes ? " المعروض آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCashBoxOptionsAsync" disabled="@isLoadingCashBoxOptions">
+                                        @(isLoadingCashBoxOptions ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الخزائن")
+                                    </button>
+                                </div>
+                            }
+                            else if (cashBoxOptionsReadDenied)
+                            {
+                                <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض خيارات الخزائن.</small>
+                            }
+                            else if (hasLoadedCashBoxes && !cashBoxes.Any())
+                            {
+                                <small style="color:#b45309">لا توجد خزائن نشطة متاحة.</small>
+                            }
+                            <small style="color:@(canViewCashBoxBalances ? "#059669" : "#8B95A5")">@(canViewCashBoxBalances ? (cashBalanceReadFailed ? "المعروض آخر رصيد ناجح؛ سيُحدّث عند اعتماد المصروف." : "سيُحدّث الرصيد عند اعتماد المصروف.") : cashBalanceReadDenied ? "ليس لديك صلاحية عرض الرصيد الفعلي." : CanReadCashBoxBalances ? "الرصيد الفعلي غير متاح حاليًا؛ لن يُعرض الصفر كرصيد." : "الرصيد غير متاح لهذا المستخدم؛ لن يُعرض الصفر على أنه رصيد فعلي.")</small>
+                            @if (cashBalanceReadFailed)
+                            {
+                                <div class="expense-lookup-read-alert" role="alert">
+                                    <span>@cashBalanceLoadMessage</span>
+                                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCashBoxBalanceLoadAsync" disabled="@isLoadingCashBoxBalances">
+                                        @(isLoadingCashBoxBalances ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الرصيد")
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (dto.PaymentMethod == 2)
+                    {
+                        <div class="fg"><label>الحساب البنكي * (مصدر الدفع)</label>
+                            <select @bind="bankAccountSelected" disabled="@(isLoadingBankAccounts || bankAccountOptionsReadDenied)" style="border-color:@(bankAccountSelected==0 ? "#ef4444" : "#e8e2d0")">
+                                <option value="0">— اختر الحساب البنكي —</option>
+                                @foreach(var bank in bankAccounts){<option value="@bank.BankAccountID">@bank.BankName - @bank.AccountNumber</option>}
+                            </select>
+                            @if (bankAccountOptionsReadFailed)
+                            {
+                                <div class="expense-lookup-read-alert" role="alert">
+                                    <span>تعذر تحميل خيارات الحسابات البنكية.@(hasLoadedBankAccounts ? " المعروض آخر تحميل ناجح." : " لا توجد خيارات سابقة.")</span>
+                                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryBankAccountOptionsAsync" disabled="@isLoadingBankAccounts">
+                                        @(isLoadingBankAccounts ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الحسابات البنكية")
+                                    </button>
+                                </div>
+                            }
+                            else if (bankAccountOptionsReadDenied)
+                            {
+                                <small role="alert" style="color:#dc2626;font-weight:700">ليس لديك صلاحية عرض الحسابات البنكية.</small>
+                            }
+                            else if (hasLoadedBankAccounts && !bankAccounts.Any())
+                            {
+                                <small style="color:#b45309">لا يوجد حساب بنكي نشط متاح.</small>
+                            }
+                        </div>
+                    }
 
                     <div class="fg full"><label>البيان *</label><textarea @bind="dto.Description" rows="2" placeholder="مصاريف صيانة..."></textarea></div>
                     <div class="fg"><label>مرجع</label><input type="text" @bind="dto.Reference" /></div>
@@ -120,7 +269,7 @@ else
                         </div>
                         <div style="background:#fff;border:1px solid #e8e2d0;border-radius:10px;padding:10px">
                             <div style="color:#8B95A5;font-size:.7rem">دائن</div>
-                            <div style="font-weight:800">@(creditSelected!=0?GetCreditAccountName(creditSelected):"تلقائي - خزينة")</div>
+                            <div style="font-weight:800">@GetCreditPreviewName()</div>
                             <div style="color:#059669;font-weight:800;margin-top:4px">@dto.Amount.ToString("#,##0.00")</div>
                             <div style="color:#8B95A5;font-size:.7rem;margin-top:4px">الفترة: @GetPeriodName(dto.PeriodID)</div>
                         </div>
@@ -170,6 +319,11 @@ else
 .fc-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end;flex-wrap:wrap}
 .msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.expense-lookup-read-alert{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:8px 10px;border-radius:10px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.76rem;font-weight:700}
+.expense-lookup-read-alert .btn-luxury:disabled{opacity:.55;cursor:not-allowed}
+.expense-detail-read-state{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px;border-radius:12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.84rem;font-weight:700}
+.expense-detail-read-state p{margin:0}
+.expense-detail-read-state .btn-luxury:disabled{opacity:.55;cursor:not-allowed}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
 .loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
@@ -186,13 +340,47 @@ else
     private List<AccountingPeriodListDto> allPeriods = new();
     private List<AccountingPeriodListDto> filteredPeriods = new();
     private List<CashBoxListDto> cashBoxes = new();
+    private bool isLoadingCashBoxOptions;
+    private bool hasLoadedCashBoxes;
+    private bool cashBoxOptionsReadFailed;
+    private bool cashBoxOptionsReadDenied;
+    private List<BankAccountListDto> bankAccounts = new();
     private bool isLoading = true;
+    private bool isLoadingFiscalYearOptions;
+    private bool hasLoadedFiscalYearOptions;
+    private bool fiscalYearOptionsReadFailed;
+    private bool fiscalYearOptionsReadDenied;
+    private bool isLoadingAccountingPeriods;
+    private bool hasLoadedAccountingPeriods;
+    private bool accountingPeriodsReadFailed;
+    private bool accountingPeriodsReadDenied;
+    private bool isLoadingCostCenters;
+    private bool hasLoadedCostCenters;
+    private bool costCenterOptionsReadFailed;
+    private bool costCenterOptionsReadDenied;
+    private bool isLoadingExpenseAccountOptions;
+    private bool hasLoadedExpenseAccounts;
+    private bool expenseAccountOptionsReadFailed;
+    private bool expenseAccountOptionsReadDenied;
+    private bool isLoadingBankAccounts;
+    private bool hasLoadedBankAccounts;
+    private bool bankAccountOptionsReadFailed;
+    private bool bankAccountOptionsReadDenied;
+    private bool isLoadingExpenseDetail;
+    private bool expenseDetailReadFailed;
+    private bool expenseDetailReadDenied;
+    private bool expenseDetailNotFound;
+    private bool expenseEditorInitialized;
     private bool isSaving = false;
     private string msg = "";
     private bool isError = true;
     private ModulePermissionDto? permissions;
     private bool permissionsLoaded;
     private bool canViewCashBoxBalances;
+    private bool isLoadingCashBoxBalances;
+    private bool hasLoadedCashBoxBalances;
+    private bool cashBalanceReadFailed;
+    private bool cashBalanceReadDenied;
     private string cashBalanceLoadMessage = "";
 
     private bool CanReadCashBoxBalances => PermissionService.CanView("SCR_CASHSTAT")
@@ -217,6 +405,7 @@ else
     private int creditSelected = 0;
     private int costCenterSelected = 0;
     private int cashBoxSelected = 0;
+    private int bankAccountSelected = 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -258,38 +447,18 @@ else
                 return;
             }
 
-            allAccounts = await AccountingService.GetExpenseAccountLookupsAsync();
-            // مصروفات: نوع 6 أو 5 أو كود يبدأ بـ 5 أو 4x أو اسم يحتوي مصروف
-            expenseAccounts = allAccounts.Where(a => a.AccountType == 6 || a.AccountType == 5 || (a.AccountCode != null && (a.AccountCode.StartsWith("5") || a.AccountCode.StartsWith("4"))) || (a.AccountNameAr != null && (a.AccountNameAr.Contains("مصروف") || a.AccountNameAr.Contains("تكلفة")))).ToList();
-            if (!expenseAccounts.Any()) expenseAccounts = allAccounts.Where(a => a.IsDetailAccount).ToList();
-            if (!expenseAccounts.Any()) expenseAccounts = allAccounts.ToList(); // Fallback أخير: كل الحسابات
+            await LoadExpenseAccountOptionsAsync();
 
-            creditAccounts = allAccounts.Where(a => a.AccountType == 1 || a.AccountType == 2).ToList();
-            if (!creditAccounts.Any()) creditAccounts = allAccounts.Where(a => a.IsDetailAccount).ToList();
-            if (!creditAccounts.Any()) creditAccounts = allAccounts.ToList();
-
-            costCenters = await TreasuryService.GetCostCentersFlatAsync();
-            fiscalYears = await AccountingService.GetFiscalYearsAsync();
-            allPeriods = await AccountingService.GetAccountingPeriodsAsync();
-            cashBoxes = await TreasuryService.GetCashBoxLookupsAsync();
+            await LoadCostCenterOptionsAsync();
+            await LoadFiscalYearOptionsAsync();
+            await LoadAccountingPeriodOptionsAsync();
+            await LoadCashBoxOptionsAsync();
+            await LoadBankAccountOptionsAsync();
             if (CanReadCashBoxBalances)
-            {
-                try
-                {
-                    var boxesWithBalances = await TreasuryService.GetCashBoxBalanceLookupsAsync();
-                    var balancesById = boxesWithBalances.ToDictionary(x => x.CashBoxID, x => x.CurrentBalance);
-                    foreach (var box in cashBoxes)
-                        if (balancesById.TryGetValue(box.CashBoxID, out var balance)) box.CurrentBalance = balance;
-                    canViewCashBoxBalances = true;
-                }
-                catch
-                {
-                    cashBalanceLoadMessage = "تعذر تحميل الرصيد الفعلي؛ لم يُعرض صفر افتراضي بدلاً منه.";
-                }
-            }
+                await LoadCashBoxBalanceOptionsAsync();
 
             // لا تنشئ سنة مالية أو فتراتها كأثر جانبي لفتح شاشة المصروفات.
-            if (!fiscalYears.Any())
+            if (hasLoadedFiscalYearOptions && !fiscalYearOptionsReadFailed && !fiscalYearOptionsReadDenied && !accountingPeriodsReadFailed && !accountingPeriodsReadDenied && !fiscalYears.Any())
             {
                 msg = "لا توجد سنة مالية أو فترات محاسبية. أنشئها صراحةً من شاشة إدارة السنوات المالية قبل تسجيل المصروف.";
                 isError = true;
@@ -297,21 +466,12 @@ else
 
             if (Id != 0)
             {
-                var existing = await AccountingService.GetExpenseByIdAsync(Id);
-                if (existing != null)
-                {
-                    dto = existing;
-                    fiscalYearSelected = dto.FiscalYearID ?? 0;
-                    creditSelected = dto.CreditAccountID ?? 0;
-                    costCenterSelected = dto.CostCenterID ?? 0;
-                    cashBoxSelected = dto.CashBoxID ?? 0;
-                }
+                await LoadExpenseDetailAsync();
             }
             else
             {
-                dto.ExpenseNumber = fiscalYears.Any()
-                    ? await AccountingService.GenerateExpenseNoAsync()
-                    : string.Empty;
+                // يُخصص رقم المصروف عند الحفظ داخل المعاملة، لا عند فتح النموذج.
+                dto.ExpenseNumber = string.Empty;
                 dto.ExpenseDate = DateTime.Today;
                 // اختر أول سنة مالية حالية تلقائياً
                 var currentFY = fiscalYears.FirstOrDefault(f => f.IsCurrent) ?? fiscalYears.FirstOrDefault();
@@ -322,12 +482,15 @@ else
             // لو لسه مفيش فترة بعد الفلترة، اختر أول فترة متاحة
             if (dto.PeriodID == 0 && filteredPeriods.Any())
                 dto.PeriodID = filteredPeriods.First().PeriodID;
-            // اختيار خزينة افتراضية تلقائياً
-            if (cashBoxSelected==0 && cashBoxes.Any())
+            // اختيار خزينة افتراضية عند الدفع النقدي فقط؛ لا تُربط مصروفات البنك أو الآجل بخزينة افتراضية.
+            if (dto.PaymentMethod == 1 && cashBoxSelected==0 && cashBoxes.Any())
             {
                 var def = cashBoxes.FirstOrDefault(c=>c.IsDefault) ?? cashBoxes.First();
                 cashBoxSelected = def.CashBoxID;
             }
+
+            if (Id == 0)
+                expenseEditorInitialized = true;
         }
         catch (Exception ex)
         {
@@ -337,6 +500,359 @@ else
             isError = true;
         }
         finally { isLoading = false; }
+    }
+
+    private Task RetryExpenseAccountOptionsAsync() => LoadExpenseAccountOptionsAsync();
+
+    private async Task LoadExpenseAccountOptionsAsync()
+    {
+        if (isLoadingExpenseAccountOptions) return;
+
+        isLoadingExpenseAccountOptions = true;
+        expenseAccountOptionsReadDenied = false;
+        try
+        {
+            var loadedAccounts = await AccountingService.GetExpenseAccountLookupsAsync();
+            // لا تعرض إلا الحسابات النشطة التفصيلية؛ لا تُوسّع الاختيار إلى حسابات عشوائية عند غياب المطابقة.
+            var loadedExpenseAccounts = loadedAccounts.Where(a => a.IsActive && a.IsDetailAccount
+                && (a.AccountType == 5 || a.AccountType == 6)).ToList();
+            var loadedCreditAccounts = loadedAccounts.Where(a => a.IsActive && a.IsDetailAccount && a.AccountType == 2).ToList();
+
+            allAccounts = loadedAccounts;
+            expenseAccounts = loadedExpenseAccounts;
+            creditAccounts = loadedCreditAccounts;
+            hasLoadedExpenseAccounts = true;
+            expenseAccountOptionsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            allAccounts = new();
+            expenseAccounts = new();
+            creditAccounts = new();
+            hasLoadedExpenseAccounts = false;
+            expenseAccountOptionsReadFailed = false;
+            expenseAccountOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load expense account options for the expense editor.");
+            expenseAccountOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingExpenseAccountOptions = false;
+        }
+    }
+
+    private Task RetryCostCenterOptionsAsync() => LoadCostCenterOptionsAsync();
+
+    private async Task LoadCostCenterOptionsAsync()
+    {
+        if (isLoadingCostCenters) return;
+
+        isLoadingCostCenters = true;
+        costCenterOptionsReadDenied = false;
+        try
+        {
+            var loadedCostCenters = await TreasuryService.GetCostCentersForExpenseEditAsync();
+            costCenters = loadedCostCenters;
+            hasLoadedCostCenters = true;
+            costCenterOptionsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            costCenters = new();
+            hasLoadedCostCenters = false;
+            costCenterOptionsReadFailed = false;
+            costCenterOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center options for the expense editor.");
+            costCenterOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingCostCenters = false;
+        }
+    }
+
+    private Task RetryCashBoxOptionsAsync() => LoadCashBoxOptionsAsync();
+
+    private async Task LoadCashBoxOptionsAsync()
+    {
+        if (isLoadingCashBoxOptions) return;
+
+        isLoadingCashBoxOptions = true;
+        cashBoxOptionsReadDenied = false;
+        try
+        {
+            var previousBalances = canViewCashBoxBalances
+                ? cashBoxes.ToDictionary(box => box.CashBoxID, box => box.CurrentBalance)
+                : null;
+            var loadedCashBoxes = await TreasuryService.GetCashBoxLookupsAsync();
+            if (previousBalances is not null)
+            {
+                foreach (var box in loadedCashBoxes)
+                    if (previousBalances.TryGetValue(box.CashBoxID, out var balance)) box.CurrentBalance = balance;
+
+                if (loadedCashBoxes.Any(box => !previousBalances.ContainsKey(box.CashBoxID)))
+                {
+                    canViewCashBoxBalances = false;
+                    cashBalanceReadFailed = true;
+                    cashBalanceReadDenied = false;
+                    cashBalanceLoadMessage = "تغيرت خيارات الخزائن؛ أعد تحميل الأرصدة قبل عرضها.";
+                }
+            }
+
+            cashBoxes = loadedCashBoxes;
+            hasLoadedCashBoxes = true;
+            cashBoxOptionsReadFailed = false;
+
+            if (expenseEditorInitialized && dto.PaymentMethod == 1 && cashBoxSelected == 0 && cashBoxes.Any())
+            {
+                var defaultBox = cashBoxes.FirstOrDefault(box => box.IsDefault) ?? cashBoxes.First();
+                cashBoxSelected = defaultBox.CashBoxID;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            cashBoxes = new();
+            hasLoadedCashBoxes = false;
+            cashBoxOptionsReadFailed = false;
+            cashBoxOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cash-box options for the expense editor.");
+            cashBoxOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingCashBoxOptions = false;
+        }
+    }
+
+    private Task RetryBankAccountOptionsAsync() => LoadBankAccountOptionsAsync();
+
+    private async Task LoadBankAccountOptionsAsync()
+    {
+        if (isLoadingBankAccounts) return;
+
+        isLoadingBankAccounts = true;
+        bankAccountOptionsReadDenied = false;
+        try
+        {
+            var loadedBankAccounts = await TreasuryService.GetBankAccountLookupsAsync();
+            bankAccounts = loadedBankAccounts;
+            hasLoadedBankAccounts = true;
+            bankAccountOptionsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            bankAccounts = new();
+            hasLoadedBankAccounts = false;
+            bankAccountOptionsReadFailed = false;
+            bankAccountOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load bank-account options for the expense editor.");
+            bankAccountOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingBankAccounts = false;
+        }
+    }
+
+    private Task RetryExpenseDetailLoadAsync() => LoadExpenseDetailAsync();
+
+    private async Task LoadExpenseDetailAsync()
+    {
+        if (Id == 0 || isLoadingExpenseDetail) return;
+
+        isLoadingExpenseDetail = true;
+        expenseDetailReadDenied = false;
+        try
+        {
+            var existing = await AccountingService.GetExpenseByIdAsync(Id);
+            if (existing is null)
+            {
+                expenseDetailReadFailed = false;
+                expenseDetailNotFound = true;
+                return;
+            }
+
+            dto = existing;
+            fiscalYearSelected = dto.FiscalYearID ?? 0;
+            creditSelected = dto.CreditAccountID ?? 0;
+            costCenterSelected = dto.CostCenterID ?? 0;
+            cashBoxSelected = dto.CashBoxID ?? 0;
+            bankAccountSelected = dto.BankAccountID ?? 0;
+            expenseDetailReadFailed = false;
+            expenseDetailReadDenied = false;
+            expenseDetailNotFound = false;
+            FilterPeriods();
+            if (dto.PeriodID == 0 && filteredPeriods.Any())
+                dto.PeriodID = filteredPeriods.First().PeriodID;
+            expenseEditorInitialized = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            expenseDetailReadFailed = false;
+            expenseDetailNotFound = false;
+            expenseDetailReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load expense {ExpenseID} for editing.", Id);
+            expenseDetailReadFailed = true;
+            expenseDetailReadDenied = false;
+            expenseDetailNotFound = false;
+        }
+        finally
+        {
+            isLoadingExpenseDetail = false;
+        }
+    }
+
+    private Task RetryCashBoxBalanceLoadAsync() => LoadCashBoxBalanceOptionsAsync();
+
+    private async Task LoadCashBoxBalanceOptionsAsync()
+    {
+        if (!CanReadCashBoxBalances || isLoadingCashBoxBalances) return;
+
+        isLoadingCashBoxBalances = true;
+        cashBalanceReadDenied = false;
+        try
+        {
+            var loadedBalances = await TreasuryService.GetCashBoxBalanceLookupsAsync();
+            var balancesById = loadedBalances.ToDictionary(x => x.CashBoxID, x => x.CurrentBalance);
+            if (cashBoxes.Any(box => !balancesById.ContainsKey(box.CashBoxID)))
+            {
+                Logger.LogWarning("The cash-box balance lookup omitted one or more available cash boxes; balances were not applied.");
+                cashBalanceReadFailed = true;
+                cashBalanceLoadMessage = hasLoadedCashBoxBalances
+                    ? "تعذر تحديث بعض الأرصدة؛ المعروض آخر تحميل ناجح."
+                    : "تعذر تحميل أرصدة جميع الخزائن؛ لم يُعرض صفر افتراضي بدلاً منه.";
+                return;
+            }
+
+            foreach (var box in cashBoxes)
+                if (balancesById.TryGetValue(box.CashBoxID, out var balance)) box.CurrentBalance = balance;
+            canViewCashBoxBalances = true;
+            hasLoadedCashBoxBalances = true;
+            cashBalanceReadFailed = false;
+            cashBalanceReadDenied = false;
+            cashBalanceLoadMessage = "";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            canViewCashBoxBalances = false;
+            cashBalanceReadFailed = false;
+            cashBalanceReadDenied = true;
+            cashBalanceLoadMessage = "";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load actual cash-box balances for the expense editor.");
+            cashBalanceReadFailed = true;
+            cashBalanceReadDenied = false;
+            cashBalanceLoadMessage = hasLoadedCashBoxBalances
+                ? "تعذر تحديث الرصيد الفعلي؛ المعروض آخر تحميل ناجح."
+                : "تعذر تحميل الرصيد الفعلي؛ لم يُعرض صفر افتراضي بدلاً منه.";
+        }
+        finally
+        {
+            isLoadingCashBoxBalances = false;
+        }
+    }
+
+    private Task RetryFiscalYearOptionsAsync() => LoadFiscalYearOptionsAsync();
+
+    private async Task LoadFiscalYearOptionsAsync()
+    {
+        if (isLoadingFiscalYearOptions) return;
+
+        isLoadingFiscalYearOptions = true;
+        fiscalYearOptionsReadDenied = false;
+        try
+        {
+            var loadedFiscalYears = await AccountingService.GetFiscalYearsForExpenseEditAsync();
+            fiscalYears = loadedFiscalYears;
+            hasLoadedFiscalYearOptions = true;
+            fiscalYearOptionsReadFailed = false;
+
+            if (expenseEditorInitialized)
+            {
+                if (Id == 0)
+                    OnDateChanged();
+                else
+                    FilterPeriods();
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            fiscalYears = new();
+            hasLoadedFiscalYearOptions = false;
+            fiscalYearOptionsReadFailed = false;
+            fiscalYearOptionsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load fiscal-year options for the expense editor.");
+            fiscalYearOptionsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingFiscalYearOptions = false;
+        }
+    }
+
+    private Task RetryAccountingPeriodOptionsAsync() => LoadAccountingPeriodOptionsAsync();
+
+    private async Task LoadAccountingPeriodOptionsAsync()
+    {
+        if (isLoadingAccountingPeriods) return;
+
+        isLoadingAccountingPeriods = true;
+        accountingPeriodsReadDenied = false;
+        try
+        {
+            var loadedPeriods = await AccountingService.GetAccountingPeriodsForExpenseEditAsync();
+            allPeriods = loadedPeriods;
+            hasLoadedAccountingPeriods = true;
+            accountingPeriodsReadFailed = false;
+
+            if (expenseEditorInitialized)
+            {
+                if (Id == 0)
+                    OnDateChanged();
+                else
+                    FilterPeriods();
+
+                if (dto.PeriodID == 0 && filteredPeriods.Any())
+                    dto.PeriodID = filteredPeriods.First().PeriodID;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            allPeriods = new();
+            filteredPeriods = new();
+            hasLoadedAccountingPeriods = false;
+            accountingPeriodsReadFailed = false;
+            accountingPeriodsReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load accounting-period options for the expense editor.");
+            accountingPeriodsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingAccountingPeriods = false;
+        }
     }
 
     private void OnDateChanged()
@@ -376,21 +892,60 @@ else
             filteredPeriods = allPeriods.OrderByDescending(p => p.StartDate).Take(24).OrderBy(p => p.StartDate).ToList();
     }
 
+    private void OnPaymentMethodChanged()
+    {
+        if (dto.PaymentMethod != 1) cashBoxSelected = 0;
+        if (dto.PaymentMethod != 2) bankAccountSelected = 0;
+        if (dto.PaymentMethod != 3) creditSelected = 0;
+    }
+
     private async Task Save()
     {
         if (!CanUseExpenseEditor) return;
 
+        if (!dto.PaymentMethod.HasValue || dto.PaymentMethod.Value < 1 || dto.PaymentMethod.Value > 3)
+        {
+            msg = "اختر طريقة دفع صحيحة للمصروف"; isError = true; return;
+        }
+        var paymentMethod = dto.PaymentMethod.Value;
         dto.FiscalYearID = fiscalYearSelected == 0 ? null : fiscalYearSelected;
-        dto.CreditAccountID = creditSelected == 0 ? null : creditSelected;
         dto.CostCenterID = costCenterSelected == 0 ? null : costCenterSelected;
-        dto.CashBoxID = cashBoxSelected == 0 ? null : cashBoxSelected;
 
         if (dto.PeriodID == 0) { msg = "يجب اختيار الفترة المحاسبية"; isError = true; return; }
-        if (dto.AccountID == 0) { msg = "يجب اختيار حساب المصروف"; isError = true; return; }
+        if (dto.AccountID == 0 || !expenseAccounts.Any(a => a.AccountID == dto.AccountID)) { msg = "اختر حساب مصروف نشطًا وتفصيليًا"; isError = true; return; }
         if (dto.Amount <= 0) { msg = "المبلغ يجب أن يكون أكبر من صفر"; isError = true; return; }
         if (string.IsNullOrWhiteSpace(dto.Description)) { msg = "أدخل بيان المصروف"; isError = true; return; }
-        if (dto.PaymentMethod==1 && cashBoxSelected==0 && cashBoxes.Any()) { cashBoxSelected = cashBoxes.First(c=>c.IsDefault) != null ? cashBoxes.First(c=>c.IsDefault).CashBoxID : cashBoxes.First().CashBoxID; }
-        if (dto.PaymentMethod==1 && cashBoxSelected==0) { msg = "يجب اختيار الخزينة لخصم الرصيد"; isError = true; return; }
+
+        if (paymentMethod == 1)
+        {
+            if (cashBoxSelected == 0)
+            {
+                var defaultBox = cashBoxes.FirstOrDefault(c => c.IsDefault) ?? cashBoxes.FirstOrDefault();
+                if (defaultBox != null) cashBoxSelected = defaultBox.CashBoxID;
+            }
+            if (cashBoxSelected == 0) { msg = "اختر خزينة نشطة لمصدر الدفع"; isError = true; return; }
+            dto.CashBoxID = cashBoxSelected;
+            dto.BankAccountID = null;
+            dto.CreditAccountID = null;
+        }
+        else if (paymentMethod == 2)
+        {
+            if (bankAccountSelected == 0 || !bankAccounts.Any(b => b.BankAccountID == bankAccountSelected)) { msg = "اختر حسابًا بنكيًا نشطًا لمصدر الدفع"; isError = true; return; }
+            dto.CashBoxID = null;
+            dto.BankAccountID = bankAccountSelected;
+            dto.CreditAccountID = null;
+        }
+        else if (paymentMethod == 3)
+        {
+            if (creditSelected == 0 || !creditAccounts.Any(a => a.AccountID == creditSelected)) { msg = "اختر حساب التزام نشطًا وتفصيليًا للدفع الآجل"; isError = true; return; }
+            dto.CashBoxID = null;
+            dto.BankAccountID = null;
+            dto.CreditAccountID = creditSelected;
+        }
+        else
+        {
+            msg = "طريقة الدفع غير صحيحة"; isError = true; return;
+        }
 
         isSaving = true; msg = ""; StateHasChanged();
         try
@@ -423,4 +978,13 @@ else
     private string GetCashBoxOptionLabel(CashBoxListDto box) => canViewCashBoxBalances
         ? $"{box.CashBoxNameAr} - رصيد: {box.CurrentBalance:#,##0.00}"
         : $"{box.CashBoxNameAr} - الرصيد غير متاح";
+
+    private string GetCreditPreviewName() => dto.PaymentMethod switch
+    {
+        1 => cashBoxes.FirstOrDefault(c => c.CashBoxID == cashBoxSelected)?.CashBoxNameAr ?? "اختر الخزينة",
+        2 => bankAccounts.FirstOrDefault(b => b.BankAccountID == bankAccountSelected) is { } bank
+            ? $"{bank.BankName} - {bank.AccountNumber}" : "اختر الحساب البنكي",
+        3 => creditSelected == 0 ? "اختر حساب الالتزام" : GetCreditAccountName(creditSelected),
+        _ => "مصدر دفع غير محدد"
+    };
 }

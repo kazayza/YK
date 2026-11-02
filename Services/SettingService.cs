@@ -1,18 +1,35 @@
 ﻿using Dapper;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class SettingService : BaseDbService
     {
+        private const string ModuleCode = "SCR_SETTINGS";
         private readonly AuditService _audit;
 
-        public SettingService(IConfiguration configuration, AuditService audit) : base(configuration)
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly UserSessionService _userSession;
+
+        public SettingService(
+            IConfiguration configuration,
+            AuditService audit,
+            ModuleAuthorizationService authorization,
+            UserSessionService userSession) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
+            _userSession = userSession;
         }
+
+        private Task RequireSettingPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentSettingPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<SettingDto>> GetAllSettingsAsync()
         {
+            await RequireCurrentSettingPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض إعدادات النظام.");
             using var connection = CreateConnection();
             var sql = @"SELECT SettingID, SettingKey, SettingValue, SettingDescription, 
                                SettingGroup, DataType
@@ -22,8 +39,76 @@ namespace YKCoatings.Services
             return result.ToList();
         }
 
+        private sealed class CompanyPrintSettingRow
+        {
+            public string SettingKey { get; set; } = string.Empty;
+            public string? SettingValue { get; set; }
+        }
+
+        /// <summary>
+        /// Returns only the company identity fields approved for print headers/footers.
+        /// This is read-only and requires an active session with at least one effective
+        /// CanPrint permission. It intentionally does not require SCR_SETTINGS:CanView;
+        /// individual print actions keep their own module-level authorization.
+        /// </summary>
+        public async Task<PrintCompanyProfileDto> GetCompanyPrintProfileAsync()
+        {
+            await _authorization.RequireCurrentUserAnyPrintPermissionAsync("لا تملك صلاحية الطباعة.");
+
+            using var connection = CreateConnection();
+            var rows = await connection.QueryAsync<CompanyPrintSettingRow>(@"
+SELECT SettingKey, SettingValue
+FROM dbo.SystemSettings
+WHERE SettingGroup=N'Company'
+  AND SettingKey IN
+      (N'CompanyName',N'CompanyNameEn',N'CompanyAddress',N'CompanyPhone',
+       N'CompanyEmail',N'TaxNumber',N'CommercialRegister',N'CompanyLogo');");
+
+            var values = rows.ToDictionary(x => x.SettingKey, x => x.SettingValue ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+            string Read(string key) => values.TryGetValue(key, out var value) ? value.Trim() : string.Empty;
+
+            return new PrintCompanyProfileDto
+            {
+                CompanyName = Read("CompanyName"),
+                CompanyNameEn = Read("CompanyNameEn"),
+                CompanyAddress = Read("CompanyAddress"),
+                CompanyPhone = Read("CompanyPhone"),
+                CompanyEmail = Read("CompanyEmail"),
+                TaxNumber = Read("TaxNumber"),
+                CommercialRegister = Read("CommercialRegister"),
+                CompanyLogo = NormalizeCompanyLogoPath(Read("CompanyLogo"))
+            };
+        }
+
+        private static string NormalizeCompanyLogoPath(string? value)
+        {
+            const string fallback = "/images/yk-logo-gold.png";
+            if (string.IsNullOrWhiteSpace(value)) return fallback;
+
+            var path = value.Trim().Replace('\\', '/');
+            if (path.StartsWith("wwwroot/", StringComparison.OrdinalIgnoreCase))
+                path = path["wwwroot/".Length..];
+            path = path.TrimStart('/');
+            if (path.Split('/').Any(segment => segment is ".." or ".") ||
+                path.Contains(':') ||
+                path.Any(char.IsControl))
+                return fallback;
+
+            return "/" + path;
+        }
+
         public async Task<string?> GetSettingValueAsync(string key)
         {
+            if (string.Equals(key, "SessionTimeout", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_userSession.IsLoggedIn || _userSession.UserID <= 0)
+                    throw new UnauthorizedAccessException("يجب تسجيل الدخول لقراءة مهلة الجلسة.");
+            }
+            else
+            {
+                await RequireCurrentSettingPermissionAsync(p => p.CanView, "ليس لديك صلاحية قراءة إعدادات النظام.");
+            }
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<string>(
                 "SELECT SettingValue FROM dbo.SystemSettings WHERE SettingKey = @Key",
@@ -32,6 +117,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateSettingAsync(int settingId, string? newValue, int userId)
         {
+            await RequireSettingPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل إعدادات النظام.");
             using var connection = CreateConnection();
 
             var old = await connection.QueryFirstOrDefaultAsync<SettingDto>(
@@ -55,6 +141,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertSettingAsync(string key, string? value, string? description, string? group, int userId)
         {
+            await RequireSettingPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل إعدادات النظام.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.SystemSettings (SettingKey, SettingValue, SettingDescription, SettingGroup, CreatedDate)
                         VALUES (@Key, @Value, @Description, @Group, GETDATE());
@@ -74,6 +161,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteSettingAsync(int settingId, int userId)
         {
+            await RequireSettingPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل إعدادات النظام.");
             using var connection = CreateConnection();
 
             var setting = await connection.QueryFirstOrDefaultAsync<SettingDto>(

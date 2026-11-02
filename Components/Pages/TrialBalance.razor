@@ -3,8 +3,9 @@
 @using YKCoatings.Models
 @inject AccountingService AccountingService
 @inject UserSessionService UserSession
+@inject Microsoft.Extensions.Logging.ILogger<TrialBalance> Logger
 
-<PageTitle>ميزان المراجعة -   </PageTitle>
+<PageTitle>ميزان المراجعة</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -32,8 +33,22 @@ else
 
     @if (isLoading)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل ميزان المراجعة...</p></div>}
+    else if (!string.IsNullOrWhiteSpace(loadError) && allList.Count == 0)
+    {
+        <div class="loading-luxury" role="alert">
+            <p style="color:#dc2626">@loadError</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+        </div>
+    }
     else
     {
+        @if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                @loadError
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+            </div>
+        }
         <div class="filter-luxury">
             <div class="search-luxury">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -75,7 +90,7 @@ else
     }
 </div>
 
-@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'><i class=bi-x-lg></i></button></div></div>}
+
 }
 
 <style>
@@ -127,17 +142,30 @@ else
     private int filterType = 0;
     private DateTime? filterFrom = null;
     private DateTime? filterTo = null;
-    private string toast = "";
-    private bool toastOk = true;
+    private string loadError = string.Empty;
 
     protected override async Task OnInitializedAsync(){ await LoadData(); }
 
     private async Task LoadData()
     {
-        isLoading=true; StateHasChanged();
-        try{ allList = await AccountingService.GetTrialBalanceAsync(filterFrom, filterTo, filterLevel==0?null:filterLevel); ApplyFilter(); }
-        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
-        finally{ isLoading=false; }
+        isLoading = true;
+        loadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            allList = await AccountingService.GetTrialBalanceAsync(filterFrom, filterTo, filterLevel == 0 ? null : filterLevel);
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load trial balance data.");
+            loadError = "تعذر تحميل ميزان المراجعة. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
     private void ApplyFilter()

@@ -8,8 +8,9 @@
 @inject SalesOrderService SoService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SalesOrders> Logger
 
-<PageTitle>أوامر البيع - واي كي كوتينج   </PageTitle>
+<PageTitle>أوامر البيع - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -27,7 +28,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">أوامر البيع</h2><p class="lh-subtitle">أوامر البيع اختيارية - الفاتورة هي الأساس - نفس نظام المشتريات</p></div>
                 </div>
                 <div class="lh-actions" style="overflow:visible !important">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count أمر</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(orders == null && !string.IsNullOrWhiteSpace(loadError) ? "العدد غير متاح" : $"{filtered.Count} أمر")</span>
                     @if (permissions.CanExport)
                     {
                         <button class="btn-luxury btn-export-luxury" @onclick="ExportExcel" disabled="@isExporting">
@@ -86,7 +87,26 @@ else
             <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if (orders == null)
+        @if (orders != null && !string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                @loadError
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">
+                    @(isLoading ? "جاري إعادة المحاولة..." : "إعادة المحاولة")
+                </button>
+            </div>
+        }
+        @if (orders == null && !string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="empty-luxury" role="alert">
+                <h4>تعذر تحميل قائمة أوامر البيع</h4>
+                <p class="empty-sub">@loadError</p>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">
+                    @(isLoading ? "جاري إعادة المحاولة..." : "إعادة المحاولة")
+                </button>
+            </div>
+        }
+        else if (orders == null)
         {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
         else if (!filtered.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M6 2 3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/></svg></div><h4>لا توجد أوامر بيع</h4><p class="empty-sub">أمر البيع اختياري - يمكنك إنشاء فاتورة مباشرة</p></div>}
@@ -229,6 +249,8 @@ else
 @code {
     private List<SalesOrderListDto>? orders;
     private List<SalesOrderListDto> filtered = new();
+    private bool isLoading = false;
+    private string loadError = string.Empty;
     private ModulePermissionDto? permissions;
     private string searchText = "";
     private int filterStatus = 0;
@@ -248,7 +270,32 @@ else
         permissions = PermissionService.GetModule("SCR_SO");
         if (permissions != null && permissions.CanView) await LoadData();
     }
-    private async Task LoadData(){orders = await SoService.GetOrdersListAsync();Filter();}
+    private async Task LoadData()
+    {
+        isLoading = true;
+        loadError = string.Empty;
+        List<SalesOrderListDto> loadedOrders;
+
+        try
+        {
+            loadedOrders = await SoService.GetOrdersListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load sales orders list.");
+            loadError = orders == null
+                ? "تعذر تحميل قائمة أوامر البيع. يرجى إعادة المحاولة."
+                : "تعذر تحديث قائمة أوامر البيع؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة.";
+            return;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+
+        orders = loadedOrders;
+        Filter();
+    }
     private void Filter()
     {
         if (orders == null) return;

@@ -1,25 +1,43 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class PurchaseRequestService : BaseDbService
     {
+        private const string ModuleCode = "SCR_PR";
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<PurchaseRequestService> _logger;
 
-        public PurchaseRequestService(IConfiguration configuration, AuditService audit, NotificationService notif)
+        public PurchaseRequestService(
+            IConfiguration configuration, AuditService audit, NotificationService notif,
+            ModuleAuthorizationService authorization, ILogger<PurchaseRequestService> logger)
             : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequirePurchaseRequestPermissionAsync(
+            int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentPurchaseRequestPermissionAsync(
+            Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة الطلبات
         // ==========================================
         public async Task<List<PurchaseRequestListDto>> GetRequestsListAsync()
         {
+            await RequireCurrentPurchaseRequestPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             pr.RequestID, pr.RequestNumber, pr.RequestDate, pr.RequiredDate,
@@ -39,6 +57,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<PurchaseRequestHeaderDto?> GetRequestByIdAsync(int requestId)
         {
+            await RequireCurrentPurchaseRequestPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"SELECT RequestID, RequestNumber, RequestDate, RequiredDate,
                                RequestedBy, DepartmentID, RequestStatus, Priority,
@@ -52,6 +71,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<PurchaseRequestDetailDto>> GetRequestDetailsAsync(int requestId)
         {
+            await RequireCurrentPurchaseRequestPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض تفاصيل طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             rd.RequestDetailID, rd.RequestID, rd.LineNumber,
@@ -73,6 +93,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateRequestNumberAsync()
         {
+            await RequireCurrentPurchaseRequestPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء طلبات الشراء.");
             using var connection = CreateConnection();
             try
             {
@@ -97,6 +118,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertRequestAsync(PurchaseRequestHeaderDto header, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.PurchaseRequests 
                         (RequestNumber, RequestDate, RequiredDate, RequestedBy, DepartmentID,
@@ -126,6 +148,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateRequestAsync(PurchaseRequestHeaderDto header, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.PurchaseRequests SET
                             RequestDate = @RequestDate, RequiredDate = @RequiredDate,
@@ -152,6 +175,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertDetailAsync(PurchaseRequestDetailEditDto detail, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أصناف إلى طلبات الشراء.");
             using var connection = CreateConnection();
 
             var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
@@ -182,6 +206,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateDetailAsync(PurchaseRequestDetailEditDto detail, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أصناف طلبات الشراء.");
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.PurchaseRequestDetails SET
                             ItemID = @ItemID, UnitID = @UnitID,
@@ -202,6 +227,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أصناف طلبات الشراء.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(
                 "DELETE FROM dbo.PurchaseRequestDetails WHERE RequestDetailID = @ID",
@@ -222,6 +248,12 @@ namespace YKCoatings.Services
             int? employeeId = null,
             string? rejectionReason = null)
         {
+            if (newStatus == 2)
+                await RequirePurchaseRequestPermissionAsync(userId, p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إرسال طلبات الشراء للاعتماد.");
+            else if (newStatus is 3 or 4)
+                await RequirePurchaseRequestPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد أو رفض طلبات الشراء.");
+            else
+                await RequirePurchaseRequestPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تغيير حالة طلبات الشراء.");
             using var connection = CreateConnection();
 
             var reqNum = await connection.QueryFirstOrDefaultAsync<string>(
@@ -255,7 +287,10 @@ namespace YKCoatings.Services
                         relatedRecordId: requestId,
                         createdBy: userId);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not create the pending-approval notification for a purchase request.");
+                }
 
                 await _audit.WriteAuditLogAsync(userId, 2, "PurchaseRequests", requestId.ToString(),
                     moduleName: "SCR_PR",
@@ -273,7 +308,15 @@ namespace YKCoatings.Services
                       WHERE RequestID = @ID",
                     new { ID = requestId, EmployeeID = employeeId, UserID = userId });
 
-                try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
+                try
+                {
+                    await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not complete pending notifications after approving a purchase request.");
+                }
+
                 try
                 {
                     if (createdBy.HasValue)
@@ -290,7 +333,10 @@ namespace YKCoatings.Services
                             createdBy: userId);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not notify the creator after approving a purchase request.");
+                }
 
                 await _audit.WriteAuditLogAsync(userId, 2, "PurchaseRequests", requestId.ToString(),
                     moduleName: "SCR_PR",
@@ -309,7 +355,15 @@ namespace YKCoatings.Services
                       WHERE RequestID = @ID",
                     new { ID = requestId, EmployeeID = employeeId, Reason = rejectionReason, UserID = userId });
 
-                try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
+                try
+                {
+                    await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a purchase request.");
+                }
+
                 try
                 {
                     if (createdBy.HasValue)
@@ -326,7 +380,10 @@ namespace YKCoatings.Services
                             createdBy: userId);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not notify the creator after rejecting a purchase request.");
+                }
 
                 await _audit.WriteAuditLogAsync(userId, 2, "PurchaseRequests", requestId.ToString(),
                     moduleName: "SCR_PR",
@@ -353,6 +410,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task QuickApproveAsync(int requestId, int userId, int? employeeId = null)
 {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد طلبات الشراء.");
     using var connection = CreateConnection();
     await connection.OpenAsync();
     using var transaction = connection.BeginTransaction();
@@ -386,7 +444,13 @@ namespace YKCoatings.Services
     }
     catch (Exception ex)
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); }
+        catch (Exception rollbackException)
+        {
+            _logger.LogError(rollbackException,
+                "Rollback failed after quick-approving purchase request {PurchaseRequestID}.",
+                requestId);
+        }
         throw new Exception($"فشل الاعتماد السريع: {ex.Message}", ex);
     }
 
@@ -399,7 +463,15 @@ namespace YKCoatings.Services
         "SELECT CreatedBy FROM dbo.PurchaseRequests WHERE RequestID = @ID",
         new { ID = requestId });
 
-    try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
+    try
+    {
+        await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not complete pending notifications after quick-approving a purchase request.");
+    }
+
     try
     {
         if (createdBy.HasValue)
@@ -416,7 +488,10 @@ namespace YKCoatings.Services
                 createdBy: userId);
         }
     }
-    catch { }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not notify the creator after quick-approving a purchase request.");
+    }
 
     await _audit.WriteAuditLogAsync(
         userId,
@@ -436,6 +511,7 @@ namespace YKCoatings.Services
     int userId,
     int? employeeId = null)
 {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد طلبات الشراء.");
     using var connection = CreateConnection();
     await connection.OpenAsync();
     using var transaction = connection.BeginTransaction();
@@ -477,7 +553,13 @@ namespace YKCoatings.Services
     }
     catch (Exception ex)
     {
-        transaction.Rollback();
+        try { transaction.Rollback(); }
+        catch (Exception rollbackException)
+        {
+            _logger.LogError(rollbackException,
+                "Rollback failed after detailed approval of purchase request {PurchaseRequestID}.",
+                requestId);
+        }
         throw new Exception($"فشل الاعتماد التفصيلي: {ex.Message}", ex);
     }
 
@@ -490,7 +572,15 @@ namespace YKCoatings.Services
         "SELECT CreatedBy FROM dbo.PurchaseRequests WHERE RequestID = @ID",
         new { ID = requestId });
 
-    try { await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId); } catch { }
+    try
+    {
+        await _notif.MarkRelatedAsActionedAsync("SCR_PR", requestId);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not complete pending notifications after detailed-approving a purchase request.");
+    }
+
     try
     {
         if (createdBy.HasValue)
@@ -507,7 +597,10 @@ namespace YKCoatings.Services
                 createdBy: userId);
         }
     }
-    catch { }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not notify the creator after detailed-approving a purchase request.");
+    }
 
     await _audit.WriteAuditLogAsync(
         userId,
@@ -523,6 +616,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteRequestAsync(int requestId, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف طلبات الشراء.");
             using var connection = CreateConnection();
 
             var status = await connection.QueryFirstOrDefaultAsync<int>(
@@ -556,6 +650,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<PurchaseRequestListDto> requests, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير طلبات الشراء.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("طلبات الشراء");
             ws.RightToLeft = true;
@@ -621,6 +716,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateReportHtmlAsync(int requestId, int userId)
         {
+            await RequirePurchaseRequestPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة طلبات الشراء.");
             var header = await GetRequestByIdAsync(requestId);
             if (header == null) return "<h3>الطلب غير موجود</h3>";
 

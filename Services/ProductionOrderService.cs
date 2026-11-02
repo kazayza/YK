@@ -17,6 +17,8 @@ namespace YKCoatings.Services
             public decimal OverheadCostPerBatch { get; set; }
             public int BOMStatus { get; set; }
             public bool IsActive { get; set; }
+            public DateTime? EffectiveFrom { get; set; }
+            public DateTime? EffectiveTo { get; set; }
         }
         private sealed class ProductionOrderWorkflowDto
         {
@@ -27,8 +29,41 @@ namespace YKCoatings.Services
             public int ProductItemID { get; set; }
             public int PlannedUnitID { get; set; }
             public decimal PlannedQty { get; set; }
+            public DateTime? PlannedStartDate { get; set; }
             public int? CreatedBy { get; set; }
         }
+        private sealed class ProductionOrderSubstituteValidationDto
+        {
+            public int BOMDetailID { get; set; }
+            public bool IsOptional { get; set; }
+        }
+        private sealed class ProductionOrderSubstituteAuditDto
+        {
+            public int BOMDetailID { get; set; }
+            public int BOMItemID { get; set; }
+            public int SelectedItemID { get; set; }
+        }
+
+        private static string? GetBomEffectiveDateError(
+            DateTime? plannedStartDate,
+            DateTime? effectiveFrom,
+            DateTime? effectiveTo,
+            bool requirePlannedStart)
+        {
+            if (!plannedStartDate.HasValue)
+                return requirePlannedStart
+                    ? "يجب تحديد تاريخ بدء الإنتاج المخطط قبل اعتماد الأمر؛ فهو يحدد نسخة الوصفة السارية."
+                    : null;
+
+            var asOfDate = plannedStartDate.Value.Date;
+            if (effectiveFrom.HasValue && asOfDate < effectiveFrom.Value.Date)
+                return "تاريخ بدء الإنتاج المخطط يسبق بداية سريان الوصفة المحددة.";
+            if (effectiveTo.HasValue && asOfDate > effectiveTo.Value.Date)
+                return "تاريخ بدء الإنتاج المخطط يتجاوز نهاية سريان الوصفة المحددة.";
+
+            return null;
+        }
+
         public ProductionOrderService(
             IConfiguration configuration,
             AuditService audit,
@@ -154,10 +189,10 @@ SELECT
     ISNULL(sw.WarehouseNameAr, N'') AS SourceWarehouse,
     ISNULL(tw.WarehouseNameAr, N'') AS TargetWarehouse,
     ISNULL(emp.FullNameAr, N'') AS AssignedToName,
-    ISNULL((SELECT COUNT(*) FROM dbo.ProductionBatches pb 
+    ISNULL((SELECT COUNT(*) FROM dbo.ProductionBatches pb
             WHERE pb.ProductionOrderID = po.ProductionOrderID), 0) AS BatchCount,
-    ISNULL((SELECT COUNT(*) FROM dbo.ProductionBatches pb 
-            WHERE pb.ProductionOrderID = po.ProductionOrderID 
+    ISNULL((SELECT COUNT(*) FROM dbo.ProductionBatches pb
+            WHERE pb.ProductionOrderID = po.ProductionOrderID
             AND pb.BatchStatus = 5), 0) AS CompletedBatchCount
 FROM dbo.ProductionOrders po
 INNER JOIN dbo.Items i ON po.ProductItemID = i.ItemID
@@ -178,7 +213,7 @@ WHERE 1 = 1
         i.ItemNameAr LIKE N'%' + @Search + N'%' OR
         b.BOMName LIKE N'%' + @Search + N'%'
     )
-ORDER BY 
+ORDER BY
     CASE WHEN po.OrderStatus IN (3,4) THEN 0 ELSE 1 END,
     po.OrderPriority,
     po.OrderDate DESC";
@@ -262,14 +297,12 @@ WHERE ProductionOrderID = @OrderID";
 
             try
             {
-                var orderNumber = await GenerateOrderNumberAsync();
-
                 // جلب بيانات الوصفة لحساب عدد الدفعات
                 var bomData = await connection.QueryFirstOrDefaultAsync<ProductionOrderBomCalcDto>(
     @"SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
           ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
           ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
-          BOMStatus,ISNULL(IsActive,1) AS IsActive
+          BOMStatus,ISNULL(IsActive,1) AS IsActive,EffectiveFrom,EffectiveTo
       FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
       WHERE BOMID=@BOMID",
     new { order.BOMID }, transaction);
@@ -277,6 +310,10 @@ WHERE ProductionOrderID = @OrderID";
                     throw new InvalidOperationException("حدد وصفة ومنتجاً ووحدة إنتاج وكمية مخططة موجبة.");
                 if (bomData is null || bomData.BOMStatus != 2 || !bomData.IsActive)
                     throw new InvalidOperationException("لا يمكن إنشاء أمر إلا من وصفة نشطة ومعتمدة.");
+                var bomDateError = GetBomEffectiveDateError(
+                    order.PlannedStartDate, bomData.EffectiveFrom, bomData.EffectiveTo, requirePlannedStart: false);
+                if (bomDateError is not null)
+                    throw new InvalidOperationException(bomDateError);
                 if (bomData.ProductItemID != order.ProductItemID || bomData.OutputUnitID != order.PlannedUnitID)
                     throw new InvalidOperationException("المنتج أو وحدة أمر التصنيع لا يطابقان مخرج الوصفة.");
                 if (bomData.OutputQty <= 0)
@@ -292,6 +329,7 @@ WHERE ProductionOrderID = @OrderID";
                     ? order.NumberOfBatches
                     : (int)Math.Ceiling((double)multiplier);
 
+                var orderNumber = await GenerateOrderNumberAsync(connection, transaction);
                 var sql = @"
 INSERT INTO dbo.ProductionOrders
 (
@@ -336,7 +374,16 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 }, transaction);
 
                 // ===== حساب المواد المطلوبة من الوصفة =====
-                await CalculateOrderMaterialsAsync(connection, transaction, newId, order.BOMID, order.PlannedQty);
+                await CalculateOrderMaterialsAsync(
+                    connection, transaction, newId, order.BOMID, order.PlannedQty,
+                    order.SelectedOptionalBOMDetailIDs, order.SelectedSubstituteBOMDetailIDs);
+                var createdSubstituteSelections = (await connection.QueryAsync<ProductionOrderSubstituteAuditDto>(@"
+SELECT pom.BOMDetailID,bd.ItemID AS BOMItemID,pom.ItemID AS SelectedItemID
+FROM dbo.ProductionOrderMaterials pom
+INNER JOIN dbo.BOMDetails bd ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@OrderID AND pom.ItemID<>bd.ItemID
+ORDER BY pom.BOMDetailID",
+                    new { OrderID = newId }, transaction)).ToList();
 
                 await _notification.CreateForPermissionHoldersAsync(
                     connection, transaction, notificationType: 1,
@@ -363,7 +410,17 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         OrderNumber = orderNumber,
                         order.BOMID,
                         order.ProductItemID,
-                        order.PlannedQty
+                        order.PlannedQty,
+                        OptionalBOMDetailIDs = (order.SelectedOptionalBOMDetailIDs ?? new List<int>())
+                            .Distinct().OrderBy(id => id),
+                        SubstituteBOMDetailIDs = (order.SelectedSubstituteBOMDetailIDs ?? new List<int>())
+                            .Distinct().OrderBy(id => id),
+                        SubstituteSelections = createdSubstituteSelections.Select(item => new
+                        {
+                            item.BOMDetailID,
+                            item.BOMItemID,
+                            SubstituteItemID = item.SelectedItemID
+                        })
                     }),
                     moduleName: "SCR_PRODORD",
                     description: $"إنشاء أمر تصنيع جديد: {orderNumber}"
@@ -397,6 +454,14 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
             ProductionOrderEditDto? oldOrder = null;
+            var optionalSelectionChanged = false;
+            var substituteSelectionChanged = false;
+            var oldOptionalIDsForAudit = new HashSet<int>();
+            var selectedOptionalIDsForAudit = new HashSet<int>();
+            var oldSubstituteIDsForAudit = new HashSet<int>();
+            var selectedSubstituteIDsForAudit = new HashSet<int>();
+            var oldSubstituteItemsForAudit = new List<ProductionOrderSubstituteAuditDto>();
+            var selectedSubstituteItemsForAudit = new List<ProductionOrderSubstituteAuditDto>();
             try
             {
                 oldOrder = await connection.QueryFirstOrDefaultAsync<ProductionOrderEditDto>(@"
@@ -415,12 +480,16 @@ WHERE ProductionOrderID=@ID",
 SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
        ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
        ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
-       BOMStatus,ISNULL(IsActive,1) AS IsActive
+       BOMStatus,ISNULL(IsActive,1) AS IsActive,EffectiveFrom,EffectiveTo
 FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
 WHERE BOMID=@BOMID",
                     new { order.BOMID }, transaction);
                 if (bomData is null || bomData.BOMStatus != 2 || !bomData.IsActive || bomData.OutputQty <= 0)
                     throw new InvalidOperationException("لا يمكن ربط أمر التصنيع إلا بوصفة نشطة ومعتمدة ذات مخرج صالح.");
+                var bomDateError = GetBomEffectiveDateError(
+                    order.PlannedStartDate, bomData.EffectiveFrom, bomData.EffectiveTo, requirePlannedStart: false);
+                if (bomDateError is not null)
+                    throw new InvalidOperationException(bomDateError);
                 if (bomData.ProductItemID != order.ProductItemID || bomData.OutputUnitID != order.PlannedUnitID)
                     throw new InvalidOperationException("المنتج أو وحدة أمر التصنيع لا يطابقان مخرج الوصفة.");
                 await ValidateOrderReferencesAsync(connection, transaction, order.ProductItemID, order.PlannedUnitID,
@@ -459,11 +528,54 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
                 if (changed != 1)
                     throw new InvalidOperationException("تغيرت حالة أمر التصنيع أثناء الحفظ؛ أعد تحميله.");
 
-                if (oldOrder.BOMID != order.BOMID || oldOrder.PlannedQty != order.PlannedQty)
+                var existingOptionalIDs = (await connection.QueryAsync<int>(@"
+SELECT DISTINCT pom.BOMDetailID
+FROM dbo.ProductionOrderMaterials pom WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+    ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@OrderID AND ISNULL(bd.IsOptional,0)=1",
+                    new { OrderID = order.ProductionOrderID }, transaction)).ToHashSet();
+                var selectedOptionalIDs = order.SelectedOptionalBOMDetailIDs is null
+                    ? (oldOrder.BOMID == order.BOMID ? existingOptionalIDs : new HashSet<int>())
+                    : order.SelectedOptionalBOMDetailIDs.ToHashSet();
+                var existingSubstituteIDs = (await connection.QueryAsync<int>(@"
+SELECT DISTINCT bd.BOMDetailID
+FROM dbo.ProductionOrderMaterials pom WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+    ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@OrderID AND pom.ItemID<>bd.ItemID",
+                    new { OrderID = order.ProductionOrderID }, transaction)).ToHashSet();
+                oldSubstituteItemsForAudit = (await connection.QueryAsync<ProductionOrderSubstituteAuditDto>(@"
+SELECT pom.BOMDetailID,bd.ItemID AS BOMItemID,pom.ItemID AS SelectedItemID
+FROM dbo.ProductionOrderMaterials pom WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK) ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@OrderID AND pom.ItemID<>bd.ItemID
+ORDER BY pom.BOMDetailID",
+                    new { OrderID = order.ProductionOrderID }, transaction)).ToList();
+                var selectedSubstituteIDs = order.SelectedSubstituteBOMDetailIDs is null
+                    ? (oldOrder.BOMID == order.BOMID ? existingSubstituteIDs : new HashSet<int>())
+                    : order.SelectedSubstituteBOMDetailIDs.ToHashSet();
+                oldOptionalIDsForAudit = existingOptionalIDs;
+                selectedOptionalIDsForAudit = selectedOptionalIDs;
+                oldSubstituteIDsForAudit = existingSubstituteIDs;
+                selectedSubstituteIDsForAudit = selectedSubstituteIDs;
+                optionalSelectionChanged = !existingOptionalIDs.SetEquals(selectedOptionalIDs);
+                substituteSelectionChanged = !existingSubstituteIDs.SetEquals(selectedSubstituteIDs);
+
+                if (oldOrder.BOMID != order.BOMID || oldOrder.PlannedQty != order.PlannedQty ||
+                    optionalSelectionChanged || substituteSelectionChanged)
                 {
                     await CalculateOrderMaterialsAsync(
-                        connection, transaction, order.ProductionOrderID, order.BOMID, order.PlannedQty);
+                        connection, transaction, order.ProductionOrderID, order.BOMID, order.PlannedQty,
+                        selectedOptionalIDs, selectedSubstituteIDs);
                 }
+                selectedSubstituteItemsForAudit = (await connection.QueryAsync<ProductionOrderSubstituteAuditDto>(@"
+SELECT pom.BOMDetailID,bd.ItemID AS BOMItemID,pom.ItemID AS SelectedItemID
+FROM dbo.ProductionOrderMaterials pom WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK) ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@OrderID AND pom.ItemID<>bd.ItemID
+ORDER BY pom.BOMDetailID",
+                    new { OrderID = order.ProductionOrderID }, transaction)).ToList();
 
                 await _notification.CreateForPermissionHoldersAsync(
                     connection, transaction, notificationType: 3,
@@ -499,6 +611,8 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
             if (oldOrder.AssignedTo != order.AssignedTo) changes.Add("AssignedTo");
             if (oldOrder.SupervisorID != order.SupervisorID) changes.Add("SupervisorID");
             if (oldOrder.Notes != order.Notes) changes.Add("Notes");
+            if (optionalSelectionChanged) changes.Add("OptionalComponents");
+            if (substituteSelectionChanged) changes.Add("SubstituteComponents");
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -508,12 +622,28 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
                 oldValues: System.Text.Json.JsonSerializer.Serialize(new
                 {
                     oldOrder.BOMID,oldOrder.ProductItemID,oldOrder.PlannedQty,oldOrder.PlannedUnitID,
-                    oldOrder.OrderPriority,oldOrder.SourceWarehouseID,oldOrder.TargetWarehouseID
+                    oldOrder.OrderPriority,oldOrder.SourceWarehouseID,oldOrder.TargetWarehouseID,
+                    OptionalBOMDetailIDs = oldOptionalIDsForAudit.OrderBy(id => id),
+                    SubstituteBOMDetailIDs = oldSubstituteIDsForAudit.OrderBy(id => id),
+                    SubstituteSelections = oldSubstituteItemsForAudit.Select(item => new
+                    {
+                        item.BOMDetailID,
+                        item.BOMItemID,
+                        SubstituteItemID = item.SelectedItemID
+                    })
                 }),
                 newValues: System.Text.Json.JsonSerializer.Serialize(new
                 {
                     order.BOMID,order.ProductItemID,order.PlannedQty,order.PlannedUnitID,
-                    order.OrderPriority,order.SourceWarehouseID,order.TargetWarehouseID
+                    order.OrderPriority,order.SourceWarehouseID,order.TargetWarehouseID,
+                    OptionalBOMDetailIDs = selectedOptionalIDsForAudit.OrderBy(id => id),
+                    SubstituteBOMDetailIDs = selectedSubstituteIDsForAudit.OrderBy(id => id),
+                    SubstituteSelections = selectedSubstituteItemsForAudit.Select(item => new
+                    {
+                        item.BOMDetailID,
+                        item.BOMItemID,
+                        SubstituteItemID = item.SelectedItemID
+                    })
                 }),
                 changedColumns: changes.Count > 0 ? string.Join(",", changes) : null,
                 moduleName: "SCR_PRODORD",
@@ -531,7 +661,9 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
                 return (false, "استخدم مسار إلغاء الأمر؛ فهو يتحقق من الصرف والدفعات.");
             if (newStatus == 6)
                 return (false, "اكتمال الأمر يُسجل من مسار استلام الدفعات المقبولة.");
-            if (newStatus is not (2 or 3 or 4 or 5))
+            if (newStatus == 3)
+                return (false, "لا يمكن نقل الأمر يدويًا إلى «جاري التجهيز»؛ تتحول الحالة بعد اعتماد إذن الصرف بنجاح.");
+            if (newStatus is not (2 or 4 or 5))
                 return (false, "حالة أمر التصنيع المطلوبة غير صالحة.");
 
             await _authorization.RequireUserPermissionAsync(userId, "SCR_PRODORD",
@@ -551,7 +683,7 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
             try
             {
                 current = await connection.QueryFirstOrDefaultAsync<ProductionOrderWorkflowDto>(
-                    @"SELECT ProductionOrderID,OrderNumber,OrderStatus,BOMID,ProductItemID,PlannedUnitID,PlannedQty,CreatedBy
+                    @"SELECT ProductionOrderID,OrderNumber,OrderStatus,BOMID,ProductItemID,PlannedUnitID,PlannedQty,PlannedStartDate,CreatedBy
                       FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
                       WHERE ProductionOrderID=@ID",
                     new { ID = orderId }, transaction);
@@ -560,7 +692,6 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
                 var validTransitions = new Dictionary<int, int[]>
                 {
                     { 1, new[] { 2 } },
-                    { 2, new[] { 3 } },
                     { 3, new[] { 4 } },
                     { 4, new[] { 5 } },
                     { 5, new[] { 4 } }
@@ -574,12 +705,16 @@ WHERE ProductionOrderID=@ProductionOrderID AND OrderStatus=1",
 SELECT ProductItemID,OutputUnitID,ISNULL(OutputQty,0) AS OutputQty,
        ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
        ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
-       BOMStatus,ISNULL(IsActive,1) AS IsActive
+       BOMStatus,ISNULL(IsActive,1) AS IsActive,EffectiveFrom,EffectiveTo
 FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
 WHERE BOMID=@BOMID",
                         new { current.BOMID }, transaction);
                     if (bom is null || bom.BOMStatus != 2 || !bom.IsActive || bom.OutputQty <= 0)
                         return (false, "لا يمكن اعتماد أمر التصنيع دون وصفة نشطة ومعتمدة ذات مخرج صالح.");
+                    var bomDateError = GetBomEffectiveDateError(
+                        current.PlannedStartDate, bom.EffectiveFrom, bom.EffectiveTo, requirePlannedStart: true);
+                    if (bomDateError is not null)
+                        return (false, bomDateError);
                     if (bom.ProductItemID != current.ProductItemID || bom.OutputUnitID != current.PlannedUnitID)
                         return (false, "المنتج أو وحدة أمر التصنيع لم يعودا يطابقان مخرج الوصفة.");
                     var activeReferences = await connection.ExecuteScalarAsync<int>(@"
@@ -595,6 +730,26 @@ SELECT CASE WHEN EXISTS
                         new { ProductItemID = current.ProductItemID, OutputUnitID = current.PlannedUnitID }, transaction);
                     if (activeReferences != 1)
                         return (false, "المنتج أو وحدة ناتج الوصفة غير نشطين؛ لا يمكن اعتماد الأمر.");
+
+                    var invalidSubstituteCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.ProductionOrderMaterials pom WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK) ON bd.BOMDetailID=pom.BOMDetailID
+WHERE pom.ProductionOrderID=@ID AND pom.ItemID<>bd.ItemID
+  AND (bd.BOMID<>@BOMID
+       OR ISNULL(bd.SubstituteItemID,0)<>pom.ItemID
+       OR pom.UnitID<>bd.UnitID
+       OR NOT EXISTS
+          (SELECT 1
+           FROM dbo.Items sourceItem WITH (UPDLOCK,HOLDLOCK)
+           INNER JOIN dbo.Items selectedItem WITH (UPDLOCK,HOLDLOCK) ON selectedItem.ItemID=pom.ItemID
+           WHERE sourceItem.ItemID=bd.ItemID
+             AND selectedItem.IsActive=1
+             AND selectedItem.ItemType=sourceItem.ItemType
+             AND selectedItem.PrimaryUnitID=bd.UnitID))",
+                        new { ID = orderId, BOMID = current.BOMID }, transaction);
+                    if (invalidSubstituteCount > 0)
+                        return (false, "لا يمكن اعتماد الأمر؛ البديل المحفوظ لم يعد مطابقًا للبديل النشط/نوع/وحدة سطر BOM. حدّث مسودة الأمر ثم أعد المحاولة.");
 
                     var invalidMaterialCount = await connection.ExecuteScalarAsync<int>(
                         @"SELECT COUNT(*) FROM dbo.ProductionOrderMaterials WITH (UPDLOCK,HOLDLOCK)
@@ -820,15 +975,85 @@ SELECT
         WHEN 3 THEN N'صرف جزئي'
     END AS LineStatusName,
     pom.BOMDetailID,
+    bd.ItemID AS BOMItemID,
+    bomItem.ItemCode AS BOMItemCode,
+    bomItem.ItemNameAr AS BOMItemName,
+    ISNULL(bd.IsOptional, 0) AS IsOptional,
+    bd.SubstituteItemID,
     pom.Notes
 FROM dbo.ProductionOrderMaterials pom
 INNER JOIN dbo.Items i ON pom.ItemID = i.ItemID
 INNER JOIN dbo.Units u ON pom.UnitID = u.UnitID
+LEFT JOIN dbo.BOMDetails bd ON bd.BOMDetailID = pom.BOMDetailID
+LEFT JOIN dbo.Items bomItem ON bomItem.ItemID = bd.ItemID
 WHERE pom.ProductionOrderID = @OrderID
 ORDER BY pom.MaterialType, pom.LineNumber";
 
             var result = await connection.QueryAsync<ProductionOrderMaterialDto>(
                 sql, new { OrderID = orderId });
+            return result.ToList();
+        }
+
+        public async Task<List<ProductionOrderOptionalComponentDto>> GetOptionalBOMComponentsAsync(int bomId)
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView,
+                "لا تملك صلاحية عرض مكونات أمر التصنيع.");
+            if (bomId <= 0) return new List<ProductionOrderOptionalComponentDto>();
+
+            using var connection = CreateConnection();
+            var result = await connection.QueryAsync<ProductionOrderOptionalComponentDto>(@"
+SELECT bd.BOMDetailID,bd.ItemID,i.ItemCode,i.ItemNameAr AS ItemName,
+       bd.UnitID,u.UnitNameAr AS UnitName,bd.Quantity,
+       ISNULL(bd.WastePercent,0) AS WastePercent
+FROM dbo.BOMDetails bd
+INNER JOIN dbo.Items i ON i.ItemID=bd.ItemID
+INNER JOIN dbo.Units u ON u.UnitID=bd.UnitID
+WHERE bd.BOMID=@BOMID AND ISNULL(bd.IsOptional,0)=1
+ORDER BY bd.MaterialType,bd.Sequence,bd.LineNumber",
+                new { BOMID = bomId });
+            return result.ToList();
+        }
+
+        public async Task<List<ProductionOrderSubstituteComponentDto>> GetSubstituteBOMComponentsAsync(int bomId, int orderId = 0)
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView,
+                "لا تملك صلاحية عرض بدائل مكونات أمر التصنيع.");
+            if (bomId <= 0) return new List<ProductionOrderSubstituteComponentDto>();
+
+            using var connection = CreateConnection();
+            var result = await connection.QueryAsync<ProductionOrderSubstituteComponentDto>(@"
+SELECT bd.BOMDetailID,bd.ItemID,
+       sourceItem.ItemCode,sourceItem.ItemNameAr AS ItemName,
+       bd.SubstituteItemID,substituteItem.ItemCode AS SubstituteItemCode,
+       substituteItem.ItemNameAr AS SubstituteItemName,
+       existingMaterial.ItemID AS SelectedItemID,
+       selectedItem.ItemCode AS SelectedItemCode,
+       selectedItem.ItemNameAr AS SelectedItemName,
+       CONVERT(bit,CASE WHEN existingMaterial.ItemID IS NOT NULL
+                             AND existingMaterial.ItemID<>bd.ItemID
+                             AND (bd.SubstituteItemID IS NULL OR existingMaterial.ItemID<>bd.SubstituteItemID)
+                        THEN 1 ELSE 0 END) AS IsStaleSelection,
+       bd.UnitID,u.UnitNameAr AS UnitName,bd.Quantity,
+       ISNULL(bd.WastePercent,0) AS WastePercent,
+       ISNULL(bd.IsOptional,0) AS IsOptional,
+       CONVERT(bit,CASE WHEN substituteItem.ItemID IS NOT NULL
+                             AND substituteItem.IsActive=1
+                             AND substituteItem.ItemType=sourceItem.ItemType
+                             AND substituteItem.ItemID<>bd.ItemID
+                             AND substituteItem.PrimaryUnitID=bd.UnitID
+                        THEN 1 ELSE 0 END) AS IsCompatible
+FROM dbo.BOMDetails bd
+INNER JOIN dbo.Items sourceItem ON sourceItem.ItemID=bd.ItemID
+LEFT JOIN dbo.Items substituteItem ON substituteItem.ItemID=bd.SubstituteItemID
+LEFT JOIN dbo.ProductionOrderMaterials existingMaterial
+       ON existingMaterial.ProductionOrderID=@OrderID AND existingMaterial.BOMDetailID=bd.BOMDetailID
+LEFT JOIN dbo.Items selectedItem ON selectedItem.ItemID=existingMaterial.ItemID
+INNER JOIN dbo.Units u ON u.UnitID=bd.UnitID
+WHERE bd.BOMID=@BOMID
+  AND (bd.SubstituteItemID IS NOT NULL
+       OR (existingMaterial.ItemID IS NOT NULL AND existingMaterial.ItemID<>bd.ItemID))
+ORDER BY bd.MaterialType,bd.Sequence,bd.LineNumber",
+                new { BOMID = bomId, OrderID = orderId });
             return result.ToList();
         }
 
@@ -840,8 +1065,44 @@ ORDER BY pom.MaterialType, pom.LineNumber";
             System.Data.IDbTransaction transaction,
             int orderId,
             int bomId,
-            decimal plannedQty)
+            decimal plannedQty,
+            System.Collections.Generic.IReadOnlyCollection<int>? selectedOptionalBOMDetailIDs = null,
+            System.Collections.Generic.IReadOnlyCollection<int>? selectedSubstituteBOMDetailIDs = null)
         {
+            var selectedOptionalIDs = selectedOptionalBOMDetailIDs?.Distinct().ToArray() ?? Array.Empty<int>();
+            var selectedSubstituteIDs = selectedSubstituteBOMDetailIDs?.Distinct().ToArray() ?? Array.Empty<int>();
+            if (selectedOptionalIDs.Any(id => id <= 0))
+                throw new InvalidOperationException("تحديد المكوّنات الاختيارية يحتوي على معرّف غير صالح.");
+            if (selectedSubstituteIDs.Any(id => id <= 0))
+                throw new InvalidOperationException("تحديد البدائل يحتوي على معرّف غير صالح.");
+            if (selectedOptionalIDs.Length > 0)
+            {
+                var validOptionalIDs = (await connection.QueryAsync<int>(@"
+SELECT BOMDetailID FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND ISNULL(IsOptional,0)=1 AND BOMDetailID IN @SelectedIDs",
+                    new { BOMID = bomId, SelectedIDs = selectedOptionalIDs }, transaction)).Distinct().Count();
+                if (validOptionalIDs != selectedOptionalIDs.Length)
+                    throw new InvalidOperationException("يوجد مكوّن اختياري محدد لا يتبع وصفة أمر التصنيع الحالية.");
+            }
+            if (selectedSubstituteIDs.Length > 0)
+            {
+                var validSubstitutes = (await connection.QueryAsync<ProductionOrderSubstituteValidationDto>(@"
+SELECT bd.BOMDetailID,ISNULL(bd.IsOptional,0) AS IsOptional
+FROM dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.Items sourceItem WITH (UPDLOCK,HOLDLOCK) ON sourceItem.ItemID=bd.ItemID
+INNER JOIN dbo.Items substituteItem WITH (UPDLOCK,HOLDLOCK) ON substituteItem.ItemID=bd.SubstituteItemID
+WHERE bd.BOMID=@BOMID AND bd.BOMDetailID IN @SelectedIDs
+  AND bd.SubstituteItemID IS NOT NULL AND bd.SubstituteItemID<>bd.ItemID
+  AND substituteItem.IsActive=1
+  AND substituteItem.ItemType=sourceItem.ItemType
+  AND substituteItem.PrimaryUnitID=bd.UnitID",
+                    new { BOMID = bomId, SelectedIDs = selectedSubstituteIDs }, transaction)).ToList();
+                if (validSubstitutes.Count != selectedSubstituteIDs.Length)
+                    throw new InvalidOperationException("يوجد بديل محدد لا يتبع الوصفة أو غير نشط أو لا يطابق نوع/وحدة المكوّن.");
+                if (validSubstitutes.Any(item => item.IsOptional && !selectedOptionalIDs.Contains(item.BOMDetailID)))
+                    throw new InvalidOperationException("لا يمكن اختيار بديل لمكوّن اختياري غير محدد في هذا الأمر.");
+            }
+
             // PlannedQty is entered in the BOM output unit, so scale from the expected output quantity.
             var outputQty = await connection.ExecuteScalarAsync<decimal>(
                 @"SELECT ISNULL(OutputQty, 0) FROM dbo.BillOfMaterials WHERE BOMID = @BOMID",
@@ -855,8 +1116,19 @@ ORDER BY pom.MaterialType, pom.LineNumber";
                   WHERE ProductionOrderID = @OrderID",
                 new { OrderID = orderId }, transaction);
 
-            // إدراج المواد من الوصفة
-            await connection.ExecuteAsync(@"
+            // Optional BOM lines are opt-in per order; their selected IDs are stored by material-row presence.
+            var optionalFilter = selectedOptionalIDs.Length == 0
+                ? "AND ISNULL(bd.IsOptional,0)=0"
+                : "AND (ISNULL(bd.IsOptional,0)=0 OR bd.BOMDetailID IN @SelectedOptionalIDs)";
+            var itemIdExpression = selectedSubstituteIDs.Length == 0
+                ? "bd.ItemID"
+                : "CASE WHEN bd.BOMDetailID IN @SelectedSubstituteIDs THEN bd.SubstituteItemID ELSE bd.ItemID END";
+            const string sourceCostExpression = "ISNULL(i.AverageCost, ISNULL(i.LastPurchasePrice, ISNULL(i.StandardCost, 0)))";
+            const string substituteCostExpression = "ISNULL(substituteItem.AverageCost, ISNULL(substituteItem.LastPurchasePrice, ISNULL(substituteItem.StandardCost, 0)))";
+            var itemCostExpression = selectedSubstituteIDs.Length == 0
+                ? sourceCostExpression
+                : $"CASE WHEN bd.BOMDetailID IN @SelectedSubstituteIDs THEN {substituteCostExpression} ELSE {sourceCostExpression} END";
+            var insertMaterialsSql = $@"
 INSERT INTO dbo.ProductionOrderMaterials
 (
     ProductionOrderID, LineNumber, ItemID, UnitID, MaterialType,
@@ -865,22 +1137,26 @@ INSERT INTO dbo.ProductionOrderMaterials
 SELECT
     @OrderID,
     ROW_NUMBER() OVER (ORDER BY bd.MaterialType, bd.Sequence, bd.LineNumber),
-    bd.ItemID,
+    {itemIdExpression},
     bd.UnitID,
     bd.MaterialType,
     ROUND(bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0) * @Multiplier, 4),
-    ISNULL(i.AverageCost, ISNULL(i.LastPurchasePrice, ISNULL(i.StandardCost, 0))),
+    {itemCostExpression},
     bd.BOMDetailID,
     bd.Notes
 FROM dbo.BOMDetails bd
 INNER JOIN dbo.Items i ON bd.ItemID = i.ItemID
-WHERE bd.BOMID = @BOMID",
-                new
-                {
-                    OrderID = orderId,
-                    BOMID = bomId,
-                    Multiplier = multiplier
-                }, transaction);
+LEFT JOIN dbo.Items substituteItem ON substituteItem.ItemID = bd.SubstituteItemID
+WHERE bd.BOMID = @BOMID
+{optionalFilter}";
+            await connection.ExecuteAsync(insertMaterialsSql, new
+            {
+                OrderID = orderId,
+                BOMID = bomId,
+                Multiplier = multiplier,
+                SelectedOptionalIDs = selectedOptionalIDs,
+                SelectedSubstituteIDs = selectedSubstituteIDs
+            }, transaction);
 
             // تحديث التكاليف التقديرية
             await connection.ExecuteAsync(@"
@@ -971,7 +1247,9 @@ WHERE ProductionOrderID = @OrderID";
         // ==========================================
         // Lookups
         // ==========================================
-        public async Task<List<ProductionLookupDto>> GetActiveBOMsLookupAsync()
+        public async Task<List<ProductionLookupDto>> GetActiveBOMsLookupAsync(
+            DateTime? asOfDate = null,
+            int? includeBOMID = null)
         {
             await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView, "لا تملك صلاحية عرض بيانات أوامر التصنيع.");
 
@@ -982,10 +1260,21 @@ SELECT
     b.BOMID AS Id,
     (b.BOMCode + N' - ' + b.BOMName + N' (v' + CAST(b.BOMVersion AS NVARCHAR) + N')') AS Name
 FROM dbo.BillOfMaterials b
-WHERE b.BOMStatus = 2 AND ISNULL(b.IsActive, 1) = 1
+WHERE
+    (
+        (b.BOMStatus = 2 AND ISNULL(b.IsActive, 1) = 1
+         AND (@AsOfDate IS NULL OR
+              ((b.EffectiveFrom IS NULL OR CONVERT(date,b.EffectiveFrom) <= @AsOfDate)
+               AND (b.EffectiveTo IS NULL OR CONVERT(date,b.EffectiveTo) >= @AsOfDate))))
+        OR b.BOMID = @IncludeBOMID
+    )
 ORDER BY b.BOMName";
 
-            return (await connection.QueryAsync<ProductionLookupDto>(sql)).ToList();
+            return (await connection.QueryAsync<ProductionLookupDto>(sql, new
+            {
+                AsOfDate = asOfDate?.Date,
+                IncludeBOMID = includeBOMID
+            })).ToList();
         }
 
         public async Task<List<ProductionLookupDto>> GetWarehousesLookupAsync(int? warehouseType = null)
@@ -1056,7 +1345,9 @@ SELECT
     bu.UnitNameAr AS BatchUnitName,
     b.OutputQty,
     b.OutputUnitID,
-    ou.UnitNameAr AS OutputUnitName
+    ou.UnitNameAr AS OutputUnitName,
+    b.EffectiveFrom,
+    b.EffectiveTo
 FROM dbo.BillOfMaterials b
 INNER JOIN dbo.Items i ON b.ProductItemID = i.ItemID
 INNER JOIN dbo.Units bu ON b.BatchUnitID = bu.UnitID
@@ -1066,13 +1357,12 @@ WHERE b.BOMID = @BOMID",
         }
 
         // ==========================================
-        // توليد رقم الأمر
+        // توليد رقم الأمر داخل معاملة إنشاء الأمر
         // ==========================================
-        public async Task<string> GenerateOrderNumberAsync()
+        private async Task<string> GenerateOrderNumberAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction)
         {
-            await _authorization.RequireCurrentUserPermissionAsync("SCR_PRODORD", p => p.CanView || p.CanAdd, "لا تملك صلاحية إنشاء رقم أمر تصنيع.");
-            using var connection = CreateConnection();
-
             try
             {
                 var sql = @"
@@ -1080,7 +1370,7 @@ DECLARE @NextNum NVARCHAR(50);
 EXEC dbo.sp_GetNextNumber 'MO', @NextNum OUTPUT;
 SELECT @NextNum;";
 
-                var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql, transaction: transaction);
                 if (string.IsNullOrWhiteSpace(result))
                     throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لأمر التصنيع.");
 

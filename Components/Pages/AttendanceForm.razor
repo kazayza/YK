@@ -9,6 +9,7 @@
 @inject AttendanceService AttendanceService
 @inject LookupService LookupService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<AttendanceForm> Logger
 
 <PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
 
@@ -38,13 +39,13 @@ else
                 <h2 class="page-title">@PageTitleText</h2>
             </div>
             <div class="header-actions">
-                @if (isViewMode && permissions.CanEdit && AttendanceId > 0)
+                @if (isViewMode && permissions.CanEdit && AttendanceId > 0 && (!attendanceLoadFailed || attendanceLoaded))
                 {
                     <button class="btn-modern btn-primary-modern" @onclick="SwitchToEdit">تعديل</button>
                 }
                 @if (!isViewMode)
                 {
-                    <button class="btn-modern btn-primary-modern" @onclick="SaveItem" disabled="@isSaving">
+                    <button class="btn-modern btn-primary-modern" @onclick="SaveItem" disabled="@(isSaving || (attendanceLoadFailed && !attendanceLoaded))">
                         @if (isSaving) { <div class="btn-spinner-sm"></div><span>جاري الحفظ...</span> } else { <span>حفظ</span> }
                     </button>
                 }
@@ -56,7 +57,19 @@ else
         {
             <div class="form-message @(formSuccess ? "msg-success" : "msg-error")">@formMessage</div>
         }
-
+        @if (attendanceLoadFailed)
+        {
+            <div class="form-message msg-error attendance-load-message" role="alert">
+                <span>@attendanceLoadError</span>
+                <button type="button" class="btn-modern btn-secondary-modern" @onclick="RetryLoadAttendanceAsync" disabled="@isAttendanceLoading">إعادة المحاولة</button>
+            </div>
+        }
+        @if (isAttendanceLoading)
+        {
+            <div class="loading-state attendance-loading-small" role="status"><div class="loader"></div><p>جاري إعادة تحميل سجل الحضور...</p></div>
+        }
+        @if (!attendanceLoadFailed || attendanceLoaded || isNewMode)
+        {
                 <div class="form-card">
             <div class="section-title">بيانات الحضور</div>
             <div class="form-grid cols-3">
@@ -138,6 +151,7 @@ else
                 </div>
             </div>
         </div>
+        }
     </div>
 }
 
@@ -162,6 +176,8 @@ else
 .form-message{padding:12px 14px;border-radius:14px;font-size:.86rem;font-weight:700}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.attendance-load-message{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.attendance-loading-small{padding:16px}
 .btn-modern{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:14px;border:none;font-weight:700;font-size:.88rem;cursor:pointer;transition:.2s}
 .btn-modern:disabled{opacity:.6;cursor:not-allowed}
 .btn-primary-modern{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}
@@ -181,6 +197,12 @@ else
     private AttendanceEditDto model = new();
     private List<LookupDto>? employees;
     private bool isLoading = true, isSaving = false;
+    private bool attendanceLoaded;
+    private bool attendanceLoadFailed;
+    private bool isAttendanceLoading;
+    private string attendanceLoadError = string.Empty;
+    private int attendanceContextId = int.MinValue;
+    private int attendanceLoadVersion;
     private string currentMode = "new";
     private bool isNewMode => currentMode == "new";
     private bool isViewMode => currentMode == "view";
@@ -283,6 +305,16 @@ else
     private async Task LoadPageAsync()
     {
         isLoading = true; formMessage = "";
+        if (attendanceContextId != AttendanceId)
+        {
+            attendanceLoadVersion++;
+            attendanceContextId = AttendanceId;
+            attendanceLoaded = isNewMode;
+            attendanceLoadFailed = false;
+            attendanceLoadError = string.Empty;
+            isAttendanceLoading = false;
+            model = new AttendanceEditDto();
+        }
         try
         {
             employees = await LookupService.GetEmployeesAsync();
@@ -295,16 +327,69 @@ else
                     ScheduledIn = new TimeSpan(8, 0, 0),
                     ScheduledOut = new TimeSpan(17, 0, 0)
                 };
+                attendanceLoaded = true;
+                attendanceLoadFailed = false;
+                attendanceLoadError = string.Empty;
             }
             else
             {
-                var loaded = await AttendanceService.GetAttendanceByIdAsync(AttendanceId);
-                if (loaded == null) { formMessage = "غير موجود"; formSuccess = false; model = new(); }
-                else { model = loaded; }
+                await LoadAttendanceRecordAsync();
             }
         }
         catch (Exception ex) { formMessage = "خطأ: " + ex.Message; formSuccess = false; }
         finally { isLoading = false; }
+    }
+
+    private async Task RetryLoadAttendanceAsync()
+    {
+        await LoadAttendanceRecordAsync();
+    }
+
+    private async Task LoadAttendanceRecordAsync()
+    {
+        if (isAttendanceLoading) return;
+
+        var attendanceId = AttendanceId;
+        var requestVersion = ++attendanceLoadVersion;
+        isAttendanceLoading = true;
+        formMessage = string.Empty;
+        try
+        {
+            var loaded = await AttendanceService.GetAttendanceByIdAsync(attendanceId);
+            if (requestVersion != attendanceLoadVersion || AttendanceId != attendanceId) return;
+
+            attendanceLoadFailed = false;
+            attendanceLoadError = string.Empty;
+            if (loaded is null)
+            {
+                attendanceLoaded = true;
+                model = new AttendanceEditDto();
+                formMessage = "غير موجود";
+                formSuccess = false;
+                return;
+            }
+
+            model = loaded;
+            attendanceLoaded = true;
+            formSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            if (requestVersion != attendanceLoadVersion || AttendanceId != attendanceId) return;
+
+            Logger.LogWarning(ex,
+                "Failed to load attendance record {AttendanceID}.",
+                attendanceId);
+            attendanceLoadFailed = true;
+            attendanceLoadError = attendanceLoaded
+                ? "تعذر تحديث سجل الحضور؛ تم الاحتفاظ بآخر بيانات محمّلة. أعد المحاولة."
+                : "تعذر تحميل سجل الحضور. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == attendanceLoadVersion)
+                isAttendanceLoading = false;
+        }
     }
 
     private void SwitchToEdit() { currentMode = "edit"; formMessage = ""; }

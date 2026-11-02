@@ -9,20 +9,33 @@ namespace YKCoatings.Services
         private readonly AuditService _audit;
         private readonly SequenceService _seq;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<PayrollService> _logger;
 
         public PayrollService(
             IConfiguration configuration,
             AuditService audit,
             SequenceService seq,
-            NotificationService notif) : base(configuration)
+            NotificationService notif,
+            ModuleAuthorizationService authorization,
+            ILogger<PayrollService> logger) : base(configuration)
         {
             _audit = audit;
             _seq = seq;
             _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequirePayrollPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, "SCR_PAYROLL", predicate, deniedMessage);
+
+        private Task RequireCurrentPayrollPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync("SCR_PAYROLL", predicate, deniedMessage);
 
         public async Task<PayrollPagedResult> GetPayrollsPagedAsync(PayrollFilterDto filter)
         {
+            await RequireCurrentPayrollPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مسيرات الرواتب.");
             using var connection = CreateConnection();
             filter ??= new PayrollFilterDto();
 
@@ -94,6 +107,7 @@ namespace YKCoatings.Services
 
         public async Task<PayrollRunEditDto?> GetPayrollByIdAsync(int id)
         {
+            await RequireCurrentPayrollPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             return await connection.QueryFirstOrDefaultAsync<PayrollRunEditDto>(@"
@@ -117,6 +131,7 @@ namespace YKCoatings.Services
 
         public async Task<List<PayrollDetailDto>> GetPayrollDetailsAsync(int payrollId)
         {
+            await RequireCurrentPayrollPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -172,6 +187,7 @@ namespace YKCoatings.Services
 
         public async Task<PayrollDetailDto?> GetPayrollDetailByEmployeeAsync(int payrollId, int employeeId)
         {
+            await RequireCurrentPayrollPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -230,6 +246,7 @@ namespace YKCoatings.Services
 
         public async Task<int> CreatePayrollAsync(PayrollRunEditDto item, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء مسير رواتب.");
             using var connection = CreateConnection();
 
             if (item.PayrollMonth == default)
@@ -289,6 +306,7 @@ namespace YKCoatings.Services
 
         public async Task CalculatePayrollAsync(int payrollId, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             var payroll = await connection.QueryFirstOrDefaultAsync<PayrollActionInfo>(@"
@@ -355,6 +373,7 @@ namespace YKCoatings.Services
 
         public async Task ApprovePayrollAsync(int payrollId, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             var payroll = await connection.QueryFirstOrDefaultAsync<PayrollActionInfo>(@"
@@ -401,6 +420,7 @@ namespace YKCoatings.Services
 
         public async Task PayPayrollAsync(int payrollId, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل مسيرات الرواتب.");
             using var connection = CreateConnection();
             connection.Open();
 
@@ -410,7 +430,7 @@ namespace YKCoatings.Services
             {
                 var payroll = await connection.QueryFirstOrDefaultAsync<PayrollPayInfo>(@"
                     SELECT PayrollID, PayrollNumber, PayrollMonth, PayrollStatus, JournalID
-                    FROM dbo.Payroll
+                    FROM dbo.Payroll WITH (UPDLOCK, HOLDLOCK)
                     WHERE PayrollID = @PayrollID;",
                     new { PayrollID = payrollId }, transaction);
 
@@ -427,7 +447,7 @@ namespace YKCoatings.Services
                 if (employeeId == null || employeeId == 0)
                     throw new Exception("لم يتم العثور على بيانات الموظف المرتبط بحسابك");
 
-                if (!payroll.JournalID.HasValue || payroll.JournalID.Value == 0)
+                if (!payroll.JournalID.HasValue || payroll.JournalID.Value <= 0)
                 {
                     await connection.ExecuteAsync(
                         "sp_CreatePayrollJournal",
@@ -436,6 +456,64 @@ namespace YKCoatings.Services
                         commandType: CommandType.StoredProcedure);
                 }
 
+                // لا تُدفع الرواتب إذا لم يرتبط المسير بقيد مرحّل ومتوازن يؤيده صراحةً.
+                var linkedJournal = await connection.QueryFirstOrDefaultAsync<(
+                    int? PayrollJournalID, int? JournalID, string? JournalNumber, int? JournalStatus, bool IsAutoGenerated,
+                    string? SourceDocType, int? SourceDocID, decimal? HeaderDebit, decimal? HeaderCredit)>(
+                    @"SELECT p.JournalID AS PayrollJournalID, je.JournalID, je.JournalNumber, je.JournalStatus,
+                             ISNULL(je.IsAutoGenerated,0) AS IsAutoGenerated, je.SourceDocType, je.SourceDocID,
+                             je.TotalDebit AS HeaderDebit, je.TotalCredit AS HeaderCredit
+                      FROM dbo.Payroll p WITH (UPDLOCK, HOLDLOCK)
+                      LEFT JOIN dbo.JournalEntries je WITH (UPDLOCK, HOLDLOCK) ON je.JournalID=p.JournalID
+                      WHERE p.PayrollID=@PayrollID",
+                    new { PayrollID = payrollId }, transaction);
+                if (!linkedJournal.PayrollJournalID.HasValue || linkedJournal.PayrollJournalID.Value <= 0
+                    || linkedJournal.JournalID != linkedJournal.PayrollJournalID
+                    || string.IsNullOrWhiteSpace(linkedJournal.JournalNumber)
+                    || !linkedJournal.JournalStatus.HasValue || linkedJournal.JournalStatus.Value != 2
+                    || !linkedJournal.IsAutoGenerated || linkedJournal.SourceDocID != payrollId
+                    || (!string.Equals(linkedJournal.SourceDocType, "PAY", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(linkedJournal.SourceDocType, "Payroll", StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException("لا يمكن دفع المسير دون قيد أوتوماتيكي مرتبط به ومرحل؛ لم يتم الدفع. راجع إجراء إنشاء قيد الرواتب.");
+
+                var linkedJournalCount = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocID=@PayrollID AND SourceDocType IN ('PAY','Payroll') AND IsAutoGenerated=1",
+                    new { PayrollID = payrollId }, transaction);
+                if (linkedJournalCount != 1)
+                    throw new InvalidOperationException("يوجد صفر أو أكثر من قيد مصدر مرتبط بالمسير؛ أُوقف الدفع لمنع دفع غير موثق أو مزدوج.");
+
+                var journalTotals = await connection.QueryFirstOrDefaultAsync<(
+                    int DetailCount, decimal TotalDebit, decimal TotalCredit, int InvalidDetailCount)>(
+                    @"SELECT ISNULL(SUM(CASE WHEN ISNULL(jd.DebitAmount,0)>0 OR ISNULL(jd.CreditAmount,0)>0 THEN 1 ELSE 0 END),0) AS DetailCount,
+                             ISNULL(SUM(jd.DebitAmount),0) AS TotalDebit,
+                             ISNULL(SUM(jd.CreditAmount),0) AS TotalCredit,
+                             ISNULL(SUM(CASE WHEN jd.DebitAmount IS NULL OR jd.CreditAmount IS NULL
+                                      OR jd.DebitAmount<0 OR jd.CreditAmount<0
+                                      OR (jd.DebitAmount>0 AND jd.CreditAmount>0)
+                                      OR ((jd.DebitAmount>0 OR jd.CreditAmount>0)
+                                          AND (jd.AccountID IS NULL OR jd.AccountID<=0
+                                               OR coa.AccountID IS NULL
+                                               OR ISNULL(coa.IsActive,1)<>1
+                                               OR ISNULL(coa.IsDetailAccount,0)<>1
+                                               OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
+                                               OR jd.CostCenterID<0
+                                               OR (jd.CostCenterID>0 AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))
+                                          )
+                                      THEN 1 ELSE 0 END),0) AS InvalidDetailCount
+                      FROM dbo.JournalEntryDetails jd WITH (UPDLOCK, HOLDLOCK)
+                      LEFT JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
+                      LEFT JOIN dbo.CostCenters cc WITH (UPDLOCK,HOLDLOCK) ON cc.CostCenterID=jd.CostCenterID
+                      WHERE jd.JournalID=@JournalID",
+                    new { JournalID = linkedJournal.JournalID!.Value }, transaction);
+                if (journalTotals.DetailCount < 2 || journalTotals.InvalidDetailCount > 0
+                    || journalTotals.TotalDebit <= 0m || journalTotals.TotalDebit != journalTotals.TotalCredit)
+                    throw new InvalidOperationException("قيد الرواتب المرتبط غير مكتمل أو يحتوي سطرًا محاسبيًا غير صالح أو غير متوازن؛ لم يتم الدفع.");
+                if (!linkedJournal.HeaderDebit.HasValue || !linkedJournal.HeaderCredit.HasValue
+                    || linkedJournal.HeaderDebit.Value != journalTotals.TotalDebit
+                    || linkedJournal.HeaderCredit.Value != journalTotals.TotalCredit)
+                    throw new InvalidOperationException("إجماليات رأس قيد الرواتب لا تطابق مجموع السطور؛ لم يتم الدفع.");
+
                 var paidDateTime = DateTime.Now;
                 var paidDate = paidDateTime.Date;
                 var monthEnd = new DateTime(
@@ -443,21 +521,24 @@ namespace YKCoatings.Services
                     payroll.PayrollMonth.Month,
                     DateTime.DaysInMonth(payroll.PayrollMonth.Year, payroll.PayrollMonth.Month));
 
-                await connection.ExecuteAsync(@"
+                var paidPayrollRows = await connection.ExecuteAsync(@"
                     UPDATE dbo.Payroll
                     SET PayrollStatus = 4,
                         PaidBy = @PaidBy,
                         PaidDate = @PaidDateTime,
                         ModifiedBy = @ModifiedBy,
                         ModifiedDate = GETDATE()
-                    WHERE PayrollID = @PayrollID;",
+                    WHERE PayrollID = @PayrollID AND PayrollStatus=3 AND JournalID=@JournalID;",
                     new
                     {
                         PayrollID = payrollId,
+                        JournalID = linkedJournal.JournalID!.Value,
                         PaidBy = employeeId.Value,
                         PaidDateTime = paidDateTime,
                         ModifiedBy = userId
                     }, transaction);
+                if (paidPayrollRows != 1)
+                    throw new InvalidOperationException("تغيرت حالة المسير أثناء الدفع؛ أُلغيت العملية.");
 
                 await connection.ExecuteAsync(@"
                     UPDATE dbo.PayrollDetails
@@ -547,13 +628,20 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after payroll payment failed for payroll {PayrollID}.",
+                        payrollId);
+                }
                 throw;
             }
         }
 
         public async Task CancelPayrollAsync(int payrollId, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل مسيرات الرواتب.");
             using var connection = CreateConnection();
 
             var payroll = await connection.QueryFirstOrDefaultAsync<PayrollActionInfo>(@"
@@ -590,6 +678,7 @@ namespace YKCoatings.Services
 
         public async Task UpdatePayrollDetailManualAsync(PayrollDetailEditDto item, int userId)
         {
+            await RequirePayrollPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل تفاصيل مسير الرواتب.");
             using var connection = CreateConnection();
 
             if (item.PayrollDetailID <= 0)
@@ -709,7 +798,7 @@ namespace YKCoatings.Services
 
         public async Task<byte[]> ExportPayrollToExcelAsync(List<PayrollDetailDto> details, string payrollNumber)
         {
-            await Task.CompletedTask;
+            await RequireCurrentPayrollPermissionAsync(p => p.CanExport, "ليس لديك صلاحية تصدير مسيرات الرواتب.");
 
             using var workbook = new ClosedXML.Excel.XLWorkbook();
             var ws = workbook.Worksheets.Add("كشف المرتبات");

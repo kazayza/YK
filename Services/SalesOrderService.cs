@@ -1,5 +1,6 @@
 using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 using SqlTransaction = Microsoft.Data.SqlClient.SqlTransaction;
@@ -10,12 +11,27 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<SalesOrderService> _logger;
+        private const string ModuleCode = "SCR_SO";
 
-        public SalesOrderService(IConfiguration configuration, AuditService audit, NotificationService notif) : base(configuration)
+        public SalesOrderService(
+            IConfiguration configuration, AuditService audit, NotificationService notif,
+            ModuleAuthorizationService authorization, ILogger<SalesOrderService> logger) : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequireSalesOrderPermissionAsync(
+            int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentSalesOrderPermissionAsync(
+            Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         private async Task<bool> IsRemainingQtyWritableAsync(SqlConnection connection, SqlTransaction transaction)
         {
@@ -32,6 +48,7 @@ WHERE object_id = OBJECT_ID(N'dbo.SalesOrderDetails', N'U')
         // ==========================================
         public async Task<List<SalesOrderListDto>> GetOrdersListAsync()
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر البيع.");
             using var connection = CreateConnection();
             try
             {
@@ -70,12 +87,12 @@ ORDER BY so.SODate DESC, so.SalesOrderID DESC";
                 var result = await connection.QueryAsync<SalesOrderListDto>(sql);
                 return result.ToList();
             }
-            catch
+            catch (Exception primaryQueryException)
             {
-                // Fallback مبسط جداً
-                try
-                {
-                    var sql2 = @"
+                _logger.LogWarning(primaryQueryException,
+                    "Primary sales-order list query failed; attempting the simplified compatibility query.");
+
+                var sql2 = @"
 SELECT
     so.SalesOrderID,
     so.SONumber AS OrderNumber,
@@ -94,18 +111,14 @@ SELECT
 FROM dbo.SalesOrders so
 INNER JOIN dbo.Customers c ON so.CustomerID=c.CustomerID
 ORDER BY so.SalesOrderID DESC";
-                    var result = await connection.QueryAsync<SalesOrderListDto>(sql2);
-                    return result.ToList();
-                }
-                catch
-                {
-                    return new List<SalesOrderListDto>();
-                }
+                var result = await connection.QueryAsync<SalesOrderListDto>(sql2);
+                return result.ToList();
             }
         }
 
         public async Task<SalesOrderHeaderDto?> GetOrderByIdAsync(int salesOrderId)
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر البيع.");
             using var connection = CreateConnection();
             var sql = @"
 SELECT
@@ -158,6 +171,7 @@ WHERE so.SalesOrderID=@ID";
 
         public async Task<List<SalesOrderDetailDto>> GetOrderDetailsAsync(int salesOrderId)
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر البيع.");
             using var connection = CreateConnection();
             var sql = @"
 SELECT
@@ -197,6 +211,7 @@ ORDER BY sod.LineNumber";
 
         public async Task<string> GenerateOrderNumberAsync()
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء أوامر البيع.");
             using var connection = CreateConnection();
             try
             {
@@ -216,7 +231,10 @@ ORDER BY sod.LineNumber";
 
         public async Task<int> InsertOrderAsync(SalesOrderHeaderDto header, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء أوامر البيع.");
             using var connection = CreateConnection();
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, header.CurrencyID, header.ExchangeRate);
             if (string.IsNullOrWhiteSpace(header.OrderNumber))
                 header.OrderNumber = await GenerateOrderNumberAsync();
 
@@ -268,9 +286,19 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
         public async Task UpdateOrderAsync(SalesOrderHeaderDto header, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أوامر البيع.");
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(@"SELECT SOStatus FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = header.SalesOrderID });
-            if (status.HasValue && status.Value != 1) throw new Exception("لا يمكن تعديل أمر بيع ليس في حالة مسودة");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, header.CurrencyID, header.ExchangeRate);
+            var current = await connection.QueryFirstOrDefaultAsync<(
+                int? SOStatus, int? CurrencyID, decimal ExchangeRate)>(
+                @"SELECT SOStatus, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                  FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK) WHERE SalesOrderID=@ID",
+                new { ID = header.SalesOrderID });
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, current.CurrencyID, current.ExchangeRate);
+            if (current.SOStatus.HasValue && current.SOStatus.Value != 1)
+                throw new Exception("لا يمكن تعديل أمر بيع ليس في حالة مسودة");
 
             var sql = @"
 UPDATE dbo.SalesOrders SET
@@ -320,19 +348,34 @@ WHERE SalesOrderID=@SalesOrderID";
                 UserID = userId
             });
 
-            try { await connection.ExecuteAsync("EXEC dbo.sp_CalculateSOTotals @SalesOrderID", new { SalesOrderID = header.SalesOrderID }); } catch { }
+            try
+            {
+                await connection.ExecuteAsync("EXEC dbo.sp_CalculateSOTotals @SalesOrderID", new { SalesOrderID = header.SalesOrderID });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not recalculate sales-order totals after updating the header.");
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", header.SalesOrderID.ToString(), moduleName: "SCR_SO", description: $"تعديل أمر بيع: {header.OrderNumber}");
         }
 
         public async Task<int> InsertDetailAsync(SalesOrderDetailEditDto detail, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أصناف إلى أوامر البيع.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
             try
             {
-                var status = await connection.QueryFirstOrDefaultAsync<int?>(@"SELECT SOStatus FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = detail.SalesOrderID }, transaction);
-                if (status != 1) throw new Exception("لا يمكن تعديل تفاصيل أمر بيع ليس في حالة مسودة");
+                var parent = await connection.QueryFirstOrDefaultAsync<(
+                    int? SOStatus, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT SOStatus, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK) WHERE SalesOrderID=@ID",
+                    new { ID = detail.SalesOrderID }, transaction);
+                if (parent.SOStatus != 1) throw new Exception("لا يمكن تعديل تفاصيل أمر بيع ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, parent.CurrencyID, parent.ExchangeRate);
                 if (detail.ItemID <= 0) throw new Exception("اختر الصنف");
                 if (detail.UnitID <= 0) throw new Exception("اختر الوحدة");
                 if (detail.OrderedQty <= 0) throw new Exception("أدخل الكمية");
@@ -385,24 +428,48 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         UPDATE dbo.SalesOrders SET SubTotal=@SubTotal, TaxAmount=@TaxAmount, TotalAmount=@TotalAmount, ModifiedDate=GETDATE()
                         WHERE SalesOrderID=@ID", new { ID = detail.SalesOrderID, SubTotal = totals.SubTotal, TaxAmount = totals.TaxAmount, TotalAmount = totals.TotalAmount }, transaction);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not recalculate sales-order totals after adding a detail; the transaction will be rolled back.");
+                    throw;
+                }
 
                 transaction.Commit();
                 await _audit.WriteAuditLogAsync(userId, 1, "SalesOrderDetails", newId.ToString(), moduleName: "SCR_SO", description: $"إضافة سطر في أمر بيع رقم {detail.SalesOrderID}");
                 return newId;
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after adding detail to sales order {SalesOrderID} failed.",
+                        detail.SalesOrderID);
+                }
+                throw;
+            }
         }
 
         public async Task UpdateDetailAsync(SalesOrderDetailEditDto detail, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أصناف أوامر البيع.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
             try
             {
-                var status = await connection.QueryFirstOrDefaultAsync<int?>(@"SELECT so.SOStatus FROM dbo.SalesOrders so INNER JOIN dbo.SalesOrderDetails sod ON so.SalesOrderID=sod.SalesOrderID WHERE sod.SODetailID=@ID", new { ID = detail.SODetailID }, transaction);
-                if (status != 1) throw new Exception("لا يمكن تعديل تفاصيل أمر بيع ليس في حالة مسودة");
+                var parent = await connection.QueryFirstOrDefaultAsync<(
+                    int? SOStatus, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT so.SOStatus, so.CurrencyID, ISNULL(so.ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.SalesOrders so WITH (UPDLOCK,HOLDLOCK)
+                      INNER JOIN dbo.SalesOrderDetails sod WITH (UPDLOCK,HOLDLOCK)
+                        ON so.SalesOrderID=sod.SalesOrderID
+                      WHERE sod.SODetailID=@ID",
+                    new { ID = detail.SODetailID }, transaction);
+                if (parent.SOStatus != 1) throw new Exception("لا يمكن تعديل تفاصيل أمر بيع ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, parent.CurrencyID, parent.ExchangeRate);
 
                 var discountAmt = detail.UnitPrice * detail.OrderedQty * detail.DiscountPercent / 100m;
                 var lineTotal = detail.UnitPrice * detail.OrderedQty - discountAmt;
@@ -435,16 +502,31 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     var totals = await connection.QueryFirstOrDefaultAsync<(decimal SubTotal, decimal TaxAmount, decimal TotalAmount)>(@"SELECT ISNULL(SUM(LineTotal),0) AS SubTotal, ISNULL(SUM(TaxAmount),0) AS TaxAmount, ISNULL(SUM(LineTotalWithTax),0) AS TotalAmount FROM dbo.SalesOrderDetails WHERE SalesOrderID=@ID", new { ID = soId }, transaction);
                     await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SubTotal=@SubTotal, TaxAmount=@TaxAmount, TotalAmount=@TotalAmount WHERE SalesOrderID=@ID", new { ID = soId, SubTotal = totals.SubTotal, TaxAmount = totals.TaxAmount, TotalAmount = totals.TotalAmount }, transaction);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not recalculate sales-order totals after editing a detail; the transaction will be rolled back.");
+                    throw;
+                }
 
                 transaction.Commit();
                 await _audit.WriteAuditLogAsync(userId, 2, "SalesOrderDetails", detail.SODetailID.ToString(), moduleName: "SCR_SO", description: $"تعديل سطر في أمر بيع رقم {detail.SalesOrderID}");
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating detail {SalesOrderDetailID} failed.",
+                        detail.SODetailID);
+                }
+                throw;
+            }
         }
 
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أصناف أوامر البيع.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -461,21 +543,44 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     var totals = await connection.QueryFirstOrDefaultAsync<(decimal SubTotal, decimal TaxAmount, decimal TotalAmount)>(@"SELECT ISNULL(SUM(LineTotal),0) AS SubTotal, ISNULL(SUM(TaxAmount),0) AS TaxAmount, ISNULL(SUM(LineTotalWithTax),0) AS TotalAmount FROM dbo.SalesOrderDetails WHERE SalesOrderID=@ID", new { ID = info.SalesOrderID }, transaction);
                     await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SubTotal=@SubTotal, TaxAmount=@TaxAmount, TotalAmount=@TotalAmount WHERE SalesOrderID=@ID", new { ID = info.SalesOrderID, SubTotal = totals.SubTotal, TaxAmount = totals.TaxAmount, TotalAmount = totals.TotalAmount }, transaction);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not recalculate sales-order totals after deleting a detail; the transaction will be rolled back.");
+                    throw;
+                }
 
                 transaction.Commit();
                 await _audit.WriteAuditLogAsync(userId, 3, "SalesOrderDetails", detailId.ToString(), moduleName: "SCR_SO", description: "حذف سطر من أمر بيع");
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting sales-order detail {SalesOrderDetailID} failed.",
+                        detailId);
+                }
+                throw;
+            }
         }
 
         public async Task SubmitForApprovalAsync(int salesOrderId, int userId, int? employeeId = null)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إرسال أوامر البيع للاعتماد.");
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string SONumber, int SOStatus, int DetailCount)>(@"SELECT SONumber, SOStatus, (SELECT COUNT(*) FROM dbo.SalesOrderDetails d WHERE d.SalesOrderID=so.SalesOrderID) AS DetailCount FROM dbo.SalesOrders so WHERE so.SalesOrderID=@ID", new { ID = salesOrderId });
+            var info = await connection.QueryFirstOrDefaultAsync<(
+                string SONumber, int SOStatus, int DetailCount, int? CurrencyID, decimal ExchangeRate)>(
+                @"SELECT SONumber, SOStatus,
+                         (SELECT COUNT(*) FROM dbo.SalesOrderDetails d WHERE d.SalesOrderID=so.SalesOrderID) AS DetailCount,
+                         CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                  FROM dbo.SalesOrders so WHERE so.SalesOrderID=@ID",
+                new { ID = salesOrderId });
             if (string.IsNullOrWhiteSpace(info.SONumber)) throw new Exception("أمر البيع غير موجود");
             if (info.SOStatus != 1) throw new Exception("لا يمكن إرسال أمر بيع غير مسودة");
             if (info.DetailCount == 0) throw new Exception("لا يمكن إرسال أمر بيع بدون أصناف");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, info.CurrencyID, info.ExchangeRate);
 
             await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=2, ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE SalesOrderID=@ID", new { ID = salesOrderId, UserID = userId });
 
@@ -492,12 +597,17 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                     relatedRecordId: salesOrderId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the pending-approval notification for a sales order.");
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"إرسال أمر بيع للاعتماد: {info.SONumber}");
         }
 
         public async Task ApproveAsync(int salesOrderId, int userId, int? employeeId = null)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد أوامر البيع.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -505,18 +615,42 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             int? createdBy = null;
             try
             {
-                var info = await connection.QueryFirstOrDefaultAsync<(string SONumber, int SOStatus, int? CreatedBy)>(@"SELECT SONumber, SOStatus, CreatedBy FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId }, transaction);
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string SONumber, int SOStatus, int? CreatedBy, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT SONumber, SOStatus, CreatedBy, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK) WHERE SalesOrderID=@ID",
+                    new { ID = salesOrderId }, transaction);
                 if (string.IsNullOrWhiteSpace(info.SONumber)) throw new Exception("أمر البيع غير موجود");
                 if (info.SOStatus != 2) throw new Exception("لا يمكن اعتماد أمر بيع ليس في انتظار الاعتماد");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, info.CurrencyID, info.ExchangeRate);
                 orderNumber = info.SONumber;
                 createdBy = info.CreatedBy;
 
                 await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=3, ApprovedBy=@EmployeeID, ApprovedDate=GETDATE(), ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE SalesOrderID=@ID", new { ID = salesOrderId, EmployeeID = employeeId, UserID = userId }, transaction);
                 transaction.Commit();
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after approving sales order {SalesOrderID} failed.",
+                        salesOrderId);
+                }
+                throw;
+            }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a sales order.");
+            }
+
             try
             {
                 if (createdBy.HasValue)
@@ -533,12 +667,16 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a sales order.");
+            }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"اعتماد أمر بيع: {orderNumber}");
         }
 
         public async Task RejectAsync(int salesOrderId, string rejectionReason, int userId, int? employeeId = null)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية رفض أوامر البيع.");
             if (string.IsNullOrWhiteSpace(rejectionReason)) throw new Exception("أدخل سبب الرفض");
             using var connection = CreateConnection();
             var info = await connection.QueryFirstOrDefaultAsync<(string SONumber, int SOStatus, int? CreatedBy)>(@"SELECT SONumber, SOStatus, CreatedBy FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId });
@@ -547,7 +685,15 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=1, ModifiedBy=@UserID, ModifiedDate=GETDATE(), Notes=ISNULL(Notes,'') + @Reason WHERE SalesOrderID=@ID", new { ID = salesOrderId, Reason = " - رفض: " + rejectionReason, UserID = userId });
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a sales order.");
+            }
+
             try
             {
                 if (info.CreatedBy.HasValue)
@@ -564,24 +710,37 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after rejecting a sales order.");
+            }
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"رفض أمر بيع: {info.SONumber} - {rejectionReason}");
         }
 
         public async Task CancelAsync(int salesOrderId, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanCancel, "ليس لديك صلاحية إلغاء أوامر البيع.");
             using var connection = CreateConnection();
             var info = await connection.QueryFirstOrDefaultAsync<(string SONumber, int SOStatus)>(@"SELECT SONumber, SOStatus FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId });
             if (string.IsNullOrWhiteSpace(info.SONumber)) throw new Exception("أمر البيع غير موجود");
             if (info.SOStatus == 7) throw new Exception("أمر البيع ملغي بالفعل");
 
             await connection.ExecuteAsync(@"UPDATE dbo.SalesOrders SET SOStatus=7, ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE SalesOrderID=@ID", new { ID = salesOrderId, UserID = userId });
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SO", salesOrderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after cancelling a sales order.");
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"إلغاء أمر بيع: {info.SONumber}");
         }
 
         public async Task<(bool Success, string Message)> DeleteOrderAsync(int salesOrderId, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أوامر البيع.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -597,11 +756,22 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 await _audit.WriteAuditLogAsync(userId, 3, "SalesOrders", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"حذف أمر بيع: {info.SONumber}");
                 return (true, "تم حذف أمر البيع بنجاح");
             }
-            catch (Exception ex) { transaction.Rollback(); return (false, ex.Message); }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting sales order {SalesOrderID} failed.",
+                        salesOrderId);
+                }
+                return (false, ex.Message);
+            }
         }
 
         public async Task<byte[]> ExportToExcelAsync(List<SalesOrderListDto> orders, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير أوامر البيع.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("أوامر البيع");
             ws.RightToLeft = true;
@@ -651,6 +821,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
         public async Task<string> GenerateReportHtmlAsync(int salesOrderId, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة أوامر البيع.");
             var header = await GetOrderByIdAsync(salesOrderId);
             if (header == null) return "<h3>أمر البيع غير موجود</h3>";
             var details = await GetOrderDetailsAsync(salesOrderId);
@@ -733,6 +904,7 @@ tr:nth-child(even){{background:#fcfaf6}}
 
         public async Task<ItemAuditDto?> GetOrderAuditAsync(int salesOrderId)
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض بيانات أوامر البيع.");
             using var connection = CreateConnection();
             var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, so.CreatedDate,
                                ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, so.ModifiedDate
@@ -768,6 +940,7 @@ tr:nth-child(even){{background:#fcfaf6}}
         // ==========================================
         public async Task<List<SearchableItem>> GetApprovedQuotationsSearchableAsync()
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية استخدام عروض الأسعار في أوامر البيع.");
             using var connection = CreateConnection();
             try
             {
@@ -780,8 +953,10 @@ tr:nth-child(even){{background:#fcfaf6}}
                 var result = await connection.QueryAsync<SearchableItem>(sql);
                 return result.ToList();
             }
-            catch
+            catch (Exception primaryQueryException)
             {
+                _logger.LogWarning(primaryQueryException,
+                    "Primary approved-quotation lookup failed; attempting the compatibility query.");
                 try
                 {
                     var sql2 = @"SELECT QuotationID AS Id, CAST(QuotationID AS NVARCHAR) AS Name, CAST(QuotationID AS NVARCHAR) AS Code,
@@ -790,12 +965,18 @@ tr:nth-child(even){{background:#fcfaf6}}
                     var result = await connection.QueryAsync<SearchableItem>(sql2);
                     return result.ToList();
                 }
-                catch { return new List<SearchableItem>(); }
+                catch (Exception fallbackException)
+                {
+                    _logger.LogError(fallbackException,
+                        "Both approved-quotation lookups failed; returning an empty list.");
+                    return new List<SearchableItem>();
+                }
             }
         }
 
         public async Task<List<QuotationLineForOrderDto>> GetQuotationLinesForOrderAsync(int quotationId)
         {
+            await RequireCurrentSalesOrderPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية استخدام عروض الأسعار في أوامر البيع.");
             using var connection = CreateConnection();
             try
             {
@@ -837,15 +1018,21 @@ tr:nth-child(even){{background:#fcfaf6}}
 
         public async Task<int> ImportLinesFromQuotationAsync(int salesOrderId, int quotationId, List<int> quotationDetailIds, int userId)
         {
+            await RequireSalesOrderPermissionAsync(userId, p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية تحميل أصناف إلى أوامر البيع.");
             if (quotationDetailIds == null || !quotationDetailIds.Any()) return 0;
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
             try
             {
-                var orderState = await connection.QueryFirstOrDefaultAsync<QuotationOrderState>(@"SELECT SOStatus, CustomerID FROM dbo.SalesOrders WHERE SalesOrderID=@ID", new { ID = salesOrderId }, transaction);
+                var orderState = await connection.QueryFirstOrDefaultAsync<QuotationOrderState>(
+                    @"SELECT SOStatus, CustomerID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK) WHERE SalesOrderID=@ID",
+                    new { ID = salesOrderId }, transaction);
                 if (orderState is null) throw new Exception("أمر البيع غير موجود");
                 if (orderState.SOStatus != 1) throw new Exception("لا يمكن تحميل سطور على أمر بيع ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, orderState.CurrencyID, orderState.ExchangeRate);
 
                 var quotationState = await connection.QueryFirstOrDefaultAsync<QuotationImportState>(@"SELECT QuotationStatus, CustomerID FROM dbo.SalesQuotations WHERE QuotationID=@ID", new { ID = quotationId }, transaction);
                 if (quotationState is null) throw new Exception("عرض السعر غير موجود");
@@ -899,7 +1086,18 @@ VALUES (@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty{remainingQtyVa
                 await _audit.WriteAuditLogAsync(userId, 1, "SalesOrderDetails", salesOrderId.ToString(), moduleName: "SCR_SO", description: $"تحميل {inserted} سطر من عرض سعر {quotationId} إلى أمر بيع");
                 return inserted;
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after importing quotation {QuotationID} into sales order {SalesOrderID} failed.",
+                        quotationId,
+                        salesOrderId);
+                }
+                throw;
+            }
         }
 
         private sealed class QuotationOrderState
@@ -907,6 +1105,8 @@ VALUES (@SalesOrderID, @LineNumber, @ItemID, @UnitID, @OrderedQty{remainingQtyVa
             public QuotationOrderState() { }
             public int SOStatus { get; set; }
             public int CustomerID { get; set; }
+            public int? CurrencyID { get; set; }
+            public decimal ExchangeRate { get; set; } = 1m;
         }
 
         private sealed class QuotationImportState

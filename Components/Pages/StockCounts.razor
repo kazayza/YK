@@ -9,11 +9,24 @@
 @inject InventoryService InvService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<StockCounts> Logger
 
-<PageTitle>الجرد - واي كي كوتينج   </PageTitle>
+<PageTitle>الجرد - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
+else if (isStockCountPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات الجرد...</p></div>
+}
+else if (stockCountPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockCountPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadStockCountPermissionsAsync" disabled="@isStockCountPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (stockCountPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockCountPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToStockCountsLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
@@ -28,19 +41,19 @@ else
                     <div class="lh-text"><h2 class="lh-title">أوامر الجرد</h2><p class="lh-subtitle">جرد ومراجعة أرصدة المخزون — تسوية الفروقات</p></div>
                 </div>
                 <div class="lh-actions">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count جرد</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(CountsLoadedForCurrentUser ? filtered.Count.ToString() : "—") جرد</span>
                     @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/stock-counts/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>جرد جديد</button>}
                 </div>
             </div>
         </div>
 
-        @if (counts != null)
+        @if (CountsLoadedForCurrentUser && counts is { } loadedCounts)
         {
             <div class="stats-luxury">
-                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="st-info"><span class="st-value">@counts.Count(c => c.CountStatus == 1)</span><span class="st-label">مسودة</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@counts.Count(c => c.CountStatus == 2)</span><span class="st-label">قيد الجرد</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@counts.Count(c => c.CountStatus == 3)</span><span class="st-label">مكتمل</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@counts.Count(c => c.CountStatus == 4)</span><span class="st-label">معتمد</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="st-info"><span class="st-value">@loadedCounts.Count(c => c.CountStatus == 1)</span><span class="st-label">مسودة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@loadedCounts.Count(c => c.CountStatus == 2)</span><span class="st-label">قيد الجرد</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@loadedCounts.Count(c => c.CountStatus == 3)</span><span class="st-label">مكتمل</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@loadedCounts.Count(c => c.CountStatus == 4)</span><span class="st-label">معتمد</span></div><div class="st-gold-line"></div></div>
             </div>
         }
 
@@ -50,9 +63,27 @@ else
             <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if (counts == null) { <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div> }
-        else if (!filtered.Any()) { <div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><h4>لا توجد أوامر جرد</h4></div> }
-        else
+        @if (isLoadingCounts && CountsLoadedForCurrentUser)
+        {
+            <div class="loading-luxury" role="status"><p>جارٍ تحديث أوامر الجرد؛ آخر نتيجة ناجحة ما زالت معروضة.</p></div>
+        }
+        @if (countsLoadFailed)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@countsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCountsAsync" disabled="@isLoadingCounts">إعادة المحاولة</button></div>
+        }
+        @if (countsLoadDenied)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@countsLoadError</h4></div>
+        }
+        @if (isLoadingCounts && !CountsLoadedForCurrentUser)
+        {
+            <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جارٍ تحميل أوامر الجرد...</p></div>
+        }
+        else if (CountsLoadedForCurrentUser && !filtered.Any())
+        {
+            <div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><h4>لا توجد أوامر جرد</h4></div>
+        }
+        else if (CountsLoadedForCurrentUser)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -147,6 +178,17 @@ else
 @code {
     private List<StockCountListDto>? counts;
     private List<StockCountListDto> filtered = new();
+    private bool isStockCountPermissionsLoading;
+    private bool stockCountPermissionsLoadFailed, stockCountPermissionsLoadDenied;
+    private int stockCountPermissionsLoadVersion;
+    private string stockCountPermissionsLoadError = string.Empty;
+    private bool isLoadingCounts = true;
+    private bool countsLoadFailed, countsLoadDenied;
+    private int countsLoadVersion;
+    private string countsLoadError = string.Empty;
+    private int? countsLoadedUserId;
+    private bool CountsLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && counts is not null && countsLoadedUserId == UserSession.UserID;
     private ModulePermissionDto? permissions;
     private string searchText = ""; private int filterStatus = 0;
     private string toast = ""; private bool toastOk = true;
@@ -155,12 +197,148 @@ else
     protected override async Task OnInitializedAsync()
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_COUNT");
-        if (permissions != null && permissions.CanView) await LoadData();
+        if (await LoadStockCountPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
     }
 
-    private async Task LoadData() { counts = await InvService.GetCountsListAsync(); Filter(); }
+    private async Task<bool> LoadStockCountPermissionsAsync()
+    {
+        if (isStockCountPermissionsLoading) return false;
+
+        var requestVersion = ++stockCountPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isStockCountPermissionsLoading = true;
+        stockCountPermissionsLoadFailed = false;
+        stockCountPermissionsLoadDenied = false;
+        stockCountPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentStockCountPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            permissions = PermissionService.GetModule("SCR_COUNT");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockCountPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockCountPermissionsLoadDenied = true;
+            stockCountPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockCountPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockCountPermissionsLoadFailed = true;
+            stockCountPermissionsLoadError = "تعذر تحميل صلاحيات الجرد. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == stockCountPermissionsLoadVersion)
+            {
+                isStockCountPermissionsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentStockCountPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == stockCountPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadStockCountPermissionsAsync()
+    {
+        if (isStockCountPermissionsLoading || !stockCountPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadStockCountPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private void GoToStockCountsLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private async Task LoadData()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++countsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (countsLoadedUserId.HasValue && countsLoadedUserId != userId)
+        {
+            counts = null;
+            filtered.Clear();
+            countsLoadedUserId = null;
+        }
+
+        isLoadingCounts = true;
+        countsLoadFailed = false;
+        countsLoadDenied = false;
+        countsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await InvService.GetCountsListAsync();
+            if (!IsCurrentCountsLoad(requestVersion, userId, pageUri)) return;
+            counts = result;
+            countsLoadedUserId = userId;
+            Filter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count list for user {UserID}.", userId);
+            if (!IsCurrentCountsLoad(requestVersion, userId, pageUri)) return;
+            counts = null;
+            filtered.Clear();
+            countsLoadedUserId = null;
+            countsLoadDenied = true;
+            countsLoadError = "ليس لديك صلاحية عرض أوامر الجرد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count list for user {UserID}.", userId);
+            if (!IsCurrentCountsLoad(requestVersion, userId, pageUri)) return;
+            countsLoadFailed = true;
+            countsLoadError = CountsLoadedForCurrentUser
+                ? "تعذر تحديث أوامر الجرد؛ آخر نتيجة ناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل أوامر الجرد. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == countsLoadVersion)
+            {
+                isLoadingCounts = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == countsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCountsAsync()
+    {
+        if (isLoadingCounts || !countsLoadFailed) return;
+        await LoadData();
+    }
     private void Filter()
     {
         if (counts == null) return;

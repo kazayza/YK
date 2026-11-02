@@ -5,8 +5,9 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<ExpenseView> Logger
 
-<PageTitle>عرض المصروف -    Pro</PageTitle>
+<PageTitle>عرض المصروف</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -26,7 +27,7 @@ else if (isLoading)
 }
 else if (!string.IsNullOrWhiteSpace(errorMessage))
 {
-    <div class="expense-view-message error" dir="rtl"><span class="message-eyebrow">LOAD ERROR</span><h4>تعذر تحميل المصروف</h4><p>@errorMessage</p><button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button></div>
+    <div class="expense-view-message error" dir="rtl"><span class="message-eyebrow">LOAD ERROR</span><h4>تعذر تحميل المصروف</h4><p>@errorMessage</p><div class="footer-actions"><button class="expense-action primary" @onclick="LoadExpenseAsync" disabled="@isLoading">إعادة المحاولة</button><button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button></div></div>
 }
 else if (expense is null)
 {
@@ -267,8 +268,7 @@ else
             permissionsChecked = true;
             if (!canViewExpenses) return;
 
-            expense = (await AccountingService.GetExpensesAsync(expenseId: Id))
-                .FirstOrDefault();
+            await LoadExpenseAsync();
         }
         catch (UnauthorizedAccessException)
         {
@@ -279,6 +279,32 @@ else
         {
             permissionsChecked = true;
             errorMessage = $"تعذر تحميل تفاصيل المصروف: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadExpenseAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var loadedExpenses = await AccountingService.GetExpensesAsync(expenseId: Id);
+            expense = loadedExpenses.FirstOrDefault();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            canViewExpenses = false;
+            permissionsChecked = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load expense details.");
+            errorMessage = "تعذر تحميل تفاصيل المصروف. يرجى إعادة المحاولة.";
         }
         finally
         {

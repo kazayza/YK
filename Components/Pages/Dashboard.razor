@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject DashboardService DashboardService
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Dashboard> Logger
 
 <PageTitle>الرئيسية - واي كي كوتينج ERP</PageTitle>
 
@@ -228,13 +229,13 @@ else
 
         <!-- ===== CHARTS ROW - APEXCHARTS ===== -->
         <div class="charts-row">
-            @if (CanViewPurchases)
+            @if (CanViewMonthlyChart)
             {
                 <section class="dash-card chart-card">
                     <div class="card-header">
                         <div class="section-header-left">
                             <div class="section-icon-wrap gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
-                            <div><h3 class="card-title">المشتريات — آخر @chartMonths شهر</h3><p class="card-sub">تحليل المشتريات الشهرية</p></div>
+                            <div><h3 class="card-title">@MonthlyChartTitle — آخر @chartMonths شهر</h3><p class="card-sub">تحليل الفواتير الشهرية بالجنيه المصري</p></div>
                         </div>
                         <div class="chart-period-switch" role="group" aria-label="اختيار الفترة">
                             <button type="button" class="period-btn @(chartMonths == 6 ? "active" : "")" @onclick='@(() => ChangeChartPeriod(6))'>6 شهور</button>
@@ -249,9 +250,16 @@ else
                     {
                         <div class="chart-empty">
                             <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
-                            <span class="empty-title">لا توجد فواتير شراء بعد</span>
-                            <span>سجّل أول فاتورة شراء لعرض التحليل الشهري هنا</span>
-                            <button type="button" class="err-retry" style="background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E" @onclick='@(() => GoTo("SCR_PINV"))'>الذهاب إلى فواتير الشراء</button>
+                            <span class="empty-title">لا توجد بيانات فواتير للفترة المحددة</span>
+                            <span>سجّل فاتورة ضمن الفترة لعرض التحليل الشهري هنا</span>
+                            @if (CanViewPurchases)
+                            {
+                                <button type="button" class="err-retry" style="background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#0A0F1E" @onclick='@(() => GoTo("SCR_PINV"))'>الذهاب إلى فواتير الشراء</button>
+                            }
+                            @if (CanViewSales)
+                            {
+                                <button type="button" class="err-retry" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff" @onclick='@(() => GoTo("SCR_SINV"))'>الذهاب إلى فواتير المبيعات</button>
+                            }
                         </div>
                     }
                 </section>
@@ -1720,6 +1728,9 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
     }
 
     private bool CanViewPurchases => PermissionService.CanView("SCR_PR") || PermissionService.CanView("SCR_PO") || PermissionService.CanView("SCR_PINV");
+    private bool CanViewSales => PermissionService.CanView("SCR_SINV");
+    private bool CanViewMonthlyChart => CanViewPurchases || CanViewSales;
+    private string MonthlyChartTitle => CanViewPurchases && CanViewSales ? "المشتريات والمبيعات" : CanViewSales ? "المبيعات" : "المشتريات";
     private bool CanViewStock => PermissionService.CanView("SCR_STOCK") || PermissionService.CanView("SCR_WAREHOUSES");
     private bool CanViewFinance => PermissionService.CanView("SCR_COA") || PermissionService.CanView("SCR_JV") || PermissionService.CanView("SCR_PINV");
     private bool CanViewItems => PermissionService.CanView("SCR_ITEMS");
@@ -1761,30 +1772,38 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
             var t5 = CanViewFinance ? DashboardService.GetOverdueInfoAsync() : Task.FromResult<DashboardOverdueDto?>(null)!;
             var t6 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseStatsAsync() : Task.FromResult<DashboardPurchaseStatsDto?>(null)!;
             var t7 = CanViewStock ? DashboardService.GetTopItemAlertsAsync(5) : Task.FromResult<List<DashboardItemAlertDto>?>(null)!;
-            var t8 = CanViewPurchases ? DashboardService.GetMonthlyPurchaseChartAsync(chartMonths) : Task.FromResult<List<MonthlyChartDto>?>(null)!;
+            var t8 = CanViewMonthlyChart ? DashboardService.GetMonthlyPurchaseSalesChartAsync(chartMonths, CanViewPurchases, CanViewSales) : Task.FromResult<List<MonthlyChartDto>?>(null)!;
             var t9 = DashboardService.GetStatsDeltasAsync();
             await Task.WhenAll(t1, t2, t3, t4, t5, t6, t7, t8, t9);
             stats = t1.Result; recentActivities = t2.Result; pending = t3.Result; invAlerts = t4.Result; overdue = t5.Result; purchaseStats = t6.Result; itemAlerts = t7.Result; chartData = t8.Result; deltas = t9.Result;
             _lastRefresh = DateTime.Now;
             _loadError = false;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex,
+                "Failed to load dashboard data; preserving the currently displayed data where available.");
             _loadError = true;
         }
     }
 
     private async Task ChangeChartPeriod(int months)
     {
-        if (chartMonths == months || !CanViewPurchases) return;
+        if (chartMonths == months || !CanViewMonthlyChart) return;
         chartMonths = months;
         try
         {
-            chartData = await DashboardService.GetMonthlyPurchaseChartAsync(chartMonths);
+            chartData = await DashboardService.GetMonthlyPurchaseSalesChartAsync(chartMonths, CanViewPurchases, CanViewSales);
             StateHasChanged();
             await RenderMonthlyOnly();
         }
-        catch { _loadError = true; StateHasChanged(); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load dashboard monthly chart data for the selected period.");
+            _loadError = true;
+            StateHasChanged();
+        }
     }
 
     private async Task RenderMonthlyOnly()
@@ -1793,12 +1812,53 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
         {
             if (chartData != null && chartData.Any())
             {
-                var cats = chartData.Select(c => GetArabicMonthName(c.MonthKey)).ToArray();
-                var amounts = chartData.Select(c => c.Amount).ToArray();
-                await JS.InvokeVoidAsync("dashboardCharts.renderMonthly", cats, amounts);
+                var cats = BuildMonthlyCategories();
+                await JS.InvokeVoidAsync("dashboardCharts.renderMonthly", cats, BuildMonthlySeries());
             }
         }
         catch { }
+    }
+
+    private string[] BuildMonthlyCategories()
+    {
+        if (chartData == null) return Array.Empty<string>();
+
+        string? previousYear = null;
+        return chartData.Select(item =>
+        {
+            var monthName = GetArabicMonthName(item.MonthKey);
+            var separator = item.MonthKey?.IndexOf('-') ?? -1;
+            if (separator <= 0) return monthName;
+
+            var year = item.MonthKey!.Substring(0, separator);
+            var startsYear = !string.Equals(previousYear, year, StringComparison.Ordinal);
+            previousYear = year;
+            return startsYear ? $"{monthName} {year}" : monthName;
+        }).ToArray();
+    }
+
+    private object[] BuildMonthlySeries()
+    {
+        if (chartData == null) return Array.Empty<object>();
+
+        var series = new List<object>();
+        if (CanViewPurchases)
+        {
+            series.Add(new
+            {
+                name = "المشتريات",
+                data = chartData.Select(item => (double)item.Amount).ToArray()
+            });
+        }
+        if (CanViewSales)
+        {
+            series.Add(new
+            {
+                name = "المبيعات",
+                data = chartData.Select(item => (double)item.SalesAmount).ToArray()
+            });
+        }
+        return series.ToArray();
     }
 
     private async Task RenderSparks()
@@ -1806,13 +1866,13 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
         try
         {
             if (stats == null) return;
-            if (CanViewItems && chartData != null && chartData.Any())
+            if (CanViewPurchases && CanViewItems && chartData != null && chartData.Any())
                 await JS.InvokeVoidAsync("dashboardCharts.renderSpark", "sparkItems", chartData.Select(c => (double)c.Amount).ToArray(), "#D4AF37");
-            if (CanViewSuppliers && chartData != null && chartData.Any())
+            if (CanViewPurchases && CanViewSuppliers && chartData != null && chartData.Any())
                 await JS.InvokeVoidAsync("dashboardCharts.renderSpark", "sparkSuppliers", chartData.Select(c => (double)c.Amount).ToArray(), "#eab308");
-            if (CanViewCustomers && chartData != null && chartData.Any())
+            if (CanViewPurchases && CanViewCustomers && chartData != null && chartData.Any())
                 await JS.InvokeVoidAsync("dashboardCharts.renderSpark", "sparkCustomers", chartData.Select(c => (double)c.Amount).ToArray(), "#10b981");
-            if (CanViewEmployees && chartData != null && chartData.Any())
+            if (CanViewPurchases && CanViewEmployees && chartData != null && chartData.Any())
                 await JS.InvokeVoidAsync("dashboardCharts.renderSpark", "sparkEmployees", chartData.Select(c => (double)c.Amount).ToArray(), "#D4AF37");
         }
         catch { }
@@ -1830,11 +1890,10 @@ button.hero-pending:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(
     {
         try
         {
-            if (chartData != null && chartData.Any())
+            if (CanViewMonthlyChart && chartData != null && chartData.Any())
             {
-                var cats = chartData.Select(c => GetArabicMonthName(c.MonthKey)).ToArray();
-                var amounts = chartData.Select(c => c.Amount).ToArray();
-                await JS.InvokeVoidAsync("dashboardCharts.renderMonthly", cats, amounts);
+                var cats = BuildMonthlyCategories();
+                await JS.InvokeVoidAsync("dashboardCharts.renderMonthly", cats, BuildMonthlySeries());
             }
             if (stats != null && invAlerts != null)
             {

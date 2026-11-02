@@ -5,6 +5,29 @@ namespace YKCoatings.Services
 {
     public class BOMService : BaseDbService
     {
+        private sealed class BOMActivationState
+        {
+            public int BOMID { get; set; }
+            public string BOMCode { get; set; } = "";
+            public int ProductItemID { get; set; }
+            public int BOMStatus { get; set; }
+            public bool IsActive { get; set; }
+        }
+
+        private sealed class BOMDetailHeaderDto
+        {
+            public decimal OutputQty { get; set; }
+            public int OutputUnitID { get; set; }
+        }
+
+        private sealed class BOMSubstituteItemState
+        {
+            public int ItemID { get; set; }
+            public int ItemType { get; set; }
+            public int PrimaryUnitID { get; set; }
+            public bool IsActive { get; set; }
+        }
+
         private readonly AuditService _audit;
         private readonly ModuleAuthorizationService _authorization;
 
@@ -13,6 +36,197 @@ namespace YKCoatings.Services
         {
             _audit = audit;
             _authorization = authorization;
+        }
+
+        private static void ValidateBOMHeader(BOMEditDto bom)
+        {
+            if (string.IsNullOrWhiteSpace(bom.BOMName) || bom.ProductItemID <= 0 ||
+                bom.BatchSize <= 0 || bom.BatchUnitID <= 0 || bom.OutputQty <= 0 || bom.OutputUnitID <= 0)
+                throw new InvalidOperationException("بيانات الوصفة الأساسية غير مكتملة أو كمياتها/وحداتها غير صالحة.");
+            if (bom.EffectiveFrom.HasValue && bom.EffectiveTo.HasValue &&
+                bom.EffectiveTo.Value.Date < bom.EffectiveFrom.Value.Date)
+                throw new InvalidOperationException("تاريخ نهاية السريان لا يمكن أن يسبق تاريخ بدايته.");
+        }
+
+        private static async Task ValidateBOMReferencesAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            BOMEditDto bom)
+        {
+            var valid = await connection.ExecuteScalarAsync<int>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1 FROM dbo.Items WITH (UPDLOCK,HOLDLOCK)
+    WHERE ItemID=@ProductItemID AND ItemType IN (3,4) AND IsActive=1
+) AND EXISTS
+(
+    SELECT 1 FROM dbo.Units WITH (UPDLOCK,HOLDLOCK)
+    WHERE UnitID=@BatchUnitID AND IsActive=1
+) AND EXISTS
+(
+    SELECT 1 FROM dbo.Units WITH (UPDLOCK,HOLDLOCK)
+    WHERE UnitID=@OutputUnitID AND IsActive=1
+) THEN 1 ELSE 0 END",
+                new { bom.ProductItemID, bom.BatchUnitID, bom.OutputUnitID }, transaction);
+            if (valid != 1)
+                throw new InvalidOperationException("المنتج أو وحدات الدفعة/الناتج غير موجودة أو غير نشطة.");
+        }
+
+        private static async Task ValidateBOMForActivationAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            int bomId)
+        {
+            var bom = await connection.QueryFirstOrDefaultAsync<BOMEditDto>(@"
+SELECT BOMID,BOMName,ProductItemID,BatchSize,BatchUnitID,OutputQty,OutputUnitID,
+       ISNULL(WastePercent,0) AS WastePercent,EstimatedTime,
+       ISNULL(LaborCostPerBatch,0) AS LaborCostPerBatch,
+       ISNULL(OverheadCostPerBatch,0) AS OverheadCostPerBatch,
+       EffectiveFrom,EffectiveTo
+FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                new { BOMID = bomId }, transaction);
+            if (bom is null)
+                throw new InvalidOperationException("الوصفة غير موجودة.");
+            ValidateBOMHeader(bom);
+            await ValidateBOMReferencesAsync(connection, transaction, bom);
+
+            var materialCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                new { BOMID = bomId }, transaction);
+            if (materialCount <= 0)
+                throw new InvalidOperationException("لا يمكن تنشيط وصفة بدون مكونات.");
+
+            var incompatiblePercentageLines = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.Units u ON u.UnitID=bd.UnitID
+WHERE bd.BOMID=@BOMID AND bd.InputPercentage IS NOT NULL
+  AND (bd.MaterialType=2 OR bd.UnitID<>@OutputUnitID OR ISNULL(u.UnitType,N'')<>N'Weight')",
+                new { BOMID = bomId, bom.OutputUnitID }, transaction);
+            if (incompatiblePercentageLines > 0)
+                throw new InvalidOperationException("توجد مكونات محفوظة كنسبة لا تطابق وحدة وزن الناتج.");
+
+            var totalInputPercentage = await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(InputPercentage),0)
+FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND InputPercentage IS NOT NULL",
+                new { BOMID = bomId }, transaction);
+            if (totalInputPercentage > 100m)
+                throw new InvalidOperationException("مجموع نسب مكونات الوصفة لا يمكن أن يتجاوز 100%.");
+
+            var invalidSubstitutes = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.Items sourceItem ON sourceItem.ItemID=bd.ItemID
+WHERE bd.BOMID=@BOMID AND bd.SubstituteItemID IS NOT NULL
+  AND (sourceItem.ItemID IS NULL OR bd.SubstituteItemID=bd.ItemID OR NOT EXISTS
+       (SELECT 1 FROM dbo.Items substituteItem WITH (UPDLOCK,HOLDLOCK)
+        WHERE substituteItem.ItemID=bd.SubstituteItemID
+          AND substituteItem.IsActive=1
+          AND substituteItem.ItemType=sourceItem.ItemType
+          AND substituteItem.PrimaryUnitID=bd.UnitID))",
+                new { BOMID = bomId }, transaction);
+            if (invalidSubstitutes > 0)
+                throw new InvalidOperationException("لا يمكن تنشيط الوصفة؛ يوجد بديل غير نشط أو من نوع/وحدة غير متوافقة.");
+        }
+
+        private static async Task EnsureEditableBOMAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            int bomId)
+        {
+            if (bomId <= 0)
+                throw new InvalidOperationException("معرّف الوصفة غير صالح.");
+            var status = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMStatus FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                new { BOMID = bomId }, transaction);
+            if (!status.HasValue)
+                throw new InvalidOperationException("الوصفة غير موجودة.");
+            if (status.Value != 1 && status.Value != 3)
+                throw new InvalidOperationException("لا يمكن تعديل مكونات أو مراحل وصفة نشطة أو ملغاة.");
+        }
+
+        private static async Task ValidateBOMDetailAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction transaction,
+            BOMDetailDto detail,
+            int excludeDetailId = 0)
+        {
+            if (detail.ItemID <= 0 || detail.UnitID <= 0 || detail.Quantity <= 0 ||
+                (detail.MaterialType != 1 && detail.MaterialType != 2 && detail.MaterialType != 3))
+                throw new InvalidOperationException("بيانات مكوّن الوصفة غير مكتملة أو غير صالحة.");
+
+            var expectedItemType = detail.MaterialType switch { 1 => 1, 2 => 2, 3 => 4, _ => 0 };
+            var itemType = await connection.ExecuteScalarAsync<int?>(@"
+SELECT ItemType FROM dbo.Items WITH (UPDLOCK,HOLDLOCK)
+WHERE ItemID=@ItemID AND IsActive=1",
+                new { detail.ItemID }, transaction);
+            if (!itemType.HasValue || itemType.Value != expectedItemType)
+                throw new InvalidOperationException("نوع الصنف لا يطابق نوع مكوّن الوصفة أو أن الصنف غير نشط.");
+
+            if (detail.SubstituteItemID.HasValue)
+            {
+                if (detail.SubstituteItemID.Value == detail.ItemID)
+                    throw new InvalidOperationException("لا يمكن أن يكون الصنف بديلًا لنفسه.");
+
+                var substitute = await connection.QueryFirstOrDefaultAsync<BOMSubstituteItemState>(@"
+SELECT ItemID,ItemType,PrimaryUnitID,IsActive
+FROM dbo.Items WITH (UPDLOCK,HOLDLOCK)
+WHERE ItemID=@SubstituteItemID",
+                    new { SubstituteItemID = detail.SubstituteItemID.Value }, transaction);
+                if (substitute is null || !substitute.IsActive || substitute.ItemType != itemType.Value)
+                    throw new InvalidOperationException("البديل يجب أن يكون صنفًا نشطًا من نفس نوع مكوّن الوصفة.");
+                if (substitute.PrimaryUnitID != detail.UnitID)
+                    throw new InvalidOperationException("البديل يجب أن يستخدم نفس الوحدة الأساسية للمكوّن؛ لا توجد نسبة استبدال محفوظة.");
+            }
+
+            var header = await connection.QueryFirstOrDefaultAsync<BOMDetailHeaderDto>(@"
+SELECT OutputQty,OutputUnitID FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                new { detail.BOMID }, transaction);
+            if (header is null || header.OutputQty <= 0)
+                throw new InvalidOperationException("مخرج الوصفة غير صالح لحفظ المكوّن.");
+
+            var unitType = await connection.QueryFirstOrDefaultAsync<string?>(@"
+SELECT UnitType FROM dbo.Units WITH (UPDLOCK,HOLDLOCK)
+WHERE UnitID=@UnitID AND IsActive=1",
+                new { detail.UnitID }, transaction);
+            if (unitType is null)
+                throw new InvalidOperationException("وحدة المكوّن غير موجودة أو غير نشطة.");
+
+            var duplicateCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND ItemID=@ItemID AND BOMDetailID<>@ExcludeID",
+                new { detail.BOMID, detail.ItemID, ExcludeID = excludeDetailId }, transaction);
+            if (duplicateCount > 0)
+                throw new InvalidOperationException("هذا الصنف موجود بالفعل داخل الوصفة.");
+
+            if (detail.InputPercentage.HasValue)
+            {
+                var percentage = detail.InputPercentage.Value;
+                if ((detail.MaterialType != 1 && detail.MaterialType != 3) ||
+                    detail.UnitID != header.OutputUnitID ||
+                    !string.Equals(unitType, "Weight", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("لا يمكن حفظ نسبة لمكوّن لا يطابق وحدة وزن الناتج.");
+                if (percentage <= 0 || percentage > 100)
+                    throw new InvalidOperationException("نسبة المكوّن يجب أن تكون أكبر من صفر ولا تتجاوز 100%.");
+
+                var expectedQuantity = decimal.Round(
+                    header.OutputQty * percentage / 100m, 6, MidpointRounding.AwayFromZero);
+                if (Math.Abs(detail.Quantity - expectedQuantity) > 0.000001m)
+                    throw new InvalidOperationException("كمية المكوّن لا تطابق النسبة المحفوظة وحجم الناتج.");
+
+                var existingPercentageTotal = await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(InputPercentage),0)
+FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND InputPercentage IS NOT NULL AND BOMDetailID<>@ExcludeID",
+                    new { detail.BOMID, ExcludeID = excludeDetailId }, transaction);
+                if (existingPercentageTotal + percentage > 100m)
+                    throw new InvalidOperationException("مجموع نسب مكونات الوصفة لا يمكن أن يتجاوز 100%.");
+            }
         }
 
         // ==========================================
@@ -141,18 +355,26 @@ WHERE BOMID = @BOMID";
         public async Task<int> InsertBOMAsync(BOMEditDto bom, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanAdd, "لا تملك صلاحية إضافة الوصفات.");
+            ValidateBOMHeader(bom);
 
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
-            var bomCode = await GenerateBOMCodeAsync();
+            string bomCode;
+            int nextVersion;
+            int newId;
+            try
+            {
+                await ValidateBOMReferencesAsync(connection, transaction, bom);
+                bomCode = await GenerateBOMCodeAsync(connection, transaction);
+                nextVersion = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT ISNULL(MAX(BOMVersion), 0) + 1
+                      FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductItemID = @ProductItemID",
+                    new { bom.ProductItemID }, transaction);
 
-            var nextVersion = await connection.ExecuteScalarAsync<int>(
-                @"SELECT ISNULL(MAX(BOMVersion), 0) + 1
-                  FROM dbo.BillOfMaterials
-                  WHERE ProductItemID = @ProductItemID",
-                new { bom.ProductItemID });
-
-            var sql = @"
+                var sql = @"
 INSERT INTO dbo.BillOfMaterials
 (
     BOMCode, BOMName, ProductItemID, BOMVersion,
@@ -175,28 +397,35 @@ VALUES
 );
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    BOMCode = bomCode,
+                    bom.BOMName,
+                    bom.ProductItemID,
+                    BOMVersion = nextVersion,
+                    bom.BatchSize,
+                    bom.BatchUnitID,
+                    bom.OutputQty,
+                    bom.OutputUnitID,
+                    bom.WastePercent,
+                    bom.EstimatedTime,
+                    bom.LaborCostPerBatch,
+                    bom.OverheadCostPerBatch,
+                    bom.Instructions,
+                    bom.SafetyNotes,
+                    bom.QualityNotes,
+                    bom.Notes,
+                    bom.EffectiveFrom,
+                    bom.EffectiveTo,
+                    UserID = userId
+                }, transaction);
+                transaction.Commit();
+            }
+            catch
             {
-                BOMCode = bomCode,
-                bom.BOMName,
-                bom.ProductItemID,
-                BOMVersion = nextVersion,
-                bom.BatchSize,
-                bom.BatchUnitID,
-                bom.OutputQty,
-                bom.OutputUnitID,
-                bom.WastePercent,
-                bom.EstimatedTime,
-                bom.LaborCostPerBatch,
-                bom.OverheadCostPerBatch,
-                bom.Instructions,
-                bom.SafetyNotes,
-                bom.QualityNotes,
-                bom.Notes,
-                bom.EffectiveFrom,
-                bom.EffectiveTo,
-                UserID = userId
-            });
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -223,6 +452,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         public async Task UpdateBOMAsync(BOMEditDto bom, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل الوصفات.");
+            ValidateBOMHeader(bom);
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
@@ -236,10 +466,40 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                       LaborCostPerBatch, OverheadCostPerBatch,
                       Instructions, SafetyNotes, QualityNotes, Notes,
                       BOMStatus, IsActive, EffectiveFrom, EffectiveTo
-                  FROM dbo.BillOfMaterials
+                  FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
                   WHERE BOMID = @BOMID",
                 new { bom.BOMID },
                 transaction);
+            if (oldBom is null)
+                throw new InvalidOperationException("الوصفة غير موجودة.");
+            if (oldBom.BOMStatus != 1 && oldBom.BOMStatus != 3)
+                throw new InvalidOperationException("لا يمكن تعديل وصفة غير مسودة أو متوقفة؛ أوقفها أو أنشئ نسخة جديدة.");
+            await ValidateBOMReferencesAsync(connection, transaction, bom);
+            if (oldBom.ProductItemID != bom.ProductItemID)
+            {
+                var detailCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                    new { bom.BOMID }, transaction);
+                if (detailCount > 0)
+                    throw new InvalidOperationException("لا يمكن تغيير منتج الوصفة بعد إضافة مكوناتها.");
+            }
+
+            var incompatiblePercentageLines = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*)
+FROM dbo.BOMDetails bd WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.Units u ON u.UnitID=bd.UnitID
+WHERE bd.BOMID=@BOMID AND bd.InputPercentage IS NOT NULL
+  AND (bd.MaterialType=2 OR bd.UnitID<>@OutputUnitID OR ISNULL(u.UnitType,N'')<>N'Weight')",
+                new { bom.BOMID, bom.OutputUnitID }, transaction);
+            if (incompatiblePercentageLines > 0)
+                throw new InvalidOperationException("توجد مكونات محفوظة كنسبة لا تطابق وحدة وزن الناتج؛ طابق الوحدة أو غيّر نمط المكوّن إلى كمية أولاً.");
+            var totalInputPercentage = await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(InputPercentage),0) FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND InputPercentage IS NOT NULL",
+                new { bom.BOMID }, transaction);
+            if (totalInputPercentage > 100m)
+                throw new InvalidOperationException("مجموع نسب مكونات الوصفة لا يمكن أن يتجاوز 100%.");
 
             var sql = @"
 UPDATE dbo.BillOfMaterials SET
@@ -263,7 +523,7 @@ UPDATE dbo.BillOfMaterials SET
     ModifiedDate = GETDATE()
 WHERE BOMID = @BOMID";
 
-            await connection.ExecuteAsync(sql, new
+            var rowsUpdated = await connection.ExecuteAsync(sql, new
             {
                 bom.BOMID,
                 bom.BOMName,
@@ -284,6 +544,8 @@ WHERE BOMID = @BOMID";
                 bom.EffectiveTo,
                 UserID = userId
             }, transaction);
+            if (rowsUpdated != 1)
+                throw new InvalidOperationException("لم يتم تعديل الوصفة؛ أعد تحميل الصفحة وحاول مجدداً.");
 
             var recalculatedPercentageLineCount = 0;
             if (oldBom != null &&
@@ -415,46 +677,44 @@ WHERE bd.BOMID = @BOMID
                     4 => p.CanDelete,
                     _ => false
                 }, "لا تملك صلاحية تغيير حالة الوصفة.");
+
             using var connection = CreateConnection();
-
-            var current = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                @"SELECT BOMID, BOMCode, BOMName, BOMStatus, ProductItemID
-                  FROM dbo.BillOfMaterials
-                  WHERE BOMID = @BOMID",
-                new { BOMID = bomId });
-
-            if (current == null)
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            var current = await connection.QueryFirstOrDefaultAsync<BOMActivationState>(@"
+SELECT BOMID,BOMCode,ProductItemID,BOMStatus,ISNULL(IsActive,1) AS IsActive
+FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                new { BOMID = bomId }, transaction);
+            if (current is null)
                 return (false, "الوصفة غير موجودة");
-
-            int currentStatus = current.BOMStatus;
 
             if (newStatus == 2)
             {
-                if (currentStatus != 1 && currentStatus != 3)
+                if ((current.BOMStatus != 1 && current.BOMStatus != 3) || !current.IsActive)
                     return (false, "لا يمكن تنشيط الوصفة من هذه الحالة");
 
-                var materialCount = await connection.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(*) FROM dbo.BOMDetails WHERE BOMID = @BOMID",
-                    new { BOMID = bomId });
+                var otherActiveVersion = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductItemID=@ProductItemID AND BOMStatus=2 AND ISNULL(IsActive,1)=1 AND BOMID<>@BOMID",
+                    new { current.ProductItemID, current.BOMID }, transaction);
+                if (otherActiveVersion > 0)
+                    return (false, "يوجد إصدار نشط آخر لهذا المنتج؛ استخدم مسار تبديل الإصدار للتحقق من الوصفتين.");
 
-                if (materialCount <= 0)
-                    return (false, "لا يمكن تنشيط وصفة بدون مكونات");
+                try { await ValidateBOMForActivationAsync(connection, transaction, bomId); }
+                catch (InvalidOperationException ex) { return (false, ex.Message); }
 
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BillOfMaterials
-                      SET BOMStatus = 2,
-                          ModifiedBy = @UserID,
-                          ModifiedDate = GETDATE(),
-                          ApprovedBy = CASE WHEN @EmployeeID IS NULL OR @EmployeeID = 0 THEN ApprovedBy ELSE @EmployeeID END,
-                          ApprovedDate = CASE WHEN @EmployeeID IS NULL OR @EmployeeID = 0 THEN ApprovedDate ELSE GETDATE() END
-                      WHERE BOMID = @BOMID",
-                    new
-                    {
-                        BOMID = bomId,
-                        UserID = userId,
-                        EmployeeID = employeeId
-                    });
+                var updated = await connection.ExecuteAsync(@"
+UPDATE dbo.BillOfMaterials
+SET BOMStatus=2, ModifiedBy=@UserID, ModifiedDate=GETDATE(),
+    ApprovedBy=CASE WHEN @EmployeeID IS NULL OR @EmployeeID=0 THEN ApprovedBy ELSE @EmployeeID END,
+    ApprovedDate=CASE WHEN @EmployeeID IS NULL OR @EmployeeID=0 THEN ApprovedDate ELSE GETDATE() END
+WHERE BOMID=@BOMID AND BOMStatus IN (1,3) AND ISNULL(IsActive,1)=1",
+                    new { BOMID = bomId, UserID = userId, EmployeeID = employeeId }, transaction);
+                if (updated != 1)
+                    return (false, "تغيرت حالة الوصفة أثناء التنشيط؛ حدّث الصفحة وحاول مجدداً.");
 
+                transaction.Commit();
                 await _audit.WriteAuditLogAsync(
                     userId: userId,
                     actionType: 2,
@@ -463,27 +723,23 @@ WHERE bd.BOMID = @BOMID
                     moduleName: "SCR_BOM",
                     description: $"تنشيط وصفة: {current.BOMCode}"
                 );
-
                 return (true, "تم تنشيط الوصفة بنجاح");
             }
 
             if (newStatus == 3)
             {
-                if (currentStatus != 2)
+                if (current.BOMStatus != 2)
                     return (false, "لا يمكن إيقاف إلا وصفة نشطة");
 
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BillOfMaterials
-                      SET BOMStatus = 3,
-                          ModifiedBy = @UserID,
-                          ModifiedDate = GETDATE()
-                      WHERE BOMID = @BOMID",
-                    new
-                    {
-                        BOMID = bomId,
-                        UserID = userId
-                    });
+                var updated = await connection.ExecuteAsync(@"
+UPDATE dbo.BillOfMaterials
+SET BOMStatus=3, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+WHERE BOMID=@BOMID AND BOMStatus=2",
+                    new { BOMID = bomId, UserID = userId }, transaction);
+                if (updated != 1)
+                    return (false, "تغيرت حالة الوصفة أثناء الإيقاف؛ حدّث الصفحة وحاول مجدداً.");
 
+                transaction.Commit();
                 await _audit.WriteAuditLogAsync(
                     userId: userId,
                     actionType: 2,
@@ -492,7 +748,6 @@ WHERE bd.BOMID = @BOMID
                     moduleName: "SCR_BOM",
                     description: $"إيقاف وصفة: {current.BOMCode}"
                 );
-
                 return (true, "تم إيقاف الوصفة بنجاح");
             }
 
@@ -540,60 +795,82 @@ WHERE bd.BOMID = @BOMID
             int? employeeId = null)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanApprove, "لا تملك صلاحية اعتماد إصدار الوصفة.");
+            if (newBomId <= 0 || oldBomId <= 0 || newBomId == oldBomId)
+                return (false, "معرّفا الإصدارين غير صالحين.");
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
-
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            BOMActivationState? newBom = null;
+            BOMActivationState? oldBom = null;
             try
             {
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BillOfMaterials
-                      SET BOMStatus = 3,
-                          ModifiedBy = @UserID,
-                          ModifiedDate = GETDATE()
-                      WHERE BOMID = @BOMID",
-                    new
-                    {
-                        BOMID = oldBomId,
-                        UserID = userId
-                    },
-                    transaction);
+                // Lock in a stable key order to avoid reverse-order swaps deadlocking.
+                foreach (var id in new[] { newBomId, oldBomId }.OrderBy(x => x))
+                {
+                    var state = await connection.QueryFirstOrDefaultAsync<BOMActivationState>(@"
+SELECT BOMID,BOMCode,ProductItemID,BOMStatus,ISNULL(IsActive,1) AS IsActive
+FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID",
+                        new { BOMID = id }, transaction);
+                    if (id == newBomId) newBom = state;
+                    else oldBom = state;
+                }
 
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BillOfMaterials
-                      SET BOMStatus = 2,
-                          ModifiedBy = @UserID,
-                          ModifiedDate = GETDATE(),
-                          ApprovedBy = CASE WHEN @EmployeeID IS NULL OR @EmployeeID = 0 THEN ApprovedBy ELSE @EmployeeID END,
-                          ApprovedDate = CASE WHEN @EmployeeID IS NULL OR @EmployeeID = 0 THEN ApprovedDate ELSE GETDATE() END
-                      WHERE BOMID = @BOMID",
-                    new
-                    {
-                        BOMID = newBomId,
-                        UserID = userId,
-                        EmployeeID = employeeId
-                    },
-                    transaction);
+                if (newBom is null || oldBom is null)
+                    throw new InvalidOperationException("الوصفة الجديدة أو الإصدار النشط غير موجود.");
+                if (newBom.ProductItemID != oldBom.ProductItemID)
+                    throw new InvalidOperationException("لا يمكن تبديل إصدارين لمنتجين مختلفين.");
+                if (!newBom.IsActive || (newBom.BOMStatus != 1 && newBom.BOMStatus != 3))
+                    throw new InvalidOperationException("الإصدار الجديد يجب أن يكون مسودة أو متوقفاً وغير ملغى.");
+                if (!oldBom.IsActive || oldBom.BOMStatus != 2)
+                    throw new InvalidOperationException("الإصدار القديم لم يعد نشطاً؛ حدّث القائمة وحاول مجدداً.");
+
+                var thirdActiveVersion = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductItemID=@ProductItemID AND BOMStatus=2 AND ISNULL(IsActive,1)=1
+  AND BOMID NOT IN (@NewBOMID,@OldBOMID)",
+                    new { newBom.ProductItemID, NewBOMID = newBomId, OldBOMID = oldBomId }, transaction);
+                if (thirdActiveVersion > 0)
+                    throw new InvalidOperationException("يوجد إصدار نشط ثالث لهذا المنتج؛ أوقف التعارض قبل التبديل.");
+
+                await ValidateBOMForActivationAsync(connection, transaction, newBomId);
+
+                var stopped = await connection.ExecuteAsync(@"
+UPDATE dbo.BillOfMaterials
+SET BOMStatus=3, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+WHERE BOMID=@BOMID AND BOMStatus=2 AND ISNULL(IsActive,1)=1",
+                    new { BOMID = oldBomId, UserID = userId }, transaction);
+                if (stopped != 1)
+                    throw new InvalidOperationException("تعذر إيقاف الإصدار القديم؛ لم يُبدّل أي إصدار.");
+
+                var activated = await connection.ExecuteAsync(@"
+UPDATE dbo.BillOfMaterials
+SET BOMStatus=2, ModifiedBy=@UserID, ModifiedDate=GETDATE(),
+    ApprovedBy=CASE WHEN @EmployeeID IS NULL OR @EmployeeID=0 THEN ApprovedBy ELSE @EmployeeID END,
+    ApprovedDate=CASE WHEN @EmployeeID IS NULL OR @EmployeeID=0 THEN ApprovedDate ELSE GETDATE() END
+WHERE BOMID=@BOMID AND BOMStatus IN (1,3) AND ISNULL(IsActive,1)=1",
+                    new { BOMID = newBomId, UserID = userId, EmployeeID = employeeId }, transaction);
+                if (activated != 1)
+                    throw new InvalidOperationException("تعذر تنشيط الإصدار الجديد؛ أُلغيت عملية التبديل كاملة.");
 
                 transaction.Commit();
-
-                await _audit.WriteAuditLogAsync(
-                    userId: userId,
-                    actionType: 2,
-                    tableName: "BillOfMaterials",
-                    recordId: newBomId.ToString(),
-                    moduleName: "SCR_BOM",
-                    description: $"تنشيط وصفة {newBomId} وإيقاف الوصفة القديمة {oldBomId}"
-                );
-
-                return (true, "تم تنشيط الوصفة الجديدة وإيقاف القديمة بنجاح");
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); } catch { }
                 return (false, $"حدث خطأ أثناء تبديل الحالة: {ex.Message}");
             }
+
+            await _audit.WriteAuditLogAsync(
+                userId: userId,
+                actionType: 2,
+                tableName: "BillOfMaterials",
+                recordId: newBomId.ToString(),
+                moduleName: "SCR_BOM",
+                description: $"تنشيط وصفة {newBomId} وإيقاف الوصفة القديمة {oldBomId}"
+            );
+            return (true, "تم تنشيط الوصفة الجديدة وإيقاف القديمة بنجاح");
         }
 
         // ==========================================
@@ -605,7 +882,7 @@ WHERE bd.BOMID = @BOMID
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
             try
             {
@@ -617,22 +894,24 @@ WHERE bd.BOMID = @BOMID
                           LaborCostPerBatch, OverheadCostPerBatch,
                           Instructions, SafetyNotes, QualityNotes, Notes,
                           EffectiveFrom, EffectiveTo
-                      FROM dbo.BillOfMaterials
+                      FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
                       WHERE BOMID = @BOMID",
                     new { BOMID = sourceBomId },
                     transaction);
 
                 if (source == null)
                     return (false, 0, "الوصفة الأصلية غير موجودة");
+                ValidateBOMHeader(source);
+                await ValidateBOMReferencesAsync(connection, transaction, source);
 
                 var nextVersion = await connection.ExecuteScalarAsync<int>(
                     @"SELECT ISNULL(MAX(BOMVersion), 0) + 1
-                      FROM dbo.BillOfMaterials
+                      FROM dbo.BillOfMaterials WITH (UPDLOCK,HOLDLOCK)
                       WHERE ProductItemID = @ProductItemID",
                     new { source.ProductItemID },
                     transaction);
 
-                var newCode = await GenerateBOMCodeAsync();
+                var newCode = await GenerateBOMCodeAsync(connection, transaction);
 
                 var insertSql = @"
 INSERT INTO dbo.BillOfMaterials
@@ -774,6 +1053,7 @@ SELECT
     (bd.Quantity * (1 + ISNULL(bd.WastePercent, 0) / 100.0) * ISNULL(bd.UnitCost, 0)) AS LineCost,
     ISNULL(bd.IsOptional, 0) AS IsOptional,
     bd.SubstituteItemID,
+    si.ItemCode AS SubstituteItemCode,
     si.ItemNameAr AS SubstituteItemName,
     ISNULL(bd.Sequence, 0) AS Sequence,
     ISNULL(bd.StageNumber, 1) AS StageNumber,
@@ -792,20 +1072,23 @@ ORDER BY bd.MaterialType, bd.LineNumber";
         public async Task<int> InsertBOMDetailAsync(BOMDetailDto detail, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مكونات الوصفة.");
-
-            using var connection = CreateConnection();
-
-            var nextLine = await connection.ExecuteScalarAsync<int>(
-                @"SELECT ISNULL(MAX(LineNumber), 0) + 1
-                  FROM dbo.BOMDetails
-                  WHERE BOMID = @BOMID",
-                new { detail.BOMID });
-
             var unitCost = await GetItemCostAsync(detail.ItemID);
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            int newId;
+            try
+            {
+                await EnsureEditableBOMAsync(connection, transaction, detail.BOMID);
+                await ValidateBOMDetailAsync(connection, transaction, detail);
+                var nextLine = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT ISNULL(MAX(LineNumber), 0) + 1
+                      FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+                      WHERE BOMID = @BOMID",
+                    new { detail.BOMID }, transaction);
 
-            // The audited database constraint permits stored MaterialType 1/2 only.
-            // Logical type 3 is identified by Items.ItemType=4 and stored as type 1.
-            var sql = @"
+                // Logical type 3 (finished product component) is persisted as material type 1.
+                var sql = @"
 INSERT INTO dbo.BOMDetails
 (
     BOMID, LineNumber, ItemID, MaterialType, UnitID,
@@ -820,23 +1103,30 @@ VALUES
 );
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    detail.BOMID,
+                    LineNumber = nextLine,
+                    detail.ItemID,
+                    MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
+                    detail.UnitID,
+                    detail.Quantity,
+                    detail.InputPercentage,
+                    detail.WastePercent,
+                    UnitCost = unitCost,
+                    detail.IsOptional,
+                    detail.SubstituteItemID,
+                    Sequence = detail.Sequence <= 0 ? 0 : detail.Sequence,
+                    StageNumber = detail.StageNumber <= 0 ? 1 : detail.StageNumber,
+                    detail.Notes
+                }, transaction);
+                transaction.Commit();
+            }
+            catch
             {
-                detail.BOMID,
-                LineNumber = nextLine,
-                detail.ItemID,
-                MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
-                detail.UnitID,
-                detail.Quantity,
-                detail.InputPercentage,
-                detail.WastePercent,
-                UnitCost = unitCost,
-                detail.IsOptional,
-                detail.SubstituteItemID,
-                Sequence = detail.Sequence <= 0 ? 0 : detail.Sequence,
-                StageNumber = detail.StageNumber <= 0 ? 1 : detail.StageNumber,
-                detail.Notes
-            });
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -846,21 +1136,37 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 moduleName: "SCR_BOM",
                 description: $"إضافة مكون لوصفة رقم: {detail.BOMID}"
             );
-
             return newId;
         }
 
         public async Task UpdateBOMDetailAsync(BOMDetailDto detail, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مكونات الوصفة.");
-
-            using var connection = CreateConnection();
+            if (detail.BOMDetailID <= 0 || detail.BOMID <= 0)
+                throw new InvalidOperationException("معرّف مكوّن الوصفة غير صالح.");
 
             var unitCost = await GetItemCostAsync(detail.ItemID);
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            var actualBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMDetails WHERE BOMDetailID=@BOMDetailID",
+                new { detail.BOMDetailID });
+            if (!actualBOMID.HasValue || actualBOMID.Value != detail.BOMID)
+                throw new InvalidOperationException("مكوّن الوصفة غير موجود أو لا يتبع الوصفة المحددة.");
 
-            // Keep the persisted value within the audited 1/2 constraint; ItemType=4
-            // carries the logical finished-product component identity on reads.
-            await connection.ExecuteAsync(@"
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                await EnsureEditableBOMAsync(connection, transaction, actualBOMID.Value);
+                var lockedBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMDetailID=@BOMDetailID",
+                    new { detail.BOMDetailID }, transaction);
+                if (!lockedBOMID.HasValue || lockedBOMID.Value != actualBOMID.Value)
+                    throw new InvalidOperationException("تغير مكوّن الوصفة أثناء التعديل؛ أعد تحميل الصفحة.");
+                await ValidateBOMDetailAsync(connection, transaction, detail, detail.BOMDetailID);
+
+                var rowsUpdated = await connection.ExecuteAsync(@"
 UPDATE dbo.BOMDetails SET
     ItemID = @ItemID,
     MaterialType = @MaterialType,
@@ -874,23 +1180,33 @@ UPDATE dbo.BOMDetails SET
     Sequence = @Sequence,
     StageNumber = @StageNumber,
     Notes = @Notes
-WHERE BOMDetailID = @BOMDetailID",
-                new
-                {
-                    detail.BOMDetailID,
-                    detail.ItemID,
-                    MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
-                    detail.UnitID,
-                    detail.Quantity,
-                    detail.InputPercentage,
-                    detail.WastePercent,
-                    UnitCost = unitCost,
-                    detail.IsOptional,
-                    detail.SubstituteItemID,
-                    Sequence = detail.Sequence <= 0 ? 0 : detail.Sequence,
-                    StageNumber = detail.StageNumber <= 0 ? 1 : detail.StageNumber,
-                    detail.Notes
-                });
+WHERE BOMDetailID = @BOMDetailID AND BOMID = @BOMID",
+                    new
+                    {
+                        detail.BOMDetailID,
+                        detail.BOMID,
+                        detail.ItemID,
+                        MaterialType = detail.MaterialType == 3 ? 1 : detail.MaterialType,
+                        detail.UnitID,
+                        detail.Quantity,
+                        detail.InputPercentage,
+                        detail.WastePercent,
+                        UnitCost = unitCost,
+                        detail.IsOptional,
+                        detail.SubstituteItemID,
+                        Sequence = detail.Sequence <= 0 ? 0 : detail.Sequence,
+                        StageNumber = detail.StageNumber <= 0 ? 1 : detail.StageNumber,
+                        detail.Notes
+                    }, transaction);
+                if (rowsUpdated != 1)
+                    throw new InvalidOperationException("لم يتم تعديل المكوّن؛ أعد تحميل الصفحة وحاول مجدداً.");
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -908,50 +1224,54 @@ WHERE BOMDetailID = @BOMDetailID",
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
-
             var bomId = await connection.QueryFirstOrDefaultAsync<int?>(
-                @"SELECT BOMID
-                  FROM dbo.BOMDetails WITH (UPDLOCK, HOLDLOCK)
-                  WHERE BOMDetailID = @ID",
-                new { ID = bomDetailId },
-                transaction);
-
+                @"SELECT BOMID FROM dbo.BOMDetails WHERE BOMDetailID=@ID",
+                new { ID = bomDetailId });
             if (!bomId.HasValue)
-            {
-                transaction.Commit();
                 return;
-            }
 
-            await connection.ExecuteAsync(
-                @"DELETE FROM dbo.BOMDetails WHERE BOMDetailID = @ID",
-                new { ID = bomDetailId },
-                transaction);
-
-            var remainingCount = await connection.ExecuteScalarAsync<int>(
-                @"SELECT COUNT(*) FROM dbo.BOMDetails WHERE BOMID = @BOMID",
-                new { BOMID = bomId.Value },
-                transaction);
-
-            if (remainingCount > 0)
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
             {
-                var maxLineNumber = await connection.ExecuteScalarAsync<int>(
-                    @"SELECT ISNULL(MAX(LineNumber), 0)
-                      FROM dbo.BOMDetails
-                      WHERE BOMID = @BOMID",
+                await EnsureEditableBOMAsync(connection, transaction, bomId.Value);
+                var lockedBOMID = await connection.QueryFirstOrDefaultAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMDetails WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMDetailID=@ID",
+                    new { ID = bomDetailId }, transaction);
+                if (!lockedBOMID.HasValue || lockedBOMID.Value != bomId.Value)
+                    throw new InvalidOperationException("تغير مكوّن الوصفة أثناء الحذف؛ أعد تحميل الصفحة.");
+
+                var rowsDeleted = await connection.ExecuteAsync(
+                    @"DELETE FROM dbo.BOMDetails WHERE BOMDetailID = @ID AND BOMID = @BOMID",
+                    new { ID = bomDetailId, BOMID = bomId.Value },
+                    transaction);
+                if (rowsDeleted != 1)
+                    throw new InvalidOperationException("لم يتم حذف المكوّن؛ أعد تحميل الصفحة وحاول مجدداً.");
+
+                var remainingCount = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.BOMDetails WHERE BOMID = @BOMID",
                     new { BOMID = bomId.Value },
                     transaction);
 
-                // Move lines above the current range first so the unique (BOMID, LineNumber)
-                // index cannot collide while the visible line numbers are compacted.
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BOMDetails
-                      SET LineNumber = LineNumber + @Offset
-                      WHERE BOMID = @BOMID",
-                    new { BOMID = bomId.Value, Offset = maxLineNumber + 1 },
-                    transaction);
+                if (remainingCount > 0)
+                {
+                    var maxLineNumber = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT ISNULL(MAX(LineNumber), 0)
+                          FROM dbo.BOMDetails
+                          WHERE BOMID = @BOMID",
+                        new { BOMID = bomId.Value },
+                        transaction);
 
-                await connection.ExecuteAsync(@"
+                    // Move lines above the current range first so the unique (BOMID, LineNumber)
+                    // index cannot collide while the visible line numbers are compacted.
+                    await connection.ExecuteAsync(
+                        @"UPDATE dbo.BOMDetails
+                          SET LineNumber = LineNumber + @Offset
+                          WHERE BOMID = @BOMID",
+                        new { BOMID = bomId.Value, Offset = maxLineNumber + 1 },
+                        transaction);
+
+                    await connection.ExecuteAsync(@"
 ;WITH OrderedLines AS
 (
     SELECT BOMDetailID,
@@ -963,11 +1283,17 @@ UPDATE detail
 SET LineNumber = ordered.NewLineNumber
 FROM dbo.BOMDetails detail
 INNER JOIN OrderedLines ordered ON ordered.BOMDetailID = detail.BOMDetailID;",
-                    new { BOMID = bomId.Value },
-                    transaction);
-            }
+                        new { BOMID = bomId.Value },
+                        transaction);
+                }
 
-            transaction.Commit();
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -1079,10 +1405,36 @@ ORDER BY bs.StageOrder";
         public async Task<int> InsertBOMStageAsync(BOMStageDto stage, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مراحل الوصفة.");
+            if (stage.StageID <= 0 || stage.StageOrder <= 0)
+                throw new InvalidOperationException("حدد مرحلة وترتيباً صحيحاً.");
 
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            int newId;
+            try
+            {
+                await EnsureEditableBOMAsync(connection, transaction, stage.BOMID);
+                var activeStage = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionStages WITH (UPDLOCK,HOLDLOCK)
+WHERE StageID=@StageID AND IsActive=1",
+                    new { stage.StageID }, transaction);
+                if (activeStage != 1)
+                    throw new InvalidOperationException("المرحلة غير موجودة أو غير نشطة.");
+                var duplicateStage = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND StageID=@StageID",
+                    new { stage.BOMID, stage.StageID }, transaction);
+                var duplicateOrder = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND StageOrder=@StageOrder",
+                    new { stage.BOMID, stage.StageOrder }, transaction);
+                if (duplicateStage > 0)
+                    throw new InvalidOperationException("هذه المرحلة موجودة بالفعل داخل الوصفة.");
+                if (duplicateOrder > 0)
+                    throw new InvalidOperationException("رقم ترتيب المرحلة مستخدم مسبقاً.");
 
-            var sql = @"
+                var sql = @"
 INSERT INTO dbo.BOMStages
 (
     BOMID, StageID, StageOrder, Duration,
@@ -1096,20 +1448,19 @@ VALUES
     @Instructions, @Notes
 );
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    stage.BOMID, stage.StageID, stage.StageOrder, stage.Duration,
+                    stage.Temperature, stage.Speed, stage.QualityCheckRequired,
+                    stage.QualityCheckNotes, stage.Instructions, stage.Notes
+                }, transaction);
+                transaction.Commit();
+            }
+            catch
             {
-                stage.BOMID,
-                stage.StageID,
-                stage.StageOrder,
-                stage.Duration,
-                stage.Temperature,
-                stage.Speed,
-                stage.QualityCheckRequired,
-                stage.QualityCheckNotes,
-                stage.Instructions,
-                stage.Notes
-            });
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -1119,41 +1470,76 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                 moduleName: "SCR_BOM",
                 description: $"إضافة مرحلة لوصفة رقم: {stage.BOMID}"
             );
-
             return newId;
         }
 
         public async Task UpdateBOMStageAsync(BOMStageDto stage, int userId)
         {
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanEdit, "لا تملك صلاحية تعديل مراحل الوصفة.");
+            if (stage.BOMStageID <= 0 || stage.BOMID <= 0 || stage.StageID <= 0 || stage.StageOrder <= 0)
+                throw new InvalidOperationException("بيانات مرحلة الوصفة غير مكتملة أو غير صالحة.");
 
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            // Read the owner without retaining a child lock; the transaction locks the BOM header first and revalidates it.
+            var actualBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMStages
+WHERE BOMStageID=@BOMStageID",
+                new { stage.BOMStageID });
+            if (!actualBOMID.HasValue || actualBOMID.Value != stage.BOMID)
+                throw new InvalidOperationException("مرحلة الوصفة غير موجودة أو لا تتبع الوصفة المحددة.");
 
-            await connection.ExecuteAsync(@"
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                await EnsureEditableBOMAsync(connection, transaction, actualBOMID.Value);
+                var lockedBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMStageID=@BOMStageID",
+                    new { stage.BOMStageID }, transaction);
+                if (!lockedBOMID.HasValue || lockedBOMID.Value != actualBOMID.Value)
+                    throw new InvalidOperationException("تغيرت مرحلة الوصفة أثناء التعديل؛ أعد تحميل الصفحة.");
+                var activeStage = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.ProductionStages WITH (UPDLOCK,HOLDLOCK)
+WHERE StageID=@StageID AND IsActive=1",
+                    new { stage.StageID }, transaction);
+                if (activeStage != 1)
+                    throw new InvalidOperationException("المرحلة غير موجودة أو غير نشطة.");
+                var duplicateStage = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND StageID=@StageID AND BOMStageID<>@BOMStageID",
+                    new { stage.BOMID, stage.StageID, stage.BOMStageID }, transaction);
+                var duplicateOrder = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND StageOrder=@StageOrder AND BOMStageID<>@BOMStageID",
+                    new { stage.BOMID, stage.StageOrder, stage.BOMStageID }, transaction);
+                if (duplicateStage > 0)
+                    throw new InvalidOperationException("هذه المرحلة موجودة بالفعل داخل الوصفة.");
+                if (duplicateOrder > 0)
+                    throw new InvalidOperationException("رقم ترتيب المرحلة مستخدم مسبقاً.");
+
+                var rowsUpdated = await connection.ExecuteAsync(@"
 UPDATE dbo.BOMStages SET
-    StageID = @StageID,
-    StageOrder = @StageOrder,
-    Duration = @Duration,
-    Temperature = @Temperature,
-    Speed = @Speed,
-    QualityCheckRequired = @QualityCheckRequired,
-    QualityCheckNotes = @QualityCheckNotes,
-    Instructions = @Instructions,
-    Notes = @Notes
-WHERE BOMStageID = @BOMStageID",
-                new
-                {
-                    stage.BOMStageID,
-                    stage.StageID,
-                    stage.StageOrder,
-                    stage.Duration,
-                    stage.Temperature,
-                    stage.Speed,
-                    stage.QualityCheckRequired,
-                    stage.QualityCheckNotes,
-                    stage.Instructions,
-                    stage.Notes
-                });
+    StageID = @StageID, StageOrder = @StageOrder, Duration = @Duration,
+    Temperature = @Temperature, Speed = @Speed,
+    QualityCheckRequired = @QualityCheckRequired, QualityCheckNotes = @QualityCheckNotes,
+    Instructions = @Instructions, Notes = @Notes
+WHERE BOMStageID = @BOMStageID AND BOMID = @BOMID",
+                    new
+                    {
+                        stage.BOMID, stage.BOMStageID, stage.StageID, stage.StageOrder,
+                        stage.Duration, stage.Temperature, stage.Speed,
+                        stage.QualityCheckRequired, stage.QualityCheckNotes, stage.Instructions, stage.Notes
+                    }, transaction);
+                if (rowsUpdated != 1)
+                    throw new InvalidOperationException("لم يتم تعديل المرحلة؛ أعد تحميل الصفحة وحاول مجدداً.");
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -1170,10 +1556,38 @@ WHERE BOMStageID = @BOMStageID",
             await _authorization.RequireUserPermissionAsync(userId, "SCR_BOM", p => p.CanDelete, "لا تملك صلاحية حذف مراحل الوصفة.");
 
             using var connection = CreateConnection();
-
-            await connection.ExecuteAsync(
-                @"DELETE FROM dbo.BOMStages WHERE BOMStageID = @ID",
+            await connection.OpenAsync();
+            // Read the owner without retaining a child lock; the transaction locks the BOM header first and revalidates it.
+            var ownerBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMStages
+WHERE BOMStageID=@ID",
                 new { ID = bomStageId });
+            if (!ownerBOMID.HasValue)
+                throw new InvalidOperationException("مرحلة الوصفة غير موجودة.");
+            var bomId = ownerBOMID.Value;
+
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                await EnsureEditableBOMAsync(connection, transaction, bomId);
+                var lockedBOMID = await connection.ExecuteScalarAsync<int?>(@"
+SELECT BOMID FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMStageID=@ID",
+                    new { ID = bomStageId }, transaction);
+                if (!lockedBOMID.HasValue || lockedBOMID.Value != bomId)
+                    throw new InvalidOperationException("تغيرت مرحلة الوصفة أثناء الحذف؛ أعد تحميل الصفحة.");
+                var rowsDeleted = await connection.ExecuteAsync(
+                    @"DELETE FROM dbo.BOMStages WHERE BOMStageID = @ID AND BOMID = @BOMID",
+                    new { ID = bomStageId, BOMID = bomId }, transaction);
+                if (rowsDeleted != 1)
+                    throw new InvalidOperationException("لم يتم حذف المرحلة؛ أعد تحميل الصفحة وحاول مجدداً.");
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId: userId,
@@ -1181,7 +1595,7 @@ WHERE BOMStageID = @BOMStageID",
                 tableName: "BOMStages",
                 recordId: bomStageId.ToString(),
                 moduleName: "SCR_BOM",
-                description: $"حذف مرحلة من الوصفة رقم: {bomStageId}"
+                description: $"حذف مرحلة من الوصفة رقم: {bomId}"
             );
         }
 
@@ -1235,24 +1649,28 @@ WHERE BOMStageID = @BOMStageID",
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction();
-
+            using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
             try
             {
-                await connection.ExecuteAsync(
-                    @"UPDATE dbo.BOMStages SET StageOrder = 999 WHERE BOMStageID = @ID",
-                    new { ID = stageId1 },
-                    transaction);
+                await EnsureEditableBOMAsync(connection, transaction, bomId);
+                var validStageCount = await connection.ExecuteScalarAsync<int>(@"
+SELECT COUNT(*) FROM dbo.BOMStages WITH (UPDLOCK,HOLDLOCK)
+WHERE BOMID=@BOMID AND
+      ((BOMStageID=@StageID1 AND StageOrder=@Order1) OR
+       (BOMStageID=@StageID2 AND StageOrder=@Order2))",
+                    new { BOMID = bomId, StageID1 = stageId1, StageID2 = stageId2, Order1 = order1, Order2 = order2 }, transaction);
+                if (validStageCount != 2 || stageId1 == stageId2)
+                    throw new InvalidOperationException("المرحلتان المحددتان لم تعودا متطابقتين مع ترتيب الوصفة الحالي.");
 
                 await connection.ExecuteAsync(
-                    @"UPDATE dbo.BOMStages SET StageOrder = @Order WHERE BOMStageID = @ID",
-                    new { ID = stageId2, Order = order1 },
-                    transaction);
-
+                    @"UPDATE dbo.BOMStages SET StageOrder = 999 WHERE BOMStageID = @ID AND BOMID=@BOMID",
+                    new { ID = stageId1, BOMID = bomId }, transaction);
                 await connection.ExecuteAsync(
-                    @"UPDATE dbo.BOMStages SET StageOrder = @Order WHERE BOMStageID = @ID",
-                    new { ID = stageId1, Order = order2 },
-                    transaction);
+                    @"UPDATE dbo.BOMStages SET StageOrder = @Order WHERE BOMStageID = @ID AND BOMID=@BOMID",
+                    new { ID = stageId2, BOMID = bomId, Order = order1 }, transaction);
+                await connection.ExecuteAsync(
+                    @"UPDATE dbo.BOMStages SET StageOrder = @Order WHERE BOMStageID = @ID AND BOMID=@BOMID",
+                    new { ID = stageId1, BOMID = bomId, Order = order2 }, transaction);
 
                 transaction.Commit();
             }
@@ -1370,7 +1788,13 @@ WHERE BOMID = @BOMID";
         {
             await _authorization.RequireCurrentUserPermissionAsync("SCR_BOM", p => p.CanView || p.CanAdd, "لا تملك صلاحية إنشاء رقم وصفة.");
             using var connection = CreateConnection();
+            return await GenerateBOMCodeAsync(connection, transaction: null);
+        }
 
+        private static async Task<string> GenerateBOMCodeAsync(
+            System.Data.IDbConnection connection,
+            System.Data.IDbTransaction? transaction)
+        {
             try
             {
                 var sql = @"
@@ -1378,10 +1802,9 @@ DECLARE @NextNum NVARCHAR(50);
 EXEC dbo.sp_GetNextNumber 'BOM', @NextNum OUTPUT;
 SELECT @NextNum;";
 
-                var result = await connection.QueryFirstOrDefaultAsync<string>(sql);
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql, transaction: transaction);
                 if (string.IsNullOrWhiteSpace(result))
                     throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber كوداً للوصفة.");
-
                 return result;
             }
             catch (Exception ex)

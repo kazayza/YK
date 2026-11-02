@@ -8,13 +8,18 @@ namespace YKCoatings.Services
     {
         private static readonly HashSet<int> SupportedPageSizes = new() { 10, 20, 50, 100 };
         private readonly UserSessionService _userSession;
+        private readonly ILogger<UserPreferencesService> _logger;
 
         public event Action? PreferencesChanged;
 
-        public UserPreferencesService(IConfiguration configuration, UserSessionService userSession)
+        public UserPreferencesService(
+            IConfiguration configuration,
+            UserSessionService userSession,
+            ILogger<UserPreferencesService> logger)
             : base(configuration)
         {
             _userSession = userSession;
+            _logger = logger;
         }
 
         public async Task<UserPreferencesDto> GetCurrentAsync(int userId)
@@ -110,7 +115,13 @@ WHERE SettingKey=N'NotificationSound'");
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while saving preferences for user {UserID}.",
+                        userId);
+                }
                 throw;
             }
 

@@ -5,13 +5,22 @@ namespace YKCoatings.Services
 {
     public class AuditLogService : BaseDbService
     {
-        public AuditLogService(IConfiguration configuration) : base(configuration) { }
+        private const string ModuleCode = "SCR_AUDIT";
+        private readonly ModuleAuthorizationService _authorization;
+        public AuditLogService(IConfiguration configuration, ModuleAuthorizationService authorization) : base(configuration)
+        {
+            _authorization = authorization;
+        }
+
+        private Task RequireCurrentAuditLogPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ══════════════════════════════════════
         // 1) جلب سجل العمليات مع الفلاتر
         // ══════════════════════════════════════
         public async Task<List<AuditLogDto>> GetAllAsync(AuditLogFilterDto? filter = null)
         {
+            await RequireCurrentAuditLogPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض سجل العمليات.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -103,6 +112,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<AuditLogDto?> GetByIdAsync(long auditId)
         {
+            await RequireCurrentAuditLogPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض سجل العمليات.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -140,6 +150,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<List<string>> GetDistinctTablesAsync()
         {
+            await RequireCurrentAuditLogPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض سجل العمليات.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -157,6 +168,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<List<string>> GetDistinctModulesAsync()
         {
+            await RequireCurrentAuditLogPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض سجل العمليات.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -174,6 +186,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<AuditStatsDto> GetStatsAsync(DateTime? dateFrom = null, DateTime? dateTo = null)
         {
+            await RequireCurrentAuditLogPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض إحصاءات سجل العمليات.");
             using var connection = CreateConnection();
 
             var fromDate = dateFrom ?? DateTime.Today;

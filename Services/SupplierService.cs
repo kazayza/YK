@@ -8,16 +8,24 @@ namespace YKCoatings.Services
 {
     public class SupplierService : BaseDbService
     {
+        private const string ModuleCode = "SCR_SUPPLIERS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public SupplierService(IConfiguration configuration, AuditService audit)
-            : base(configuration) { _audit = audit; }
+        public SupplierService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization)
+            : base(configuration) { _audit = audit; _authorization = authorization; }
+
+        private Task RequireSupplierPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentSupplierPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة الموردين
         // ==========================================
         public async Task<List<SupplierListDto>> GetSuppliersListAsync(bool includeInactive = false)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الموردين.");
             using var connection = CreateConnection();
             var sql = @"SELECT
                             SupplierID, SupplierCode, SupplierNameAr, SupplierNameEn,
@@ -38,6 +46,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<SupplierEditDto?> GetSupplierByIdAsync(int supplierId)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الموردين.");
             using var connection = CreateConnection();
             var sql = @"SELECT
                             SupplierID, SupplierCode, SupplierNameAr, SupplierNameEn,
@@ -61,6 +70,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateSupplierCodeAsync()
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إضافة الموردين.");
             using var connection = CreateConnection();
             try
             {
@@ -83,6 +93,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertSupplierAsync(SupplierEditDto sup, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة الموردين.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.Suppliers
                         (SupplierCode, SupplierNameAr, SupplierNameEn, SupplierType,
@@ -123,6 +134,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateSupplierAsync(SupplierEditDto sup, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل الموردين.");
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.Suppliers SET
                             SupplierCode=@SupplierCode, SupplierNameAr=@SupplierNameAr,
@@ -160,6 +172,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteSupplierAsync(int supplierId, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف الموردين.");
             using var connection = CreateConnection();
 
             var hasInvoices = await connection.QueryFirstOrDefaultAsync<int>(
@@ -187,6 +200,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<SupplierContactDto>> GetContactsAsync(int supplierId)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض جهات اتصال الموردين.");
             using var connection = CreateConnection();
             return (await connection.QueryAsync<SupplierContactDto>(
                 @"SELECT ContactID, SupplierID, ContactName, JobTitle, Phone, Mobile, Email, IsPrimary, Notes, IsActive
@@ -196,6 +210,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertContactAsync(SupplierContactDto contact, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل جهات اتصال الموردين.");
             using var connection = CreateConnection();
             var newId = await connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO dbo.SupplierContacts (SupplierID, ContactName, JobTitle, Phone, Mobile, Email, IsPrimary, Notes, IsActive, CreatedDate)
@@ -208,6 +223,7 @@ namespace YKCoatings.Services
 
         public async Task DeleteContactAsync(int contactId, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية حذف جهات اتصال الموردين.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync("UPDATE dbo.SupplierContacts SET IsActive=0 WHERE ContactID=@ID", new { ID = contactId });
             await _audit.WriteAuditLogAsync(userId, 3, "SupplierContacts", contactId.ToString(),
@@ -219,6 +235,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<SupplierItemDto>> GetSupplierItemsAsync(int supplierId)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أصناف الموردين.");
             using var connection = CreateConnection();
             return (await connection.QueryAsync<SupplierItemDto>(
                 @"SELECT si.SupplierItemID, si.SupplierID, si.ItemID, i.ItemCode, i.ItemNameAr,
@@ -233,6 +250,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertSupplierItemAsync(SupplierItemEditDto item, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أصناف الموردين.");
             using var connection = CreateConnection();
             var exists = await connection.QueryFirstOrDefaultAsync<int>(
                 "SELECT COUNT(*) FROM dbo.SupplierItems WHERE SupplierID=@SID AND ItemID=@IID AND IsActive=1",
@@ -250,6 +268,7 @@ namespace YKCoatings.Services
 
         public async Task DeleteSupplierItemAsync(int supplierItemId, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية حذف أصناف الموردين.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync("UPDATE dbo.SupplierItems SET IsActive=0 WHERE SupplierItemID=@ID", new { ID = supplierItemId });
             await _audit.WriteAuditLogAsync(userId, 3, "SupplierItems", supplierItemId.ToString(),
@@ -261,6 +280,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<SupplierStatementDto>> GetStatementAsync(int supplierId)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض كشف المورد.");
             using var connection = CreateConnection();
             return (await connection.QueryAsync<SupplierStatementDto>(
                 @"SELECT TransDate, TransType, DocNumber, DebitAmount, CreditAmount, Balance, DocType, DocID
@@ -273,6 +293,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<SupplierListDto> suppliers, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية تصدير قائمة الموردين.");
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("الموردين");
             ws.RightToLeft = true;
@@ -321,6 +342,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateSupplierCardHtmlAsync(int supplierId, int userId)
         {
+            await RequireSupplierPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة بطاقة المورد.");
             var sup = await GetSupplierByIdAsync(supplierId);
             if (sup == null) return "<h3>المورد غير موجود</h3>";
 
@@ -371,6 +393,7 @@ table{{width:100%;border-collapse:collapse;margin-bottom:12px}}th{{background:#1
         // ==========================================
         public async Task<ItemAuditDto?> GetSupplierAuditAsync(int supplierId)
         {
+            await RequireCurrentSupplierPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض سجل الموردين.");
             using var connection = CreateConnection();
             var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, s.CreatedDate,
                                ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, s.ModifiedDate

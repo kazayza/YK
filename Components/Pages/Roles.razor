@@ -5,6 +5,7 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<Roles> Logger
 
 <PageTitle>الأدوار والصلاحيات</PageTitle>
 
@@ -68,11 +69,27 @@ else
             </button>
         </div>
         <div class="mudtabs-body-luxury">
-            @if (!string.IsNullOrEmpty(_message))
+            @if (!string.IsNullOrEmpty(_loadError) && filteredRoles.Any())
+            {
+                <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                    @_loadError
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+                </div>
+            }
+            else if (string.IsNullOrEmpty(_loadError) && !string.IsNullOrEmpty(_message))
             {<div class="msg-luxury @( _isError ? "msg-error" : "msg-success")" style="margin-bottom:12px">@_message <button @onclick='()=>_message=""' style="margin-right:auto;background:none;border:none;cursor:pointer"><i class=bi-x-lg></i></button></div>}
 
             @if (_loading)
             {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الأدوار...</p></div>}
+            else if (!filteredRoles.Any() && !string.IsNullOrEmpty(_loadError))
+            {
+                <div class="empty-luxury" role="alert">
+                    <div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+                    <h4>تعذر تحميل الأدوار</h4>
+                    <p>@_loadError</p>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+                </div>
+            }
             else if (!filteredRoles.Any())
             {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><h4>لا يوجد أدوار</h4></div>}
             else
@@ -237,6 +254,7 @@ else
     private bool _authorized = false;
     private bool _loading = true;
     private string _message = "";
+    private string _loadError = string.Empty;
     private bool _isError = false;
     private string _toast = "";
     private bool _toastOk = true;
@@ -265,7 +283,30 @@ else
         }
     }
 
-    private async Task LoadData(){try{_loading=true; StateHasChanged(); _roles=await RoleService.GetAllAsync(_searchText);}catch(Exception ex){ShowError("خطأ: "+ex.Message);}finally{_loading=false;}}
+    private async Task LoadData()
+    {
+        if (!string.IsNullOrEmpty(_loadError) && _message == _loadError)
+            _message = string.Empty;
+
+        _loading = true;
+        _loadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            _roles = await RoleService.GetAllAsync(_searchText);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load roles list.");
+            _loadError = "تعذر تحميل الأدوار. يرجى إعادة المحاولة.";
+            ShowError(_loadError);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
     private void OnSearchKeyUp(KeyboardEventArgs e){_searchTimer?.Stop(); _searchTimer?.Dispose(); _searchTimer=new System.Timers.Timer(400); _searchTimer.Elapsed+=async (s,args)=>{_searchTimer?.Stop(); await InvokeAsync(async()=>{await LoadData(); StateHasChanged();});}; _searchTimer.AutoReset=false; _searchTimer.Start();}
     private async Task ClearSearch(){_searchText=""; await LoadData();}
     private void AddNew()=>Navigation.NavigateTo("/roles/new");

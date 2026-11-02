@@ -25,12 +25,14 @@ else
         @foreach (var mod in filteredModules)
         {
             var kids = PermissionService.GetChildModules(mod.ModuleID).ToList();
+            var visibleKids = kids.Where(k => !VoucherModuleCodes.Contains(k.ModuleCode) && IsChildVisible(k)).ToList();
+            var showUnifiedVoucher = IsAccountingParent(mod) && CanShowUnifiedVoucher && IsUnifiedVoucherSearchMatch();
             var modColor = GetModuleColor(mod, kids);
             var groupClass = GetGroupClass(mod);
             var isVisible = IsModuleVisible(mod, kids);
             @if (!isVisible) { continue; }
 
-            @if (kids.Any())
+            @if (visibleKids.Any() || showUnifiedVoucher || kids.Any())
             {
                 <div class="@groupClass" style="@($"--mc:{modColor}" )">
                     <span class="nm-rail"></span>
@@ -39,19 +41,27 @@ else
                         @if (!IsCollapsed)
                         {
                             <span class="nm-label">@mod.ModuleNameAr</span>
-                            <span class="nm-badge">@kids.Count(k => IsChildVisible(k))</span>
+                            <span class="nm-badge">@(visibleKids.Count + (showUnifiedVoucher ? 1 : 0))</span>
                             <span class="nm-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
                         }
                     </button>
                     @if (!IsCollapsed)
                     {
                         <div class="nm-sub-panel"><div class="nm-sub-list" style="@($"--mc:{modColor}")">
-                            @foreach (var kid in kids.Where(k => IsChildVisible(k)))
+                            @foreach (var kid in visibleKids)
                             {
                                 var kidColor = GetModuleColor(kid, new List<ModulePermissionDto>());
                                 <NavLink class="nm-sub-item" href="@ModuleRouteHelper.GetRoute(kid.ModuleCode)" Match="NavLinkMatch.Prefix" title="@kid.ModuleNameAr" @onclick="HandleScreenSelected">
                                     <span class="nm-sub-icon" style="@($"--ic:{kidColor}")">@((MarkupString)NavMenuIcons.Get(kid.ModuleCode))</span>
                                     <span class="nm-sub-dot"></span><span class="nm-sub-text">@kid.ModuleNameAr</span>
+                                    <svg class="nm-sub-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m15 18-6-6 6-6"/></svg>
+                                </NavLink>
+                            }
+                            @if (showUnifiedVoucher)
+                            {
+                                <NavLink class="nm-sub-item" href="/accounting-vouchers" Match="NavLinkMatch.Prefix" title="@UnifiedVoucherMenuTitle" @onclick="HandleScreenSelected">
+                                    <span class="nm-sub-icon" style="@($"--ic:{modColor}")">@((MarkupString)NavMenuIcons.Get("SCR_RECV"))</span>
+                                    <span class="nm-sub-dot"></span><span class="nm-sub-text">@UnifiedVoucherMenuTitle</span>
                                     <svg class="nm-sub-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m15 18-6-6 6-6"/></svg>
                                 </NavLink>
                             }
@@ -146,8 +156,18 @@ else
     private Task HandleScreenSelected() => OnScreenSelected.InvokeAsync();
     private bool isLoading = true;
     private List<ModulePermissionDto> mainModules = new();
+    private ModulePermissionDto? accountingParentModule;
     private HashSet<int> expandedGroups = new();
     private string? lastRoute;
+
+    private const string UnifiedVoucherMenuTitle = "سندات القبض والصرف";
+    private static readonly HashSet<string> VoucherModuleCodes = new(StringComparer.OrdinalIgnoreCase) { "SCR_RECV", "SCR_PAYV" };
+    private static readonly HashSet<string> AccountingModuleCodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SCR_COA", "SCR_JV", "SCR_JV_NEW", "SCR_PAYV", "SCR_EXPENSES", "SCR_EXPENSE", "SCR_OVERHEAD",
+        "SCR_OVERHEAD_EXPENSES", "SCR_TRIAL", "SCR_TRIALBAL", "SCR_TB", "SCR_LEDGER", "SCR_ACCLEDGER", "SCR_ACCOUNT_LEDGER"
+    };
+    private bool CanShowUnifiedVoucher => PermissionService.CanView("SCR_RECV") || PermissionService.CanView("SCR_PAYV");
 
     // ===== ألوان الموديولات - حسب العائلة الوظيفية =====
     private static readonly Dictionary<string, string> ColorByCode = new(StringComparer.OrdinalIgnoreCase)
@@ -205,25 +225,69 @@ else
         Navigation.LocationChanged += OnNav;
         if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
         if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        mainModules = PermissionService.GetMainModules().ToList();
+        accountingParentModule = ResolveAccountingParent();
+        mainModules = BuildMainModules();
         SyncRoute();
         if (!expandedGroups.Any() && mainModules.Any()) expandedGroups.Add(mainModules.First().ModuleID);
         isLoading = false;
     }
-    private List<ModulePermissionDto> filteredModules
+
+    private ModulePermissionDto? ResolveAccountingParent()
     {
-        get
+        var modules = PermissionService.Permissions;
+        var namedAccountingGroup = modules.FirstOrDefault(x => x.ModuleType == 1 &&
+            (x.ModuleNameAr.Contains("الحسابات", StringComparison.OrdinalIgnoreCase) ||
+             x.ModuleNameAr.Contains("المحاسبة", StringComparison.OrdinalIgnoreCase)));
+        if (namedAccountingGroup is not null) return namedAccountingGroup;
+
+        foreach (var moduleCode in new[] { "SCR_PAYV", "SCR_COA", "SCR_JV", "SCR_JV_NEW" })
         {
-            if (string.IsNullOrWhiteSpace(SearchText)) return mainModules;
-            return mainModules.Where(m => IsModuleVisible(m, PermissionService.GetChildModules(m.ModuleID).ToList())).ToList();
+            var child = modules.FirstOrDefault(x => x.ModuleCode.Equals(moduleCode, StringComparison.OrdinalIgnoreCase));
+            if (child is null || !child.ParentModuleID.HasValue) continue;
+            var parent = modules.FirstOrDefault(x => x.ModuleID == child.ParentModuleID.Value && x.ModuleType == 1);
+            if (parent is not null) return parent;
         }
+
+        foreach (var child in modules.Where(x => AccountingModuleCodes.Contains(x.ModuleCode)))
+        {
+            if (child.ParentModuleID is not int parentModuleId) continue;
+            var parent = modules.FirstOrDefault(x => x.ModuleID == parentModuleId && x.ModuleType == 1);
+            if (parent is not null) return parent;
+        }
+        return null;
     }
+
+    private List<ModulePermissionDto> BuildMainModules()
+    {
+        var groups = PermissionService.GetMainModules().ToList();
+        if (CanShowUnifiedVoucher && accountingParentModule is not null &&
+            groups.All(x => x.ModuleID != accountingParentModule.ModuleID))
+            groups.Add(accountingParentModule!);
+        return groups.OrderBy(x => x.SortOrder).ThenBy(x => x.ModuleID).ToList();
+    }
+
+    private bool IsAccountingParent(ModulePermissionDto module) =>
+        accountingParentModule?.ModuleID == module.ModuleID;
+
+    private bool IsUnifiedVoucherSearchMatch() =>
+        string.IsNullOrWhiteSpace(SearchText) ||
+        UnifiedVoucherMenuTitle.Contains(SearchText.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private List<ModulePermissionDto> filteredModules => mainModules
+        .Where(m => IsModuleVisible(m, PermissionService.GetChildModules(m.ModuleID).ToList()))
+        .ToList();
+
     private bool IsModuleVisible(ModulePermissionDto mod, List<ModulePermissionDto> kids)
     {
-        if (string.IsNullOrWhiteSpace(SearchText)) return true;
-        var s = SearchText.Trim();
-        if (mod.ModuleNameAr.Contains(s, StringComparison.OrdinalIgnoreCase)) return true;
-        return kids.Any(k => k.ModuleNameAr.Contains(s, StringComparison.OrdinalIgnoreCase));
+        var hasVisibleChild = kids.Any(k => !VoucherModuleCodes.Contains(k.ModuleCode) && IsChildVisible(k));
+        var hasUnifiedVoucher = IsAccountingParent(mod) && CanShowUnifiedVoucher && IsUnifiedVoucherSearchMatch();
+        var hasOwnScreen = kids.Count == 0 && mod.CanView;
+        if (string.IsNullOrWhiteSpace(SearchText))
+            return hasVisibleChild || hasUnifiedVoucher || hasOwnScreen;
+
+        var search = SearchText.Trim();
+        var moduleNameMatches = mod.ModuleNameAr.Contains(search, StringComparison.OrdinalIgnoreCase);
+        return hasVisibleChild || hasUnifiedVoucher || moduleNameMatches;
     }
     private bool IsChildVisible(ModulePermissionDto kid)
     {
@@ -242,7 +306,13 @@ else
     private void Toggle(int id){if (!expandedGroups.Add(id)) expandedGroups.Remove(id);}
     private void OnNav(object? s, LocationChangedEventArgs e){if (lastRoute == e.Location) return;lastRoute = e.Location;SyncRoute();InvokeAsync(StateHasChanged);}
     private void SyncRoute(){foreach (var m in mainModules) if (HasActiveChild(m.ModuleID)) expandedGroups.Add(m.ModuleID);}
-    private bool HasActiveChild(int id) => PermissionService.GetChildModules(id).Any(c => IsCurrent(ModuleRouteHelper.GetRoute(c.ModuleCode)));
+    private bool HasActiveChild(int id)
+    {
+        if (CanShowUnifiedVoucher && accountingParentModule?.ModuleID == id && IsCurrent("/accounting-vouchers")) return true;
+        return PermissionService.GetChildModules(id)
+            .Where(c => !VoucherModuleCodes.Contains(c.ModuleCode))
+            .Any(c => IsCurrent(ModuleRouteHelper.GetRoute(c.ModuleCode)));
+    }
     private bool IsCurrent(string? route)
     {
         if (string.IsNullOrWhiteSpace(route)) return false;

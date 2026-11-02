@@ -5,8 +5,9 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<Users> Logger
 
-<PageTitle>المستخدمين -    Tabs</PageTitle>
+<PageTitle>المستخدمين</PageTitle>
 
 @if (!_authorized)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -52,6 +53,15 @@ else
         <div class="select-wrap-luxury"><select @bind="_filter.RoleID" @bind:after="ApplyFilters"><option value="">كل الأدوار</option>@foreach(var role in _rolesLookup){<option value="@role.Id">@role.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
         <button class="btn-luxury btn-ghost-luxury" @onclick="ResetFilters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>إعادة تعيين</button>
     </div>
+    @if (!string.IsNullOrWhiteSpace(_rolesLookupError))
+    {
+        <div class="msg-luxury msg-info" role="alert" style="margin-top:-8px">
+            @_rolesLookupError
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadLookups" disabled="@_rolesLookupLoading">
+                @(_rolesLookupLoading ? "جاري إعادة المحاولة..." : "إعادة تحميل الأدوار")
+            </button>
+        </div>
+    }
 
     <div class="mudtabs-luxury">
         <div class="mudtabs-header-luxury">
@@ -243,6 +253,8 @@ else
             _=>true
         }).ToList();
     private List<LookupDto> _rolesLookup = new();
+    private string _rolesLookupError = string.Empty;
+    private bool _rolesLookupLoading = false;
     private UserFilterDto _filter = new();
     private bool _showResetModal = false;
     private UserListDto? _resetUser;
@@ -262,7 +274,28 @@ else
         }
     }
 
-    private async Task LoadLookups(){try{_rolesLookup=await UserService.GetRolesLookupAsync();}catch{}}
+    private async Task LoadLookups()
+    {
+        if (_rolesLookupLoading) return;
+        _rolesLookupLoading = true;
+        StateHasChanged();
+        try
+        {
+            _rolesLookup = await UserService.GetRolesLookupAsync();
+            _rolesLookupError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load roles lookup for the users list; the user list remains available.");
+            _rolesLookup = new List<LookupDto>();
+            _rolesLookupError = "تعذر تحميل قائمة الأدوار للتصفية؛ بقية قائمة المستخدمين ما زالت متاحة. يمكنك إعادة المحاولة.";
+        }
+        finally
+        {
+            _rolesLookupLoading = false;
+        }
+    }
     private async Task LoadData()
     {
         try{_loading=true; StateHasChanged(); _users=await UserService.GetAllAsync(_filter);}

@@ -6,7 +6,7 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 
-<PageTitle>تحويلات خزينة -    (فعلي)</PageTitle>
+<PageTitle>تحويلات خزينة(فعلي)</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -31,7 +31,18 @@ else
         </div>
     </div>
 
-    @if (transfers == null){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+    @if (transferListLoadFailed)
+    {
+        <div class="cash-transfer-list-alert" role="alert">
+            <span>تعذر تحميل قائمة التحويلات.@(transfers is not null ? " المعروض هو آخر تحميل ناجح." : " لا توجد قائمة سابقة يمكن عرضها.")</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadTransfersAsync" disabled="@isLoadingTransfers">
+                @(isLoadingTransfers ? "جاري إعادة المحاولة..." : "إعادة المحاولة")
+            </button>
+        </div>
+    }
+
+    @if (transfers == null && isLoadingTransfers){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+    else if (transfers == null){<div class="empty-luxury" role="status"><h4>ستظهر التحويلات بعد نجاح القراءة</h4></div>}
     else if (!transfers.Any()){<div class="empty-luxury"><h4>لا توجد تحويلات</h4></div>}
     else
     {
@@ -96,6 +107,8 @@ else
 .actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
 .act-btn{padding:4px 10px;border-radius:8px;border:1px solid #a7f3d0;background:#ecfdf5;color:#059669;cursor:pointer;font-weight:700}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.cash-transfer-list-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.82rem;font-weight:700}
+.btn-luxury:disabled{opacity:.55;cursor:not-allowed}
 .loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
 .transfer-view-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:18px;background:rgba(7,11,20,.74);backdrop-filter:blur(5px)}
 .transfer-view-card{position:relative;width:min(720px,100%);max-height:calc(100vh - 36px);overflow:auto;background:#fff;border:1px solid rgba(212,175,55,.36);border-radius:20px;box-shadow:0 28px 90px rgba(0,0,0,.35);padding:24px;color:#111827}
@@ -119,6 +132,8 @@ else
     private CashTransferListDto? selectedTransfer;
     private bool permissionChecked;
     private bool isAuthorized;
+    private bool isLoadingTransfers;
+    private bool transferListLoadFailed;
 
     protected override async Task OnInitializedAsync()
     {
@@ -130,21 +145,52 @@ else
                 await PermissionService.LoadPermissionsAsync(UserSession.UserID);
 
             isAuthorized = PermissionService.CanView("SCR_CASHTRANS");
-            permissionChecked = true;
-            if (isAuthorized)
-            {
-                transfers = await TreasuryService.GetTransfersAsync();
-                var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
-                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-                if (int.TryParse(query["transferId"], out var transferId))
-                    selectedTransfer = transfers?.FirstOrDefault(t => t.TransferID == transferId);
-            }
         }
         catch
         {
-            permissionChecked = true;
             isAuthorized = false;
         }
+        finally
+        {
+            permissionChecked = true;
+        }
+
+        if (isAuthorized)
+            await LoadTransfersAsync();
+    }
+
+    private async Task LoadTransfersAsync()
+    {
+        if (isLoadingTransfers || !isAuthorized) return;
+
+        isLoadingTransfers = true;
+        try
+        {
+            transfers = await TreasuryService.GetTransfersAsync();
+            transferListLoadFailed = false;
+            SelectTransferFromQuery();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            isAuthorized = false;
+            selectedTransfer = null;
+        }
+        catch (Exception)
+        {
+            transferListLoadFailed = true;
+        }
+        finally
+        {
+            isLoadingTransfers = false;
+        }
+    }
+
+    private void SelectTransferFromQuery()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (int.TryParse(query["transferId"], out var transferId))
+            selectedTransfer = transfers?.FirstOrDefault(t => t.TransferID == transferId);
     }
 
     private void CloseTransferDetails()
@@ -156,6 +202,6 @@ else
     private async Task Approve(int id)
     {
         await TreasuryService.ApproveTransferAsync(id, UserSession.UserID);
-        transfers = await TreasuryService.GetTransfersAsync();
+        await LoadTransfersAsync();
     }
 }

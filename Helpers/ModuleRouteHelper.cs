@@ -31,7 +31,7 @@
                 "SCR_PRODORD" => "/production-orders",
                 "SCR_MATISS"  => "/material-issues",
                 "SCR_BATCH"   => "/production-batches",
-                "SCR_QC"      => "/quality-control",
+                "SCR_QC"      => "/module/SCR_QC",
                 //"SCR_CONTRACT" => "/contract-orders",
 
                 // المخازن
@@ -45,7 +45,6 @@
                 "SCR_SO"   => "/sales-orders",
                 "SCR_SINV" => "/sales-invoices",
                 "SCR_SRET" => "/sales-returns",
-                "SCR_RECV" => "/receipt-vouchers",
 
                 // الخزينة -   
                 "SCR_CASHBOX"    => "/cash-boxes",
@@ -55,14 +54,15 @@
                 "SCR_BANK_ACCOUNTS" => "/bank-accounts",
                 "SCR_CASHTRANS"  => "/cash-transfers",
                 "SCR_CASHSTAT"   => "/cash-box-statement",
-                "SCR_DAILYCLOSE" => "/daily-closing",
+                "SCR_DAILYCLOSE" => "/module/SCR_DAILYCLOSE",
                 "SCR_TREASURY"   => "/treasury-dashboard",
 
                 // الحسابات -    Pro
                 "SCR_COA"      => "/chart-of-accounts",
                 "SCR_JV"       => "/journal-entries",
                 "SCR_JV_NEW"   => "/journal-entries/new",
-                "SCR_PAYV"     => "/payment-vouchers",
+                "SCR_RECV"     => "/accounting-vouchers?type=receipt",
+                "SCR_PAYV"     => "/accounting-vouchers?type=payment",
                 "SCR_EXPENSES" => "/expenses",
                 "SCR_EXPENSE"  => "/expenses",
                 "SCR_OVERHEAD" => "/expenses",

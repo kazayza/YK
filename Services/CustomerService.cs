@@ -5,17 +5,26 @@ namespace YKCoatings.Services
 {
     public class CustomerService : BaseDbService
     {
+        private const string ModuleCode = "SCR_CUSTOMERS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public CustomerService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public CustomerService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequireCustomerPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentCustomerPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
                 // ==========================================
         // قائمة العملاء مع Paging وفلاتر
         // ==========================================
         public async Task<CustomerPagedResult> GetCustomersPagedAsync(CustomerFilterDto filter)
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض العملاء.");
             using var connection = CreateConnection();
 
             filter ??= new CustomerFilterDto();
@@ -125,6 +134,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<CustomerListDto>> GetCustomersReportAsync(CustomerFilterDto filter)
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanPrint || p.CanExport, "ليس لديك صلاحية طباعة أو تصدير تقرير العملاء.");
             using var connection = CreateConnection();
 
             filter ??= new CustomerFilterDto();
@@ -191,6 +201,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<CustomerStatsDto> GetCustomerStatsAsync()
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض إحصاءات العملاء.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -214,6 +225,7 @@ namespace YKCoatings.Services
         public async Task<(bool Success, string Message)> SetCustomerActiveStatusAsync(
             int customerId, bool isActive, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية تعطيل أو تفعيل العملاء.");
             using var connection = CreateConnection();
 
             var existing = await connection.QueryFirstOrDefaultAsync<CustomerEditDto>(
@@ -256,6 +268,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteCustomerAsync(int customerId, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف العملاء.");
             return await SetCustomerActiveStatusAsync(customerId, false, userId);
         }
 
@@ -264,6 +277,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<CustomerContactDto>> GetCustomerContactsAsync(int customerId)
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView || p.CanEdit, "ليس لديك صلاحية عرض جهات اتصال العملاء.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -290,6 +304,7 @@ namespace YKCoatings.Services
 
         public async Task<int> SaveCustomerContactAsync(CustomerContactDto dto, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل جهات اتصال العملاء.");
             using var connection = CreateConnection();
 
             if (dto.CustomerID <= 0)
@@ -397,6 +412,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteCustomerContactAsync(int contactId, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية حذف جهات اتصال العملاء.");
             using var connection = CreateConnection();
 
             var oldContact = await connection.QueryFirstOrDefaultAsync<CustomerContactDto>(@"
@@ -427,6 +443,7 @@ namespace YKCoatings.Services
 
         public async Task<List<CustomerListDto>> GetCustomersListAsync()
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض العملاء.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             c.CustomerID, c.CustomerCode, c.CustomerNameAr, c.CustomerNameEn,
@@ -454,6 +471,7 @@ namespace YKCoatings.Services
 
         public async Task<CustomerEditDto?> GetCustomerByIdAsync(int customerId)
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView || p.CanEdit, "ليس لديك صلاحية عرض أو تعديل بيانات العملاء.");
             using var connection = CreateConnection();
             var sql = @"SELECT CustomerID, CustomerCode, CustomerNameAr, CustomerNameEn,
                    CustomerType, CustomerGroupID, TaxNumber, CommercialRegister,
@@ -473,6 +491,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertCustomerAsync(CustomerEditDto cust, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة العملاء.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.Customers 
                         (CustomerCode, CustomerNameAr, CustomerNameEn, CustomerType, CustomerGroupID,
@@ -516,6 +535,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateCustomerAsync(CustomerEditDto cust, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل العملاء.");
             using var connection = CreateConnection();
 
             var oldCust = await connection.QueryFirstOrDefaultAsync<CustomerEditDto>(
@@ -580,6 +600,7 @@ namespace YKCoatings.Services
 
                 public async Task<byte[]> ExportCustomersToExcelAsync(List<CustomerListDto> customers, int userId)
         {
+            await RequireCustomerPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير العملاء.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("العملاء");
 
@@ -703,6 +724,7 @@ namespace YKCoatings.Services
 
                 public async Task<string> GenerateCustomerCodeAsync()
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إضافة العملاء.");
             using var connection = CreateConnection();
             try
             {
@@ -724,6 +746,7 @@ namespace YKCoatings.Services
 
         public async Task<ItemAuditDto?> GetCustomerAuditAsync(int customerId)
         {
+            await RequireCurrentCustomerPermissionAsync(p => p.CanView || p.CanEdit, "ليس لديك صلاحية عرض سجل العملاء.");
             using var connection = CreateConnection();
             var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, c.CreatedDate,
                                ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, c.ModifiedDate

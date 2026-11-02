@@ -27,15 +27,18 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<SystemModuleAdminService> _logger;
 
         public SystemModuleAdminService(
             IConfiguration configuration,
             AuditService audit,
-            ModuleAuthorizationService authorization)
+            ModuleAuthorizationService authorization,
+            ILogger<SystemModuleAdminService> logger)
             : base(configuration)
         {
             _audit = audit;
             _authorization = authorization;
+            _logger = logger;
         }
 
         public async Task<List<SystemModuleAdminDto>> GetAllAsync()
@@ -132,7 +135,13 @@ WHERE ModuleID=@ModuleID AND ISNULL(IsActive,0)=@CurrentIsActive",
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while changing active state of system module {ModuleID} to {RequestedIsActive} by user {UserID}.",
+                        moduleId, isActive, userId);
+                }
                 throw;
             }
 

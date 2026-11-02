@@ -1,22 +1,32 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class UnitService : BaseDbService
     {
+        private const string ModuleCode = "SCR_UNITS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public UnitService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public UnitService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequireUnitPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentUnitPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة الوحدات
         // ==========================================
         public async Task<List<UnitListDto>> GetUnitsListAsync()
         {
+            await RequireCurrentUnitPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الوحدات.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             u.UnitID,
@@ -42,6 +52,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<UnitEditDto?> GetUnitByIdAsync(int unitId)
         {
+            await RequireCurrentUnitPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الوحدات.");
             using var connection = CreateConnection();
             var sql = @"SELECT UnitID, UnitCode, UnitNameAr, UnitNameEn, UnitType, IsActive
                         FROM dbo.Units WHERE UnitID = @UnitID";
@@ -53,6 +64,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertUnitAsync(UnitEditDto unit, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة الوحدات.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.Units (UnitCode, UnitNameAr, UnitNameEn, UnitType, IsActive, CreatedDate)
                         VALUES (@UnitCode, @UnitNameAr, @UnitNameEn, @UnitType, 1, GETDATE());
@@ -80,6 +92,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateUnitAsync(UnitEditDto unit, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل الوحدات.");
             using var connection = CreateConnection();
 
             var oldUnit = await connection.QueryFirstOrDefaultAsync<UnitEditDto>(
@@ -126,6 +139,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteUnitAsync(int unitId, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف الوحدات.");
             using var connection = CreateConnection();
 
             var itemCount = await connection.QueryFirstOrDefaultAsync<int>(
@@ -155,6 +169,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<UnitConversionDto>> GetConversionsAsync()
         {
+            await RequireCurrentUnitPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض تحويلات الوحدات.");
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             uc.ConversionID,
@@ -177,6 +192,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertConversionAsync(int fromUnitId, int toUnitId, decimal factor, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة تحويلات الوحدات.");
             using var connection = CreateConnection();
 
             var exists = await connection.QueryFirstOrDefaultAsync<int>(
@@ -207,6 +223,7 @@ namespace YKCoatings.Services
 
         public async Task DeleteConversionAsync(int conversionId, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف تحويلات الوحدات.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(
                 "DELETE FROM dbo.UnitConversions WHERE ConversionID = @ID",
@@ -221,6 +238,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportUnitsToExcelAsync(List<UnitListDto> units, int userId)
         {
+            await RequireUnitPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير الوحدات.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("وحدات القياس");
             ws.RightToLeft = true;

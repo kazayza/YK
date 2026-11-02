@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 using SqlTransaction = Microsoft.Data.SqlClient.SqlTransaction;
@@ -10,22 +11,54 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<GoodsReceiptService> _logger;
+        private const string ModuleCode = "SCR_GRN";
+
+        private sealed class GoodsReceiptInventoryPostingLine
+        {
+            public int GRNDetailID { get; set; }
+            public int GRNID { get; set; }
+            public string GRNNumber { get; set; } = "";
+            public DateTime GRNDate { get; set; }
+            public int ItemID { get; set; }
+            public int UnitID { get; set; }
+            public decimal AcceptedQty { get; set; }
+            public decimal UnitCost { get; set; }
+            public int WarehouseID { get; set; }
+            public string? BatchNumber { get; set; }
+            public DateTime? ExpiryDate { get; set; }
+            public DateTime? ManufactureDate { get; set; }
+        }
 
         public GoodsReceiptService(
             IConfiguration configuration,
             AuditService audit,
-            NotificationService notif)
+            NotificationService notif,
+            ModuleAuthorizationService authorization,
+            ILogger<GoodsReceiptService> logger)
             : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequireGoodsReceiptPermissionAsync(
+            int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentGoodsReceiptPermissionAsync(
+            Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة أذونات الاستلام
         // ==========================================
         public async Task<List<GoodsReceiptListDto>> GetReceiptsListAsync()
         {
+            await RequireCurrentGoodsReceiptPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أذونات الاستلام.");
             using var connection = CreateConnection();
             var sql = @"SELECT
                             GRNID, GRNNumber, GRNDate, GRNStatus, GRNSource, GRNSourceName,
@@ -47,6 +80,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<GoodsReceiptHeaderDto?> GetReceiptByIdAsync(int grnId)
         {
+            await RequireCurrentGoodsReceiptPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أذونات الاستلام.");
             using var connection = CreateConnection();
             var sql = @"SELECT
                             grn.GRNID, grn.GRNNumber, grn.GRNDate, grn.GRNStatus,
@@ -97,6 +131,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<GoodsReceiptDetailDto>> GetReceiptDetailsAsync(int grnId)
         {
+            await RequireCurrentGoodsReceiptPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض تفاصيل أذونات الاستلام.");
             using var connection = CreateConnection();
             var sql = @"SELECT
                             grd.GRNDetailID, grd.GRNID, grd.LineNumber,
@@ -126,6 +161,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateGRNNumberAsync()
         {
+            await RequireCurrentGoodsReceiptPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء أذونات الاستلام.");
             using var connection = CreateConnection();
             try
             {
@@ -150,6 +186,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertReceiptAsync(GoodsReceiptHeaderDto header, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء أذونات الاستلام.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.GoodsReceiptNotes
                         (
@@ -201,6 +238,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateReceiptAsync(GoodsReceiptHeaderDto header, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أذونات الاستلام.");
             using var connection = CreateConnection();
 
             var status = await connection.QueryFirstOrDefaultAsync<int?>(
@@ -253,6 +291,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertDetailAsync(GoodsReceiptDetailEditDto detail, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أصناف إلى أذونات الاستلام.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -341,7 +380,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after inserting a goods receipt detail for goods receipt {GoodsReceiptID}.",
+                        detail.GRNID);
+                }
                 throw;
             }
         }
@@ -351,6 +396,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateDetailAsync(GoodsReceiptDetailEditDto detail, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أصناف أذونات الاستلام.");
             using var connection = CreateConnection();
 
             var status = await connection.QueryFirstOrDefaultAsync<int?>(
@@ -413,6 +459,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أصناف أذونات الاستلام.");
             using var connection = CreateConnection();
 
             var info = await connection.QueryFirstOrDefaultAsync<(int GRNID, int GRNStatus)>(
@@ -438,6 +485,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> ImportLinesFromPOAsync(int grnId, int purchaseOrderId, List<POLineForGRNDto> lines, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية تحميل أصناف إلى أذونات الاستلام.");
             if (lines == null || !lines.Any(l => l.IsSelected))
                 return 0;
 
@@ -516,7 +564,14 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after importing purchase order {PurchaseOrderID} lines into goods receipt {GoodsReceiptID}.",
+                        purchaseOrderId,
+                        grnId);
+                }
                 throw;
             }
         }
@@ -532,6 +587,7 @@ namespace YKCoatings.Services
             int? inspectedBy,
             string? inspectionNotes)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد أذونات الاستلام.");
             if (inspectionStatus != 2)
                 throw new InvalidOperationException("يجب تسجيل نتيجة فحص مقبولة قبل اعتماد إذن الاستلام.");
 
@@ -596,17 +652,26 @@ namespace YKCoatings.Services
                         new { PurchaseOrderID = purchaseOrderId.Value }, transaction);
                 }
 
-                // 3) تحديث تكلفة الأصناف
-                var details = await connection.QueryAsync<(int ItemID, decimal AcceptedQty, decimal UnitCost, int WarehouseID)>(
+                // 3) ترحيل الكمية والتكلفة وبيانات طبقة الباتش لكل سطر مقبول
+                var details = await connection.QueryAsync<GoodsReceiptInventoryPostingLine>(
                     @"SELECT
+                        grd.GRNDetailID,
+                        grn.GRNID,
+                        grn.GRNNumber,
+                        grn.GRNDate,
                         grd.ItemID,
+                        grd.UnitID,
                         ISNULL(grd.AcceptedQty, grd.ReceivedQty) AS AcceptedQty,
                         grd.UnitCost,
-                        grn.WarehouseID
+                        grn.WarehouseID,
+                        NULLIF(LTRIM(RTRIM(grd.BatchNumber)), N'') AS BatchNumber,
+                        grd.ExpiryDate,
+                        grd.ManufactureDate
                       FROM dbo.GoodsReceiptDetails grd
                       INNER JOIN dbo.GoodsReceiptNotes grn ON grd.GRNID = grn.GRNID
                       WHERE grd.GRNID = @ID
-                        AND ISNULL(grd.AcceptedQty, grd.ReceivedQty) > 0",
+                        AND ISNULL(grd.AcceptedQty, grd.ReceivedQty) > 0
+                      ORDER BY grd.GRNDetailID",
                     new { ID = grnId }, transaction);
 
                 foreach (var d in details)
@@ -614,13 +679,35 @@ namespace YKCoatings.Services
                     if (d.UnitCost > 0)
                     {
                         await connection.ExecuteAsync(
-                            "EXEC dbo.sp_UpdateItemCostAfterGRN @ItemID, @ReceivedQty, @UnitCost, @WarehouseID",
+                            @"EXEC dbo.sp_UpdateItemCostAfterGRN
+                                  @ItemID = @ItemID,
+                                  @ReceivedQty = @ReceivedQty,
+                                  @UnitCost = @UnitCost,
+                                  @WarehouseID = @WarehouseID,
+                                  @GRNID = @GRNID,
+                                  @GRNDetailID = @GRNDetailID,
+                                  @GRNNumber = @GRNNumber,
+                                  @GRNDate = @GRNDate,
+                                  @UnitID = @UnitID,
+                                  @BatchNumber = @BatchNumber,
+                                  @ExpiryDate = @ExpiryDate,
+                                  @ManufactureDate = @ManufactureDate,
+                                  @UserID = @UserID",
                             new
                             {
                                 d.ItemID,
                                 ReceivedQty = d.AcceptedQty,
                                 d.UnitCost,
-                                d.WarehouseID
+                                d.WarehouseID,
+                                d.GRNID,
+                                d.GRNDetailID,
+                                d.GRNNumber,
+                                GRNDate = d.GRNDate.Date,
+                                d.UnitID,
+                                d.BatchNumber,
+                                ExpiryDate = d.ExpiryDate?.Date,
+                                ManufactureDate = d.ManufactureDate?.Date,
+                                UserID = userId
                             }, transaction);
                     }
                 }
@@ -629,12 +716,25 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after goods-receipt approval failed for GRN {GRNID}.",
+                        grnId);
+                }
                 throw;
             }
 
             // Complete pending QC/approval notifications before creating the unread result message.
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a goods receipt.");
+            }
 
             try
             {
@@ -656,7 +756,10 @@ namespace YKCoatings.Services
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a goods receipt.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "GoodsReceiptNotes", grnId.ToString(),
                 moduleName: "SCR_GRN",
@@ -668,6 +771,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task CancelAsync(int grnId, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية إلغاء إذن الاستلام.");
             using var connection = CreateConnection();
 
             var info = await connection.QueryFirstOrDefaultAsync<(string GRNNumber, int GRNStatus)>(
@@ -691,7 +795,14 @@ namespace YKCoatings.Services
                   WHERE GRNID = @ID",
                 new { ID = grnId, UserID = userId });
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after cancelling a goods receipt.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "GoodsReceiptNotes", grnId.ToString(),
                 moduleName: "SCR_GRN",
@@ -703,6 +814,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteReceiptAsync(int grnId, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أذونات الاستلام.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -737,7 +849,13 @@ namespace YKCoatings.Services
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after goods-receipt deletion failed for GRN {GRNID}.",
+                        grnId);
+                }
                 return (false, ex.Message);
             }
         }
@@ -747,6 +865,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<GoodsReceiptListDto> receipts, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير أذونات الاستلام.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("أذونات الاستلام");
             ws.RightToLeft = true;
@@ -811,6 +930,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateReportHtmlAsync(int grnId, int userId)
         {
+            await RequireGoodsReceiptPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة أذونات الاستلام.");
             var header = await GetReceiptByIdAsync(grnId);
             if (header == null) return "<h3>إذن الاستلام غير موجود</h3>";
 
@@ -981,6 +1101,7 @@ tr:nth-child(even){{background:#f8fafc}}
 // ==========================================
 public async Task RequestInspectionAsync(int grnId, int userId)
 {
+    await RequireGoodsReceiptPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية إرسال إذن الاستلام للفحص.");
     using var connection = CreateConnection();
 
     var info = await connection.QueryFirstOrDefaultAsync<(string GRNNumber, int GRNStatus)>(
@@ -1018,7 +1139,10 @@ public async Task RequestInspectionAsync(int grnId, int userId)
                 createdBy: userId);
         }
     }
-    catch { }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not create quality-inspection notifications for a goods receipt.");
+    }
 
     await _audit.WriteAuditLogAsync(userId, 2, "GoodsReceiptNotes", grnId.ToString(),
         moduleName: "SCR_GRN",
@@ -1030,6 +1154,7 @@ public async Task RequestInspectionAsync(int grnId, int userId)
 // ==========================================
 public async Task RequestApprovalAsync(int grnId, int userId)
 {
+    await RequireGoodsReceiptPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية إرسال إذن الاستلام للاعتماد.");
     using var connection = CreateConnection();
 
     var info = await connection.QueryFirstOrDefaultAsync<(string GRNNumber, int GRNStatus, int InspectionStatus)>(
@@ -1040,7 +1165,14 @@ public async Task RequestApprovalAsync(int grnId, int userId)
     if (info.GRNStatus != 1) return;
 
     // QC-stage notifications are complete once the receipt is routed for approval.
-    try { await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId); } catch { }
+    try
+    {
+        await _notif.MarkRelatedAsActionedAsync("SCR_GRN", grnId);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not complete QC notifications when routing a goods receipt for approval.");
+    }
 
     try
     {
@@ -1062,7 +1194,10 @@ public async Task RequestApprovalAsync(int grnId, int userId)
             relatedRecordId: grnId,
             createdBy: userId);
     }
-    catch { }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Could not create the approval notification for a goods receipt.");
+    }
 
     await _audit.WriteAuditLogAsync(userId, 2, "GoodsReceiptNotes", grnId.ToString(),
         moduleName: "SCR_GRN",

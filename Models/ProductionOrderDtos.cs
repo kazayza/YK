@@ -99,6 +99,10 @@
         public string? Notes { get; set; }
         public int? ApprovedBy { get; set; }
         public DateTime? ApprovedDate { get; set; }
+
+        // UI/service selections only; chosen components are persisted by the generated material rows.
+        public System.Collections.Generic.List<int>? SelectedOptionalBOMDetailIDs { get; set; }
+        public System.Collections.Generic.List<int>? SelectedSubstituteBOMDetailIDs { get; set; }
     }
 
     // ==========================================
@@ -134,6 +138,12 @@
         public string LineStatusName { get; set; } = "";
 
         public int? BOMDetailID { get; set; }
+        public int? BOMItemID { get; set; }
+        public string? BOMItemCode { get; set; }
+        public string? BOMItemName { get; set; }
+        public bool IsOptional { get; set; }
+        public int? SubstituteItemID { get; set; }
+        public bool IsSubstitute => BOMItemID.HasValue && ItemID != BOMItemID.Value;
         public string? Notes { get; set; }
 
         // نسبة الصرف
@@ -148,6 +158,45 @@
         public string AvailabilityClass =>
             AvailableStock >= RequiredQty ? "avail-ok" :
             AvailableStock > 0 ? "avail-partial" : "avail-no";
+    }
+
+    // ==========================================
+    // مكوّن اختياري لاختياره على مستوى أمر التصنيع
+    // ==========================================
+    public class ProductionOrderOptionalComponentDto
+    {
+        public int BOMDetailID { get; set; }
+        public int ItemID { get; set; }
+        public string ItemCode { get; set; } = "";
+        public string ItemName { get; set; } = "";
+        public int UnitID { get; set; }
+        public string UnitName { get; set; } = "";
+        public decimal Quantity { get; set; }
+        public decimal WastePercent { get; set; }
+    }
+
+    // ==========================================
+    // اختيار بديل BOM على مستوى أمر التصنيع
+    // ==========================================
+    public class ProductionOrderSubstituteComponentDto
+    {
+        public int BOMDetailID { get; set; }
+        public int ItemID { get; set; }
+        public string ItemCode { get; set; } = "";
+        public string ItemName { get; set; } = "";
+        public int? SubstituteItemID { get; set; }
+        public string? SubstituteItemCode { get; set; }
+        public string? SubstituteItemName { get; set; }
+        public int? SelectedItemID { get; set; }
+        public string? SelectedItemCode { get; set; }
+        public string? SelectedItemName { get; set; }
+        public bool IsStaleSelection { get; set; }
+        public int UnitID { get; set; }
+        public string UnitName { get; set; } = "";
+        public decimal Quantity { get; set; }
+        public decimal WastePercent { get; set; }
+        public bool IsOptional { get; set; }
+        public bool IsCompatible { get; set; }
     }
 
     // ==========================================

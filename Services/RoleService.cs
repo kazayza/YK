@@ -5,13 +5,28 @@ namespace YKCoatings.Services
 {
     public class RoleService : BaseDbService
     {
-        public RoleService(IConfiguration configuration) : base(configuration) { }
+        private const string ModuleCode = "SCR_ROLES";
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<RoleService> _logger;
+
+        public RoleService(
+            IConfiguration configuration,
+            ModuleAuthorizationService authorization,
+            ILogger<RoleService> logger) : base(configuration)
+        {
+            _authorization = authorization;
+            _logger = logger;
+        }
+
+        private Task RequireCurrentRolePermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ══════════════════════════════════════
         // 1) جلب قائمة الأدوار مع الإحصائيات
         // ══════════════════════════════════════
         public async Task<List<RoleListDto>> GetAllAsync(string? searchText = null)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الأدوار.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -63,6 +78,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<RoleEditDto?> GetByIdAsync(int roleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية تعديل الأدوار.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -85,6 +101,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<int> CreateAsync(RoleEditDto dto)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إضافة الأدوار.");
             using var connection = CreateConnection();
 
             // التحقق من عدم تكرار الكود
@@ -130,6 +147,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<bool> UpdateAsync(RoleEditDto dto)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية تعديل الأدوار.");
             using var connection = CreateConnection();
 
             // التحقق من عدم تكرار الكود مع دور آخر
@@ -167,6 +185,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<bool> DeleteAsync(int roleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanDelete, "ليس لديك صلاحية حذف الأدوار.");
             using var connection = CreateConnection();
 
             // التحقق من أن الدور ليس نظامي
@@ -206,6 +225,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<bool> ToggleActiveAsync(int roleId, bool isActive)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية تفعيل أو تعطيل الأدوار.");
             using var connection = CreateConnection();
 
             // حماية الدور النظامي من التعطيل
@@ -228,6 +248,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<List<RolePermissionEditDto>> GetPermissionsAsync(int roleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية عرض أو تعديل صلاحيات الأدوار.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -265,6 +286,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task SavePermissionsAsync(int roleId, List<RolePermissionEditDto> permissions)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية حفظ صلاحيات الأدوار.");
             using var connection = CreateConnection();
             using var transaction = connection.BeginTransaction();
 
@@ -310,7 +332,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while {Operation} for role {RoleID} with {PermissionCount} entries.",
+                        "saving role permissions", roleId, permissions.Count);
+                }
                 throw;
             }
         }
@@ -320,6 +348,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task CopyPermissionsAsync(int sourceRoleId, int targetRoleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية نسخ صلاحيات الأدوار.");
             using var connection = CreateConnection();
             using var transaction = connection.BeginTransaction();
 
@@ -351,7 +380,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while {Operation} from role {SourceRoleID} to role {TargetRoleID}.",
+                        "copying role permissions", sourceRoleId, targetRoleId);
+                }
                 throw;
             }
         }
@@ -361,6 +396,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<List<LookupDto>> GetRolesForCopyAsync(int excludeRoleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية عرض الأدوار للنسخ.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -381,6 +417,7 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         public async Task<bool> IsSystemRoleAsync(int roleId)
         {
+            await RequireCurrentRolePermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الأدوار.");
             using var connection = CreateConnection();
 
             var isSystem = await connection.QueryFirstOrDefaultAsync<bool>(

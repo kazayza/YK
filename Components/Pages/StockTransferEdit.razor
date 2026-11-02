@@ -48,8 +48,8 @@ else
                 <div class="form-grid-luxury c4">
                     <div class="f-field-luxury"><label class="f-label-luxury">الرقم</label><input type="text" class="f-input-luxury readonly" value="@(header.TransferNumber ?? "تلقائي")" disabled /></div>
                     <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.TransferDate" disabled="@isReadOnly" /></div>
-                    <div class="f-field-luxury"><label class="f-label-luxury required">من مخزن</label><select class="f-input-luxury" @bind="header.FromWarehouseID" @bind:after="OnFromWarehouseChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
-                    <div class="f-field-luxury"><label class="f-label-luxury required">إلى مخزن</label><select class="f-input-luxury" @bind="header.ToWarehouseID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">من مخزن</label><select class="f-input-luxury" @bind="header.FromWarehouseID" @bind:after="OnFromWarehouseChanged" disabled="@(isReadOnly || details.Any())"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">إلى مخزن</label><select class="f-input-luxury" @bind="header.ToWarehouseID" disabled="@(isReadOnly || details.Any())"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
                     <div class="f-field-luxury"><label class="f-label-luxury">الطالب</label><select class="f-input-luxury" @bind="header.RequestedBy" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
                     <div class="f-field-luxury c3"><label class="f-label-luxury">السبب / الملاحظات</label><input type="text" class="f-input-luxury" @bind="header.TransferReason" disabled="@isReadOnly" placeholder="سبب التحويل..." /></div>
                 </div>
@@ -71,9 +71,9 @@ else
                         <div class="line-form-luxury"><div class="ml-gold-line"></div><div class="line-form-head-luxury"><h4>إضافة صنف</h4><button class="btn-close-x-luxury" @onclick="() => showLineForm = false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
                             <div class="form-grid-luxury c3">
                                 <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@(warehouseItems ?? allItems)" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة</label><select class="f-input-luxury" @bind="editLine.UnitID"><option value="0">--</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة الأساسية</label><input type="text" class="f-input-luxury readonly" value="@(units?.FirstOrDefault(u => u.Id == editLine.UnitID)?.Name ?? "اختر الصنف أولًا")" disabled /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="editLine.Quantity" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">الباتش</label><input type="text" class="f-input-luxury" @bind="editLine.BatchNumber" /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury">رقم الباتش بالمصدر</label><input type="text" class="f-input-luxury" @bind="editLine.BatchNumber" maxlength="100" placeholder="رقم باتش موجود بالمخزن المصدر" /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">الصلاحية</label><input type="date" class="f-input-luxury" @bind="editLine.ExpiryDate" /></div>
                             </div>
                             @if (!string.IsNullOrEmpty(lineMsg)){<div class="form-msg-luxury @(lineMsgOk?"ok":"err")">@lineMsg</div>}
@@ -85,7 +85,7 @@ else
 
             @if (!isViewMode && !canApprove)
             {
-                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly){<button class="btn-luxury btn-primary-luxury" @onclick="SaveTransfer" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ" : "حفظ التعديلات")</button>}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
+                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly && (isNewMode ? permissions.CanAdd : permissions.CanEdit)){<button class="btn-luxury btn-primary-luxury" @onclick="SaveTransfer" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ" : "حفظ التعديلات")</button>}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
             }
         }
     </div>

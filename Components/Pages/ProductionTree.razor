@@ -32,9 +32,12 @@ else
         <section class="tree-selector-card">
             <div class="selector-heading">
                 <h2>اختر وصفة المنتج الجذر</h2>
-                <p>@approvedBoms.Count وصفة نشطة ومعتمدة متاحة حسب صلاحية SCR_BOM.</p>
+                <p>@approvedBoms.Count وصفة نشطة ومعتمدة سارية في @asOfDate.ToString("dd/MM/yyyy").</p>
             </div>
             <div class="selector-row">
+                <label class="as-of-date-label">تاريخ السريان
+                    <input type="date" class="as-of-date" @bind="asOfDate" @bind:after="OnAsOfDateChanged" disabled="@isLoading" />
+                </label>
                 <select class="tree-select" value="@selectedBomId" @onchange="OnBomSelected" disabled="@isLoading">
                     <option value="0">اختر المنتج والوصفة</option>
                     @foreach (var bom in approvedBoms)
@@ -89,6 +92,7 @@ else
     private List<ProductionTreeBOMOptionDto> approvedBoms = new();
     private ProductionTreeResult? tree;
     private int selectedBomId;
+    private DateTime asOfDate = DateTime.Today;
     private bool isLoading;
     private int expandSignal;
     private string message = "";
@@ -115,11 +119,13 @@ else
         message = "";
         try
         {
-            approvedBoms = await ProductionTreeService.GetApprovedActiveBomsAsync(UserSession.UserID);
+            approvedBoms = await ProductionTreeService.GetApprovedActiveBomsAsync(UserSession.UserID, asOfDate);
             if (selectedBomId > 0 && !approvedBoms.Any(x => x.BOMID == selectedBomId))
             {
                 selectedBomId = 0;
                 tree = null;
+                message = "الوصفة المحددة غير سارية في التاريخ المختار؛ اختر وصفة أخرى.";
+                messageIsError = false;
             }
         }
         catch (Exception ex)
@@ -131,6 +137,13 @@ else
         {
             isLoading = false;
         }
+    }
+
+    private async Task OnAsOfDateChanged()
+    {
+        await LoadOptions();
+        if (selectedBomId > 0)
+            await LoadSelectedTree();
     }
 
     private async Task OnBomSelected(ChangeEventArgs args)
@@ -158,7 +171,7 @@ else
         messageIsError = false;
         try
         {
-            tree = await ProductionTreeService.GetTreeAsync(selectedBomId, UserSession.UserID);
+            tree = await ProductionTreeService.GetTreeAsync(selectedBomId, UserSession.UserID, asOfDate);
             expandSignal++;
         }
         catch (Exception ex)
@@ -197,6 +210,8 @@ else
 .selector-heading h2,.tree-view-heading h2{font-size:.95rem;font-weight:900;color:#182131;margin:0}
 .selector-heading p,.tree-view-heading p{font-size:.72rem;color:#737d8c;margin:0}
 .selector-row{display:flex;gap:10px;align-items:center}
+.as-of-date-label{display:flex;align-items:center;gap:8px;white-space:nowrap;color:#5f6570;font-size:.72rem;font-weight:800}
+.as-of-date{height:42px;padding:0 10px;border:1px solid #ded7c5;border-radius:10px;background:#fff;color:#182131;font:700 .76rem 'Tajawal','Segoe UI',sans-serif}
 .tree-select{flex:1;min-width:0;height:42px;padding:0 12px;border:1px solid #ded7c5;border-radius:10px;background:#fff;font:700 .76rem 'Tajawal','Segoe UI',sans-serif;color:#182131}
 .tree-refresh{background:#111827;color:#e7d494}
 .tree-message{padding:11px 14px;border-radius:10px;margin-bottom:14px;font-size:.76rem}
@@ -214,4 +229,5 @@ else
 .tree-content{padding:5px 0}
 .tree-denied{direction:rtl;max-width:600px;margin:50px auto;padding:24px;background:#101725;color:#f5e6c8;border:1px solid #d4af37;border-radius:16px;text-align:center}
 .tree-denied button{padding:9px 14px;border:1px solid #d4af37;border-radius:9px;background:#d4af37;color:#111;font-weight:800}
+@@media(max-width:720px){.selector-heading{align-items:flex-start;flex-direction:column}.selector-row{align-items:stretch;flex-direction:column}.as-of-date-label{justify-content:space-between}.as-of-date{flex:1}}
 </style>

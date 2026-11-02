@@ -8,11 +8,20 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<JournalEntryView> Logger
 
 <PageTitle>عرض قيد محاسبي - @Id</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (journalPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@journalPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryJournalPermissionsAsync" disabled="@isLoadingJournalPermissions">إعادة المحاولة</button></div>
+}
+else if (journalPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@journalPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToJournalViewLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (!permissionsChecked)
 {<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحية عرض القيد...</p></div>}
 else if (!canViewJournal)
@@ -42,12 +51,26 @@ else
         </div>
     </div>
 
-    @if (isLoading)
-    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل القيد...</p></div>}
-    else if (journal==null)
-    {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>القيد غير موجود</h4><p class="empty-sub">ID=@Id غير موجود أو تم حذفه</p><button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/journal-entries")' style="margin-top:12px">رجوع</button></div>}
-    else
+    @if (journalReadFailed)
     {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <span>تعذر تحميل بيانات القيد.@(journal != null ? " المعروض آخر تحميل ناجح." : " لم تُحمّل بيانات سابقة.")</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryJournalLoadAsync" disabled="@isLoading">
+                @(isLoading ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل القيد")
+            </button>
+        </div>
+    }
+
+    @if (isLoading && journal == null)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل القيد...</p></div>}
+    else if (journal == null && !journalReadFailed)
+    {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>القيد غير موجود</h4><p class="empty-sub">ID=@Id غير موجود أو تم حذفه</p><button class="btn-luxury btn-ghost-luxury" @onclick='()=>Navigation.NavigateTo("/journal-entries")' style="margin-top:12px">رجوع</button></div>}
+    else if (journal != null)
+    {
+        @if (isLoading)
+        {
+            <div class="msg-luxury" role="status">جاري تحديث بيانات القيد...</div>
+        }
         <div class="form-card-luxury">
             <div class="fc-gold-line"></div>
             <div class="fc-header"><h3><svg class="fc-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>بيانات القيد — @journal.JournalNumber</h3>
@@ -192,6 +215,11 @@ else
     [Parameter] public int Id { get; set; }
     private JournalEntryDto? journal = null;
     private bool isLoading = true;
+    private bool journalReadFailed;
+    private bool isLoadingJournalPermissions;
+    private bool journalPermissionsLoadFailed, journalPermissionsLoadDenied;
+    private int journalPermissionsLoadVersion;
+    private string journalPermissionsLoadError = string.Empty;
     private bool permissionsChecked = false;
     private bool canViewJournal = false;
     private bool canEditJournal = false;
@@ -209,28 +237,124 @@ else
             return;
         }
 
+        if (await LoadJournalPermissionsAsync() && canViewJournal)
+            await LoadJournalAsync();
+        else
+            isLoading = false;
+    }
+
+    private async Task<bool> LoadJournalPermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+        if (isLoadingJournalPermissions) return false;
+
+        var requestVersion = ++journalPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isLoadingJournalPermissions = true;
+        permissionsChecked = false;
+        canViewJournal = false;
+        canEditJournal = false;
+        canPostJournal = false;
+        journalPermissionsLoadFailed = false;
+        journalPermissionsLoadDenied = false;
+        journalPermissionsLoadError = string.Empty;
+        StateHasChanged();
+
         try
         {
             if (!PermissionService.IsLoaded)
-                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                await PermissionService.LoadPermissionsAsync(userId);
 
+            if (!IsCurrentJournalPermissionsRequest(requestVersion, userId, pageUri)) return false;
             canViewJournal = PermissionService.CanView("SCR_JV");
             canEditJournal = PermissionService.CanEdit("SCR_JV");
             canPostJournal = PermissionService.CanPost("SCR_JV");
             permissionsChecked = true;
-
-            if (canViewJournal)
-                journal = await AccountingService.GetJournalByIdAsync(Id);
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading journal-view page permissions for user {UserID}.", userId);
+            if (!IsCurrentJournalPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            canViewJournal = false;
+            canEditJournal = false;
+            canPostJournal = false;
+            journalPermissionsLoadDenied = true;
+            journalPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
         }
         catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Failed to load journal-view page permissions for user {UserID}.", userId);
+            if (!IsCurrentJournalPermissionsRequest(requestVersion, userId, pageUri)) return false;
             canViewJournal = false;
-            toast = ex.Message;
-            toastOk = false;
+            canEditJournal = false;
+            canPostJournal = false;
+            journalPermissionsLoadFailed = true;
+            journalPermissionsLoadError = "تعذر تحميل صلاحيات عرض القيد. أعد المحاولة.";
+            return false;
         }
         finally
         {
-            permissionsChecked = true;
+            if (requestVersion == journalPermissionsLoadVersion)
+            {
+                isLoadingJournalPermissions = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentJournalPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == journalPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryJournalPermissionsAsync()
+    {
+        if (isLoadingJournalPermissions || !journalPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadJournalPermissionsAsync() && canViewJournal)
+            await LoadJournalAsync();
+        else
+            isLoading = false;
+    }
+
+    private void GoToJournalViewLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private Task RetryJournalLoadAsync() => LoadJournalAsync();
+
+    private async Task LoadJournalAsync()
+    {
+        isLoading = true;
+        journalReadFailed = false;
+        StateHasChanged();
+        try
+        {
+            var loadedJournal = await AccountingService.GetJournalByIdAsync(Id);
+            journal = loadedJournal;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            journal = null;
+            canViewJournal = false;
+            journalReadFailed = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load journal {JournalID} for viewing.", Id);
+            journalReadFailed = true;
+        }
+        finally
+        {
             isLoading = false;
         }
     }
@@ -267,13 +391,20 @@ else
 
     private async Task PostJournal()
     {
-        if (journal==null) return;
+        if (journal == null) return;
         try
         {
             await AccountingService.PostJournalAsync(journal.JournalID, UserSession.UserID);
-            toast = "تم ترحيل القيد "; toastOk = true;
-            journal = await AccountingService.GetJournalByIdAsync(Id);
         }
-        catch (Exception ex) { toast = ex.Message; toastOk = false; }
+        catch (Exception ex)
+        {
+            toast = ex.Message;
+            toastOk = false;
+            return;
+        }
+
+        toast = "تم ترحيل القيد ";
+        toastOk = true;
+        await LoadJournalAsync();
     }
 }

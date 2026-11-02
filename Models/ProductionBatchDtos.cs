@@ -125,6 +125,9 @@
         public bool QualityCheck { get; set; }
         public string? QualityResult { get; set; }
         public string? Notes { get; set; }
+        public string? Instructions { get; set; }
+        public string? QualityCheckNotes { get; set; }
+        public decimal? PlannedDuration { get; set; }
     }
 
     // ==========================================

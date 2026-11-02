@@ -11,8 +11,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SalesQuotationEdit> Logger
 
-<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -62,7 +63,14 @@ else
         }
         else if (!string.IsNullOrWhiteSpace(loadError))
         {
-            <div class="quotation-error-banner" role="alert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg><span>@loadError</span></div>
+            <div class="quotation-error-banner" role="alert">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+                <span>@loadError</span>
+                @if (isPageLoadFailure)
+                {
+                    <button type="button" class="quotation-btn secondary" @onclick="RetryLoadQuotationPageAsync" disabled="@isLoading">إعادة المحاولة</button>
+                }
+            </div>
         }
         else
         {
@@ -88,7 +96,19 @@ else
                     <div class="quotation-field"><label>رقم عرض السعر</label><input class="quotation-input ltr" value="@(header.QuotationNumber ?? "سيُنشأ عند الحفظ")" readonly /></div>
                     <div class="quotation-field"><label class="required">تاريخ العرض</label><input class="quotation-input" type="date" @bind="header.QuotationDate" disabled="@(!CanModify)" /></div>
                     <div class="quotation-field"><label>صالح حتى</label><input class="quotation-input" type="date" @bind="header.ValidUntilDate" disabled="@(!CanModify)" /></div>
-                    <div class="quotation-field"><label>مندوب المبيعات</label><select class="quotation-input" @bind="salesRepValue" disabled="@(!CanModify)"><option value="0">بدون تعيين</option>@foreach (var representative in salesReps){<option value="@representative.Id">@representative.Name</option>}</select></div>
+                    <div class="quotation-field">
+                        <label>مندوب المبيعات</label>
+                        <select class="quotation-input" @bind="salesRepValue" disabled="@(!CanModify)"><option value="0">بدون تعيين</option>@foreach (var representative in salesReps){<option value="@representative.Id">@representative.Name</option>}</select>
+                        @if (!string.IsNullOrWhiteSpace(salesRepLookupWarning))
+                        {
+                            <div class="quotation-inline-error" role="alert">
+                                @salesRepLookupWarning
+                                <button type="button" class="quotation-btn secondary" @onclick="RetrySalesRepLookupAsync" disabled="@isRefreshingSalesReps">
+                                    @(isRefreshingSalesReps ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل القائمة")
+                                </button>
+                            </div>
+                        }
+                    </div>
                     <div class="quotation-field wide"><label>ملاحظات وشروط العرض</label><textarea class="quotation-input quotation-textarea" @bind="header.Notes" disabled="@(!CanModify)" maxlength="2000" placeholder="اكتب أي ملاحظات أو شروط تخص هذا العرض..."></textarea></div>
                 </div>
             </section>
@@ -410,6 +430,8 @@ else
     private List<SearchableItem> saleItems = new();
     private List<LookupDto> units = new();
     private List<LookupDto> salesReps = new();
+    private string salesRepLookupWarning = string.Empty;
+    private bool isRefreshingSalesReps = false;
     private SalesQuotationDetailDto editLine = new();
     private int salesRepValue
     {
@@ -418,6 +440,7 @@ else
     }
     private string pageTitle = "عرض سعر جديد";
     private string loadError = string.Empty;
+    private bool isPageLoadFailure = false;
     private string lineError = string.Empty;
     private string rejectReason = string.Empty;
     private string rejectError = string.Empty;
@@ -500,18 +523,33 @@ else
             return;
         }
 
+        await LoadQuotationPageDataAsync();
+    }
+
+    private async Task LoadQuotationPageDataAsync()
+    {
+        isLoading = true;
+        loadError = string.Empty;
+        isPageLoadFailure = false;
+
         try
         {
             await LoadLookupsAsync();
             if (!isNewMode)
             {
-                header = await QuotationService.GetQuotationByIdAsync(QuotationId)
-                    ?? throw new InvalidOperationException("عرض السعر غير موجود");
+                var loadedHeader = await QuotationService.GetQuotationByIdAsync(QuotationId);
+                if (loadedHeader == null)
+                {
+                    loadError = "عرض السعر غير موجود";
+                    return;
+                }
+
+                header = loadedHeader;
                 details = await QuotationService.GetQuotationDetailsAsync(QuotationId);
                 pageTitle = isViewMode ? "عرض تفاصيل عرض السعر"
-                    : header.QuotationStatus == 2 && permissions.CanApprove ? "مراجعة واعتماد عرض السعر"
-                    : header.QuotationStatus == 1 && permissions.CanEdit ? "تعديل عرض السعر"
-                    : "تفاصيل عرض السعر";
+                    : header.QuotationStatus == 2 && permissions?.CanApprove == true ? "مراجعة واعتماد عرض السعر"
+                    : header.QuotationStatus == 1 && permissions?.CanEdit == true ? "تعديل عرض السعر"
+                    : "تفاصيل العرض";
             }
             else
             {
@@ -524,7 +562,10 @@ else
         }
         catch (Exception ex)
         {
-            loadError = ex.Message;
+            Logger.LogWarning(ex,
+                "Failed to load sales quotation page data.");
+            loadError = "تعذر تحميل بيانات عرض السعر. أعد المحاولة.";
+            isPageLoadFailure = true;
         }
         finally
         {
@@ -532,13 +573,48 @@ else
         }
     }
 
+    private async Task RetryLoadQuotationPageAsync()
+    {
+        if (isLoading) return;
+        await LoadQuotationPageDataAsync();
+    }
+
     private async Task LoadLookupsAsync()
     {
         customers = await LookupService.GetCustomersSearchableAsync();
         saleItems = await LookupService.GetItemsForSaleSearchableAsync();
         units = await LookupService.GetUnitsAsync();
-        try { salesReps = await LookupService.GetSalesRepsAsync(); }
-        catch { salesReps = new List<LookupDto>(); }
+        await LoadSalesRepLookupAsync();
+    }
+
+    private async Task LoadSalesRepLookupAsync()
+    {
+        salesRepLookupWarning = string.Empty;
+        try
+        {
+            salesReps = await LookupService.GetSalesRepsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load salesperson options for the sales quotation.");
+            salesReps = new List<LookupDto>();
+            salesRepLookupWarning = "تعذر تحميل قائمة مندوبي المبيعات. أعد المحاولة.";
+        }
+    }
+
+    private async Task RetrySalesRepLookupAsync()
+    {
+        if (isRefreshingSalesReps) return;
+        isRefreshingSalesReps = true;
+        try
+        {
+            await LoadSalesRepLookupAsync();
+        }
+        finally
+        {
+            isRefreshingSalesReps = false;
+        }
     }
 
     private Task OnCustomerSelected(SearchableItem? item)

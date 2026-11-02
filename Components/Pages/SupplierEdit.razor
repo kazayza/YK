@@ -13,8 +13,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SupplierEdit> Logger
 
-<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
@@ -49,7 +50,7 @@ else
                         <span class="rating-chip-luxury">@for(int i = 0; i < header.Rating; i++){<i class=bi-star-fill></i>}</span>
                     }
                     <span class="lh-badge"><span class="lh-dot"></span>@(isNewMode?"جديد":isViewMode?"عرض":"تعديل")</span>
-                    @if (permissions.CanPrint && SupplierId > 0)
+                    @if (permissions.CanPrint && SupplierId > 0 && supplierRecordLoaded)
                     {
                         <button class="btn-luxury btn-ghost-dark" @onclick="PrintCard" disabled="@isPrintLoading">@if(isPrintLoading){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>}طباعة</button>
                     }
@@ -59,8 +60,24 @@ else
 
         @if (isLoading)
         {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل بيانات المورد...</p></div>}
+        else if (SupplierId > 0 && isSupplierRecordLoading && !supplierRecordLoaded)
+        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل سجل المورد...</p></div>}
+        else if (SupplierId > 0 && supplierRecordLoadDenied && !supplierRecordLoaded)
+        {<div class="no-access-luxury"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية قراءة بيانات المورد</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة للقائمة</button></div>}
+        else if (SupplierId > 0 && supplierRecordNotFound)
+        {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg></div><h4>المورد غير موجود</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة للقائمة</button></div>}
+        else if (SupplierId > 0 && supplierRecordLoadFailed && !supplierRecordLoaded)
+        {<div class="loading-luxury"><div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>تعذر تحميل بيانات المورد. يرجى إعادة المحاولة.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierRecordAsync" disabled="@isSupplierRecordLoading">إعادة المحاولة</button></div></div>}
         else
         {
+            @if (SupplierId > 0 && supplierRecordLoaded && isSupplierRecordLoading)
+            {
+                <div class="field-hint" role="status">جارٍ تحديث بيانات المورد...</div>
+            }
+            else if (SupplierId > 0 && supplierRecordLoaded && supplierRecordLoadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px"><span>تعذر تحديث بيانات المورد. المعروض آخر سجل ناجح.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierRecordAsync" disabled="@isSupplierRecordLoading">إعادة المحاولة</button></div>
+            }
             <div class="mudtabs-luxury">
                 <div class="mudtabs-header">
                     <button class="mudtab-btn @(activeTab==0?"active":"")" @onclick="() => SelectTab(0)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>البيانات الأساسية @if(supplierErrors.Any()){<span class="mt-required"></span>}</button>
@@ -69,9 +86,9 @@ else
                     <button class="mudtab-btn @(activeTab==3?"active":"")" @onclick="() => SelectTab(3)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>البنكية والملاحظات</button>
                     @if (SupplierId > 0)
                     {
-                        <button class="mudtab-btn @(activeTab==4?"active":"")" @onclick="() => SelectTab(4)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>جهات الاتصال <span class="mt-count">@contacts.Count</span></button>
-                        <button class="mudtab-btn @(activeTab==5?"active":"")" @onclick="() => SelectTab(5)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>الأصناف <span class="mt-count gold">@supplierItems.Count</span></button>
-                        <button class="mudtab-btn @(activeTab==6?"active":"")" @onclick="() => SelectTab(6)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>كشف الحساب <span class="mt-count">@statement.Count</span></button>
+                        <button class="mudtab-btn @(activeTab==4?"active":"")" @onclick="() => SelectTab(4)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>جهات الاتصال <span class="mt-count">@SupplierContactsCountText</span></button>
+                        <button class="mudtab-btn @(activeTab==5?"active":"")" @onclick="() => SelectTab(5)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>الأصناف <span class="mt-count gold">@SupplierItemsCountText</span></button>
+                        <button class="mudtab-btn @(activeTab==6?"active":"")" @onclick="() => SelectTab(6)"><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>كشف الحساب <span class="mt-count">@SupplierStatementCountText</span></button>
                     }
                     <div class="mudtab-indicator" style="--tab:@activeTab;--total:@(SupplierId>0?7:4)"></div>
                 </div>
@@ -119,8 +136,88 @@ else
                             <div class="form-grid cols-4">
                                 <div class="form-field"><label class="field-label">الرقم الضريبي</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg><input type="text" class="field-input" @bind="header.TaxNumber" disabled="@isReadOnly" dir="ltr" /></div></div>
                                 <div class="form-field"><label class="field-label">السجل التجاري</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/></svg><input type="text" class="field-input" @bind="header.CommercialRegister" disabled="@isReadOnly" dir="ltr" /></div></div>
-                                <div class="form-field"><label class="field-label">شروط الدفع</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><select class="field-select" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(paymentTerms!=null){@foreach(var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                                <div class="form-field"><label class="field-label">العملة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><select class="field-select" @bind="header.CurrencyID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(currencies!=null){@foreach(var c in currencies){<option value="@c.Id">@c.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                <div class="form-field">
+                                    <label class="field-label">شروط الدفع</label>
+                                    <div class="select-wrap">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                                        <select class="field-select" @bind="header.PaymentTermID" disabled="@(isReadOnly || isLoadingPaymentTerms || !paymentTermsLoaded || paymentTermsLoadDenied)">
+                                            <option value="0">-- اختر --</option>
+                                            @if (paymentTerms != null)
+                                            {
+                                                @foreach (var pt in paymentTerms)
+                                                {
+                                                    <option value="@pt.Id">@pt.Name</option>
+                                                }
+                                            }
+                                        </select>
+                                        <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                    </div>
+                                    @if (isLoadingPaymentTerms && paymentTermsLoaded)
+                                    {
+                                        <span class="field-hint" role="status">جارٍ تحديث شروط الدفع؛ الخيارات السابقة متاحة.</span>
+                                    }
+                                    else if (paymentTermsLoadFailed && paymentTermsLoaded)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@paymentTermsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPaymentTermsAsync" disabled="@isLoadingPaymentTerms">إعادة المحاولة</button></div>
+                                    }
+                                    @if (isLoadingPaymentTerms && !paymentTermsLoaded)
+                                    {
+                                        <span class="field-hint" role="status">جارٍ تحميل شروط الدفع...</span>
+                                    }
+                                    else if (paymentTermsLoadFailed && !paymentTermsLoaded)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@paymentTermsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPaymentTermsAsync" disabled="@isLoadingPaymentTerms">إعادة المحاولة</button></div>
+                                    }
+                                    else if (paymentTermsLoadDenied && !paymentTermsLoaded)
+                                    {
+                                        <span class="field-hint" role="status">ليس لديك صلاحية قراءة شروط الدفع.</span>
+                                    }
+                                    else if (paymentTermsLoaded && paymentTerms != null && paymentTerms.Count == 0)
+                                    {
+                                        <span class="field-hint" role="status">لا توجد شروط دفع نشطة.</span>
+                                    }
+                                </div>
+                                <div class="form-field">
+                                    <label class="field-label">العملة</label>
+                                    <div class="select-wrap">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                        <select class="field-select" @bind="header.CurrencyID" disabled="@(isReadOnly || isLoadingCurrencies || !currenciesLoaded || currenciesLoadDenied)">
+                                            <option value="0">-- اختر --</option>
+                                            @if (currencies != null)
+                                            {
+                                                @foreach (var currency in currencies)
+                                                {
+                                                    <option value="@currency.Id">@currency.Name</option>
+                                                }
+                                            }
+                                        </select>
+                                        <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                    </div>
+                                    @if (isLoadingCurrencies && currenciesLoaded)
+                                    {
+                                        <span class="field-hint" role="status">جارٍ تحديث العملات؛ الخيارات السابقة متاحة.</span>
+                                    }
+                                    else if (currenciesLoadFailed && currenciesLoaded)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@currenciesLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCurrenciesAsync" disabled="@isLoadingCurrencies">إعادة المحاولة</button></div>
+                                    }
+                                    @if (isLoadingCurrencies && !currenciesLoaded)
+                                    {
+                                        <span class="field-hint" role="status">جارٍ تحميل العملات...</span>
+                                    }
+                                    else if (currenciesLoadFailed && !currenciesLoaded)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@currenciesLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCurrenciesAsync" disabled="@isLoadingCurrencies">إعادة المحاولة</button></div>
+                                    }
+                                    else if (currenciesLoadDenied && !currenciesLoaded)
+                                    {
+                                        <span class="field-hint" role="status">ليس لديك صلاحية قراءة العملات.</span>
+                                    }
+                                    else if (currenciesLoaded && currencies != null && currencies.Count == 0)
+                                    {
+                                        <span class="field-hint" role="status">لا توجد عملات نشطة.</span>
+                                    }
+                                </div>
                             </div>
                             <div class="form-grid cols-3">
                                 <div class="form-field"><label class="field-label required">حد الائتمان</label><div class="input-with-suffix"><input type="number" class="field-input @(supplierErrors.ContainsKey(nameof(header.CreditLimit))?"error":"")" @bind="header.CreditLimit" step="0.01" disabled="@isReadOnly" /><span class="field-suffix">ج.م</span></div>@if(supplierErrors.ContainsKey(nameof(header.CreditLimit))){<span class="field-hint error">@supplierErrors[nameof(header.CreditLimit)]</span>}<span class="field-hint">الحد الأقصى للمديونية المسموح بها</span></div>
@@ -153,8 +250,31 @@ else
                     @if (activeTab == 4 && SupplierId > 0)
                     {
                         <div class="tab-panel luxury-fade">
-                            <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><h3>جهات الاتصال</h3><p>@contacts.Count جهة اتصال - @contacts.Count(c=>c.IsPrimary) رئيسي</p></div>@if(!isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddContact" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة جهة اتصال</button>}</div>
-                            @if (!contacts.Any() && !showContactForm){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا توجد جهات اتصال</h4></div>}
+                            <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><h3>جهات الاتصال</h3><p>@SupplierContactsSummaryText</p></div>@if(!isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddContact" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة جهة اتصال</button>}</div>
+                            @if (isLoadingSupplierContacts && supplierContactsLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث جهات الاتصال...</div>
+                            }
+                            else if (supplierContactsLoadFailed && supplierContactsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierContactsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierContactsAsync" disabled="@isLoadingSupplierContacts">إعادة المحاولة</button></div>
+                            }
+                            @if (isLoadingSupplierContacts && !supplierContactsLoaded)
+                            {
+                                <div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحميل جهات الاتصال...</div>
+                            }
+                            else if (supplierContactsLoadFailed && !supplierContactsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierContactsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierContactsAsync" disabled="@isLoadingSupplierContacts">إعادة المحاولة</button></div>
+                            }
+                            else if (supplierContactsLoadDenied && !supplierContactsLoaded)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-bottom:10px">ليس لديك صلاحية قراءة جهات اتصال المورد.</div>
+                            }
+                            else if (!contacts.Any() && !showContactForm)
+                            {
+                                <div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا توجد جهات اتصال</h4></div>
+                            }
                             else if (contacts.Any())
                             {
                                 <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>#</th><th>الاسم</th><th>المنصب</th><th>الهاتف</th><th>الموبايل</th><th>البريد</th><th class="th-center">رئيسي</th>@if(!isViewMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@{int cn=0;}@foreach(var c in contacts){cn++;<tr><td class="td-num">@cn</td><td class="td-name">@c.ContactName</td><td class="td-muted">@(c.JobTitle ?? "—")</td><td dir="ltr">@(c.Phone ?? "—")</td><td dir="ltr">@(c.Mobile ?? "—")</td><td dir="ltr">@(c.Email ?? "—")</td><td class="td-center">@if(c.IsPrimary){<span class="primary-badge-luxury">رئيسي</span>}</td>@if(!isViewMode){<td class="td-actions"><button class="act-btn delete" @onclick="() => ShowDeleteContact(c.ContactID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button></td>}</tr>}</tbody></table></div></div>
@@ -168,24 +288,94 @@ else
                     @if (activeTab == 5 && SupplierId > 0)
                     {
                         <div class="tab-panel luxury-fade">
-                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف المورد</h3><p>@supplierItems.Count صنف مرتبط - أسعار ومدد توريد</p></div>@if(!isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddItem" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
-                            @if (!supplierItems.Any() && !showItemForm){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أصناف مرتبطة</h4></div>}
+                            <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف المورد</h3><p>@SupplierItemsSummaryText</p></div>@if(!isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddItem" disabled="@isLoadingItems" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
+                            @if (isLoadingSupplierItems && supplierItemsLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث أصناف المورد...</div>
+                            }
+                            else if (supplierItemsLoadFailed && supplierItemsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierItemsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierItemsAsync" disabled="@isLoadingSupplierItems">إعادة المحاولة</button></div>
+                            }
+                            @if (isLoadingSupplierItems && !supplierItemsLoaded)
+                            {
+                                <div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحميل أصناف المورد...</div>
+                            }
+                            else if (supplierItemsLoadFailed && !supplierItemsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierItemsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierItemsAsync" disabled="@isLoadingSupplierItems">إعادة المحاولة</button></div>
+                            }
+                            else if (supplierItemsLoadDenied && !supplierItemsLoaded)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-bottom:10px">ليس لديك صلاحية قراءة أصناف المورد.</div>
+                            }
+                            else if (supplierItemsLoaded && !supplierItems.Any() && !showItemForm)
+                            {
+                                <div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أصناف مرتبطة</h4></div>
+                            }
                             else if (supplierItems.Any())
                             {
                                 <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>كود المورد</th><th>السعر</th><th class="th-center">أقل كمية</th><th class="th-center">مدة التوريد</th><th class="th-center">رئيسي</th>@if(!isViewMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@{int sn=0;}@foreach(var si in supplierItems){sn++;<tr><td class="td-num">@sn</td><td><span class="code-luxury">@si.ItemCode</span></td><td class="td-name">@si.ItemNameAr</td><td class="td-muted">@(si.SupplierItemCode ?? "—")</td><td><span class="amount-luxury">@si.UnitPrice.ToString("#,##0.00")</span></td><td class="td-center">@si.MinOrderQty.ToString("#,##0.##")</td><td class="td-center">@si.LeadTimeDays يوم</td><td class="td-center">@if(si.IsPrimary){<span class="primary-badge-luxury">رئيسي</span>}</td>@if(!isViewMode){<td class="td-actions"><button class="act-btn delete" @onclick="() => ShowDeleteItem(si.SupplierItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button></td>}</tr>}</tbody></table></div></div>
                             }
+                            @if (isLoadingItems && supplierItemOptionsLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث خيارات الأصناف؛ الخيارات السابقة محفوظة.</div>
+                            }
+                            else if (supplierItemOptionsLoadFailed && supplierItemOptionsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><span>@supplierItemOptionsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierItemOptionsAsync" disabled="@isLoadingItems">إعادة المحاولة</button></div>
+                            }
+                            @if (isLoadingItems && !supplierItemOptionsLoaded)
+                            {
+                                <div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحميل خيارات الأصناف...</div>
+                            }
+                            else if (supplierItemOptionsLoadFailed && !supplierItemOptionsLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><span>@supplierItemOptionsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierItemOptionsAsync" disabled="@isLoadingItems">إعادة المحاولة</button></div>
+                            }
+                            else if (supplierItemOptionsLoadDenied && !supplierItemOptionsLoaded)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-bottom:10px">ليس لديك صلاحية قراءة خيارات الأصناف.</div>
+                            }
+                            else if (supplierItemOptionsLoaded && allItems != null && allItems.Count == 0 && !showItemForm)
+                            {
+                                <div class="field-hint" role="status">لا توجد أصناف نشطة للاختيار.</div>
+                            }
                             @if (showItemForm)
                             {
-                                <div class="line-form-luxury"><div class="lf-gold-line"></div><div class="line-form-head"><h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف للمورد</h4><button class="btn-close-x" @onclick="() => showItemForm=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>@if(isLoadingItems){<div class="loading-luxury small"><div class="loader-luxury"></div>جاري تحميل الأصناف...</div>}else{<div class="form-grid cols-3"><div class="form-field"><label class="field-label required">الصنف</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select class="field-select @(itemErrors.ContainsKey(nameof(newItem.ItemID))?"error":"")" @onchange="@((ChangeEventArgs e) => { if (int.TryParse(e.Value?.ToString(), out int id)) HandleItemSelected(id); })"><option value="0">-- اختر صنف --</option>@if(allItems!=null){@foreach(var item in allItems){<option value="@item.Id" selected="@(newItem.ItemID==item.Id)">@(item.Code ?? "") - @item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>@if(itemErrors.ContainsKey(nameof(newItem.ItemID))){<span class="field-hint error">@itemErrors[nameof(newItem.ItemID)]</span>}</div><div class="form-field"><label class="field-label">كود المورد للصنف</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg><input type="text" class="field-input" @bind="newItem.SupplierItemCode" /></div></div><div class="form-field"><label class="field-label required">السعر</label><div class="input-with-suffix"><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.UnitPrice))?"error":"")" @bind="newItem.UnitPrice" step="0.01" /><span class="field-suffix">ج.م</span></div>@if(itemErrors.ContainsKey(nameof(newItem.UnitPrice))){<span class="field-hint error">@itemErrors[nameof(newItem.UnitPrice)]</span>}</div><div class="form-field"><label class="field-label">أقل كمية طلب</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.MinOrderQty))?"error":"")" @bind="newItem.MinOrderQty" step="0.01" /></div>@if(itemErrors.ContainsKey(nameof(newItem.MinOrderQty))){<span class="field-hint error">@itemErrors[nameof(newItem.MinOrderQty)]</span>}</div><div class="form-field"><label class="field-label">مدة التوريد (يوم)</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.LeadTimeDays))?"error":"")" @bind="newItem.LeadTimeDays" /></div>@if(itemErrors.ContainsKey(nameof(newItem.LeadTimeDays))){<span class="field-hint error">@itemErrors[nameof(newItem.LeadTimeDays)]</span>}</div><div class="form-field"><label class="field-label">مورد رئيسي؟</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="newItem.IsPrimary"><option value="false">لا</option><option value="true">نعم</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div></div>}<div class="line-form-btns"><button class="btn-luxury btn-primary-luxury" @onclick="SaveItem" disabled="@isLoadingItems"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg>حفظ الصنف</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showItemForm=false">إلغاء</button></div></div>
+                                <div class="line-form-luxury"><div class="lf-gold-line"></div><div class="line-form-head"><h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف للمورد</h4><button class="btn-close-x" @onclick="() => showItemForm=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>@if (supplierItemOptionsLoaded && allItems != null && allItems.Count == 0){<div class="msg-luxury msg-info" role="status" style="margin:8px 0">لا توجد أصناف نشطة للاختيار.</div>}@if(isLoadingItems){<div class="loading-luxury small"><div class="loader-luxury"></div>جاري تحميل الأصناف...</div>}else{<div class="form-grid cols-3"><div class="form-field"><label class="field-label required">الصنف</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select class="field-select @(itemErrors.ContainsKey(nameof(newItem.ItemID))?"error":"")" @onchange="@((ChangeEventArgs e) => { if (int.TryParse(e.Value?.ToString(), out int id)) HandleItemSelected(id); })"><option value="0">-- اختر صنف --</option>@if(allItems!=null){@foreach(var item in allItems){<option value="@item.Id" selected="@(newItem.ItemID==item.Id)">@(item.Code ?? "") - @item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>@if(itemErrors.ContainsKey(nameof(newItem.ItemID))){<span class="field-hint error">@itemErrors[nameof(newItem.ItemID)]</span>}</div><div class="form-field"><label class="field-label">كود المورد للصنف</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg><input type="text" class="field-input" @bind="newItem.SupplierItemCode" /></div></div><div class="form-field"><label class="field-label required">السعر</label><div class="input-with-suffix"><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.UnitPrice))?"error":"")" @bind="newItem.UnitPrice" step="0.01" /><span class="field-suffix">ج.م</span></div>@if(itemErrors.ContainsKey(nameof(newItem.UnitPrice))){<span class="field-hint error">@itemErrors[nameof(newItem.UnitPrice)]</span>}</div><div class="form-field"><label class="field-label">أقل كمية طلب</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.MinOrderQty))?"error":"")" @bind="newItem.MinOrderQty" step="0.01" /></div>@if(itemErrors.ContainsKey(nameof(newItem.MinOrderQty))){<span class="field-hint error">@itemErrors[nameof(newItem.MinOrderQty)]</span>}</div><div class="form-field"><label class="field-label">مدة التوريد (يوم)</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><input type="number" class="field-input @(itemErrors.ContainsKey(nameof(newItem.LeadTimeDays))?"error":"")" @bind="newItem.LeadTimeDays" /></div>@if(itemErrors.ContainsKey(nameof(newItem.LeadTimeDays))){<span class="field-hint error">@itemErrors[nameof(newItem.LeadTimeDays)]</span>}</div><div class="form-field"><label class="field-label">مورد رئيسي؟</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="newItem.IsPrimary"><option value="false">لا</option><option value="true">نعم</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div></div>}<div class="line-form-btns"><button class="btn-luxury btn-primary-luxury" @onclick="SaveItem" disabled="@isLoadingItems"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H6v8"/></svg>حفظ الصنف</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showItemForm=false">إلغاء</button></div></div>
                             }
                         </div>
                     }
                     @if (activeTab == 6 && SupplierId > 0)
                     {
                         <div class="tab-panel luxury-fade">
-                            <div class="tab-header"><div class="tab-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div><div><h3>كشف حساب المورد</h3><p>@statement.Count حركة - الرصيد: @header.CurrentBalance.ToString("#,##0.00") ج.م</p></div></div>
-                            @if (!statement.Any()){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 3v18h18"/><path d="M18 17V9"/></svg></div><h4>لا توجد حركات</h4></div>}
-                            else
+                            <div class="tab-header"><div class="tab-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div><div><h3>كشف حساب المورد</h3><p>@SupplierStatementSummaryText</p></div></div>
+                            @if (isLoadingSupplierStatement && supplierStatementLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث كشف الحساب؛ تُعرض آخر نتيجة ناجحة.</div>
+                            }
+                            else if (supplierStatementLoadFailed && supplierStatementLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierStatementLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierStatementAsync" disabled="@isLoadingSupplierStatement">إعادة المحاولة</button></div>
+                            }
+                            @if (isLoadingSupplierStatement && !supplierStatementLoaded)
+                            {
+                                <div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحميل كشف الحساب...</div>
+                            }
+                            else if (supplierStatementLoadFailed && !supplierStatementLoaded)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px"><span>@supplierStatementLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierStatementAsync" disabled="@isLoadingSupplierStatement">إعادة المحاولة</button></div>
+                            }
+                            else if (supplierStatementLoadDenied && !supplierStatementLoaded)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-bottom:10px">ليس لديك صلاحية قراءة كشف حساب المورد.</div>
+                            }
+                            else if (supplierStatementLoaded && !statement.Any())
+                            {
+                                <div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 3v18h18"/><path d="M18 17V9"/></svg></div><h4>لا توجد حركات</h4></div>
+                            }
+                            else if (supplierStatementLoaded && statement.Any())
                             {
                                 <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>#</th><th>التاريخ</th><th>النوع</th><th>المستند</th><th>مدين (له)</th><th>دائن (منه)</th><th>الرصيد</th></tr></thead><tbody>@{int stn=0; decimal runBal=0;}@foreach(var st in statement){stn++; runBal+=st.DebitAmount-st.CreditAmount;<tr><td class="td-num">@stn</td><td class="td-muted">@st.TransDate.ToString("dd/MM/yyyy")</td><td>@st.TransType</td><td><span class="code-luxury">@st.DocNumber</span></td><td class="num-cell @(st.DebitAmount>0?"bal-danger":"")">@(st.DebitAmount>0?st.DebitAmount.ToString("#,##0.00"):"—")</td><td class="num-cell @(st.CreditAmount>0?"bal-ok":"")">@(st.CreditAmount>0?st.CreditAmount.ToString("#,##0.00"):"—")</td><td class="num-cell"><strong>@runBal.ToString("#,##0.00")</strong></td></tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="4" class="td-name">الإجمالي</td><td class="num-cell bal-danger"><strong>@statement.Sum(s=>s.DebitAmount).ToString("#,##0.00")</strong></td><td class="num-cell bal-ok"><strong>@statement.Sum(s=>s.CreditAmount).ToString("#,##0.00")</strong></td><td class="num-cell"><strong>@runBal.ToString("#,##0.00") ج.م</strong></td></tr></tfoot></table></div></div>
                             }
@@ -197,10 +387,37 @@ else
             @if (SupplierId > 0)
             {
                 <div class="audit-bar-luxury">
-                    <div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>أنشئ بواسطة: <strong>@(string.IsNullOrEmpty(createdByName)?"غير محدد":createdByName)</strong></span><span class="audit-date">@createdDate</span></div>
-                    @if (!string.IsNullOrEmpty(modifiedByName)){<div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg><span>آخر تعديل: <strong>@modifiedByName</strong></span><span class="audit-date">@modifiedDate</span></div>}
+                    @if (auditInfoLoaded && auditInfoHasData)
+                    {
+                        <div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>أنشئ بواسطة: <strong>@(string.IsNullOrEmpty(createdByName)?"غير محدد":createdByName)</strong></span><span class="audit-date">@createdDate</span></div>
+                        @if (!string.IsNullOrEmpty(modifiedByName)){<div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg><span>آخر تعديل: <strong>@modifiedByName</strong></span><span class="audit-date">@modifiedDate</span></div>}
+                    }
                     <div class="audit-item-luxury gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>المستخدم الحالي: <strong>@UserSession.FullName</strong></span></div>
                 </div>
+            }
+            @if (isAuditInfoLoading && auditInfoLoaded)
+            {
+                <div class="field-hint" role="status" style="margin-top:8px">جارٍ تحديث بيانات سجل المراجعة؛ آخر بيانات ناجحة معروضة.</div>
+            }
+            else if (auditInfoLoadFailed && auditInfoLoaded)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span>@auditInfoWarning</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadAuditInfoAsync" disabled="@isAuditInfoLoading">إعادة المحاولة</button></div>
+            }
+            @if (isAuditInfoLoading && !auditInfoLoaded)
+            {
+                <div class="field-hint" role="status" style="margin-top:8px">جارٍ تحميل سجل مراجعة المورد...</div>
+            }
+            else if (auditInfoLoadFailed && !auditInfoLoaded)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span>@auditInfoWarning</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadAuditInfoAsync" disabled="@isAuditInfoLoading">إعادة المحاولة</button></div>
+            }
+            else if (auditInfoLoadDenied && !auditInfoLoaded)
+            {
+                <div class="msg-luxury msg-info" role="status" style="margin-top:8px">ليس لديك صلاحية قراءة سجل مراجعة المورد.</div>
+            }
+            else if (auditInfoLoaded && !auditInfoHasData)
+            {
+                <div class="field-hint" role="status" style="margin-top:8px">لا تتوفر بيانات سجل تدقيق إضافية لهذا المورد.</div>
             }
 
             @if (!isViewMode)
@@ -373,9 +590,50 @@ else
     private List<SupplierStatementDto> statement = new();
     private ModulePermissionDto? permissions;
     private List<LookupDto>? paymentTerms, currencies;
+    private int paymentTermsLoadVersion;
+    private bool isLoadingPaymentTerms;
+    private bool paymentTermsLoaded;
+    private bool paymentTermsLoadFailed;
+    private bool paymentTermsLoadDenied;
+    private string paymentTermsLoadError = string.Empty;
+    private int currenciesLoadVersion;
+    private bool isLoadingCurrencies;
+    private bool currenciesLoaded;
+    private bool currenciesLoadFailed;
+    private bool currenciesLoadDenied;
+    private string currenciesLoadError = string.Empty;
     private List<SearchableItem>? allItems;
+    private int supplierItemOptionsLoadVersion;
+    private bool supplierItemOptionsLoaded;
+    private bool supplierItemOptionsLoadFailed;
+    private bool supplierItemOptionsLoadDenied;
+    private string supplierItemOptionsLoadError = string.Empty;
     private int activeTab = 0;
     private bool isLoading = true, isSaving = false, isLoadingItems = false, isPrintLoading = false;
+    private int supplierRecordLoadVersion;
+    private bool isSupplierRecordLoading;
+    private bool supplierRecordLoaded;
+    private bool supplierRecordLoadFailed;
+    private bool supplierRecordLoadDenied;
+    private bool supplierRecordNotFound;
+    private int supplierContactsLoadVersion;
+    private bool isLoadingSupplierContacts;
+    private bool supplierContactsLoaded;
+    private bool supplierContactsLoadFailed;
+    private bool supplierContactsLoadDenied;
+    private string supplierContactsLoadError = string.Empty;
+    private int supplierItemsLoadVersion;
+    private bool isLoadingSupplierItems;
+    private bool supplierItemsLoaded;
+    private bool supplierItemsLoadFailed;
+    private bool supplierItemsLoadDenied;
+    private string supplierItemsLoadError = string.Empty;
+    private int supplierStatementLoadVersion;
+    private bool isLoadingSupplierStatement;
+    private bool supplierStatementLoaded;
+    private bool supplierStatementLoadFailed;
+    private bool supplierStatementLoadDenied;
+    private string supplierStatementLoadError = string.Empty;
     private string toast = ""; private bool toastOk = true;
     private bool shouldPreventDefault = false;
     private bool showContactForm = false, showDeleteContactDialog = false;
@@ -388,10 +646,41 @@ else
     private Dictionary<string, string> itemErrors = new();
     private Dictionary<string, string> supplierErrors = new();
     private string createdByName = ""; private string createdDate = ""; private string modifiedByName = ""; private string modifiedDate = "";
+    private string auditInfoWarning = "";
+    private int auditInfoLoadVersion;
+    private bool isAuditInfoLoading;
+    private bool auditInfoLoaded;
+    private bool auditInfoHasData;
+    private bool auditInfoLoadFailed;
+    private bool auditInfoLoadDenied;
     private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
     private bool isNewMode => SupplierId == 0;
     private bool isReadOnly => isViewMode;
     private string pageTitle => isNewMode ? "مورد جديد" : isViewMode ? "عرض بيانات المورد" : "تعديل المورد";
+    private string SupplierContactsSummaryText => supplierContactsLoaded
+        ? $"{contacts.Count} جهة اتصال - {contacts.Count(c => c.IsPrimary)} رئيسي"
+        : isLoadingSupplierContacts ? "جارٍ تحميل جهات الاتصال..."
+        : supplierContactsLoadFailed || supplierContactsLoadDenied ? "غير متاح" : "—";
+    private string SupplierContactsCountText => supplierContactsLoaded
+        ? contacts.Count.ToString()
+        : isLoadingSupplierContacts ? "…"
+        : supplierContactsLoadFailed || supplierContactsLoadDenied ? "!" : "—";
+    private string SupplierItemsSummaryText => supplierItemsLoaded
+        ? $"{supplierItems.Count} صنف مرتبط - أسعار ومدد توريد"
+        : isLoadingSupplierItems ? "جارٍ تحميل أصناف المورد..."
+        : supplierItemsLoadFailed || supplierItemsLoadDenied ? "غير متاح" : "—";
+    private string SupplierItemsCountText => supplierItemsLoaded
+        ? supplierItems.Count.ToString()
+        : isLoadingSupplierItems ? "…"
+        : supplierItemsLoadFailed || supplierItemsLoadDenied ? "!" : "—";
+    private string SupplierStatementSummaryText => supplierStatementLoaded
+        ? $"{statement.Count} حركة - الرصيد: {header.CurrentBalance.ToString("#,##0.00")} ج.م"
+        : isLoadingSupplierStatement ? "جارٍ تحميل كشف الحساب..."
+        : supplierStatementLoadFailed || supplierStatementLoadDenied ? "غير متاح" : "—";
+    private string SupplierStatementCountText => supplierStatementLoaded
+        ? statement.Count.ToString()
+        : isLoadingSupplierStatement ? "…"
+        : supplierStatementLoadFailed || supplierStatementLoadDenied ? "!" : "—";
 
     protected override async Task OnInitializedAsync()
     {
@@ -404,36 +693,479 @@ else
             if (isViewMode && !permissions.CanView){toast="ليس لديك صلاحية العرض";toastOk=false;return;}
             if (!isViewMode && SupplierId > 0 && !permissions.CanEdit){toast="ليس لديك صلاحية التعديل";toastOk=false;return;}
             if (isNewMode && !permissions.CanAdd){toast="ليس لديك صلاحية الإضافة";toastOk=false;return;}
-            paymentTerms = await LookupService.GetPaymentTermsAsync();
-            currencies = await LookupService.GetCurrenciesAsync();
+            await LoadPaymentTermsAsync();
+            await LoadCurrenciesAsync();
             if (SupplierId > 0)
             {
-                var loaded = await SupService.GetSupplierByIdAsync(SupplierId);
-                if (loaded != null)
+                await LoadSupplierRecordAsync();
+                if (supplierRecordLoaded)
                 {
-                    originalHeader = JsonSerializer.Deserialize<SupplierEditDto>(JsonSerializer.Serialize(loaded)) ?? loaded;
-                    header = loaded;
-                    contacts = await SupService.GetContactsAsync(SupplierId);
-                    supplierItems = await SupService.GetSupplierItemsAsync(SupplierId);
-                    statement = await SupService.GetStatementAsync(SupplierId);
+                    await LoadSupplierContactsAsync();
+                    await LoadSupplierItemsAsync();
+                    await LoadSupplierStatementAsync();
                     await LoadAuditInfo();
-                }else{await ShowToast("المورد غير موجود", false);}
+                }
             }
         }catch (Exception ex){await ShowToast($"خطأ: {ex.Message}", false);}
         finally{isLoading=false;StateHasChanged();}
     }
+
+    private async Task RetryLoadPaymentTermsAsync()
+    {
+        if (isLoadingPaymentTerms) return;
+        await LoadPaymentTermsAsync();
+    }
+
+    private async Task LoadPaymentTermsAsync()
+    {
+        var requestVersion = ++paymentTermsLoadVersion;
+        isLoadingPaymentTerms = true;
+        paymentTermsLoadFailed = false;
+        paymentTermsLoadDenied = false;
+        paymentTermsLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedTerms = await LookupService.GetPaymentTermsAsync();
+            if (requestVersion != paymentTermsLoadVersion) return;
+
+            paymentTerms = loadedTerms ?? new List<LookupDto>();
+            paymentTermsLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != paymentTermsLoadVersion) return;
+
+            paymentTerms = new();
+            paymentTermsLoaded = false;
+            paymentTermsLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load payment term lookup for supplier edit.");
+            if (requestVersion != paymentTermsLoadVersion) return;
+
+            paymentTermsLoadFailed = true;
+            paymentTermsLoadError = paymentTermsLoaded
+                ? "تعذر تحديث شروط الدفع؛ ما زالت آخر الخيارات الناجحة متاحة."
+                : "تعذر تحميل شروط الدفع. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == paymentTermsLoadVersion)
+                isLoadingPaymentTerms = false;
+        }
+    }
+
+    private async Task RetryLoadCurrenciesAsync()
+    {
+        if (isLoadingCurrencies) return;
+        await LoadCurrenciesAsync();
+    }
+
+    private async Task LoadCurrenciesAsync()
+    {
+        var requestVersion = ++currenciesLoadVersion;
+        isLoadingCurrencies = true;
+        currenciesLoadFailed = false;
+        currenciesLoadDenied = false;
+        currenciesLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedCurrencies = await LookupService.GetCurrenciesAsync();
+            if (requestVersion != currenciesLoadVersion) return;
+
+            currencies = loadedCurrencies ?? new List<LookupDto>();
+            currenciesLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != currenciesLoadVersion) return;
+
+            currencies = new();
+            currenciesLoaded = false;
+            currenciesLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load currency lookup for supplier edit.");
+            if (requestVersion != currenciesLoadVersion) return;
+
+            currenciesLoadFailed = true;
+            currenciesLoadError = currenciesLoaded
+                ? "تعذر تحديث العملات؛ ما زالت آخر الخيارات الناجحة متاحة."
+                : "تعذر تحميل العملات. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == currenciesLoadVersion)
+                isLoadingCurrencies = false;
+        }
+    }
+
+    private async Task RetryLoadSupplierRecordAsync()
+    {
+        if (isSupplierRecordLoading) return;
+        await LoadSupplierRecordAsync();
+        if (!supplierRecordLoaded) return;
+
+        try
+        {
+            await LoadSupplierContactsAsync();
+            await LoadSupplierItemsAsync();
+            await LoadSupplierStatementAsync();
+            await LoadAuditInfo();
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"خطأ: {ex.Message}", false);
+        }
+    }
+
+    private async Task LoadSupplierRecordAsync()
+    {
+        var supplierId = SupplierId;
+        if (supplierId <= 0) return;
+
+        var requestVersion = ++supplierRecordLoadVersion;
+        isSupplierRecordLoading = true;
+        supplierRecordLoadFailed = false;
+        supplierRecordLoadDenied = false;
+        supplierRecordNotFound = false;
+        StateHasChanged();
+        try
+        {
+            var loaded = await SupService.GetSupplierByIdAsync(supplierId);
+            if (requestVersion != supplierRecordLoadVersion || SupplierId != supplierId) return;
+
+            if (loaded is null)
+            {
+                supplierRecordLoaded = false;
+                supplierRecordNotFound = true;
+                ClearSupplierRecordData();
+                return;
+            }
+
+            originalHeader = JsonSerializer.Deserialize<SupplierEditDto>(JsonSerializer.Serialize(loaded)) ?? loaded;
+            header = loaded;
+            supplierRecordLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != supplierRecordLoadVersion || SupplierId != supplierId) return;
+
+            supplierRecordLoaded = false;
+            supplierRecordLoadDenied = true;
+            ClearSupplierRecordData();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load supplier record for supplier edit.");
+            if (requestVersion != supplierRecordLoadVersion || SupplierId != supplierId) return;
+
+            supplierRecordLoadFailed = true;
+        }
+        finally
+        {
+            if (requestVersion == supplierRecordLoadVersion && SupplierId == supplierId)
+                isSupplierRecordLoading = false;
+        }
+    }
+
+    private void ClearSupplierRecordData()
+    {
+        supplierContactsLoadVersion++;
+        isLoadingSupplierContacts = false;
+        header = new SupplierEditDto { SupplierType = 1, Rating = 3, Country = "مصر" };
+        originalHeader = null;
+        contacts = new();
+        supplierContactsLoaded = false;
+        supplierContactsLoadFailed = false;
+        supplierContactsLoadDenied = false;
+        supplierContactsLoadError = string.Empty;
+        supplierItemsLoadVersion++;
+        isLoadingSupplierItems = false;
+        supplierItemsLoaded = false;
+        supplierItemsLoadFailed = false;
+        supplierItemsLoadDenied = false;
+        supplierItemsLoadError = string.Empty;
+        supplierItems = new();
+        supplierStatementLoadVersion++;
+        isLoadingSupplierStatement = false;
+        supplierStatementLoaded = false;
+        supplierStatementLoadFailed = false;
+        supplierStatementLoadDenied = false;
+        supplierStatementLoadError = string.Empty;
+        statement = new();
+        createdByName = string.Empty;
+        createdDate = string.Empty;
+        modifiedByName = string.Empty;
+        modifiedDate = string.Empty;
+        auditInfoWarning = string.Empty;
+        auditInfoLoadVersion++;
+        isAuditInfoLoading = false;
+        auditInfoLoaded = false;
+        auditInfoHasData = false;
+        auditInfoLoadFailed = false;
+        auditInfoLoadDenied = false;
+    }
+
+    private async Task RetryLoadSupplierContactsAsync()
+    {
+        if (isLoadingSupplierContacts) return;
+        await LoadSupplierContactsAsync();
+    }
+
+    private async Task LoadSupplierContactsAsync()
+    {
+        var supplierId = SupplierId;
+        if (supplierId <= 0)
+        {
+            contacts = new();
+            supplierContactsLoaded = true;
+            supplierContactsLoadFailed = false;
+            supplierContactsLoadDenied = false;
+            supplierContactsLoadError = string.Empty;
+            return;
+        }
+
+        var requestVersion = ++supplierContactsLoadVersion;
+        isLoadingSupplierContacts = true;
+        supplierContactsLoadFailed = false;
+        supplierContactsLoadDenied = false;
+        supplierContactsLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedContacts = await SupService.GetContactsAsync(supplierId);
+            if (requestVersion != supplierContactsLoadVersion || SupplierId != supplierId) return;
+
+            contacts = loadedContacts ?? new List<SupplierContactDto>();
+            supplierContactsLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != supplierContactsLoadVersion || SupplierId != supplierId) return;
+
+            contacts = new();
+            supplierContactsLoaded = false;
+            supplierContactsLoadDenied = true;
+            supplierContactsLoadError = "ليس لديك صلاحية قراءة جهات اتصال المورد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load supplier contacts for supplier {SupplierID}.", supplierId);
+            if (requestVersion != supplierContactsLoadVersion || SupplierId != supplierId) return;
+
+            supplierContactsLoadFailed = true;
+            supplierContactsLoadError = supplierContactsLoaded
+                ? "تعذر تحديث جهات اتصال المورد؛ ما زالت آخر قائمة ناجحة معروضة."
+                : "تعذر تحميل جهات اتصال المورد. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == supplierContactsLoadVersion && SupplierId == supplierId)
+                isLoadingSupplierContacts = false;
+        }
+    }
+
     private async Task LoadAuditInfo()
     {
-        try{
+        var supplierId = SupplierId;
+        if (supplierId <= 0) return;
+
+        var requestVersion = ++auditInfoLoadVersion;
+        isAuditInfoLoading = true;
+        auditInfoLoadFailed = false;
+        auditInfoLoadDenied = false;
+        auditInfoWarning = string.Empty;
+        StateHasChanged();
+        try
+        {
             var audit = await SupService.GetSupplierAuditAsync(SupplierId);
-            if (audit != null){createdByName = audit.CreatedByName ?? "غير محدد"; createdDate = audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? ""; modifiedByName = audit.ModifiedByName ?? ""; modifiedDate = audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";}
-        }catch{}
+            if (requestVersion != auditInfoLoadVersion || SupplierId != supplierId) return;
+
+            if (audit is null)
+            {
+                ClearAuditInfoValues();
+                auditInfoLoaded = true;
+                auditInfoHasData = false;
+                return;
+            }
+
+            createdByName = audit.CreatedByName ?? "غير محدد";
+            createdDate = audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            modifiedByName = audit.ModifiedByName ?? "";
+            modifiedDate = audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            auditInfoLoaded = true;
+            auditInfoHasData = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != auditInfoLoadVersion || SupplierId != supplierId) return;
+
+            ClearAuditInfoValues();
+            auditInfoLoaded = false;
+            auditInfoHasData = false;
+            auditInfoLoadDenied = true;
+            auditInfoWarning = "ليس لديك صلاحية قراءة سجل مراجعة المورد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load audit details for supplier {SupplierID}.",
+                supplierId);
+            if (requestVersion != auditInfoLoadVersion || SupplierId != supplierId) return;
+
+            auditInfoLoadFailed = true;
+            auditInfoWarning = auditInfoLoaded
+                ? "تعذر تحديث سجل مراجعة المورد؛ آخر بيانات ناجحة ما زالت معروضة."
+                : "تعذر تحميل سجل مراجعة المورد الإضافي؛ بيانات المورد الأساسية لم تتأثر. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == auditInfoLoadVersion && SupplierId == supplierId)
+                isAuditInfoLoading = false;
+        }
     }
+
+    private async Task RetryLoadAuditInfoAsync()
+    {
+        if (isAuditInfoLoading) return;
+        await LoadAuditInfo();
+    }
+
+    private void ClearAuditInfoValues()
+    {
+        createdByName = string.Empty;
+        createdDate = string.Empty;
+        modifiedByName = string.Empty;
+        modifiedDate = string.Empty;
+    }
+    private async Task RetryLoadSupplierStatementAsync()
+    {
+        if (isLoadingSupplierStatement) return;
+        await LoadSupplierStatementAsync();
+    }
+
+    private async Task LoadSupplierStatementAsync()
+    {
+        var supplierId = SupplierId;
+        if (supplierId <= 0)
+        {
+            statement = new();
+            supplierStatementLoaded = true;
+            supplierStatementLoadFailed = false;
+            supplierStatementLoadDenied = false;
+            supplierStatementLoadError = string.Empty;
+            return;
+        }
+
+        var requestVersion = ++supplierStatementLoadVersion;
+        isLoadingSupplierStatement = true;
+        supplierStatementLoadFailed = false;
+        supplierStatementLoadDenied = false;
+        supplierStatementLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedStatement = await SupService.GetStatementAsync(supplierId);
+            if (requestVersion != supplierStatementLoadVersion || SupplierId != supplierId) return;
+
+            statement = loadedStatement ?? new List<SupplierStatementDto>();
+            supplierStatementLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != supplierStatementLoadVersion || SupplierId != supplierId) return;
+
+            statement = new();
+            supplierStatementLoaded = false;
+            supplierStatementLoadDenied = true;
+            supplierStatementLoadError = "ليس لديك صلاحية قراءة كشف حساب المورد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load supplier statement for supplier {SupplierID}.", supplierId);
+            if (requestVersion != supplierStatementLoadVersion || SupplierId != supplierId) return;
+
+            supplierStatementLoadFailed = true;
+            supplierStatementLoadError = supplierStatementLoaded
+                ? "تعذر تحديث كشف حساب المورد؛ ما زالت آخر نتيجة ناجحة معروضة."
+                : "تعذر تحميل كشف حساب المورد. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == supplierStatementLoadVersion && SupplierId == supplierId)
+                isLoadingSupplierStatement = false;
+        }
+    }
+
+    private async Task RetryLoadSupplierItemsAsync()
+    {
+        if (isLoadingSupplierItems) return;
+        await LoadSupplierItemsAsync();
+    }
+
+    private async Task LoadSupplierItemsAsync()
+    {
+        var supplierId = SupplierId;
+        if (supplierId <= 0)
+        {
+            supplierItems = new();
+            supplierItemsLoaded = true;
+            supplierItemsLoadFailed = false;
+            supplierItemsLoadDenied = false;
+            supplierItemsLoadError = string.Empty;
+            return;
+        }
+
+        var requestVersion = ++supplierItemsLoadVersion;
+        isLoadingSupplierItems = true;
+        supplierItemsLoadFailed = false;
+        supplierItemsLoadDenied = false;
+        supplierItemsLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedItems = await SupService.GetSupplierItemsAsync(supplierId);
+            if (requestVersion != supplierItemsLoadVersion || SupplierId != supplierId) return;
+
+            supplierItems = loadedItems ?? new List<SupplierItemDto>();
+            supplierItemsLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != supplierItemsLoadVersion || SupplierId != supplierId) return;
+
+            supplierItems = new();
+            supplierItemsLoaded = false;
+            supplierItemsLoadDenied = true;
+            supplierItemsLoadError = "ليس لديك صلاحية قراءة أصناف المورد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load supplier items for supplier {SupplierID}.", supplierId);
+            if (requestVersion != supplierItemsLoadVersion || SupplierId != supplierId) return;
+
+            supplierItemsLoadFailed = true;
+            supplierItemsLoadError = supplierItemsLoaded
+                ? "تعذر تحديث أصناف المورد؛ ما زالت آخر قائمة ناجحة معروضة."
+                : "تعذر تحميل أصناف المورد. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == supplierItemsLoadVersion && SupplierId == supplierId)
+                isLoadingSupplierItems = false;
+        }
+    }
+
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.CtrlKey && e.Key == "s"){if (!isViewMode && !isSaving) await SaveSupplier();}
+        if (e.CtrlKey && e.Key == "s"){if (!isViewMode && !isSaving && (isNewMode || supplierRecordLoaded)) await SaveSupplier();}
         if (e.Key == "Escape"){if(showContactForm)showContactForm=false;else if(showItemForm)showItemForm=false;else if(showDeleteContactDialog)showDeleteContactDialog=false;else if(showDeleteItemDialog)showDeleteItemDialog=false;else GoBack();}
-        if (e.CtrlKey && e.Key == "p"){if(SupplierId>0 && permissions?.CanPrint==true) await PrintCard();}
+        if (e.CtrlKey && e.Key == "p"){if(SupplierId>0 && supplierRecordLoaded && permissions?.CanPrint==true) await PrintCard();}
     }
     private async Task SelectTab(int tabIndex)
     {
@@ -461,6 +1193,7 @@ else
     private string GetRatingName(SupplierRating rating)=>rating switch{SupplierRating.Excellent=>"ممتاز",SupplierRating.VeryGood=>"جيد جداً",SupplierRating.Good=>"جيد",SupplierRating.Acceptable=>"مقبول",SupplierRating.Poor=>"ضعيف",_=>"غير معروف"};
     private async Task SaveSupplier()
     {
+        if (!isNewMode && !supplierRecordLoaded) return;
         var errors=ValidateSupplier();if(errors.Any()){await ShowToast(errors.First(), false);StateHasChanged();return;}
         isSaving=true;StateHasChanged();
         try{
@@ -474,21 +1207,84 @@ else
     private async Task SaveContact()
     {
         var errors=ValidateContact();if(errors.Any()){StateHasChanged();return;}
-        try{await SupService.InsertContactAsync(newContact, UserSession.UserID);contacts=await SupService.GetContactsAsync(SupplierId);ResetContactForm();showContactForm=false;await ShowToast(" تم إضافة جهة اتصال", true);}
+        try{await SupService.InsertContactAsync(newContact, UserSession.UserID);await LoadSupplierContactsAsync();ResetContactForm();showContactForm=false;await ShowToast(" تم إضافة جهة اتصال", true);}
         catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}
     }
     private void ShowDeleteContact(int id){contactToDelete=contacts.FirstOrDefault(c=>c.ContactID==id);showDeleteContactDialog=true;}
-    private async Task ConfirmDeleteContact(){if(contactToDelete==null)return;try{await SupService.DeleteContactAsync(contactToDelete.ContactID, UserSession.UserID);contacts=await SupService.GetContactsAsync(SupplierId);showDeleteContactDialog=false;await ShowToast(" تم حذف جهة الاتصال", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
+    private async Task ConfirmDeleteContact(){if(contactToDelete==null)return;try{await SupService.DeleteContactAsync(contactToDelete.ContactID, UserSession.UserID);await LoadSupplierContactsAsync();showDeleteContactDialog=false;await ShowToast(" تم حذف جهة الاتصال", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
     private async Task ShowAddItem()
     {
-        if(allItems==null){isLoadingItems=true;StateHasChanged();try{allItems=await LookupService.GetItemsForPurchaseSearchableAsync();}catch(Exception ex){await ShowToast($" خطأ في تحميل الأصناف: {ex.Message}", false);isLoadingItems=false;StateHasChanged();return;}finally{isLoadingItems=false;}}
-        newItem=new(){SupplierID=SupplierId};itemErrors.Clear();showItemForm=true;StateHasChanged();
+        if (isLoadingItems) return;
+        if (!supplierItemOptionsLoaded)
+        {
+            await LoadSupplierItemOptionsAsync();
+            if (!supplierItemOptionsLoaded) return;
+        }
+
+        OpenAddItemForm();
+    }
+
+    private void OpenAddItemForm()
+    {
+        newItem = new() { SupplierID = SupplierId };
+        itemErrors.Clear();
+        showItemForm = true;
+        StateHasChanged();
+    }
+
+    private async Task RetryLoadSupplierItemOptionsAsync()
+    {
+        if (isLoadingItems) return;
+        await LoadSupplierItemOptionsAsync();
+        if (supplierItemOptionsLoaded)
+            OpenAddItemForm();
+    }
+
+    private async Task LoadSupplierItemOptionsAsync()
+    {
+        var requestVersion = ++supplierItemOptionsLoadVersion;
+        isLoadingItems = true;
+        supplierItemOptionsLoadFailed = false;
+        supplierItemOptionsLoadDenied = false;
+        supplierItemOptionsLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedItems = await LookupService.GetItemsForPurchaseSearchableAsync();
+            if (requestVersion != supplierItemOptionsLoadVersion) return;
+
+            allItems = loadedItems ?? new List<SearchableItem>();
+            supplierItemOptionsLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != supplierItemOptionsLoadVersion) return;
+
+            allItems = null;
+            supplierItemOptionsLoaded = false;
+            supplierItemOptionsLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load item options for supplier edit.");
+            if (requestVersion != supplierItemOptionsLoadVersion) return;
+
+            supplierItemOptionsLoadFailed = true;
+            supplierItemOptionsLoadError = supplierItemOptionsLoaded
+                ? "تعذر تحديث خيارات الأصناف؛ ما زالت آخر قائمة ناجحة محفوظة."
+                : "تعذر تحميل خيارات الأصناف. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == supplierItemOptionsLoadVersion)
+                isLoadingItems = false;
+        }
     }
     private void HandleItemSelected(int itemId){newItem.ItemID=itemId;if(itemId>0&&itemErrors.ContainsKey(nameof(newItem.ItemID)))itemErrors.Remove(nameof(newItem.ItemID));StateHasChanged();}
-    private async Task SaveItem(){var errors=ValidateItem();if(errors.Any()){StateHasChanged();return;}try{await SupService.InsertSupplierItemAsync(newItem, UserSession.UserID);supplierItems=await SupService.GetSupplierItemsAsync(SupplierId);newItem=new(){SupplierID=SupplierId};showItemForm=false;await ShowToast(" تم إضافة صنف", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
+    private async Task SaveItem(){var errors=ValidateItem();if(errors.Any()){StateHasChanged();return;}try{await SupService.InsertSupplierItemAsync(newItem, UserSession.UserID);await LoadSupplierItemsAsync();newItem=new(){SupplierID=SupplierId};showItemForm=false;await ShowToast(" تم إضافة صنف", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
     private void ShowDeleteItem(int id){itemToDelete=supplierItems.FirstOrDefault(i=>i.SupplierItemID==id);showDeleteItemDialog=true;}
-    private async Task ConfirmDeleteItem(){if(itemToDelete==null)return;try{await SupService.DeleteSupplierItemAsync(itemToDelete.SupplierItemID, UserSession.UserID);supplierItems=await SupService.GetSupplierItemsAsync(SupplierId);showDeleteItemDialog=false;await ShowToast(" تم حذف الصنف", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
-    private async Task PrintCard(){isPrintLoading=true;StateHasChanged();try{var html=await SupService.GenerateSupplierCardHtmlAsync(SupplierId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);await ShowToast("تم الطباعة", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}finally{isPrintLoading=false;StateHasChanged();}}
+    private async Task ConfirmDeleteItem(){if(itemToDelete==null)return;try{await SupService.DeleteSupplierItemAsync(itemToDelete.SupplierItemID, UserSession.UserID);await LoadSupplierItemsAsync();showDeleteItemDialog=false;await ShowToast(" تم حذف الصنف", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}}
+    private async Task PrintCard(){isPrintLoading=true;StateHasChanged();try{var html=await SupService.GenerateSupplierCardHtmlAsync(SupplierId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);await ShowToast("تم فتح نافذة الطباعة", true);}catch(Exception ex){await ShowToast($" خطأ: {ex.Message}", false);}finally{isPrintLoading=false;StateHasChanged();}}
     private async Task CopyToClipboard(string text){try{await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);await ShowToast($" تم نسخ: {text}", true);await Task.Delay(2000);toast="";}catch{await ShowToast(" خطأ في النسخ", false);}}
     private async Task ShowToast(string message, bool isSuccess=true){toast=message;toastOk=isSuccess;StateHasChanged();await Task.Delay(3000);toast="";StateHasChanged();}
     private void GoBack()=>Navigation.NavigateTo("/suppliers");

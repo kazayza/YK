@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 using SqlTransaction = Microsoft.Data.SqlClient.SqlTransaction;
@@ -10,22 +11,38 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<PurchaseOrderService> _logger;
+        private const string ModuleCode = "SCR_PO";
 
         public PurchaseOrderService(
             IConfiguration configuration,
             AuditService audit,
-            NotificationService notif)
+            NotificationService notif,
+            ModuleAuthorizationService authorization,
+            ILogger<PurchaseOrderService> logger)
             : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequirePurchaseOrderPermissionAsync(
+            int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentPurchaseOrderPermissionAsync(
+            Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة أوامر الشراء
         // ==========================================
         public async Task<List<PurchaseOrderListDto>> GetOrdersListAsync()
         {
+            await RequireCurrentPurchaseOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر الشراء.");
             using var connection = CreateConnection();
 
             var sql = @"SELECT
@@ -68,6 +85,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<PurchaseOrderHeaderDto?> GetOrderByIdAsync(int purchaseOrderId)
         {
+            await RequireCurrentPurchaseOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر الشراء.");
             using var connection = CreateConnection();
 
             var sql = @"SELECT
@@ -140,6 +158,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<PurchaseOrderDetailDto>> GetOrderDetailsAsync(int purchaseOrderId)
         {
+            await RequireCurrentPurchaseOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض أوامر الشراء.");
             using var connection = CreateConnection();
 
             var sql = @"SELECT
@@ -204,6 +223,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GeneratePONumberAsync()
         {
+            await RequireCurrentPurchaseOrderPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء أوامر الشراء.");
             using var connection = CreateConnection();
             try
             {
@@ -228,7 +248,10 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertOrderAsync(PurchaseOrderHeaderDto header, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء أوامر الشراء.");
             using var connection = CreateConnection();
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, header.CurrencyID, header.ExchangeRate);
 
             var sql = @"INSERT INTO dbo.PurchaseOrders
                         (
@@ -290,13 +313,21 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateOrderAsync(PurchaseOrderHeaderDto header, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أوامر الشراء.");
             using var connection = CreateConnection();
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, header.CurrencyID, header.ExchangeRate);
 
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT POStatus FROM dbo.PurchaseOrders WHERE PurchaseOrderID = @ID",
+            var current = await connection.QueryFirstOrDefaultAsync<(
+                int? POStatus, int? CurrencyID, decimal ExchangeRate)>(
+                @"SELECT POStatus, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                  FROM dbo.PurchaseOrders WITH (UPDLOCK,HOLDLOCK)
+                  WHERE PurchaseOrderID=@ID",
                 new { ID = header.PurchaseOrderID });
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, current.CurrencyID, current.ExchangeRate);
 
-            if (status != 1)
+            if (current.POStatus != 1)
                 throw new Exception("لا يمكن تعديل أمر شراء ليس في حالة مسودة");
 
             var sql = @"UPDATE dbo.PurchaseOrders SET
@@ -356,18 +387,23 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertDetailAsync(PurchaseOrderDetailEditDto detail, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أصناف إلى أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
 
             try
             {
-                var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                    "SELECT POStatus FROM dbo.PurchaseOrders WHERE PurchaseOrderID = @ID",
+                var parent = await connection.QueryFirstOrDefaultAsync<(
+                    int? POStatus, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT POStatus, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.PurchaseOrders WITH (UPDLOCK,HOLDLOCK) WHERE PurchaseOrderID=@ID",
                     new { ID = detail.PurchaseOrderID }, transaction);
 
-                if (status != 1)
+                if (parent.POStatus != 1)
                     throw new Exception("لا يمكن تعديل تفاصيل أمر شراء ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, parent.CurrencyID, parent.ExchangeRate);
 
                 if (detail.ItemID <= 0)
                     throw new Exception("اختر الصنف");
@@ -441,7 +477,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after modifying purchase order detail {PurchaseOrderDetailID} failed.",
+                        detail.PurchaseOrderID);
+                }
                 throw;
             }
         }
@@ -451,21 +493,26 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateDetailAsync(PurchaseOrderDetailEditDto detail, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أصناف أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
 
             try
             {
-                var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                    @"SELECT po.POStatus
-                      FROM dbo.PurchaseOrders po
-                      INNER JOIN dbo.PurchaseOrderDetails pod ON po.PurchaseOrderID = pod.PurchaseOrderID
-                      WHERE pod.PODetailID = @ID",
+                var parent = await connection.QueryFirstOrDefaultAsync<(
+                    int? POStatus, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT po.POStatus, po.CurrencyID, ISNULL(po.ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.PurchaseOrders po WITH (UPDLOCK,HOLDLOCK)
+                      INNER JOIN dbo.PurchaseOrderDetails pod WITH (UPDLOCK,HOLDLOCK)
+                        ON po.PurchaseOrderID=pod.PurchaseOrderID
+                      WHERE pod.PODetailID=@ID",
                     new { ID = detail.PODetailID }, transaction);
 
-                if (status != 1)
+                if (parent.POStatus != 1)
                     throw new Exception("لا يمكن تعديل تفاصيل أمر شراء ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, parent.CurrencyID, parent.ExchangeRate);
 
                 if (detail.RequestDetailID.HasValue && detail.RequestDetailID.Value > 0)
                     await ValidatePODetailQtyAsync(connection, detail.RequestDetailID.Value, detail.OrderedQty, detail.PurchaseOrderID, transaction);
@@ -508,7 +555,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after modifying purchase order detail {PurchaseOrderDetailID} failed.",
+                        detail.PODetailID);
+                }
                 throw;
             }
         }
@@ -518,6 +571,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أصناف أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -555,7 +609,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after modifying purchase order detail {PurchaseOrderDetailID} failed.",
+                        detailId);
+                }
                 throw;
             }
         }
@@ -570,6 +630,7 @@ namespace YKCoatings.Services
             int supplierId,
             int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية تحميل أصناف إلى أوامر الشراء.");
             if (requestDetailIds == null || !requestDetailIds.Any())
                 return 0;
 
@@ -579,14 +640,17 @@ namespace YKCoatings.Services
 
             try
             {
-                var poInfo = await connection.QueryFirstOrDefaultAsync<(int POStatus, int? RequestID)>(
-                    @"SELECT POStatus, RequestID
-                      FROM dbo.PurchaseOrders
-                      WHERE PurchaseOrderID = @ID",
+                var poInfo = await connection.QueryFirstOrDefaultAsync<(
+                    int POStatus, int? RequestID, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT POStatus, RequestID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.PurchaseOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE PurchaseOrderID=@ID",
                     new { ID = purchaseOrderId }, transaction);
 
                 if (poInfo.POStatus != 1)
                     throw new Exception("لا يمكن تحميل سطور على أمر شراء ليس في حالة مسودة");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, poInfo.CurrencyID, poInfo.ExchangeRate);
 
                 var lines = (await connection.QueryAsync<PRLineForPODto>(
                     @"SELECT
@@ -693,7 +757,14 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after importing purchase request {RequestID} lines into purchase order {PurchaseOrderID} failed.",
+                        requestId,
+                        purchaseOrderId);
+                }
                 throw;
             }
         }
@@ -703,15 +774,15 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task SubmitForApprovalAsync(int purchaseOrderId, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إرسال أوامر الشراء للاعتماد.");
             using var connection = CreateConnection();
 
-            var info = await connection.QueryFirstOrDefaultAsync<(string PONumber, int POStatus, int DetailsCount)>(
-                @"SELECT 
-                    po.PONumber,
-                    po.POStatus,
-                    (SELECT COUNT(*) FROM dbo.PurchaseOrderDetails d WHERE d.PurchaseOrderID = po.PurchaseOrderID) AS DetailsCount
-                  FROM dbo.PurchaseOrders po
-                  WHERE po.PurchaseOrderID = @ID",
+            var info = await connection.QueryFirstOrDefaultAsync<(
+                string PONumber, int POStatus, int DetailsCount, int? CurrencyID, decimal ExchangeRate)>(
+                @"SELECT po.PONumber, po.POStatus,
+                    (SELECT COUNT(*) FROM dbo.PurchaseOrderDetails d WHERE d.PurchaseOrderID=po.PurchaseOrderID) AS DetailsCount,
+                    po.CurrencyID, ISNULL(po.ExchangeRate,1) AS ExchangeRate
+                  FROM dbo.PurchaseOrders po WHERE po.PurchaseOrderID=@ID",
                 new { ID = purchaseOrderId });
 
             if (string.IsNullOrWhiteSpace(info.PONumber))
@@ -722,6 +793,8 @@ namespace YKCoatings.Services
 
             if (info.DetailsCount == 0)
                 throw new Exception("لا يمكن إرسال أمر شراء بدون أصناف");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, null, info.CurrencyID, info.ExchangeRate);
 
             await connection.ExecuteAsync(
                 @"UPDATE dbo.PurchaseOrders SET
@@ -746,7 +819,10 @@ namespace YKCoatings.Services
                     relatedRecordId: purchaseOrderId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the pending-approval notification for a purchase order.");
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId,
@@ -762,6 +838,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task ApproveAsync(int purchaseOrderId, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -772,10 +849,13 @@ namespace YKCoatings.Services
 
             try
             {
-                var info = await connection.QueryFirstOrDefaultAsync<(string PONumber, int POStatus, int? RequestID, int? CreatedBy)>(
-                    @"SELECT PONumber, POStatus, RequestID, CreatedBy
-                      FROM dbo.PurchaseOrders
-                      WHERE PurchaseOrderID = @ID",
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string PONumber, int POStatus, int? RequestID, int? CreatedBy,
+                    int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT PONumber, POStatus, RequestID, CreatedBy,
+                             CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.PurchaseOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE PurchaseOrderID=@ID",
                     new { ID = purchaseOrderId }, transaction);
 
                 if (string.IsNullOrWhiteSpace(info.PONumber))
@@ -783,6 +863,8 @@ namespace YKCoatings.Services
 
                 if (info.POStatus != 2)
                     throw new Exception("لا يمكن اعتماد أمر شراء ليس في انتظار الاعتماد");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, info.CurrencyID, info.ExchangeRate);
 
                 poNumber = info.PONumber;
                 requestId = info.RequestID;
@@ -809,11 +891,25 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after approving purchase order {PurchaseOrderID} failed.",
+                        purchaseOrderId);
+                }
                 throw;
             }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a purchase order.");
+            }
+
             try
             {
                 if (createdBy.HasValue)
@@ -830,7 +926,10 @@ namespace YKCoatings.Services
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a purchase order.");
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId,
@@ -846,6 +945,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task RejectAsync(int purchaseOrderId, string rejectionReason, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية رفض أوامر الشراء.");
             if (string.IsNullOrWhiteSpace(rejectionReason))
                 throw new Exception("أدخل سبب الرفض");
 
@@ -880,7 +980,15 @@ namespace YKCoatings.Services
                     UserID = userId
                 });
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_PO", purchaseOrderId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a purchase order.");
+            }
+
             try
             {
                 if (info.CreatedBy.HasValue)
@@ -897,7 +1005,10 @@ namespace YKCoatings.Services
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after rejecting a purchase order.");
+            }
 
             await _audit.WriteAuditLogAsync(
                 userId,
@@ -913,6 +1024,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task MarkAsSentAsync(int purchaseOrderId, string? sentMethod, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تسجيل إرسال أمر الشراء.");
             using var connection = CreateConnection();
 
             var info = await connection.QueryFirstOrDefaultAsync<(string PONumber, int POStatus)>(
@@ -958,6 +1070,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task CloseAsync(int purchaseOrderId, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية إغلاق أوامر الشراء.");
             using var connection = CreateConnection();
 
             var info = await connection.QueryFirstOrDefaultAsync<(string PONumber, int POStatus)>(
@@ -996,6 +1109,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task CancelAsync(int purchaseOrderId, string? cancellationReason, int userId, int? employeeId = null)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanCancel, "ليس لديك صلاحية إلغاء أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -1056,7 +1170,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after cancelling purchase order {PurchaseOrderID} failed.",
+                        purchaseOrderId);
+                }
                 throw;
             }
 
@@ -1075,6 +1195,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<(bool Success, string Message)> DeleteOrderAsync(int purchaseOrderId, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف أوامر الشراء.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -1113,7 +1234,13 @@ namespace YKCoatings.Services
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting purchase order {PurchaseOrderID} failed.",
+                        purchaseOrderId);
+                }
                 return (false, ex.Message);
             }
         }
@@ -1123,6 +1250,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportToExcelAsync(List<PurchaseOrderListDto> orders, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير أوامر الشراء.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("أوامر الشراء");
             ws.RightToLeft = true;
@@ -1199,6 +1327,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateReportHtmlAsync(int purchaseOrderId, int userId)
         {
+            await RequirePurchaseOrderPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة أوامر الشراء.");
             var header = await GetOrderByIdAsync(purchaseOrderId);
             if (header == null) return "<h3>أمر الشراء غير موجود</h3>";
 
@@ -1299,6 +1428,7 @@ tr:nth-child(even){{background:#f8fafc}}
         // ==========================================
         public async Task<ItemAuditDto?> GetOrderAuditAsync(int purchaseOrderId)
         {
+            await RequireCurrentPurchaseOrderPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض بيانات أوامر الشراء.");
             using var connection = CreateConnection();
             var sql = @"SELECT ISNULL(uc.FullName, ISNULL(uc.Username, N'غير محدد')) AS CreatedByName, po.CreatedDate,
                                ISNULL(um.FullName, ISNULL(um.Username, N'')) AS ModifiedByName, po.ModifiedDate

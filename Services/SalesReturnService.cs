@@ -22,16 +22,19 @@ namespace YKCoatings.Services
         private readonly AuditService _audit;
         private readonly PermissionService _permissions;
         private readonly UserSessionService _session;
+        private readonly ILogger<SalesReturnService> _logger;
 
         public SalesReturnService(
             IConfiguration configuration,
             AuditService audit,
             PermissionService permissions,
-            UserSessionService session) : base(configuration)
+            UserSessionService session,
+            ILogger<SalesReturnService> logger) : base(configuration)
         {
             _audit = audit;
             _permissions = permissions;
             _session = session;
+            _logger = logger;
         }
 
         // ---------------------------------------------------------------------
@@ -123,7 +126,15 @@ namespace YKCoatings.Services
                   AND ISNULL(si.InvoiceSource,3) IN (2,3)
                   AND si.DeliveryID IS NULL
                   AND ISNULL(si.ExchangeRate,1)=1
-                  AND ISNULL(cur.IsDefault,1)=1
+                  AND (ISNULL(si.CurrencyID,0)=0
+                       OR (cur.CurrencyID IS NOT NULL AND ISNULL(cur.IsDefault,0)=1))
+                  AND (si.SalesOrderID IS NULL OR EXISTS
+                       (SELECT 1 FROM dbo.SalesOrders so
+                        LEFT JOIN dbo.Currencies orderCurrency ON orderCurrency.CurrencyID=so.CurrencyID
+                        WHERE so.SalesOrderID=si.SalesOrderID
+                          AND ISNULL(so.ExchangeRate,1)=1
+                          AND (ISNULL(so.CurrencyID,0)=0
+                               OR (orderCurrency.CurrencyID IS NOT NULL AND ISNULL(orderCurrency.IsDefault,0)=1))))
                   AND ISNULL(si.ShippingCost,0)=0
                   AND ISNULL(si.OtherCosts,0)=0
                   AND EXISTS
@@ -265,7 +276,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while creating a sales return draft from invoice {InvoiceID}.",
+                        invoiceId);
+                }
                 throw;
             }
 
@@ -384,7 +401,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while saving sales return draft {ReturnID}.",
+                        request.ReturnID);
+                }
                 throw;
             }
 
@@ -420,7 +443,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting draft sales return {ReturnID}.",
+                        returnId);
+                }
                 throw;
             }
 
@@ -487,7 +516,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after submitting sales return for approval {ReturnID}.",
+                        returnId);
+                }
                 throw;
             }
 
@@ -588,7 +623,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after sales-return approval failed for return {ReturnID}.",
+                        returnId);
+                }
                 throw;
             }
 
@@ -641,7 +682,13 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after rejecting sales return {ReturnID}.",
+                        returnId);
+                }
                 throw;
             }
 
@@ -774,27 +821,38 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
         {
             var hint = lockSource ? " WITH (UPDLOCK,HOLDLOCK)" : string.Empty;
             var sql = $@"SELECT si.InvoiceID, si.InvoiceNumber, si.InvoiceDate, si.CustomerID,
-                    c.CustomerNameAr, si.SalesRepID, si.WarehouseID, si.InvoiceStatus,
+                    c.CustomerNameAr, si.SalesOrderID, si.SalesRepID, si.WarehouseID, si.InvoiceStatus,
                     ISNULL(si.InvoiceSource,3) AS InvoiceSource, si.DeliveryID,
                     ISNULL(si.SubTotal,0) AS SubTotal, ISNULL(si.TaxableAmount,0) AS TaxableAmount,
                     ISNULL(si.TaxAmount,0) AS TaxAmount, ISNULL(si.TotalAmount,0) AS TotalAmount,
                     ISNULL(si.ShippingCost,0) AS ShippingCost, ISNULL(si.OtherCosts,0) AS OtherCosts,
                     CAST(ISNULL(si.IsTaxable,1) AS bit) AS IsTaxable,
-                    ISNULL(si.ExchangeRate,1) AS ExchangeRate,
-                    ISNULL(cur.IsDefault,1) AS IsDefaultCurrency
+                    si.CurrencyID, ISNULL(si.ExchangeRate,1) AS ExchangeRate
                 FROM dbo.SalesInvoices si{hint}
                 INNER JOIN dbo.Customers c ON c.CustomerID=si.CustomerID
-                LEFT JOIN dbo.Currencies cur ON cur.CurrencyID=si.CurrencyID
                 WHERE si.InvoiceID=@InvoiceID;";
             var invoice = await connection.QueryFirstOrDefaultAsync<InvoiceState>(
                 sql, new { InvoiceID = invoiceId }, transaction);
             if (invoice == null) throw new KeyNotFoundException("الفاتورة الأصلية غير موجودة.");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, transaction, invoice.CurrencyID, invoice.ExchangeRate);
+            if (invoice.SalesOrderID.GetValueOrDefault() > 0)
+            {
+                var order = await connection.QueryFirstOrDefaultAsync<(
+                    int? SalesOrderID, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT SalesOrderID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE SalesOrderID=@ID",
+                    new { ID = invoice.SalesOrderID }, transaction);
+                if (!order.SalesOrderID.HasValue)
+                    throw new InvalidOperationException("أمر البيع المرتبط بالفاتورة الأصلية غير موجود.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, order.CurrencyID, order.ExchangeRate);
+            }
             if (invoice.InvoiceStatus != 3)
                 throw new InvalidOperationException("لا يقبل المرتجع إلا من فاتورة مبيعات معتمدة.");
             if (invoice.ShippingCost != 0 || invoice.OtherCosts != 0)
                 throw new InvalidOperationException("الفاتورة تحتوي على شحن أو تكاليف إضافية لا تُحفظ كسطور قابلة للمرتجع؛ أوقفنا الإشعار حتى لا نُصدر دائنًا ناقصًا أو مبالغًا فيه.");
-            if (!invoice.IsDefaultCurrency || Math.Abs(invoice.ExchangeRate - 1m) > 0.000001m)
-                throw new InvalidOperationException("الفاتورة الأصلية بعملة أو سعر صرف مختلف؛ مسار الإشعار الدائن الحالي يعمل بعملة النظام الافتراضية فقط.");
             if (invoice.InvoiceSource is not (2 or 3) || invoice.DeliveryID.GetValueOrDefault() > 0)
                 throw new InvalidOperationException("الفاتورة مرتبطة بمسار إذن تسليم لا يدعمه ربط حركات المخزون المتاح؛ لم يتم إنشاء المرتجع.");
 
@@ -1323,13 +1381,15 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
                     AND TargetRoleID IS NOT NULL AND TargetUserID IS NULL;",
                 new { ModuleCode, ReturnID = returnId }, transaction);
 
-        private async Task EnsureCanEditDraftAsync(
+        private Task EnsureCanEditDraftAsync(
             SqlConnection connection, IDbTransaction transaction, ReturnState header,
             int userId, ModulePermissionDto permission)
         {
-            if (permission.CanEdit) return;
-            if (permission.CanAdd && header.CreatedBy == userId && header.ReturnStatus is 1 or 4) return;
-            throw new UnauthorizedAccessException("لا تملك صلاحية تعديل هذه المسودة؛ يلزم صلاحية التعديل أو أن تكون منشئ المسودة.");
+            if (permission.CanEdit) return Task.CompletedTask;
+            if (permission.CanAdd && header.CreatedBy == userId && header.ReturnStatus is 1 or 4)
+                return Task.CompletedTask;
+            return Task.FromException(new UnauthorizedAccessException(
+                "لا تملك صلاحية تعديل هذه المسودة؛ يلزم صلاحية التعديل أو أن تكون منشئ المسودة."));
         }
 
         private async Task EnsureActiveWarehouseAsync(
@@ -1451,6 +1511,7 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
             public DateTime InvoiceDate { get; set; }
             public int CustomerID { get; set; }
             public string CustomerNameAr { get; set; } = "";
+            public int? SalesOrderID { get; set; }
             public int? SalesRepID { get; set; }
             public int? WarehouseID { get; set; }
             public int InvoiceStatus { get; set; }
@@ -1463,8 +1524,8 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
             public decimal ShippingCost { get; set; }
             public decimal OtherCosts { get; set; }
             public bool IsTaxable { get; set; }
+            public int? CurrencyID { get; set; }
             public decimal ExchangeRate { get; set; }
-            public bool IsDefaultCurrency { get; set; }
             public decimal HeaderDiscountFactor { get; set; }
             public decimal HeaderTaxFactor { get; set; }
             public List<InvoiceLineState> Lines { get; set; } = new();

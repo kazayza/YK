@@ -1,19 +1,29 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class CategoryService : BaseDbService
     {
+        private const string ModuleCode = "SCR_CATEGORIES";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public CategoryService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public CategoryService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequireCategoryPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentCategoryPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<CategoryListDto>> GetCategoriesListAsync()
         {
+            await RequireCurrentCategoryPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض التصنيفات.");
             using var connection = CreateConnection();
             var sql = @"SELECT c.CategoryID, c.CategoryCode, c.CategoryNameAr, c.CategoryNameEn,
                                c.ParentCategoryID, c.CategoryLevel, c.SortOrder, c.IsActive,
@@ -29,6 +39,7 @@ namespace YKCoatings.Services
 
         public async Task<CategoryEditDto?> GetCategoryByIdAsync(int categoryId)
         {
+            await RequireCurrentCategoryPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض التصنيفات.");
             using var connection = CreateConnection();
             var sql = @"SELECT CategoryID, CategoryCode, CategoryNameAr, CategoryNameEn,
                                ParentCategoryID, CategoryLevel, SortOrder, IsActive
@@ -38,6 +49,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertCategoryAsync(CategoryEditDto category, int userId)
         {
+            await RequireCategoryPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة التصنيفات.");
             using var connection = CreateConnection();
 
             int level = 1;
@@ -74,6 +86,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateCategoryAsync(CategoryEditDto category, int userId)
         {
+            await RequireCategoryPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل التصنيفات.");
             using var connection = CreateConnection();
 
             var oldCat = await connection.QueryFirstOrDefaultAsync<CategoryEditDto>(
@@ -125,6 +138,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteCategoryAsync(int categoryId, int userId)
         {
+            await RequireCategoryPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف التصنيفات.");
             using var connection = CreateConnection();
 
             var itemCount = await connection.QueryFirstOrDefaultAsync<int>(
@@ -155,6 +169,7 @@ namespace YKCoatings.Services
 
         public async Task<byte[]> ExportCategoriesToExcelAsync(List<CategoryListDto> categories, int userId)
         {
+            await RequireCategoryPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير التصنيفات.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("التصنيفات");
             ws.RightToLeft = true;

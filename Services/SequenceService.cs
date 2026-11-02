@@ -46,14 +46,17 @@ END";
 
         private readonly ModuleAuthorizationService _authorization;
         private readonly AuditService _audit;
+        private readonly ILogger<SequenceService> _logger;
 
         public SequenceService(
             IConfiguration configuration,
             ModuleAuthorizationService authorization,
-            AuditService audit) : base(configuration)
+            AuditService audit,
+            ILogger<SequenceService> logger) : base(configuration)
         {
             _authorization = authorization;
             _audit = audit;
+            _logger = logger;
         }
 
         /// <summary>
@@ -64,66 +67,124 @@ END";
         /// </summary>
         public async Task<string> GetNextCodeAsync(string sequenceCode)
         {
+            var normalizedCode = NormalizeSequenceCode(sequenceCode);
+            await RequireSequenceGenerationPermissionAsync(normalizedCode);
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+            try
+            {
+                var result = await GetNextCodeInTransactionAsync(connection, transaction, normalizedCode);
+                transaction.Commit();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after document sequence generation failed for {SequenceCode}.",
+                        normalizedCode);
+                }
+                throw CreateGenerationException(normalizedCode, ex);
+            }
+        }
+
+        /// <summary>
+        /// Generates a code inside a caller-owned transaction so the sequence increment
+        /// commits or rolls back with the document that consumes it.
+        /// </summary>
+        internal async Task<string> GetNextCodeAsync(
+            IDbConnection connection, IDbTransaction transaction, string sequenceCode)
+        {
+            var normalizedCode = NormalizeSequenceCode(sequenceCode);
+            await RequireSequenceGenerationPermissionAsync(normalizedCode);
+            try
+            {
+                return await GetNextCodeInTransactionAsync(connection, transaction, normalizedCode);
+            }
+            catch (Exception ex)
+            {
+                throw CreateGenerationException(normalizedCode, ex);
+            }
+        }
+
+        private async Task<string> GetNextCodeInTransactionAsync(
+            IDbConnection connection, IDbTransaction transaction, string normalizedCode)
+        {
+            var matches = (await connection.QueryAsync<SequenceState>(
+                @"SELECT SequenceID, IsActive, Prefix, CurrentNumber, NumberLength,
+                         IncludeYear, ResetYearly, LastResetYear,
+                         YEAR(GETDATE()) AS DatabaseCurrentYear
+                  FROM dbo.NumberSequences WITH (UPDLOCK, HOLDLOCK)
+                  WHERE SequenceCode=@Code",
+                new { Code = normalizedCode }, transaction)).ToList();
+
+            if (matches.Count != 1)
+                throw new InvalidOperationException(matches.Count == 0
+                    ? $"لا يوجد تسلسل وحيد مُعدّ بالرمز '{normalizedCode}'."
+                    : $"رمز التسلسل '{normalizedCode}' مكرر؛ أوقفنا التوليد لمنع تحديث أكثر من تسلسل.");
+            var state = matches[0];
+            if (state.IsActive != true)
+                throw new InvalidOperationException($"التسلسل '{normalizedCode}' غير مفعل؛ لم يُستهلك رقم.");
+            if (string.IsNullOrWhiteSpace(state.Prefix))
+                throw new InvalidOperationException($"بادئة التسلسل '{normalizedCode}' فارغة في قاعدة البيانات؛ لم يُستهلك رقم.");
+            if (!state.CurrentNumber.HasValue || state.CurrentNumber.Value < 0)
+                throw new InvalidOperationException($"العداد الحالي للتسلسل '{normalizedCode}' غير صالح؛ لم يُستهلك رقم.");
+            if (!state.NumberLength.HasValue || state.NumberLength.Value < 1
+                || state.NumberLength.Value > GetMaxNumberLength(state.Prefix, state.IncludeYear == true))
+                throw new InvalidOperationException($"طول الرقم للتسلسل '{normalizedCode}' يتجاوز سعة الإجراء المخزن؛ لم يُستهلك رقم.");
+            var willReset = state.ResetYearly == true &&
+                (!state.LastResetYear.HasValue || state.LastResetYear.Value < state.DatabaseCurrentYear);
+            var nextValue = willReset ? 1L : (long)state.CurrentNumber.Value + 1L;
+            if (nextValue > int.MaxValue)
+                throw new InvalidOperationException($"عداد التسلسل '{normalizedCode}' بلغ الحد الأعلى؛ لم يُستهلك رقم.");
+            if (!FitsNumberLength(nextValue, state.NumberLength.Value))
+                throw new InvalidOperationException($"الرقم التالي للتسلسل '{normalizedCode}' يتجاوز طول الجزء الرقمي؛ لم يُستهلك رقم.");
+
+            var result = await connection.QueryFirstOrDefaultAsync<string>(
+                @"DECLARE @NextNum NVARCHAR(50);
+                  EXEC dbo.sp_GetNextNumber @SequenceCode=@SeqCode, @NextNumber=@NextNum OUTPUT;
+                  SELECT @NextNum AS NewCode;",
+                new { SeqCode = normalizedCode }, transaction);
+            if (string.IsNullOrWhiteSpace(result))
+                throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً للتسلسل المطلوب.");
+            return result;
+        }
+
+        private Task RequireSequenceGenerationPermissionAsync(string normalizedCode)
+        {
+            (string ModuleCode, string Message) requirement = normalizedCode.ToUpperInvariant() switch
+            {
+                "HR-EMP" => ("SCR_EMP", "ليس لديك صلاحية إضافة الموظفين."),
+                "LN" => ("SCR_LOANS", "ليس لديك صلاحية إضافة السلف."),
+                "LV" => ("SCR_LEAVE", "ليس لديك صلاحية إنشاء طلبات الإجازة."),
+                // SequenceCode PR is used by PayrollService here. PurchaseRequestService
+                // has a separate SCR_PR-guarded call directly to sp_GetNextNumber.
+                "PR" => ("SCR_PAYROLL", "ليس لديك صلاحية إنشاء مسير رواتب."),
+                "RV" => ("SCR_RECV", "ليس لديك صلاحية إنشاء سند قبض."),
+                "PV" => ("SCR_PAYV", "ليس لديك صلاحية إنشاء سند صرف."),
+                _ => throw new UnauthorizedAccessException("لا يوجد مسار موثق مخول لتوليد رمز التسلسل المطلوب.")
+            };
+
+            return _authorization.RequireCurrentUserPermissionAsync(
+                requirement.ModuleCode, permission => permission.CanAdd, requirement.Message);
+        }
+
+        private static string NormalizeSequenceCode(string sequenceCode)
+        {
             if (string.IsNullOrWhiteSpace(sequenceCode))
                 throw new ArgumentException("رمز التسلسل مطلوب.", nameof(sequenceCode));
 
             var normalizedCode = sequenceCode.Trim();
             if (normalizedCode.Length > 20)
                 throw new InvalidOperationException("إجراء توليد الأرقام يقبل رمز تسلسل حتى 20 حرفاً فقط.");
-
-            using var connection = CreateConnection();
-            await connection.OpenAsync();
-            using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
-            try
-            {
-                var matches = (await connection.QueryAsync<SequenceState>(
-                    @"SELECT SequenceID, IsActive, Prefix, CurrentNumber, NumberLength,
-                             IncludeYear, ResetYearly, LastResetYear,
-                             YEAR(GETDATE()) AS DatabaseCurrentYear
-                      FROM dbo.NumberSequences WITH (UPDLOCK, HOLDLOCK)
-                      WHERE SequenceCode=@Code",
-                    new { Code = normalizedCode }, transaction)).ToList();
-
-                if (matches.Count != 1)
-                    throw new InvalidOperationException(matches.Count == 0
-                        ? $"لا يوجد تسلسل وحيد مُعدّ بالرمز '{normalizedCode}'."
-                        : $"رمز التسلسل '{normalizedCode}' مكرر؛ أوقفنا التوليد لمنع تحديث أكثر من تسلسل.");
-                var state = matches[0];
-                if (state.IsActive != true)
-                    throw new InvalidOperationException($"التسلسل '{normalizedCode}' غير مفعل؛ لم يُستهلك رقم.");
-                if (string.IsNullOrWhiteSpace(state.Prefix))
-                    throw new InvalidOperationException($"بادئة التسلسل '{normalizedCode}' فارغة في قاعدة البيانات؛ لم يُستهلك رقم.");
-                if (!state.CurrentNumber.HasValue || state.CurrentNumber.Value < 0)
-                    throw new InvalidOperationException($"العداد الحالي للتسلسل '{normalizedCode}' غير صالح؛ لم يُستهلك رقم.");
-                if (!state.NumberLength.HasValue || state.NumberLength.Value < 1
-                    || state.NumberLength.Value > GetMaxNumberLength(state.Prefix, state.IncludeYear == true))
-                    throw new InvalidOperationException($"طول الرقم للتسلسل '{normalizedCode}' يتجاوز سعة الإجراء المخزن؛ لم يُستهلك رقم.");
-                var willReset = state.ResetYearly == true &&
-                    (!state.LastResetYear.HasValue || state.LastResetYear.Value < state.DatabaseCurrentYear);
-                var nextValue = willReset ? 1L : (long)state.CurrentNumber.Value + 1L;
-                if (nextValue > int.MaxValue)
-                    throw new InvalidOperationException($"عداد التسلسل '{normalizedCode}' بلغ الحد الأعلى؛ لم يُستهلك رقم.");
-                if (!FitsNumberLength(nextValue, state.NumberLength.Value))
-                    throw new InvalidOperationException($"الرقم التالي للتسلسل '{normalizedCode}' يتجاوز طول الجزء الرقمي؛ لم يُستهلك رقم.");
-
-                var result = await connection.QueryFirstOrDefaultAsync<string>(
-                    @"DECLARE @NextNum NVARCHAR(50);
-                      EXEC dbo.sp_GetNextNumber @SequenceCode=@SeqCode, @NextNumber=@NextNum OUTPUT;
-                      SELECT @NextNum AS NewCode;",
-                    new { SeqCode = normalizedCode }, transaction);
-                if (string.IsNullOrWhiteSpace(result))
-                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً للتسلسل المطلوب.");
-
-                transaction.Commit();
-                return result;
-            }
-            catch (Exception ex)
-            {
-                try { transaction.Rollback(); } catch { }
-                throw new InvalidOperationException(
-                    $"تعذر توليد رقم للتسلسل '{normalizedCode}'. لم يُنشأ رقم بديل؛ راجع إعداد NumberSequences.", ex);
-            }
+            return normalizedCode;
         }
+
+        private static InvalidOperationException CreateGenerationException(string sequenceCode, Exception innerException) =>
+            new($"تعذر توليد رقم للتسلسل '{sequenceCode}'. لم يُنشأ رقم بديل؛ راجع إعداد NumberSequences.", innerException);
 
         /// <summary>
         /// Read-only preview using the same year/reset/prefix rules as dbo.sp_GetNextNumber.
@@ -131,6 +192,10 @@ END";
         /// </summary>
         public async Task<string> PeekNextCodeAsync(string sequenceCode)
         {
+            await _authorization.RequireCurrentUserPermissionAsync(
+                SettingsModuleCode, permission => permission.CanView,
+                "لا تملك صلاحية عرض إعدادات التسلسلات.");
+
             if (string.IsNullOrWhiteSpace(sequenceCode))
                 throw new ArgumentException("رمز التسلسل مطلوب.", nameof(sequenceCode));
 
@@ -237,7 +302,13 @@ END";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while adding managed document sequence {SequenceCode}.",
+                        code);
+                }
                 throw;
             }
 
@@ -343,7 +414,13 @@ END";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while updating managed document sequence {SequenceID}.",
+                        sequence.SequenceID);
+                }
                 throw;
             }
 

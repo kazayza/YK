@@ -75,6 +75,7 @@ namespace YKCoatings.Services
             public int AccountType { get; set; }
             public bool IsDetailAccount { get; set; }
             public bool IsActive { get; set; }
+            public bool CostCenterRequired { get; set; }
         }
 
         private sealed class ReturnAccountingPeriod
@@ -516,13 +517,17 @@ namespace YKCoatings.Services
                 throw new InvalidOperationException("مبالغ مرتجع المبيعات لا يمكن أن تكون سالبة.");
             if (Math.Abs((subtotal + taxAmount) - totalAmount) > 0.01m)
                 throw new InvalidOperationException("إجمالي المرتجع لا يساوي صافي السطور مضافاً إليه الضريبة.");
+            if (restockedCost > 0m)
+                throw new InvalidOperationException(
+                    "لا يمكن اعتماد مرتجع يتطلب عكس تكلفة مخزون قبل تثبيت حساب تكلفة المبيعات الصحيح؛ كود 5101 هو «مواد خام مستخدمة» وفق الشجرة التي أكدها المستخدم. لم يتم اختيار حساب بديل، وأُلغيت المعاملة.");
 
             var lines = new List<ReturnJournalLine>();
-            // Canonical YK chart codes; verify account type/activity/detail status before posting.
-            // This intentionally fails closed if the deployed chart differs from the assumed mapping.
-            var accountCodes = new[] { "1103", "41", "2105", "5101", "110504" };
+            // Verify only the confirmed receivable, revenue, and tax mapping used by this portion.
+            // Inventory-cost reversals fail closed above until a valid cost-of-sales account is confirmed.
+            var accountCodes = new[] { "1103", "41", "2105" };
             var accountRows = (await connection.QueryAsync<AccountIdRow>(
-                @"SELECT AccountCode,AccountID,AccountType,IsDetailAccount,ISNULL(IsActive,0) AS IsActive
+                @"SELECT AccountCode,AccountID,AccountType,IsDetailAccount,ISNULL(IsActive,0) AS IsActive,
+                         CONVERT(bit,ISNULL(CostCenterRequired,0)) AS CostCenterRequired
                   FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK)
                   WHERE AccountCode IN @AccountCodes;",
                 new { AccountCodes = accountCodes }, transaction)).ToList();
@@ -536,6 +541,8 @@ namespace YKCoatings.Services
                     throw new InvalidOperationException($"الحساب المحاسبي {code} المطلوب لعكس فاتورة البيع غير مهيأ؛ لم يتم اعتماد المرتجع.");
                 if (!account.IsActive || !account.IsDetailAccount || account.AccountType != expectedType)
                     throw new InvalidOperationException($"الحساب {code} غير نشط أو ليس حساباً تفصيلياً من النوع المتوقع؛ راجع دليل الحسابات قبل اعتماد المرتجع.");
+                if (account.CostCenterRequired)
+                    throw new InvalidOperationException($"الحساب {code} يتطلب مركز تكلفة، لكن مرتجع المبيعات لا يوفّر مركزًا لهذا القيد؛ أُلغيت المعاملة بدل إنشاء قيد غير مكتمل.");
             }
 
             if (totalAmount > 0)
@@ -544,12 +551,6 @@ namespace YKCoatings.Services
                 if (subtotal > 0) RequireAccount("41", expectedType: 4); // sales revenue
                 if (taxAmount > 0) RequireAccount("2105", expectedType: 2); // output tax liability
             }
-            if (restockedCost > 0)
-            {
-                RequireAccount("110504", expectedType: 1); // inventory asset
-                RequireAccount("5101", expectedType: 5); // cost of sales
-            }
-
             var customerName = await connection.ExecuteScalarAsync<string>(
                 "SELECT CustomerNameAr FROM dbo.Customers WHERE CustomerID=@CustomerID;",
                 new { header.CustomerID }, transaction) ?? "العميل";
@@ -574,20 +575,6 @@ namespace YKCoatings.Services
                     EntityType = "Customer",
                     EntityID = header.CustomerID
                 });
-            if (restockedCost > 0)
-            {
-                lines.Add(new ReturnJournalLine
-                {
-                    AccountID = accounts["110504"].AccountID, Debit = restockedCost, Credit = 0m,
-                    Description = TruncateJournalText($"إعادة مخزون بتكلفة FIFO - {header.ReturnNumber}", 200)
-                });
-                lines.Add(new ReturnJournalLine
-                {
-                    AccountID = accounts["5101"].AccountID, Debit = 0m, Credit = restockedCost,
-                    Description = TruncateJournalText($"عكس تكلفة المبيعات - {header.ReturnNumber}", 200)
-                });
-            }
-
             if (lines.Count == 0) return;
             var openPeriods = (await connection.QueryAsync<ReturnAccountingPeriod>(
                 @"SELECT fy.FiscalYearID,ap.PeriodID

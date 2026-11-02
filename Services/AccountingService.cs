@@ -1,4 +1,5 @@
 using Dapper;
+using Microsoft.Data.SqlClient;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
@@ -7,14 +8,17 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<AccountingService> _logger;
 
         public AccountingService(
             IConfiguration configuration,
             AuditService audit,
-            ModuleAuthorizationService authorization) : base(configuration)
+            ModuleAuthorizationService authorization,
+            ILogger<AccountingService> logger) : base(configuration)
         {
             _audit = audit;
             _authorization = authorization;
+            _logger = logger;
         }
 
         private async Task RequireFiscalLookupPermissionAsync(string deniedMessage)
@@ -74,10 +78,34 @@ namespace YKCoatings.Services
                 ("SCR_OVERHEAD", predicate),
                 ("SCR_OVERHEAD_EXPENSES", predicate));
 
+        private static void AggregateAccountBalances(IReadOnlyCollection<ChartOfAccountDto> accounts)
+        {
+            var byId = accounts.ToDictionary(account => account.AccountID);
+            var directBalances = accounts.ToDictionary(account => account.AccountID, account => account.CurrentBalance);
+
+            foreach (var account in accounts)
+            {
+                if (!account.IsActive) continue;
+                var balance = directBalances[account.AccountID];
+                var parentId = account.ParentAccountID;
+                var visited = new HashSet<int> { account.AccountID };
+
+                while (parentId is int id && id > 0)
+                {
+                    if (!visited.Add(id))
+                        throw new InvalidOperationException("توجد دورة في شجرة الحسابات؛ تعذر تجميع الأرصدة بأمان.");
+                    if (!byId.TryGetValue(id, out var parent) || !parent.IsActive) break;
+
+                    parent.CurrentBalance += balance;
+                    parentId = parent.ParentAccountID;
+                }
+            }
+        }
+
         // ==========================================
         // شجرة الحسابات - على الجدول الحقيقي ChartOfAccounts
         // ==========================================
-        // حساب الأرصدة الفعلية من القيود - الرصيد الحقيقي = افتتاحي + مدين - دائن
+        // حساب الأرصدة الفعلية من القيود - الرصيد المعروض يتبع الطبيعة: مدين للحساب المدين ودائن للحساب الدائن
         public async Task<List<ChartOfAccountDto>> GetChartOfAccountsAsync()
         {
             await _authorization.RequireCurrentUserPermissionAsync(
@@ -93,7 +121,7 @@ namespace YKCoatings.Services
                            SUM(ISNULL(jd.CreditAmount,0)) AS TotalCredit
                     FROM dbo.JournalEntryDetails jd
                     INNER JOIN dbo.JournalEntries je ON jd.JournalID = je.JournalID
-                    WHERE ISNULL(je.JournalStatus,1) != 3
+                    WHERE je.JournalStatus = 2
                     GROUP BY jd.AccountID
                 )
                 SELECT coa.AccountID, coa.AccountCode, coa.AccountNameAr, coa.AccountNameEn, coa.ParentAccountID, p.AccountNameAr AS ParentAccountNameAr,
@@ -101,7 +129,10 @@ namespace YKCoatings.Services
                        CASE coa.AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية' WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
                        coa.AccountNature, coa.IsDetailAccount, coa.CurrencyID, coa.CostCenterRequired, 
                        ISNULL(coa.OpeningBalance,0) AS OpeningBalance,
-                       ISNULL(coa.OpeningBalance,0) + ISNULL(js.TotalDebit,0) - ISNULL(js.TotalCredit,0) AS CurrentBalance,
+                       CASE WHEN ISNULL(coa.AccountNature,1)=2
+                            THEN ISNULL(coa.OpeningBalance,0) + ISNULL(js.TotalCredit,0) - ISNULL(js.TotalDebit,0)
+                            ELSE ISNULL(coa.OpeningBalance,0) + ISNULL(js.TotalDebit,0) - ISNULL(js.TotalCredit,0)
+                       END AS CurrentBalance,
                        coa.LinkedEntityType, coa.LinkedEntityID, coa.IsSystemAccount, coa.IsCashFlowAccount, coa.SortOrder, coa.Description, coa.IsActive,
                        (SELECT COUNT(*) FROM dbo.ChartOfAccounts c WHERE c.ParentAccountID=coa.AccountID) AS ChildrenCount
                 FROM dbo.ChartOfAccounts coa
@@ -111,14 +142,8 @@ namespace YKCoatings.Services
                 var result = await connection.QueryAsync<ChartOfAccountDto>(sql);
                 var all = result.ToList();
 
+                AggregateAccountBalances(all);
                 var lookup = all.ToDictionary(x => x.AccountID);
-                foreach (var acc in all.OrderByDescending(x => x.AccountLevel))
-                {
-                    if (acc.ParentAccountID.HasValue && lookup.ContainsKey(acc.ParentAccountID.Value))
-                    {
-                        lookup[acc.ParentAccountID.Value].CurrentBalance += acc.CurrentBalance;
-                    }
-                }
 
                 var roots = new List<ChartOfAccountDto>();
                 foreach (var acc in all)
@@ -136,7 +161,11 @@ namespace YKCoatings.Services
                 var sql2 = @"SELECT coa.AccountID, coa.AccountCode, coa.AccountNameAr, coa.AccountNameEn, coa.ParentAccountID, p.AccountNameAr AS ParentAccountNameAr,
                                coa.AccountLevel, coa.AccountType,
                                CASE coa.AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية' WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
-                               coa.AccountNature, coa.IsDetailAccount, coa.CurrencyID, coa.CostCenterRequired, coa.OpeningBalance, coa.CurrentBalance,
+                               coa.AccountNature, coa.IsDetailAccount, coa.CurrencyID, coa.CostCenterRequired, coa.OpeningBalance,
+                               CASE WHEN ISNULL(coa.AccountNature,1)=2
+                                    THEN (2*ISNULL(coa.OpeningBalance,0))-ISNULL(coa.CurrentBalance,ISNULL(coa.OpeningBalance,0))
+                                    ELSE ISNULL(coa.CurrentBalance,ISNULL(coa.OpeningBalance,0))
+                               END AS CurrentBalance,
                                coa.LinkedEntityType, coa.LinkedEntityID, coa.IsSystemAccount, coa.IsCashFlowAccount, coa.SortOrder, coa.Description, coa.IsActive,
                                (SELECT COUNT(*) FROM dbo.ChartOfAccounts c WHERE c.ParentAccountID=coa.AccountID) AS ChildrenCount
                         FROM dbo.ChartOfAccounts coa
@@ -144,6 +173,7 @@ namespace YKCoatings.Services
                         ORDER BY coa.AccountCode";
                 var result = await connection.QueryAsync<ChartOfAccountDto>(sql2);
                 var all = result.ToList();
+                AggregateAccountBalances(all);
                 var lookup = all.ToDictionary(x => x.AccountID);
                 var roots = new List<ChartOfAccountDto>();
                 foreach (var acc in all)
@@ -172,20 +202,24 @@ namespace YKCoatings.Services
                            SUM(ISNULL(jd.CreditAmount,0)) AS TotalCredit
                     FROM dbo.JournalEntryDetails jd
                     INNER JOIN dbo.JournalEntries je ON jd.JournalID = je.JournalID
-                    WHERE ISNULL(je.JournalStatus,1) != 3
+                    WHERE je.JournalStatus = 2
                     GROUP BY jd.AccountID
                 )
                 SELECT AccountID, AccountCode, AccountNameAr, AccountNameEn, ParentAccountID, AccountLevel, AccountType,
                        CASE AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية' WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
                        AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, 
                        ISNULL(OpeningBalance,0) AS OpeningBalance,
-                       ISNULL(OpeningBalance,0) + ISNULL(js.TotalDebit,0) - ISNULL(js.TotalCredit,0) AS CurrentBalance,
+                       CASE WHEN ISNULL(coa.AccountNature,1)=2
+                            THEN ISNULL(coa.OpeningBalance,0) + ISNULL(js.TotalCredit,0) - ISNULL(js.TotalDebit,0)
+                            ELSE ISNULL(coa.OpeningBalance,0) + ISNULL(js.TotalDebit,0) - ISNULL(js.TotalCredit,0)
+                       END AS CurrentBalance,
                        LinkedEntityType, LinkedEntityID, IsSystemAccount, IsCashFlowAccount, SortOrder, Description, IsActive, 0 AS ChildrenCount
                 FROM dbo.ChartOfAccounts coa
                 LEFT JOIN JournalSums js ON js.AccountID = coa.AccountID
                 WHERE IsActive=1 ORDER BY AccountCode";
-                var result = await connection.QueryAsync<ChartOfAccountDto>(sql);
-                return result.ToList();
+                var result = (await connection.QueryAsync<ChartOfAccountDto>(sql)).ToList();
+                AggregateAccountBalances(result);
+                return result;
             }
             catch
             {
@@ -194,21 +228,31 @@ namespace YKCoatings.Services
                 {
                     var sql2 = @"SELECT AccountID, AccountCode, AccountNameAr, AccountNameEn, ParentAccountID, AccountLevel, AccountType,
                                CASE AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية' WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
-                               AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance, CurrentBalance,
+                               AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance,
+                               CASE WHEN ISNULL(AccountNature,1)=2
+                                    THEN (2*ISNULL(OpeningBalance,0))-ISNULL(CurrentBalance,ISNULL(OpeningBalance,0))
+                                    ELSE ISNULL(CurrentBalance,ISNULL(OpeningBalance,0))
+                               END AS CurrentBalance,
                                LinkedEntityType, LinkedEntityID, IsSystemAccount, IsCashFlowAccount, SortOrder, Description, IsActive, 0 AS ChildrenCount
                         FROM dbo.ChartOfAccounts WHERE IsActive=1 ORDER BY AccountCode";
-                    var result = await connection.QueryAsync<ChartOfAccountDto>(sql2);
-                    return result.ToList();
+                    var result = (await connection.QueryAsync<ChartOfAccountDto>(sql2)).ToList();
+                    AggregateAccountBalances(result);
+                    return result;
                 }
                 catch
                 {
                     var sql3 = @"SELECT AccountID, AccountCode, AccountNameAr, AccountNameEn, ParentAccountID, AccountLevel, AccountType,
                                CASE AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية' WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
-                               AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance, CurrentBalance,
+                               AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance,
+                               CASE WHEN ISNULL(AccountNature,1)=2
+                                    THEN (2*ISNULL(OpeningBalance,0))-ISNULL(CurrentBalance,ISNULL(OpeningBalance,0))
+                                    ELSE ISNULL(CurrentBalance,ISNULL(OpeningBalance,0))
+                               END AS CurrentBalance,
                                LinkedEntityType, LinkedEntityID, IsSystemAccount, IsCashFlowAccount, SortOrder, Description, 1 AS IsActive, 0 AS ChildrenCount
                         FROM dbo.ChartOfAccounts ORDER BY AccountCode";
-                    var result = await connection.QueryAsync<ChartOfAccountDto>(sql3);
-                    return result.ToList();
+                    var result = (await connection.QueryAsync<ChartOfAccountDto>(sql3)).ToList();
+                    AggregateAccountBalances(result);
+                    return result;
                 }
             }
         }
@@ -219,7 +263,7 @@ namespace YKCoatings.Services
                 p => p.CanView || p.CanAdd || p.CanEdit,
                 "ليس لديك صلاحية استخدام قوائم حسابات المصروفات.");
 
-            return await GetAccountSelectionLookupsCoreAsync();
+            return await GetAccountSelectionLookupsCoreAsync(logPrimaryReadFailure: true);
         }
 
         public async Task<List<ChartOfAccountDto>> GetCashBoxAccountLookupsAsync()
@@ -233,7 +277,7 @@ namespace YKCoatings.Services
             return await GetAccountSelectionLookupsCoreAsync();
         }
 
-        private async Task<List<ChartOfAccountDto>> GetAccountSelectionLookupsCoreAsync()
+        private async Task<List<ChartOfAccountDto>> GetAccountSelectionLookupsCoreAsync(bool logPrimaryReadFailure = false)
         {
             using var connection = CreateConnection();
             try
@@ -246,15 +290,29 @@ namespace YKCoatings.Services
                 var result = await connection.QueryAsync<ChartOfAccountDto>(sql);
                 return result.ToList();
             }
-            catch
+            catch (Exception primaryException)
             {
-                var sql = @"SELECT AccountID, AccountCode, AccountNameAr, AccountType,
+                if (logPrimaryReadFailure)
+                    _logger.LogWarning(primaryException,
+                        "The active account selection lookup failed; attempting the compatibility fallback.");
+
+                try
+                {
+                    var sql = @"SELECT AccountID, AccountCode, AccountNameAr, AccountType,
                                   CASE AccountType WHEN 1 THEN N'أصول' WHEN 2 THEN N'التزامات' WHEN 3 THEN N'حقوق ملكية'
                                                    WHEN 4 THEN N'إيرادات' WHEN 5 THEN N'تكلفة' WHEN 6 THEN N'مصروفات' ELSE N'غير محدد' END AS AccountTypeName,
                                   IsDetailAccount, 1 AS IsActive
                             FROM dbo.ChartOfAccounts ORDER BY AccountCode";
-                var result = await connection.QueryAsync<ChartOfAccountDto>(sql);
-                return result.ToList();
+                    var result = await connection.QueryAsync<ChartOfAccountDto>(sql);
+                    return result.ToList();
+                }
+                catch (Exception fallbackException)
+                {
+                    if (logPrimaryReadFailure)
+                        _logger.LogError(fallbackException,
+                            "The compatibility fallback for account selection lookups failed.");
+                    throw;
+                }
             }
         }
 
@@ -275,48 +333,128 @@ namespace YKCoatings.Services
         {
             await _authorization.RequireUserPermissionAsync(
                 userId, "SCR_COA", p => p.CanAdd, "ليس لديك صلاحية إضافة حساب.");
+            if (string.IsNullOrWhiteSpace(dto.AccountNameAr))
+                throw new InvalidOperationException("اسم الحساب العربي مطلوب.");
 
             using var connection = CreateConnection();
-            var parentLevel = 0;
-            if (dto.ParentAccountID.HasValue && dto.ParentAccountID > 0)
-                parentLevel = await connection.ExecuteScalarAsync<int>("SELECT ISNULL(AccountLevel,1) FROM dbo.ChartOfAccounts WHERE AccountID=@ID", new { ID = dto.ParentAccountID });
-
-            dto.AccountLevel = parentLevel + 1;
-            if (string.IsNullOrWhiteSpace(dto.AccountCode))
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            int newId;
+            try
             {
-                var prefix = dto.ParentAccountID.HasValue ? await connection.QueryFirstOrDefaultAsync<string>("SELECT AccountCode FROM dbo.ChartOfAccounts WHERE AccountID=@ID", new { ID = dto.ParentAccountID }) : "1";
-                var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*)+1 FROM dbo.ChartOfAccounts WHERE ParentAccountID=@PID", new { PID = dto.ParentAccountID });
-                dto.AccountCode = $"{prefix}{count:00}";
+                var parentAccountId = dto.ParentAccountID.GetValueOrDefault();
+                if (parentAccountId <= 0) dto.ParentAccountID = null;
+
+                var parentLevel = 0;
+                if (parentAccountId > 0)
+                {
+                    var parentLevelValue = await connection.ExecuteScalarAsync<int?>(
+                        "SELECT ISNULL(AccountLevel,1) FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountID=@ID",
+                        new { ID = parentAccountId }, trans);
+                    if (!parentLevelValue.HasValue)
+                        throw new InvalidOperationException("الحساب الأب غير موجود.");
+                    parentLevel = parentLevelValue.Value;
+                }
+
+                dto.AccountLevel = parentLevel + 1;
+                var generateCode = string.IsNullOrWhiteSpace(dto.AccountCode);
+                if (generateCode)
+                {
+                    var prefix = parentAccountId > 0
+                        ? await connection.QueryFirstOrDefaultAsync<string>(
+                            "SELECT AccountCode FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountID=@ID",
+                            new { ID = parentAccountId }, trans)
+                        : "1";
+                    if (string.IsNullOrWhiteSpace(prefix))
+                        throw new InvalidOperationException("تعذر توليد كود الحساب لأن الحساب الأب غير موجود أو بلا كود.");
+
+                    var nextSuffix = parentAccountId > 0
+                        ? await connection.ExecuteScalarAsync<int>(
+                            "SELECT COUNT(*)+1 FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE ParentAccountID=@PID",
+                            new { PID = parentAccountId }, trans)
+                        : await connection.ExecuteScalarAsync<int>(
+                            "SELECT COUNT(*)+1 FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE ParentAccountID IS NULL",
+                            transaction: trans);
+
+                    while (true)
+                    {
+                        var candidate = $"{prefix}{nextSuffix:00}";
+                        var codeExists = await connection.ExecuteScalarAsync<int>(
+                            "SELECT COUNT(1) FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountCode=@Code",
+                            new { Code = candidate }, trans);
+                        if (codeExists == 0)
+                        {
+                            dto.AccountCode = candidate;
+                            break;
+                        }
+                        if (nextSuffix == int.MaxValue)
+                            throw new InvalidOperationException("تعذر إيجاد كود حساب متاح.");
+                        nextSuffix++;
+                    }
+                }
+                else
+                {
+                    dto.AccountCode = dto.AccountCode!.Trim();
+                }
+
+                var duplicateCode = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountCode=@Code",
+                    new { Code = dto.AccountCode }, trans);
+                if (duplicateCode > 0)
+                    throw new InvalidOperationException("كود الحساب مستخدم بالفعل.");
+
+                var sql = @"INSERT INTO dbo.ChartOfAccounts(AccountCode, AccountNameAr, AccountNameEn, ParentAccountID, AccountLevel, AccountType, AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance, CurrentBalance, LinkedEntityType, LinkedEntityID, IsSystemAccount, IsCashFlowAccount, SortOrder, Description, IsActive, CreatedBy, CreatedDate)
+                            VALUES(@AccountCode, @AccountNameAr, @AccountNameEn, NULLIF(@ParentAccountID,0), @AccountLevel, @AccountType, @AccountNature, @IsDetailAccount, NULLIF(@CurrencyID,0), @CostCenterRequired, @OpeningBalance, @OpeningBalance, @LinkedEntityType, @LinkedEntityID, @IsSystemAccount, @IsCashFlowAccount, @SortOrder, @Description, @IsActive, @UserID, GETDATE());
+                            SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+                newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    dto.AccountCode,
+                    dto.AccountNameAr,
+                    dto.AccountNameEn,
+                    dto.ParentAccountID,
+                    dto.AccountLevel,
+                    dto.AccountType,
+                    dto.AccountNature,
+                    dto.IsDetailAccount,
+                    dto.CurrencyID,
+                    dto.CostCenterRequired,
+                    dto.OpeningBalance,
+                    dto.LinkedEntityType,
+                    dto.LinkedEntityID,
+                    dto.IsSystemAccount,
+                    dto.IsCashFlowAccount,
+                    dto.SortOrder,
+                    dto.Description,
+                    dto.IsActive,
+                    UserID = userId
+                }, trans);
+                if (newId <= 0) throw new InvalidOperationException("لم يتم إنشاء الحساب.");
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating chart of accounts account {AccountCode} for user {UserID}.",
+                        dto.AccountCode,
+                        userId);
+                }
+                throw;
             }
 
-            var sql = @"INSERT INTO dbo.ChartOfAccounts(AccountCode, AccountNameAr, AccountNameEn, ParentAccountID, AccountLevel, AccountType, AccountNature, IsDetailAccount, CurrencyID, CostCenterRequired, OpeningBalance, CurrentBalance, LinkedEntityType, LinkedEntityID, IsSystemAccount, IsCashFlowAccount, SortOrder, Description, IsActive, CreatedBy, CreatedDate)
-                        VALUES(@AccountCode, @AccountNameAr, @AccountNameEn, NULLIF(@ParentAccountID,0), @AccountLevel, @AccountType, @AccountNature, @IsDetailAccount, NULLIF(@CurrencyID,0), @CostCenterRequired, @OpeningBalance, @OpeningBalance, @LinkedEntityType, @LinkedEntityID, @IsSystemAccount, @IsCashFlowAccount, @SortOrder, @Description, @IsActive, @UserID, GETDATE());
-                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
-            var newId = await connection.ExecuteScalarAsync<int>(sql, new
+            try
             {
-                dto.AccountCode,
-                dto.AccountNameAr,
-                dto.AccountNameEn,
-                dto.ParentAccountID,
-                dto.AccountLevel,
-                dto.AccountType,
-                dto.AccountNature,
-                dto.IsDetailAccount,
-                dto.CurrencyID,
-                dto.CostCenterRequired,
-                dto.OpeningBalance,
-                dto.LinkedEntityType,
-                dto.LinkedEntityID,
-                dto.IsSystemAccount,
-                dto.IsCashFlowAccount,
-                dto.SortOrder,
-                dto.Description,
-                dto.IsActive,
-                UserID = userId
-            });
-
-            try { await _audit.WriteAuditLogAsync(userId, 1, "ChartOfAccounts", newId.ToString(), moduleName: "SCR_COA", description: $"إنشاء حساب: {dto.AccountCode} - {dto.AccountNameAr}"); } catch { }
+                await _audit.WriteAuditLogAsync(userId, 1, "ChartOfAccounts", newId.ToString(), moduleName: "SCR_COA", description: $"إنشاء حساب: {dto.AccountCode} - {dto.AccountNameAr}");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after creating chart-of-accounts entry {AccountID}.",
+                    newId);
+            }
             return newId;
         }
 
@@ -324,46 +462,144 @@ namespace YKCoatings.Services
         {
             await _authorization.RequireUserPermissionAsync(
                 userId, "SCR_COA", p => p.CanEdit, "ليس لديك صلاحية تعديل الحسابات.");
+            if (dto.AccountID <= 0) throw new ArgumentOutOfRangeException(nameof(dto.AccountID));
 
             using var connection = CreateConnection();
-            var sql = @"UPDATE dbo.ChartOfAccounts SET AccountNameAr=@AccountNameAr, AccountNameEn=@AccountNameEn, AccountType=@AccountType, AccountNature=@AccountNature,
-                        IsDetailAccount=@IsDetailAccount, CurrencyID=NULLIF(@CurrencyID,0), CostCenterRequired=@CostCenterRequired,
-                        LinkedEntityType=@LinkedEntityType, LinkedEntityID=@LinkedEntityID, Description=@Description, IsActive=@IsActive,
-                        ModifiedBy=@UserID, ModifiedDate=GETDATE()
-                        WHERE AccountID=@AccountID";
-            await connection.ExecuteAsync(sql, new
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
             {
-                dto.AccountID,
-                dto.AccountNameAr,
-                dto.AccountNameEn,
-                dto.AccountType,
-                dto.AccountNature,
-                dto.IsDetailAccount,
-                dto.CurrencyID,
-                dto.CostCenterRequired,
-                dto.LinkedEntityType,
-                dto.LinkedEntityID,
-                dto.Description,
-                dto.IsActive,
-                UserID = userId
-            });
-            try { await _audit.WriteAuditLogAsync(userId, 2, "ChartOfAccounts", dto.AccountID.ToString(), moduleName: "SCR_COA", description: $"تعديل حساب: {dto.AccountCode}"); } catch { }
+                var current = await connection.QueryFirstOrDefaultAsync<(
+                    int? AccountID, string? AccountCode, int? ParentAccountID, decimal? OpeningBalance, bool IsSystemAccount)>(
+                    @"SELECT AccountID, AccountCode, ParentAccountID, OpeningBalance,
+                             ISNULL(IsSystemAccount,0) AS IsSystemAccount
+                      FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountID=@ID",
+                    new { ID = dto.AccountID }, trans);
+                if (!current.AccountID.HasValue)
+                    throw new InvalidOperationException("الحساب غير موجود أو تم حذفه.");
+
+                var requestedParentId = dto.ParentAccountID.GetValueOrDefault();
+                var currentParentId = current.ParentAccountID.GetValueOrDefault();
+                var accountCodeChanged = !string.Equals(
+                    dto.AccountCode?.Trim(), current.AccountCode?.Trim(), StringComparison.OrdinalIgnoreCase);
+                if (accountCodeChanged || requestedParentId != currentParentId
+                    || dto.OpeningBalance != current.OpeningBalance.GetValueOrDefault()
+                    || dto.IsSystemAccount != current.IsSystemAccount)
+                    throw new InvalidOperationException(
+                        "كود الحساب والأب والرصيد الافتتاحي وحالة الحساب النظامي لا تُعدّل من نافذة التعديل العامة؛ لم تُحفظ هذه التغييرات.");
+
+                var updated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.ChartOfAccounts SET
+                        AccountNameAr=@AccountNameAr, AccountNameEn=@AccountNameEn,
+                        AccountType=@AccountType, AccountNature=@AccountNature,
+                        IsDetailAccount=@IsDetailAccount, CurrencyID=NULLIF(@CurrencyID,0),
+                        CostCenterRequired=@CostCenterRequired, LinkedEntityType=@LinkedEntityType,
+                        LinkedEntityID=@LinkedEntityID, SortOrder=@SortOrder, Description=@Description,
+                        IsActive=@IsActive, ModifiedBy=@UserID, ModifiedDate=GETDATE()
+                      WHERE AccountID=@AccountID",
+                    new
+                    {
+                        dto.AccountID,
+                        dto.AccountNameAr,
+                        dto.AccountNameEn,
+                        dto.AccountType,
+                        dto.AccountNature,
+                        dto.IsDetailAccount,
+                        dto.CurrencyID,
+                        dto.CostCenterRequired,
+                        dto.LinkedEntityType,
+                        dto.LinkedEntityID,
+                        dto.SortOrder,
+                        dto.Description,
+                        dto.IsActive,
+                        UserID = userId
+                    }, trans);
+                if (updated != 1)
+                    throw new InvalidOperationException("لم يتم تحديث الحساب؛ أُلغيت العملية.");
+
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating chart of accounts account {AccountID} failed.",
+                        dto.AccountID);
+                }
+                throw;
+            }
+
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "ChartOfAccounts", dto.AccountID.ToString(), moduleName: "SCR_COA", description: $"تعديل حساب: {dto.AccountCode}");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after updating chart-of-accounts entry {AccountID}.",
+                    dto.AccountID);
+            }
         }
 
         public async Task DeleteAccountAsync(int id, int userId)
         {
             await _authorization.RequireUserPermissionAsync(
                 userId, "SCR_COA", p => p.CanDelete, "ليس لديك صلاحية حذف الحسابات.");
+            if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
 
             using var connection = CreateConnection();
-            var hasChildren = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.ChartOfAccounts WHERE ParentAccountID=@ID", new { ID = id });
-            if (hasChildren > 0) throw new Exception("لا يمكن حذف حساب له حسابات فرعية");
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
+            {
+                var account = await connection.QueryFirstOrDefaultAsync<(int? AccountID, bool IsSystemAccount)>(
+                    @"SELECT AccountID, ISNULL(IsSystemAccount,0) AS IsSystemAccount
+                      FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountID=@ID",
+                    new { ID = id }, trans);
+                if (!account.AccountID.HasValue) throw new InvalidOperationException("الحساب غير موجود.");
+                if (account.IsSystemAccount)
+                    throw new InvalidOperationException("لا يمكن حذف حساب نظامي.");
 
-            var hasTrans = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.JournalEntryDetails WHERE AccountID=@ID", new { ID = id });
-            if (hasTrans > 0) throw new Exception("لا يمكن حذف حساب به حركات محاسبية");
+                var hasChildren = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE ParentAccountID=@ID",
+                    new { ID = id }, trans);
+                if (hasChildren > 0) throw new Exception("لا يمكن حذف حساب له حسابات فرعية");
 
-            await connection.ExecuteAsync("DELETE FROM dbo.ChartOfAccounts WHERE AccountID=@ID", new { ID = id });
-            try { await _audit.WriteAuditLogAsync(userId, 3, "ChartOfAccounts", id.ToString(), moduleName: "SCR_COA", description: "حذف حساب"); } catch { }
+                var hasTrans = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM dbo.JournalEntryDetails WITH (UPDLOCK,HOLDLOCK) WHERE AccountID=@ID",
+                    new { ID = id }, trans);
+                if (hasTrans > 0) throw new Exception("لا يمكن حذف حساب به حركات محاسبية");
+
+                var deleted = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.ChartOfAccounts WHERE AccountID=@ID AND ISNULL(IsSystemAccount,0)=0",
+                    new { ID = id }, trans);
+                if (deleted != 1) throw new InvalidOperationException("تغيرت بيانات الحساب أثناء الحذف؛ أُلغيت العملية.");
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting account {AccountID} failed.",
+                        id);
+                }
+                throw;
+            }
+
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 3, "ChartOfAccounts", id.ToString(), moduleName: "SCR_COA", description: "حذف حساب");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after deleting chart-of-accounts entry {AccountID}.",
+                    id);
+            }
         }
 
         // ==========================================
@@ -469,6 +705,89 @@ namespace YKCoatings.Services
             }
         }
 
+        private async Task<string> GenerateJournalNoCoreAsync(SqlConnection connection, SqlTransaction transaction)
+        {
+            try
+            {
+                var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;";
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql, transaction: transaction);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً لقيد اليومية.");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "تعذر توليد رقم قيد اليومية داخل معاملة الحفظ؛ أُلغيت المعاملة.", ex);
+            }
+        }
+
+        private static List<JournalDetailDto> GetEffectiveJournalDetails(IEnumerable<JournalDetailDto>? details)
+        {
+            var source = (details ?? Enumerable.Empty<JournalDetailDto>()).ToList();
+            if (source.Any(d => d.DebitAmount < 0 || d.CreditAmount < 0))
+                throw new InvalidOperationException("لا يمكن أن تكون مبالغ القيد سالبة.");
+            if (source.Any(d => (d.DebitAmount > 0 || d.CreditAmount > 0) && d.AccountID <= 0))
+                throw new InvalidOperationException("اختر حسابًا لكل سطر يحتوي على مبلغ.");
+
+            var validDetails = source
+                .Where(d => d.AccountID > 0 && (d.DebitAmount > 0 || d.CreditAmount > 0))
+                .ToList();
+            if (validDetails.Count < 2)
+                throw new InvalidOperationException("يجب إدخال حسابين على الأقل بمبالغ.");
+            if (validDetails.Any(d => d.DebitAmount > 0 && d.CreditAmount > 0))
+                throw new InvalidOperationException("لا يمكن أن يكون السطر مدينًا ودائنًا معًا.");
+            if (validDetails.Any(d => d.CostCenterID.GetValueOrDefault() < 0))
+                throw new InvalidOperationException("مركز التكلفة المحدد غير صالح.");
+
+            return validDetails;
+        }
+
+        private async Task ValidateJournalAccountLinesAsync(
+            SqlConnection connection, SqlTransaction transaction, IReadOnlyCollection<JournalDetailDto> details)
+        {
+            var accountIds = details.Select(d => d.AccountID).Distinct().ToArray();
+            var accounts = await connection.QueryAsync<ChartOfAccountDto>(
+                @"SELECT AccountID, CONVERT(bit,ISNULL(IsActive,1)) AS IsActive,
+                         CONVERT(bit,ISNULL(IsDetailAccount,0)) AS IsDetailAccount,
+                         CONVERT(bit,ISNULL(CostCenterRequired,0)) AS CostCenterRequired
+                  FROM dbo.ChartOfAccounts WITH (UPDLOCK, HOLDLOCK)
+                  WHERE AccountID IN @AccountIDs",
+                new { AccountIDs = accountIds }, transaction);
+            var accountById = accounts.ToDictionary(a => a.AccountID);
+
+            foreach (var detail in details)
+            {
+                if (!accountById.TryGetValue(detail.AccountID, out var account))
+                    throw new InvalidOperationException($"الحساب {detail.AccountID} غير موجود.");
+                if (!account.IsActive)
+                    throw new InvalidOperationException($"الحساب {detail.AccountID} غير نشط.");
+                if (!account.IsDetailAccount)
+                    throw new InvalidOperationException($"الحساب {detail.AccountID} تجميعي؛ اختر حسابًا تفصيليًا.");
+                if (account.CostCenterRequired && detail.CostCenterID.GetValueOrDefault() <= 0)
+                    throw new InvalidOperationException($"الحساب {detail.AccountID} يتطلب اختيار مركز تكلفة.");
+            }
+
+            var costCenterIds = details
+                .Select(d => d.CostCenterID.GetValueOrDefault())
+                .Where(id => id > 0)
+                .Distinct()
+                .ToArray();
+            if (costCenterIds.Length == 0) return;
+
+            var existingCostCenterIds = await connection.QueryAsync<int>(
+                @"SELECT CostCenterID
+                  FROM dbo.CostCenters WITH (UPDLOCK, HOLDLOCK)
+                  WHERE CostCenterID IN @CostCenterIDs
+                    AND ISNULL(IsActive,1)=1",
+                new { CostCenterIDs = costCenterIds }, transaction);
+            var existingCostCenterSet = existingCostCenterIds.ToHashSet();
+            foreach (var costCenterId in costCenterIds)
+                if (!existingCostCenterSet.Contains(costCenterId))
+                    throw new InvalidOperationException($"مركز التكلفة {costCenterId} غير موجود أو غير نشط.");
+        }
+
         public async Task<int> InsertJournalAsync(JournalEntryDto dto, int userId)
         {
             await _authorization.RequireAnyUserPermissionAsync(
@@ -482,37 +801,44 @@ namespace YKCoatings.Services
             using var trans = connection.BeginTransaction();
             try
             {
-                if (string.IsNullOrWhiteSpace(dto.JournalNumber))
-                    dto.JournalNumber = await GenerateJournalNoCoreAsync();
-
-                // فلترة الأسطر الفارغة قبل الحساب
-                var validDetails = dto.Details.Where(d => d.AccountID > 0 && (d.DebitAmount > 0 || d.CreditAmount > 0)).ToList();
-                if (validDetails.Count < 2) throw new Exception("يجب إدخال حسابين على الأقل بمبالغ");
-
+                // تحقّق من السطور والحسابات ومراكز التكلفة قبل استهلاك رقم القيد.
+                var validDetails = GetEffectiveJournalDetails(dto.Details);
                 dto.TotalDebit = validDetails.Sum(d => d.DebitAmount);
                 dto.TotalCredit = validDetails.Sum(d => d.CreditAmount);
-                if (Math.Abs(dto.TotalDebit - dto.TotalCredit) > 0.01m) throw new Exception($"القيد غير متوازن - مدين: {dto.TotalDebit:#,##0.00} ≠ دائن: {dto.TotalCredit:#,##0.00}");
-                if (dto.TotalDebit == 0) throw new Exception("لا يمكن حفظ قيد صفري");
+                if (Math.Abs(dto.TotalDebit - dto.TotalCredit) > 0.01m)
+                    throw new InvalidOperationException($"القيد غير متوازن - مدين: {dto.TotalDebit:#,##0.00} ≠ دائن: {dto.TotalCredit:#,##0.00}");
+                if (dto.TotalDebit == 0)
+                    throw new InvalidOperationException("لا يمكن حفظ قيد صفري.");
+                await ValidateJournalAccountLinesAsync(connection, trans, validDetails);
 
-                // تحديد السنة المالية والفترة المحاسبية تلقائياً من تاريخ القيد
-                int? fiscalYearId = null;
-                int? periodId = null;
-                try
-                {
-                    fiscalYearId = await connection.ExecuteScalarAsync<int?>(
-                        "SELECT TOP 1 FiscalYearID FROM dbo.FiscalYears WHERE @JDate BETWEEN StartDate AND EndDate ORDER BY FiscalYearID DESC",
-                        new { JDate = dto.JournalDate }, trans);
-                    if (fiscalYearId.HasValue)
-                    {
-                        periodId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 PeriodID FROM dbo.AccountingPeriods WHERE FiscalYearID=@FYID AND @JDate BETWEEN StartDate AND EndDate ORDER BY PeriodNumber",
-                            new { FYID = fiscalYearId.Value, JDate = dto.JournalDate }, trans);
-                    }
-                }
-                catch { /* تجاهل لو الجداول غير موجودة */ }
+                // لا تحفظ قيداً بلا سنة وفترة مفتوحتين تغطيان تاريخه؛ فذلك يجعل ترحيله مستحيلاً لاحقاً.
+                var accountingPeriod = await connection.QueryFirstOrDefaultAsync<(
+                    int? FiscalYearID, int? PeriodID, int? YearStatus, int? PeriodStatus,
+                    DateTime? YearStart, DateTime? YearEnd, DateTime? PeriodStart, DateTime? PeriodEnd)>(
+                    @"SELECT TOP 1 fy.FiscalYearID, ap.PeriodID, fy.YearStatus, ap.PeriodStatus,
+                             fy.StartDate AS YearStart, fy.EndDate AS YearEnd,
+                             ap.StartDate AS PeriodStart, ap.EndDate AS PeriodEnd
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK, HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND @JDate BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+                        AND @JDate BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+                      ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+                    new { JDate = dto.JournalDate.Date }, trans);
+                if (!accountingPeriod.FiscalYearID.HasValue || !accountingPeriod.PeriodID.HasValue
+                    || !accountingPeriod.YearStatus.HasValue || accountingPeriod.YearStatus.Value != 1
+                    || !accountingPeriod.PeriodStatus.HasValue || accountingPeriod.PeriodStatus.Value != 1
+                    || !accountingPeriod.YearStart.HasValue || !accountingPeriod.YearEnd.HasValue
+                    || !accountingPeriod.PeriodStart.HasValue || !accountingPeriod.PeriodEnd.HasValue)
+                    throw new InvalidOperationException("لا يمكن حفظ القيد دون سنة وفترة محاسبية مفتوحتين تغطيان تاريخ القيد.");
+                var fiscalYearId = accountingPeriod.FiscalYearID;
+                var periodId = accountingPeriod.PeriodID;
 
                 int? srcIdInt = null;
                 if (!string.IsNullOrWhiteSpace(dto.SourceDocID) && int.TryParse(dto.SourceDocID, out var parsedSrc)) srcIdInt = parsedSrc;
+
+                if (string.IsNullOrWhiteSpace(dto.JournalNumber))
+                    dto.JournalNumber = await GenerateJournalNoCoreAsync(connection, trans);
 
                 var jId = await connection.ExecuteScalarAsync<int>(
                     @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate)
@@ -539,20 +865,36 @@ namespace YKCoatings.Services
                 int line = 1;
                 foreach (var d in validDetails)
                 {
-                    if (d.AccountID <= 0) continue;
-                    if (d.DebitAmount == 0 && d.CreditAmount == 0) continue;
-                    if (d.DebitAmount > 0 && d.CreditAmount > 0) throw new Exception($"السطر {line}: لا يمكن أن يكون مدين ودائن معاً");
-
                     await connection.ExecuteAsync(
                         "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, @Line, @AccID, @Debit, @Credit, @Desc, NULLIF(@CCID,0))",
                         new { JID = jId, Line = line++, AccID = d.AccountID, Debit = d.DebitAmount, Credit = d.CreditAmount, Desc = d.Description, CCID = d.CostCenterID ?? 0 }, trans);
                 }
 
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 1, "JournalEntries", jId.ToString(), moduleName: "SCR_JV", description: $"إنشاء قيد: {dto.JournalNumber}"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 1, "JournalEntries", jId.ToString(), moduleName: "SCR_JV", description: $"إنشاء قيد: {dto.JournalNumber}");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after creating journal entry for record {RecordID}.",
+                        jId);
+                }
                 return jId;
             }
-            catch { trans.Rollback(); throw; }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating manual journal {JournalNumber} for user {UserID}.",
+                        dto.JournalNumber,
+                        userId);
+                }
+                throw;
+            }
         }
 
         public async Task UpdateJournalAsync(JournalEntryDto dto, int userId)
@@ -575,36 +917,36 @@ namespace YKCoatings.Services
                 if (current.IsAutoGenerated)
                     throw new Exception("هذا قيد أوتوماتيك؛ عدل المستند الأصلي بدلاً من القيد.");
 
-                var validDetails = dto.Details
-                    .Where(d => d.AccountID > 0 && (d.DebitAmount > 0 || d.CreditAmount > 0))
-                    .ToList();
-                if (validDetails.Count < 2)
-                    throw new Exception("يجب إدخال حسابين على الأقل بمبالغ.");
-                if (validDetails.Any(d => d.DebitAmount > 0 && d.CreditAmount > 0))
-                    throw new Exception("لا يمكن أن يكون السطر مديناً ودائناً معاً.");
-
+                var validDetails = GetEffectiveJournalDetails(dto.Details);
                 dto.TotalDebit = validDetails.Sum(d => d.DebitAmount);
                 dto.TotalCredit = validDetails.Sum(d => d.CreditAmount);
                 if (Math.Abs(dto.TotalDebit - dto.TotalCredit) > 0.01m)
                     throw new Exception($"القيد غير متوازن - مدين: {dto.TotalDebit:#,##0.00} ≠ دائن: {dto.TotalCredit:#,##0.00}");
                 if (dto.TotalDebit <= 0)
                     throw new Exception("لا يمكن حفظ قيد صفري.");
+                await ValidateJournalAccountLinesAsync(connection, trans, validDetails);
 
-                int? fiscalYearId = null;
-                int? periodId = null;
-                try
-                {
-                    fiscalYearId = await connection.ExecuteScalarAsync<int?>(
-                        "SELECT TOP 1 FiscalYearID FROM dbo.FiscalYears WHERE @JDate BETWEEN StartDate AND EndDate ORDER BY FiscalYearID DESC",
-                        new { JDate = dto.JournalDate }, trans);
-                    if (fiscalYearId.HasValue)
-                    {
-                        periodId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 PeriodID FROM dbo.AccountingPeriods WHERE FiscalYearID=@FYID AND @JDate BETWEEN StartDate AND EndDate ORDER BY PeriodNumber",
-                            new { FYID = fiscalYearId.Value, JDate = dto.JournalDate }, trans);
-                    }
-                }
-                catch { /* حافظ على سلوك المخطط الحالي عند غياب الجداول الاختيارية. */ }
+                var accountingPeriod = await connection.QueryFirstOrDefaultAsync<(
+                    int? FiscalYearID, int? PeriodID, int? YearStatus, int? PeriodStatus,
+                    DateTime? YearStart, DateTime? YearEnd, DateTime? PeriodStart, DateTime? PeriodEnd)>(
+                    @"SELECT TOP 1 fy.FiscalYearID, ap.PeriodID, fy.YearStatus, ap.PeriodStatus,
+                             fy.StartDate AS YearStart, fy.EndDate AS YearEnd,
+                             ap.StartDate AS PeriodStart, ap.EndDate AS PeriodEnd
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK, HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND @JDate BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+                        AND @JDate BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+                      ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+                    new { JDate = dto.JournalDate.Date }, trans);
+                if (!accountingPeriod.FiscalYearID.HasValue || !accountingPeriod.PeriodID.HasValue
+                    || !accountingPeriod.YearStatus.HasValue || accountingPeriod.YearStatus.Value != 1
+                    || !accountingPeriod.PeriodStatus.HasValue || accountingPeriod.PeriodStatus.Value != 1
+                    || !accountingPeriod.YearStart.HasValue || !accountingPeriod.YearEnd.HasValue
+                    || !accountingPeriod.PeriodStart.HasValue || !accountingPeriod.PeriodEnd.HasValue)
+                    throw new InvalidOperationException("لا يمكن حفظ القيد دون سنة وفترة محاسبية مفتوحتين تغطيان تاريخ القيد.");
+                var fiscalYearId = accountingPeriod.FiscalYearID;
+                var periodId = accountingPeriod.PeriodID;
 
                 var affected = await connection.ExecuteAsync(
                     @"UPDATE dbo.JournalEntries
@@ -649,11 +991,26 @@ namespace YKCoatings.Services
                 }
 
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 2, "JournalEntries", dto.JournalID.ToString(), moduleName: "SCR_JV", description: $"تعديل قيد: {dto.JournalNumber}"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 2, "JournalEntries", dto.JournalID.ToString(), moduleName: "SCR_JV", description: $"تعديل قيد: {dto.JournalNumber}");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after updating journal entry for record {RecordID}.",
+                        dto.JournalID);
+                }
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating manual journal {JournalID} failed.",
+                        dto.JournalID);
+                }
                 throw;
             }
         }
@@ -673,8 +1030,10 @@ namespace YKCoatings.Services
                     bool IsAutoGenerated,
                     int? FiscalYearID,
                     int? PeriodID,
-                    DateTime JournalDate)>(
-                    "SELECT JournalStatus, ISNULL(IsAutoGenerated,1) AS IsAutoGenerated, FiscalYearID, PeriodID, JournalDate FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK) WHERE JournalID=@ID",
+                    DateTime JournalDate,
+                    decimal TotalDebit,
+                    decimal TotalCredit)>(
+                    "SELECT JournalStatus, ISNULL(IsAutoGenerated,1) AS IsAutoGenerated, FiscalYearID, PeriodID, JournalDate, TotalDebit, TotalCredit FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK) WHERE JournalID=@ID",
                     new { ID = id }, trans);
                 if (journal.JournalStatus == 0) throw new Exception("القيد المطلوب غير موجود.");
                 if (journal.JournalStatus != 1) throw new Exception("القيد ليس مسودة؛ لا يمكن ترحيله مرة أخرى.");
@@ -700,14 +1059,22 @@ namespace YKCoatings.Services
                 if (journal.JournalDate.Date < period.StartDate.Date || journal.JournalDate.Date > period.EndDate.Date)
                     throw new Exception("تاريخ القيد خارج نطاق الفترة المالية المرتبطة به.");
 
-                // جلب تفاصيل القيد لتحديث الأرصدة
-                var details = await connection.QueryAsync<(int AccountID, decimal Debit, decimal Credit)>(
-                    "SELECT AccountID, DebitAmount, CreditAmount FROM dbo.JournalEntryDetails WHERE JournalID=@ID",
+                // أعد فحص التفاصيل والحسابات قبل تحديث الأرصدة وترحيل القيد.
+                var storedDetails = await connection.QueryAsync<JournalDetailDto>(
+                    "SELECT AccountID, DebitAmount, CreditAmount, CostCenterID FROM dbo.JournalEntryDetails WHERE JournalID=@ID",
                     new { ID = id }, trans);
+                var details = GetEffectiveJournalDetails(storedDetails);
+                var detailDebit = details.Sum(d => d.DebitAmount);
+                var detailCredit = details.Sum(d => d.CreditAmount);
+                if (Math.Abs(detailDebit - detailCredit) > 0.01m || detailDebit <= 0
+                    || Math.Abs(detailDebit - journal.TotalDebit) > 0.01m
+                    || Math.Abs(detailCredit - journal.TotalCredit) > 0.01m)
+                    throw new InvalidOperationException("إجمالي رأس القيد لا يطابق تفاصيله أو أن القيد غير متوازن.");
+                await ValidateJournalAccountLinesAsync(connection, trans, details);
 
                 foreach (var d in details)
                 {
-                    var delta = d.Debit - d.Credit; // مدين + ، دائن -
+                    var delta = d.DebitAmount - d.CreditAmount; // مدين + ، دائن -
                     if (delta != 0)
                     {
                         await connection.ExecuteAsync(
@@ -729,14 +1096,35 @@ namespace YKCoatings.Services
                     }
                 }
 
-                await connection.ExecuteAsync(
+                var affected = await connection.ExecuteAsync(
                     "UPDATE dbo.JournalEntries SET JournalStatus=2, PostedBy=@UserID, PostedDate=GETDATE() WHERE JournalID=@ID AND JournalStatus=1",
                     new { UserID = userId, ID = id }, trans);
+                if (affected != 1)
+                    throw new InvalidOperationException("تعذر ترحيل القيد؛ ربما تغيرت حالته أثناء العملية.");
 
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 2, "JournalEntries", id.ToString(), moduleName: "SCR_JV", description: "ترحيل قيد محاسبي وتحديث الأرصدة"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 2, "JournalEntries", id.ToString(), moduleName: "SCR_JV", description: "ترحيل قيد محاسبي وتحديث الأرصدة");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after posting journal entry for record {RecordID}.",
+                        id);
+                }
             }
-            catch { trans.Rollback(); throw; }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after posting journal {JournalID} failed.",
+                        id);
+                }
+                throw;
+            }
         }
 
         public async Task DeleteJournalAsync(int id, int userId)
@@ -762,11 +1150,26 @@ namespace YKCoatings.Services
                 await connection.ExecuteAsync("DELETE FROM dbo.JournalEntryDetails WHERE JournalID=@ID", new { ID = id }, trans);
                 await connection.ExecuteAsync("DELETE FROM dbo.JournalEntries WHERE JournalID=@ID AND JournalStatus=1 AND IsAutoGenerated=0", new { ID = id }, trans);
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 3, "JournalEntries", id.ToString(), moduleName: "SCR_JV", description: "حذف قيد محاسبي"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 3, "JournalEntries", id.ToString(), moduleName: "SCR_JV", description: "حذف قيد محاسبي");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after deleting journal entry for record {RecordID}.",
+                        id);
+                }
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting manual journal {JournalID} failed.",
+                        id);
+                }
                 throw;
             }
         }
@@ -775,6 +1178,16 @@ namespace YKCoatings.Services
         // السنوات المالية - على الجدول الحقيقي FiscalYears 11 عمود - بدون IsActive
         // ==========================================
         public async Task<List<FiscalYearListDto>> GetFiscalYearsAsync()
+        {
+            return await GetFiscalYearsCoreAsync(rethrowFinalReadFailure: false);
+        }
+
+        public async Task<List<FiscalYearListDto>> GetFiscalYearsForManagementPageAsync()
+        {
+            return await GetFiscalYearsCoreAsync(rethrowFinalReadFailure: true);
+        }
+
+        private async Task<List<FiscalYearListDto>> GetFiscalYearsCoreAsync(bool rethrowFinalReadFailure)
         {
             await RequireFiscalLookupPermissionAsync("ليس لديك صلاحية عرض السنوات المالية.");
 
@@ -790,25 +1203,49 @@ namespace YKCoatings.Services
                 var result = await connection.QueryAsync<FiscalYearListDto>(sql);
                 return result.ToList();
             }
-            catch
+            catch (Exception primaryException)
             {
+                if (rethrowFinalReadFailure)
+                    _logger.LogWarning(primaryException,
+                        "The full fiscal-year lookup failed; attempting the compatibility fallback.");
+
                 try
                 {
-                    var sql2 = @"SELECT FiscalYearID, YearCode, YearName, StartDate, EndDate, YearStatus,
-                               CASE YearStatus WHEN 1 THEN N'مفتوحة' WHEN 2 THEN N'مغلقة' ELSE N'غير محدد' END AS StatusName,
-                               IsCurrent, ClosedBy, ClosedDate, CreatedDate, 0 AS PeriodsCount, 0 AS JournalsCount
-                        FROM dbo.FiscalYears ORDER BY StartDate DESC";
+                    var sql2 = @"SELECT fy.FiscalYearID, fy.YearCode, fy.YearName, fy.StartDate, fy.EndDate, fy.YearStatus,
+                               CASE fy.YearStatus WHEN 1 THEN N'مفتوحة' WHEN 2 THEN N'مغلقة' ELSE N'غير محدد' END AS StatusName,
+                               fy.IsCurrent, fy.ClosedBy, fy.ClosedDate, fy.CreatedDate,
+                               (SELECT COUNT(*) FROM dbo.AccountingPeriods ap WHERE ap.FiscalYearID=fy.FiscalYearID) AS PeriodsCount,
+                               0 AS JournalsCount
+                        FROM dbo.FiscalYears fy ORDER BY fy.StartDate DESC";
                     var result = await connection.QueryAsync<FiscalYearListDto>(sql2);
                     return result.ToList();
                 }
                 catch
                 {
+                    if (rethrowFinalReadFailure)
+                        throw;
+
                     return new List<FiscalYearListDto>();
                 }
             }
         }
 
+        public async Task<List<FiscalYearListDto>> GetFiscalYearsForExpenseEditAsync()
+        {
+            return await GetFiscalYearsCoreAsync(rethrowFinalReadFailure: true);
+        }
+
         public async Task<FiscalYearDto?> GetFiscalYearByIdAsync(int id)
+        {
+            return await GetFiscalYearByIdCoreAsync(id, logPrimaryReadFailure: false);
+        }
+
+        public async Task<FiscalYearDto?> GetFiscalYearByIdForManagementPageAsync(int id)
+        {
+            return await GetFiscalYearByIdCoreAsync(id, logPrimaryReadFailure: true);
+        }
+
+        private async Task<FiscalYearDto?> GetFiscalYearByIdCoreAsync(int id, bool logPrimaryReadFailure)
         {
             await RequireCurrentFiscalPermissionAsync(
                 p => p.CanView, "ليس لديك صلاحية عرض تفاصيل السنة المالية.");
@@ -816,12 +1253,36 @@ namespace YKCoatings.Services
             using var connection = CreateConnection();
             try
             {
-                return await connection.QueryFirstOrDefaultAsync<FiscalYearDto>("SELECT FiscalYearID, YearCode, YearName, StartDate, EndDate, YearStatus, IsCurrent, Notes, CreatedDate FROM dbo.FiscalYears WHERE FiscalYearID=@ID", new { ID = id });
+                return await connection.QueryFirstOrDefaultAsync<FiscalYearDto>(
+                    "SELECT FiscalYearID, YearCode, YearName, StartDate, EndDate, YearStatus, IsCurrent, Notes, CreatedDate FROM dbo.FiscalYears WHERE FiscalYearID=@ID",
+                    new { ID = id });
             }
-            catch
+            catch (Exception primaryException)
             {
-                return await connection.QueryFirstOrDefaultAsync<FiscalYearDto>("SELECT FiscalYearID, YearCode, YearName, StartDate, EndDate, 1 AS YearStatus, IsCurrent, '' AS Notes, GETDATE() AS CreatedDate FROM dbo.FiscalYears WHERE FiscalYearID=@ID", new { ID = id });
+                if (logPrimaryReadFailure)
+                    _logger.LogWarning(primaryException,
+                        "The full fiscal-year detail lookup failed; attempting the compatibility fallback for {FiscalYearID}.",
+                        id);
+
+                return await connection.QueryFirstOrDefaultAsync<FiscalYearDto>(
+                    "SELECT FiscalYearID, YearCode, YearName, StartDate, EndDate, 1 AS YearStatus, IsCurrent, '' AS Notes, GETDATE() AS CreatedDate FROM dbo.FiscalYears WHERE FiscalYearID=@ID",
+                    new { ID = id });
             }
+        }
+
+        private static async Task EnsureFiscalYearCodeAvailableAsync(
+            SqlConnection connection, SqlTransaction transaction, string? yearCode, int? excludeFiscalYearId = null)
+        {
+            if (string.IsNullOrWhiteSpace(yearCode)) return;
+
+            var duplicateCount = await connection.ExecuteScalarAsync<int>(
+                @"SELECT COUNT(1)
+                  FROM dbo.FiscalYears WITH (UPDLOCK, HOLDLOCK)
+                  WHERE YearCode=@YearCode
+                    AND (@ExcludeFiscalYearID IS NULL OR FiscalYearID<>@ExcludeFiscalYearID)",
+                new { YearCode = yearCode, ExcludeFiscalYearID = excludeFiscalYearId }, transaction);
+            if (duplicateCount > 0)
+                throw new InvalidOperationException($"كود السنة المالية '{yearCode}' مستخدم بالفعل.");
         }
 
         public async Task<int> InsertFiscalYearAsync(FiscalYearDto dto, int userId)
@@ -829,7 +1290,10 @@ namespace YKCoatings.Services
             await RequireFiscalPermissionAsync(
                 userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء سنة مالية.");
 
-            if (dto.EndDate <= dto.StartDate) throw new Exception("تاريخ النهاية يجب أن يكون بعد البداية");
+            if (string.IsNullOrWhiteSpace(dto.YearName))
+                throw new InvalidOperationException("أدخل اسم السنة.");
+            if (dto.EndDate <= dto.StartDate)
+                throw new InvalidOperationException("تاريخ النهاية يجب أن يكون بعد البداية.");
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
@@ -837,6 +1301,7 @@ namespace YKCoatings.Services
             int newId;
             try
             {
+                await EnsureFiscalYearCodeAvailableAsync(connection, trans, dto.YearCode);
                 var sql = @"INSERT INTO dbo.FiscalYears(YearCode, YearName, StartDate, EndDate, YearStatus, IsCurrent, Notes, CreatedDate)
                             VALUES(@YearCode, @YearName, @StartDate, @EndDate, 1, @IsCurrent, @Notes, GETDATE());
                             SELECT CAST(SCOPE_IDENTITY() AS INT);";
@@ -853,30 +1318,53 @@ namespace YKCoatings.Services
                 if (dto.IsCurrent)
                     await connection.ExecuteAsync("UPDATE dbo.FiscalYears SET IsCurrent=0 WHERE FiscalYearID<>@ID", new { ID = newId }, trans);
 
-                // إنشاء الفترات الشهرية في معاملة السنة نفسها حتى لا يبقى إعداد مالي جزئي عند الفشل.
+                // إنشاء فترات شهرية متتابعة تغطي مدى السنة كاملًا، حتى عند عبور سنة ميلادية أو بدء/انتهاء المدى في منتصف الشهر.
                 var arabicMonths = new string[] { "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر" };
-                for (int m = 1; m <= 12; m++)
+                var fiscalStart = dto.StartDate.Date;
+                var fiscalEnd = dto.EndDate.Date;
+                var periodStart = fiscalStart;
+                var periodNumber = 1;
+                while (periodStart <= fiscalEnd)
                 {
-                    var pStart = new DateTime(dto.StartDate.Year, m, 1);
-                    if (pStart < dto.StartDate) continue;
-                    if (pStart > dto.EndDate) break;
-                    var pEnd = pStart.AddMonths(1).AddDays(-1);
-                    if (pEnd > dto.EndDate) pEnd = dto.EndDate;
-                    var periodName = $"{arabicMonths[m]} {pStart.Year}";
+                    var monthEnd = new DateTime(
+                        periodStart.Year, periodStart.Month,
+                        DateTime.DaysInMonth(periodStart.Year, periodStart.Month));
+                    var periodEnd = monthEnd < fiscalEnd ? monthEnd : fiscalEnd;
+                    var periodName = $"{arabicMonths[periodStart.Month]} {periodStart.Year}";
                     await connection.ExecuteAsync(@"INSERT INTO dbo.AccountingPeriods(FiscalYearID, PeriodNumber, PeriodName, StartDate, EndDate, PeriodStatus)
                                                     VALUES(@FYID, @Num, @Name, @S, @E, 1)",
-                        new { FYID = newId, Num = m, Name = periodName, S = pStart, E = pEnd }, trans);
+                        new { FYID = newId, Num = periodNumber, Name = periodName, S = periodStart, E = periodEnd }, trans);
+
+                    if (periodEnd == fiscalEnd) break;
+                    periodStart = periodEnd.AddDays(1);
+                    periodNumber++;
                 }
 
                 trans.Commit();
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating fiscal year {YearCode} for user {UserID}.",
+                        dto.YearCode,
+                        userId);
+                }
                 throw;
             }
 
-            try { await _audit.WriteAuditLogAsync(userId, 1, "FiscalYears", newId.ToString(), moduleName: "SCR_FY", description: $"إنشاء سنة مالية: {dto.YearName}"); } catch { }
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 1, "FiscalYears", newId.ToString(), moduleName: "SCR_FY", description: $"إنشاء سنة مالية: {dto.YearName}");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after creating fiscal year for record {RecordID}.",
+                    newId);
+            }
             return newId;
         }
 
@@ -884,12 +1372,40 @@ namespace YKCoatings.Services
         {
             await RequireFiscalPermissionAsync(
                 userId, p => p.CanEdit, "ليس لديك صلاحية تعديل السنوات المالية.");
+            if (string.IsNullOrWhiteSpace(dto.YearName))
+                throw new InvalidOperationException("أدخل اسم السنة.");
+            if (dto.FiscalYearID <= 0)
+                throw new ArgumentOutOfRangeException(nameof(dto.FiscalYearID), "يجب اختيار سنة مالية صالحة للتعديل.");
+            if (dto.EndDate <= dto.StartDate)
+                throw new InvalidOperationException("تاريخ النهاية يجب أن يكون بعد البداية.");
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var trans = connection.BeginTransaction();
             try
             {
+                var currentFiscalYear = await connection.QueryFirstOrDefaultAsync<(DateTime? StartDate, DateTime? EndDate)>(
+                    @"SELECT StartDate, EndDate
+                      FROM dbo.FiscalYears WITH (UPDLOCK, HOLDLOCK)
+                      WHERE FiscalYearID=@FiscalYearID",
+                    new { FiscalYearID = dto.FiscalYearID }, trans);
+                if (!currentFiscalYear.StartDate.HasValue || !currentFiscalYear.EndDate.HasValue)
+                    throw new InvalidOperationException("السنة المالية غير موجودة.");
+
+                var dateRangeChanged = currentFiscalYear.StartDate.Value.Date != dto.StartDate.Date
+                    || currentFiscalYear.EndDate.Value.Date != dto.EndDate.Date;
+                if (dateRangeChanged)
+                {
+                    var linkedPeriods = await connection.ExecuteScalarAsync<int>(
+                        @"SELECT COUNT(1)
+                          FROM dbo.AccountingPeriods WITH (UPDLOCK, HOLDLOCK)
+                          WHERE FiscalYearID=@FiscalYearID",
+                        new { FiscalYearID = dto.FiscalYearID }, trans);
+                    if (linkedPeriods > 0)
+                        throw new InvalidOperationException("لا يمكن تغيير نطاق تواريخ السنة المالية بعد إنشاء فتراتها.");
+                }
+
+                await EnsureFiscalYearCodeAvailableAsync(connection, trans, dto.YearCode, dto.FiscalYearID);
                 // الحالة لا تُعدّل هنا؛ الإغلاق محصور في CloseFiscalYearAsync بصلاحية CanApprove.
                 var sql = @"UPDATE dbo.FiscalYears SET YearCode=@YearCode, YearName=@YearName, StartDate=@StartDate, EndDate=@EndDate, IsCurrent=@IsCurrent, Notes=@Notes WHERE FiscalYearID=@FiscalYearID";
                 await connection.ExecuteAsync(sql, new
@@ -909,17 +1425,34 @@ namespace YKCoatings.Services
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating fiscal year {FiscalYearID} ({YearCode}) failed.",
+                        dto.FiscalYearID,
+                        dto.YearCode);
+                }
                 throw;
             }
 
-            try { await _audit.WriteAuditLogAsync(userId, 2, "FiscalYears", dto.FiscalYearID.ToString(), moduleName: "SCR_FY", description: $"تعديل سنة مالية: {dto.YearName}"); } catch { }
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "FiscalYears", dto.FiscalYearID.ToString(), moduleName: "SCR_FY", description: $"تعديل سنة مالية: {dto.YearName}");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after updating fiscal year for record {RecordID}.",
+                    dto.FiscalYearID);
+            }
         }
 
         public async Task CloseFiscalYearAsync(int id, int userId)
         {
             await RequireFiscalPermissionAsync(
                 userId, p => p.CanApprove, "ليس لديك صلاحية إغلاق السنة المالية.");
+            if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
@@ -929,31 +1462,80 @@ namespace YKCoatings.Services
                 var yearStatus = await connection.QueryFirstOrDefaultAsync<int?>(
                     "SELECT YearStatus FROM dbo.FiscalYears WITH (UPDLOCK, HOLDLOCK) WHERE FiscalYearID=@ID",
                     new { ID = id }, trans);
-                if (!yearStatus.HasValue) throw new Exception("السنة المالية غير موجودة.");
+                if (!yearStatus.HasValue) throw new InvalidOperationException("السنة المالية غير موجودة.");
+                if (yearStatus.Value != 1) throw new InvalidOperationException("لا يمكن إغلاق سنة مالية غير مفتوحة.");
 
-                var hasOpenPeriods = await connection.ExecuteScalarAsync<int>(
-                    "SELECT COUNT(*) FROM dbo.AccountingPeriods WITH (UPDLOCK, HOLDLOCK) WHERE FiscalYearID=@ID AND PeriodStatus=1",
+                var periodSummary = await connection.QueryFirstOrDefaultAsync<(int PeriodCount, int NotClosedPeriodCount)>(
+                    @"SELECT COUNT(1) AS PeriodCount,
+                             ISNULL(SUM(CASE WHEN ISNULL(PeriodStatus,0)<>2 THEN 1 ELSE 0 END),0) AS NotClosedPeriodCount
+                      FROM dbo.AccountingPeriods WITH (UPDLOCK, HOLDLOCK)
+                      WHERE FiscalYearID=@ID",
                     new { ID = id }, trans);
-                if (hasOpenPeriods > 0) throw new Exception("يجب إغلاق جميع الفترات أولاً");
+                if (periodSummary.PeriodCount == 0)
+                    throw new InvalidOperationException("لا يمكن إغلاق السنة المالية قبل إنشاء فتراتها المحاسبية.");
+                if (periodSummary.NotClosedPeriodCount > 0)
+                    throw new InvalidOperationException("يجب إغلاق جميع فترات السنة أولاً.");
 
-                await connection.ExecuteAsync(
-                    "UPDATE dbo.FiscalYears SET YearStatus=2, ClosedBy=@UserID, ClosedDate=GETDATE() WHERE FiscalYearID=@ID",
+                var pendingJournals = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE FiscalYearID=@ID AND ISNULL(JournalStatus,0) NOT IN (2,3)",
+                    new { ID = id }, trans);
+                if (pendingJournals > 0)
+                    throw new InvalidOperationException("لا يمكن إغلاق السنة؛ توجد قيود مسودة أو غير مرحلة.");
+
+                var closed = await connection.ExecuteAsync(
+                    @"UPDATE dbo.FiscalYears SET YearStatus=2, ClosedBy=@UserID, ClosedDate=GETDATE()
+                      WHERE FiscalYearID=@ID AND YearStatus=1",
                     new { UserID = userId, ID = id }, trans);
+                if (closed != 1)
+                    throw new InvalidOperationException("تغيرت حالة السنة المالية أثناء الإغلاق؛ أُلغيت العملية.");
+
                 trans.Commit();
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after closing fiscal year {FiscalYearID} failed.",
+                        id);
+                }
                 throw;
             }
 
-            try { await _audit.WriteAuditLogAsync(userId, 2, "FiscalYears", id.ToString(), moduleName: "SCR_FY", description: "إغلاق سنة مالية"); } catch { }
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "FiscalYears", id.ToString(), moduleName: "SCR_FY", description: "إغلاق سنة مالية");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after closing fiscal year for record {RecordID}.",
+                    id);
+            }
         }
 
         // ==========================================
         // الفترات المحاسبية - على الجدول الحقيقي AccountingPeriods 9 أعمدة - بدون IsActive
         // ==========================================
         public async Task<List<AccountingPeriodListDto>> GetAccountingPeriodsAsync(int? fiscalYearId = null)
+        {
+            return await GetAccountingPeriodsCoreAsync(fiscalYearId, rethrowFinalReadFailure: false);
+        }
+
+        public async Task<List<AccountingPeriodListDto>> GetAccountingPeriodsForExpenseFilterAsync()
+        {
+            return await GetAccountingPeriodsCoreAsync(fiscalYearId: null, rethrowFinalReadFailure: true);
+        }
+
+        public async Task<List<AccountingPeriodListDto>> GetAccountingPeriodsForFiscalYearViewAsync(int fiscalYearId)
+        {
+            return await GetAccountingPeriodsCoreAsync(fiscalYearId, rethrowFinalReadFailure: true);
+        }
+
+        private async Task<List<AccountingPeriodListDto>> GetAccountingPeriodsCoreAsync(
+            int? fiscalYearId, bool rethrowFinalReadFailure)
         {
             await RequireFiscalLookupPermissionAsync("ليس لديك صلاحية عرض الفترات المحاسبية.");
 
@@ -967,8 +1549,13 @@ namespace YKCoatings.Services
                 var result = await connection.QueryAsync<AccountingPeriodListDto>(sql, new { FYID = fiscalYearId });
                 return result.ToList();
             }
-            catch
+            catch (Exception primaryException)
             {
+                if (rethrowFinalReadFailure)
+                    _logger.LogWarning(primaryException,
+                        "The full accounting-period lookup failed for fiscal year {FiscalYearID}; attempting the compatibility fallback.",
+                        fiscalYearId);
+
                 try
                 {
                     var sql2 = @"SELECT PeriodID, FiscalYearID, '' AS FiscalYearName, PeriodNumber, PeriodName, StartDate, EndDate, PeriodStatus,
@@ -979,25 +1566,94 @@ namespace YKCoatings.Services
                 }
                 catch
                 {
+                    if (rethrowFinalReadFailure)
+                        throw;
+
                     return new List<AccountingPeriodListDto>();
                 }
             }
+        }
+
+        public async Task<List<AccountingPeriodListDto>> GetAccountingPeriodsForExpenseEditAsync()
+        {
+            return await GetAccountingPeriodsCoreAsync(fiscalYearId: null, rethrowFinalReadFailure: true);
         }
 
         public async Task ClosePeriodAsync(int id, int userId)
         {
             await RequireFiscalPermissionAsync(
                 userId, p => p.CanApprove, "ليس لديك صلاحية إغلاق الفترة المحاسبية.");
+            if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
 
             using var connection = CreateConnection();
-            await connection.ExecuteAsync("UPDATE dbo.AccountingPeriods SET PeriodStatus=2, ClosedBy=@UserID, ClosedDate=GETDATE() WHERE PeriodID=@ID", new { UserID = userId, ID = id });
-            try { await _audit.WriteAuditLogAsync(userId, 2, "AccountingPeriods", id.ToString(), moduleName: "SCR_FY", description: "إغلاق فترة محاسبية"); } catch { }
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction();
+            try
+            {
+                // اقفل السنة أولاً ثم الفترة، بنفس ترتيب فتح الفترة وإغلاق السنة.
+                var fiscalYearId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT FiscalYearID FROM dbo.AccountingPeriods WHERE PeriodID=@ID",
+                    new { ID = id }, trans);
+                if (!fiscalYearId.HasValue || fiscalYearId.Value <= 0)
+                    throw new InvalidOperationException("الفترة المحاسبية غير موجودة أو غير مرتبطة بسنة مالية.");
+
+                var yearStatus = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT YearStatus FROM dbo.FiscalYears WITH (UPDLOCK, HOLDLOCK) WHERE FiscalYearID=@ID",
+                    new { ID = fiscalYearId.Value }, trans);
+                if (yearStatus != 1)
+                    throw new InvalidOperationException("لا يمكن إغلاق فترة داخل سنة مالية مغلقة أو غير موجودة.");
+
+                var period = await connection.QueryFirstOrDefaultAsync<(int? FiscalYearID, int? PeriodStatus)>(
+                    "SELECT FiscalYearID, PeriodStatus FROM dbo.AccountingPeriods WITH (UPDLOCK, HOLDLOCK) WHERE PeriodID=@ID",
+                    new { ID = id }, trans);
+                if (period.FiscalYearID != fiscalYearId.Value || period.PeriodStatus != 1)
+                    throw new InvalidOperationException("الفترة غير مفتوحة أو تغير ارتباطها بالسنة؛ أُوقف الإغلاق.");
+
+                var pendingJournals = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE PeriodID=@ID AND ISNULL(JournalStatus,0) NOT IN (2,3)",
+                    new { ID = id }, trans);
+                if (pendingJournals > 0)
+                    throw new InvalidOperationException("لا يمكن إغلاق الفترة؛ توجد قيود مسودة أو غير مرحلة.");
+
+                var closed = await connection.ExecuteAsync(
+                    @"UPDATE dbo.AccountingPeriods SET PeriodStatus=2, ClosedBy=@UserID, ClosedDate=GETDATE()
+                      WHERE PeriodID=@ID AND FiscalYearID=@FYID AND PeriodStatus=1",
+                    new { UserID = userId, ID = id, FYID = fiscalYearId.Value }, trans);
+                if (closed != 1)
+                    throw new InvalidOperationException("تغيرت حالة الفترة أثناء الإغلاق؛ أُلغيت العملية.");
+
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after closing accounting period {PeriodID} failed.",
+                        id);
+                }
+                throw;
+            }
+
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "AccountingPeriods", id.ToString(), moduleName: "SCR_FY", description: "إغلاق فترة محاسبية");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after closing accounting period for record {RecordID}.",
+                    id);
+            }
         }
 
         public async Task OpenPeriodAsync(int id, int userId)
         {
             await RequireFiscalPermissionAsync(
                 userId, p => p.CanApprove, "ليس لديك صلاحية إعادة فتح الفترة المحاسبية.");
+            if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
@@ -1009,32 +1665,53 @@ namespace YKCoatings.Services
                     "SELECT FiscalYearID FROM dbo.AccountingPeriods WHERE PeriodID=@ID",
                     new { ID = id }, trans);
                 if (!fiscalYearId.HasValue || fiscalYearId.Value <= 0)
-                    throw new Exception("الفترة المحاسبية غير موجودة أو غير مرتبطة بسنة مالية.");
+                    throw new InvalidOperationException("الفترة المحاسبية غير موجودة أو غير مرتبطة بسنة مالية.");
 
                 var yearStatus = await connection.QueryFirstOrDefaultAsync<int?>(
                     "SELECT YearStatus FROM dbo.FiscalYears WITH (UPDLOCK, HOLDLOCK) WHERE FiscalYearID=@ID",
                     new { ID = fiscalYearId.Value }, trans);
                 if (yearStatus != 1)
-                    throw new Exception("لا يمكن فتح فترة داخل سنة مالية مغلقة أو غير موجودة.");
+                    throw new InvalidOperationException("لا يمكن فتح فترة داخل سنة مالية مغلقة أو غير موجودة.");
 
-                var period = await connection.QueryFirstOrDefaultAsync<(int FiscalYearID, int PeriodStatus)>(
+                var period = await connection.QueryFirstOrDefaultAsync<(int? FiscalYearID, int? PeriodStatus)>(
                     "SELECT FiscalYearID, PeriodStatus FROM dbo.AccountingPeriods WITH (UPDLOCK, HOLDLOCK) WHERE PeriodID=@ID",
                     new { ID = id }, trans);
-                if (period.FiscalYearID != fiscalYearId.Value)
-                    throw new Exception("تغير ارتباط الفترة بالسنة المالية أثناء العملية؛ أعد المحاولة.");
+                if (!period.FiscalYearID.HasValue || period.FiscalYearID.Value != fiscalYearId.Value)
+                    throw new InvalidOperationException("تغير ارتباط الفترة بالسنة المالية أثناء العملية؛ أُوقف إعادة الفتح.");
+                if (period.PeriodStatus != 2)
+                    throw new InvalidOperationException("لا يمكن إعادة فتح الفترة إلا إذا كانت مغلقة بالحالة المعتمدة.");
 
-                await connection.ExecuteAsync(
-                    "UPDATE dbo.AccountingPeriods SET PeriodStatus=1, ClosedBy=NULL, ClosedDate=NULL WHERE PeriodID=@ID AND FiscalYearID=@FYID",
+                var opened = await connection.ExecuteAsync(
+                    @"UPDATE dbo.AccountingPeriods
+                      SET PeriodStatus=1, ClosedBy=NULL, ClosedDate=NULL
+                      WHERE PeriodID=@ID AND FiscalYearID=@FYID AND PeriodStatus=2",
                     new { ID = id, FYID = fiscalYearId.Value }, trans);
+                if (opened != 1)
+                    throw new InvalidOperationException("تغيرت حالة الفترة أثناء إعادة الفتح؛ أُلغيت العملية.");
                 trans.Commit();
             }
             catch
             {
-                trans.Rollback();
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after reopening accounting period {PeriodID} failed.",
+                        id);
+                }
                 throw;
             }
 
-            try { await _audit.WriteAuditLogAsync(userId, 2, "AccountingPeriods", id.ToString(), moduleName: "SCR_FY", description: "فتح فترة محاسبية"); } catch { }
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "AccountingPeriods", id.ToString(), moduleName: "SCR_FY", description: "فتح فترة محاسبية");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after opening accounting period for record {RecordID}.",
+                    id);
+            }
         }
 
         // ==========================================
@@ -1119,28 +1796,134 @@ namespace YKCoatings.Services
             }
         }
 
+        private async Task<string> GenerateExpenseNoCoreAsync(SqlConnection connection, SqlTransaction transaction)
+        {
+            try
+            {
+                var sql = "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'EXP', @Next OUTPUT; SELECT @Next;";
+                var result = await connection.QueryFirstOrDefaultAsync<string>(sql, transaction: transaction);
+                if (string.IsNullOrWhiteSpace(result))
+                    throw new InvalidOperationException("لم يُرجع إجراء sp_GetNextNumber رقماً للمصروف.");
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("تعذر توليد رقم المصروف داخل معاملة الحفظ؛ أُلغيت المعاملة.", ex);
+            }
+        }
+
+        private async Task<int> ResolveExpenseCreditAccountIdAsync(
+            SqlConnection connection, SqlTransaction transaction, ExpenseDto dto)
+        {
+            if (!dto.PaymentMethod.HasValue || dto.PaymentMethod.Value < 1 || dto.PaymentMethod.Value > 3)
+                throw new InvalidOperationException("اختر طريقة دفع صحيحة للمصروف.");
+            var paymentMethod = dto.PaymentMethod.Value;
+
+            int? accountId = null;
+            if (paymentMethod == 1)
+            {
+                if (dto.CashBoxID is not int cashBoxId || cashBoxId <= 0 || dto.BankAccountID.GetValueOrDefault() > 0)
+                    throw new InvalidOperationException("طريقة الدفع النقدي تتطلب اختيار خزينة فقط.");
+
+                accountId = await connection.ExecuteScalarAsync<int?>(
+                    @"SELECT TOP 1 coa.AccountID FROM dbo.CashBoxes cb WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK, HOLDLOCK) ON coa.AccountID=cb.AccountID
+                      WHERE cb.CashBoxID=@ID AND ISNULL(cb.IsActive,1)=1 AND coa.IsActive=1
+                        AND coa.IsDetailAccount=1 AND coa.AccountType=1",
+                    new { ID = cashBoxId }, transaction);
+            }
+            else if (paymentMethod == 2)
+            {
+                if (dto.BankAccountID is not int bankAccountId || bankAccountId <= 0 || dto.CashBoxID.GetValueOrDefault() > 0)
+                    throw new InvalidOperationException("طريقة الدفع البنكي تتطلب اختيار حساب بنكي فقط.");
+
+                accountId = await connection.ExecuteScalarAsync<int?>(
+                    @"SELECT TOP 1 coa.AccountID FROM dbo.BankAccounts ba WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK, HOLDLOCK) ON coa.AccountID=ba.AccountID
+                      WHERE ba.BankAccountID=@ID AND ISNULL(ba.IsActive,1)=1 AND coa.IsActive=1
+                        AND coa.IsDetailAccount=1 AND coa.AccountType=1",
+                    new { ID = bankAccountId }, transaction);
+            }
+            else if (paymentMethod == 3)
+            {
+                if (dto.CreditAccountID is not int liabilityAccountId || liabilityAccountId <= 0
+                    || dto.CashBoxID.GetValueOrDefault() > 0 || dto.BankAccountID.GetValueOrDefault() > 0)
+                    throw new InvalidOperationException("طريقة الدفع الآجل تتطلب اختيار حساب التزام فقط.");
+
+                accountId = await connection.ExecuteScalarAsync<int?>(
+                    @"SELECT TOP 1 AccountID FROM dbo.ChartOfAccounts WITH (UPDLOCK, HOLDLOCK)
+                      WHERE AccountID=@ID AND IsActive=1 AND IsDetailAccount=1 AND AccountType=2",
+                    new { ID = liabilityAccountId }, transaction);
+            }
+
+            var resolvedAccountId = accountId.GetValueOrDefault();
+            if (resolvedAccountId <= 0)
+            {
+                var message = paymentMethod switch
+                {
+                    1 => "الخزينة المحددة غير نشطة أو غير مرتبطة بحساب أصل تفصيلي صالح.",
+                    2 => "الحساب البنكي المحدد غير نشط أو غير مرتبط بحساب أصل تفصيلي صالح.",
+                    _ => "حساب الالتزام المحدد غير نشط أو غير تفصيلي."
+                };
+                throw new InvalidOperationException(message);
+            }
+
+            if ((paymentMethod == 1 || paymentMethod == 2)
+                && dto.CreditAccountID is int savedCreditAccountId
+                && savedCreditAccountId > 0
+                && savedCreditAccountId != resolvedAccountId)
+                throw new InvalidOperationException("حساب الدائن المحفوظ لا يطابق الحساب المرتبط بمصدر الدفع.");
+
+            return resolvedAccountId;
+        }
+
+        private async Task ValidateExpenseDebitAccountAsync(
+            SqlConnection connection, SqlTransaction transaction, ExpenseDto dto)
+        {
+            if (dto.AccountID <= 0)
+                throw new InvalidOperationException("يجب اختيار حساب المصروف.");
+
+            var account = await connection.QueryFirstOrDefaultAsync<ChartOfAccountDto>(
+                @"SELECT AccountID, AccountType, IsDetailAccount, IsActive, CostCenterRequired
+                  FROM dbo.ChartOfAccounts WITH (UPDLOCK, HOLDLOCK) WHERE AccountID=@ID",
+                new { ID = dto.AccountID }, transaction);
+            if (account == null || !account.IsActive || !account.IsDetailAccount || (account.AccountType != 5 && account.AccountType != 6))
+                throw new InvalidOperationException("حساب المصروف غير نشط أو غير تفصيلي أو ليس من حسابات التكلفة/المصروفات.");
+            if (account.CostCenterRequired && dto.CostCenterID.GetValueOrDefault() <= 0)
+                throw new InvalidOperationException("هذا الحساب يتطلب اختيار مركز تكلفة.");
+
+            if (dto.CostCenterID is int costCenterId && costCenterId > 0)
+            {
+                var centerIsActive = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT TOP 1 CASE WHEN ISNULL(IsActive,1)=1 THEN 1 ELSE 0 END FROM dbo.CostCenters WITH (UPDLOCK, HOLDLOCK) WHERE CostCenterID=@ID",
+                    new { ID = costCenterId }, transaction);
+                if (centerIsActive != 1)
+                    throw new InvalidOperationException("مركز التكلفة المحدد غير موجود أو غير نشط.");
+            }
+        }
+
         public async Task<int> InsertExpenseAsync(ExpenseDto dto, int userId)
         {
             await RequireExpensePermissionAsync(
                 userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء مصروف.");
 
-            // 1) توليد رقم وفحص الأعمدة قبل فتح الـ Transaction (لتجنب خطأ BeginExecuteReader requires transaction)
-            if (string.IsNullOrWhiteSpace(dto.ExpenseNumber))
-                dto.ExpenseNumber = await GenerateExpenseNoAsync();
-
-            bool hasCreditCol, hasRefCol, hasNumCol, hasStatusCol, hasFiscalCol, hasCashCol, hasNotesCol;
+            // افحص مخطط الأعمدة قبل المعاملة، لكن لا تستهلك أي تسلسل قبل نجاح التحقق.
+            bool hasCreditCol, hasRefCol, hasNumCol, hasStatusCol, hasPostedCol, hasFiscalCol;
+            bool hasCashCol, hasBankCol, hasPaymentMethodCol, hasNotesCol;
             using (var checkConn = CreateConnection())
             {
                 hasCreditCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='CreditAccountID'") > 0;
                 hasRefCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='Reference'") > 0;
                 hasNumCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='ExpenseNumber'") > 0;
                 hasStatusCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='ExpenseStatus'") > 0;
+                hasPostedCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='IsPosted'") > 0;
                 hasFiscalCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='FiscalYearID'") > 0;
                 hasCashCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='CashBoxID'") > 0;
+                hasBankCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='BankAccountID'") > 0;
+                hasPaymentMethodCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='PaymentMethod'") > 0;
                 hasNotesCol = await checkConn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OverheadExpenses') AND name='Notes'") > 0;
             }
-
-            var journalNumber = await GenerateJournalNoCoreAsync();
 
             using var connection = CreateConnection();
             await connection.OpenAsync();
@@ -1195,18 +1978,33 @@ namespace YKCoatings.Services
 
                 dto.FiscalYearID = periodFiscalYearId.Value;
 
-                if (dto.AccountID == 0) throw new Exception("يجب اختيار حساب المصروف");
-                if (dto.Amount <= 0) throw new Exception("المبلغ يجب أن يكون أكبر من صفر");
+                if (dto.Amount <= 0) throw new InvalidOperationException("المبلغ يجب أن يكون أكبر من صفر.");
+                if (!hasNumCol || !hasStatusCol || !hasPostedCol || !hasPaymentMethodCol || !hasCreditCol)
+                    throw new InvalidOperationException("مخطط جدول المصروفات لا يحتوي الأعمدة اللازمة لحفظ الرقم وحالة الترحيل ومصدر الدفع بأمان.");
 
-                // إدراج المصروف - بناء ديناميكي حسب الأعمدة الموجودة
+                if ((dto.PaymentMethod == 1 && !hasCashCol) || (dto.PaymentMethod == 2 && !hasBankCol))
+                    throw new InvalidOperationException("مخطط جدول المصروفات لا يدعم حفظ مصدر الدفع المختار بأمان.");
+
+                await ValidateExpenseDebitAccountAsync(connection, trans, dto);
+                var creditAccId = await ResolveExpenseCreditAccountIdAsync(connection, trans, dto);
+                dto.CreditAccountID = creditAccId;
+
+                // يُستهلك التسلسلان فقط بعد التحقق من الفترة والحسابات ومصدر الدفع، وداخل معاملة الإدراج.
+                dto.ExpenseNumber = await GenerateExpenseNoCoreAsync(connection, trans);
+                var journalNumber = await GenerateJournalNoCoreAsync(connection, trans);
+
+                // إدراج المصروف كمسودة غير مرحّلة؛ أثر الأرصدة لا يثبت إلا عند الاعتماد.
                 var cols = "PeriodID, ExpenseDate, AccountID, CostCenterID, Description, Amount, CreatedBy, CreatedDate";
                 var vals = "@PeriodID, @ExpenseDate, @AccountID, NULLIF(@CostCenterID,0), @Description, @Amount, @UserID, GETDATE()";
                 if (hasCreditCol) { cols += ", CreditAccountID"; vals += ", NULLIF(@CreditAccountID,0)"; }
                 if (hasRefCol) { cols += ", Reference"; vals += ", @Reference"; }
                 if (hasNumCol) { cols += ", ExpenseNumber"; vals += ", @ExpenseNumber"; }
                 if (hasStatusCol) { cols += ", ExpenseStatus"; vals += ", 1"; }
+                if (hasPostedCol) { cols += ", IsPosted"; vals += ", 0"; }
                 if (hasFiscalCol) { cols += ", FiscalYearID"; vals += ", @FiscalYearID"; }
-                if (hasCashCol) { cols += ", CashBoxID, BankAccountID, PaymentMethod"; vals += ", NULLIF(@CashBoxID,0), NULLIF(@BankAccountID,0), @PaymentMethod"; }
+                if (hasCashCol) { cols += ", CashBoxID"; vals += ", NULLIF(@CashBoxID,0)"; }
+                if (hasBankCol) { cols += ", BankAccountID"; vals += ", NULLIF(@BankAccountID,0)"; }
+                if (hasPaymentMethodCol) { cols += ", PaymentMethod"; vals += ", @PaymentMethod"; }
                 if (hasNotesCol) { cols += ", Notes"; vals += ", @Notes"; }
 
                 var sql = $"INSERT INTO dbo.OverheadExpenses({cols}) VALUES({vals}); SELECT CAST(SCOPE_IDENTITY() AS INT);";
@@ -1230,135 +2028,65 @@ namespace YKCoatings.Services
                     UserID = userId
                 }, trans);
 
-                // إنشاء قيد محاسبي تلقائي: مدين مصروف - دائن خزينة/بنك/مستحق
-                int? creditAccId = dto.CreditAccountID;
-                if (creditAccId == null || creditAccId == 0)
-                {
-                    if (dto.CashBoxID.HasValue && dto.CashBoxID.Value > 0)
-                    {
-                        creditAccId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 AccountID FROM dbo.CashBoxes WHERE CashBoxID=@ID", new { ID = dto.CashBoxID.Value }, trans);
-                    }
-                    if ((creditAccId == null || creditAccId == 0) &&
-                        dto.BankAccountID is int bankAccountId && bankAccountId > 0)
-                    {
-                        creditAccId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 AccountID FROM dbo.BankAccounts WHERE BankAccountID=@ID", new { ID = bankAccountId }, trans);
-                    }
-                    if (creditAccId == null || creditAccId == 0)
-                    {
-                        creditAccId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 AccountID FROM dbo.ChartOfAccounts WHERE AccountNameAr LIKE N'%نقدية%' OR AccountNameAr LIKE N'%خزينة%' OR AccountNameAr LIKE N'%صندوق%' ORDER BY AccountID", null, trans);
-                    }
-                }
+                // إنشاء قيد مسودة متوازن: مدين حساب المصروف - دائن الحساب المرتبط بمصدر الدفع/الالتزام.
+                if (creditAccId <= 0) throw new InvalidOperationException("تعذر تحديد حساب دائن صالح للمصروف.");
+                int? fyId = dto.FiscalYearID;
+                int? pId = dto.PeriodID;
 
-                if (creditAccId.HasValue && creditAccId.Value > 0)
-                {
-                    int? fyId = dto.FiscalYearID;
-                    int? pId = dto.PeriodID;
-                    
-                    var jId = await connection.ExecuteScalarAsync<int>(
-                        @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate)
-                          VALUES(@JNum, @JDate, @Desc, @Ref, 'OverheadExpense', @SrcID, @SrcNum, @Amt, @Amt, @FYID, @PID, 1, 1, 1, @UserID, GETDATE());
-                          SELECT CAST(SCOPE_IDENTITY() AS INT);",
-                        new
-                        {
-                            JNum = journalNumber,
-                            JDate = dto.ExpenseDate,
-                            Desc = dto.Description, // بيان نظيف بدون كود - الكود في SourceDocNumber
-                            Ref = dto.Reference,
-                            SrcID = newId,
-                            SrcNum = dto.ExpenseNumber,
-                            Amt = dto.Amount,
-                            FYID = fyId,
-                            PID = pId,
-                            UserID = userId
-                        }, trans);
-
-                    await connection.ExecuteAsync(
-                        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, 1, @AccID, @Amt, 0, @Desc, NULLIF(@CCID,0))",
-                        new { JID = jId, AccID = dto.AccountID, Amt = dto.Amount, Desc = dto.Description, CCID = dto.CostCenterID ?? 0 }, trans);
-
-                    await connection.ExecuteAsync(
-                        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, 2, @AccID, 0, @Amt, @Desc, NULLIF(@CCID,0))",
-                        new { JID = jId, AccID = creditAccId.Value, Amt = dto.Amount, Desc = dto.Description, CCID = dto.CostCenterID ?? 0 }, trans);
-
-                    await connection.ExecuteAsync("UPDATE dbo.OverheadExpenses SET JournalID=@JID, IsPosted=1 WHERE ExpenseID=@ID",
-                        new { JID = jId, ID = newId }, trans);
-
-                    // ==================== تحديث الأرصدة الفعلية ====================
-                    // لو طريقة الدفع نقدي ولم يحدد خزينة -> خد الافتراضية
-                    if ((dto.CashBoxID == null || dto.CashBoxID == 0) && dto.PaymentMethod == 1)
+                var jId = await connection.ExecuteScalarAsync<int>(
+                    @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate)
+                      VALUES(@JNum, @JDate, @Desc, @Ref, 'OverheadExpense', @SrcID, @SrcNum, @Amt, @Amt, @FYID, @PID, 1, 1, 1, @UserID, GETDATE());
+                      SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                    new
                     {
-                        try
-                        {
-                            var defCB = await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CashBoxID FROM dbo.CashBoxes WHERE IsDefault=1 ORDER BY CashBoxID", null, trans);
-                            if (!defCB.HasValue) defCB = await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CashBoxID FROM dbo.CashBoxes ORDER BY CashBoxID", null, trans);
-                            if (defCB.HasValue) dto.CashBoxID = defCB.Value;
-                        }
-                        catch { }
-                    }
-                    // لو بنك ولم يحدد حساب بنكي -> خد أول حساب
-                    if ((dto.BankAccountID == null || dto.BankAccountID == 0) && dto.PaymentMethod == 2)
-                    {
-                        try
-                        {
-                            var defB = await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 BankAccountID FROM dbo.BankAccounts ORDER BY BankAccountID", null, trans);
-                            if (defB.HasValue) dto.BankAccountID = defB.Value;
-                        }
-                        catch { }
-                    }
+                        JNum = journalNumber,
+                        JDate = dto.ExpenseDate,
+                        Desc = dto.Description, // بيان نظيف بدون كود - الكود في SourceDocNumber
+                        Ref = dto.Reference,
+                        SrcID = newId,
+                        SrcNum = dto.ExpenseNumber,
+                        Amt = dto.Amount,
+                        FYID = fyId,
+                        PID = pId,
+                        UserID = userId
+                    }, trans);
 
-                    // 1) خصم من رصيد الخزنة
-                    if (dto.CashBoxID.HasValue && dto.CashBoxID.Value > 0)
-                    {
-                        await connection.ExecuteAsync(
-                            "UPDATE dbo.CashBoxes SET CurrentBalance = ISNULL(CurrentBalance,0) - @Amt WHERE CashBoxID=@CBID",
-                            new { Amt = dto.Amount, CBID = dto.CashBoxID.Value }, trans);
-                        // تحديث العمود في جدول المصروفات لو كان null قبل كده
-                        try { await connection.ExecuteAsync("UPDATE dbo.OverheadExpenses SET CashBoxID=@CBID WHERE ExpenseID=@EID", new { CBID = dto.CashBoxID.Value, EID = newId }, trans); } catch { }
-                    }
-                    // 2) خصم من رصيد البنك
-                    if (dto.BankAccountID.HasValue && dto.BankAccountID.Value > 0)
-                    {
-                        await connection.ExecuteAsync(
-                            "UPDATE dbo.BankAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) - @Amt WHERE BankAccountID=@BID",
-                            new { Amt = dto.Amount, BID = dto.BankAccountID.Value }, trans);
-                        try { await connection.ExecuteAsync("UPDATE dbo.OverheadExpenses SET BankAccountID=@BID WHERE ExpenseID=@EID", new { BID = dto.BankAccountID.Value, EID = newId }, trans); } catch { }
-                    }
-                    // 3) تحديث أرصدة شجرة الحسابات - حساب المصروف مدين + وحساب الخزنة دائن -
-                    // تحديث مباشر + تحديث الآباء بالـ CTE
-                    await connection.ExecuteAsync(
-                        @"UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) + @Amt WHERE AccountID=@AccID",
-                        new { Amt = dto.Amount, AccID = dto.AccountID }, trans);
-                    await connection.ExecuteAsync(
-                        @"UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) - @Amt WHERE AccountID=@AccID",
-                        new { Amt = dto.Amount, AccID = creditAccId.Value }, trans);
+                await connection.ExecuteAsync(
+                    "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, 1, @AccID, @Amt, 0, @Desc, NULLIF(@CCID,0))",
+                    new { JID = jId, AccID = dto.AccountID, Amt = dto.Amount, Desc = dto.Description, CCID = dto.CostCenterID ?? 0 }, trans);
 
-                    // تحديث أرصدة الآباء (Parent accounts) باستخدام حلقة
-                    async Task UpdateParents(int accId, decimal delta)
-                    {
-                        int? currentId = accId;
-                        for (int i = 0; i < 10; i++) // حماية من حلقة لا نهائية - max 10 مستويات
-                        {
-                            var parentId = await connection.ExecuteScalarAsync<int?>(
-                                "SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID", new { ID = currentId }, trans);
-                            if (!parentId.HasValue || parentId.Value == 0) break;
-                            await connection.ExecuteAsync(
-                                "UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) + @Delta WHERE AccountID=@PID",
-                                new { Delta = delta, PID = parentId.Value }, trans);
-                            currentId = parentId.Value;
-                        }
-                    }
-                    await UpdateParents(dto.AccountID, dto.Amount); // المصروف يزيد رصيد الأب
-                    await UpdateParents(creditAccId.Value, -dto.Amount); // الخزنة ينقص رصيد الأب
-                }
+                await connection.ExecuteAsync(
+                    "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, 2, @AccID, 0, @Amt, @Desc, NULLIF(@CCID,0))",
+                    new { JID = jId, AccID = creditAccId, Amt = dto.Amount, Desc = dto.Description, CCID = dto.CostCenterID ?? 0 }, trans);
+
+                await connection.ExecuteAsync("UPDATE dbo.OverheadExpenses SET JournalID=@JID, IsPosted=0 WHERE ExpenseID=@ID",
+                    new { JID = jId, ID = newId }, trans);
 
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 1, "OverheadExpenses", newId.ToString(), moduleName: "SCR_EXPENSES", description: $"إنشاء مصروف: {dto.ExpenseNumber} - {dto.Amount} - خصم خزنة {dto.CashBoxID}"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 1, "OverheadExpenses", newId.ToString(), moduleName: "SCR_EXPENSES", description: $"إنشاء مصروف: {dto.ExpenseNumber} - {dto.Amount} - طريقة الدفع {dto.PaymentMethod}");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after creating expense for record {RecordID}.",
+                        newId);
+                }
                 return newId;
             }
-            catch { trans.Rollback(); throw; }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating expense {ExpenseNumber} for user {UserID}.",
+                        dto.ExpenseNumber,
+                        userId);
+                }
+                throw;
+            }
         }
 
         public async Task UpdateExpenseAsync(ExpenseDto dto, int userId)
@@ -1397,10 +2125,9 @@ namespace YKCoatings.Services
                 var hasOldJournal = current.JournalID.HasValue && current.JournalID.Value > 0;
                 if (current.IsPosted && !hasOldJournal)
                     throw new Exception("المصروف معلّم كمرحّل دون رقم قيد؛ تعذر إثبات الأثر القديم بأمان، ولم يتم تعديله.");
-                if (hasOldJournal && !current.IsPosted)
-                    throw new Exception("المصروف مرتبط بقيد لكن حالة أثره غير مؤكدة؛ أُوقف التعديل لتجنب عكس أو إعادة تطبيق أرصدة غير مثبتة.");
 
-                var hasFinancialEffect = current.IsPosted || hasOldJournal;
+                // وجود قيد مسودة لا يعني وجود أثر أرصدة؛ يُعكس الأثر القديم فقط عند IsPosted=true.
+                var hasFinancialEffect = current.IsPosted;
                 if (hasFinancialEffect)
                 {
                     await RequireExpensePermissionAsync(
@@ -1563,50 +2290,20 @@ namespace YKCoatings.Services
                         throw new Exception("تاريخ القيد القديم لا يطابق نطاق سنته وفترته؛ تعذر عكسه بأمان.");
                 }
 
-                // تحديد حساب الطرف الدائن وفق نفس قاعدة الإنشاء، مع الاعتماد على تفاصيل القيد القديم للعكس.
-                int? newCreditAccountId = null;
-                if (hasOldJournal)
-                {
-                    newCreditAccountId = dto.CreditAccountID;
-                    if (!newCreditAccountId.HasValue || newCreditAccountId.Value <= 0)
-                    {
-                        if (dto.CashBoxID.HasValue && dto.CashBoxID.Value > 0)
-                            newCreditAccountId = await connection.ExecuteScalarAsync<int?>(
-                                "SELECT TOP 1 AccountID FROM dbo.CashBoxes WHERE CashBoxID=@ID",
-                                new { ID = dto.CashBoxID.Value }, trans);
-                        if ((!newCreditAccountId.HasValue || newCreditAccountId.Value <= 0)
-                            && dto.BankAccountID.HasValue && dto.BankAccountID.Value > 0)
-                            newCreditAccountId = await connection.ExecuteScalarAsync<int?>(
-                                "SELECT TOP 1 AccountID FROM dbo.BankAccounts WHERE BankAccountID=@ID",
-                                new { ID = dto.BankAccountID.Value }, trans);
-                        if (!newCreditAccountId.HasValue || newCreditAccountId.Value <= 0)
-                            newCreditAccountId = await connection.ExecuteScalarAsync<int?>(
-                                @"SELECT TOP 1 AccountID FROM dbo.ChartOfAccounts
-                                  WHERE AccountNameAr LIKE N'%نقدية%' OR AccountNameAr LIKE N'%خزينة%' OR AccountNameAr LIKE N'%صندوق%'
-                                  ORDER BY AccountID", null, trans);
-                    }
-
-                    // احتفظ بسلوك الإنشاء للحسابات الافتراضية، لكن لا تعرض/تستخدم قيماً افتراضية كرصيد.
-                    if ((!dto.CashBoxID.HasValue || dto.CashBoxID.Value <= 0) && dto.PaymentMethod == 1)
-                    {
-                        dto.CashBoxID = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 CashBoxID FROM dbo.CashBoxes WHERE IsDefault=1 ORDER BY CashBoxID", null, trans)
-                            ?? await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CashBoxID FROM dbo.CashBoxes ORDER BY CashBoxID", null, trans);
-                    }
-                    if ((!dto.BankAccountID.HasValue || dto.BankAccountID.Value <= 0) && dto.PaymentMethod == 2)
-                        dto.BankAccountID = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT TOP 1 BankAccountID FROM dbo.BankAccounts ORDER BY BankAccountID", null, trans);
-                }
+                // اعتمد على مصدر الدفع المحدد صراحةً؛ لا تُخمن حساباً بديلاً ولا تختَر خزينة/بنك عشوائياً.
+                await ValidateExpenseDebitAccountAsync(connection, trans, dto);
+                var newCreditAccountId = await ResolveExpenseCreditAccountIdAsync(connection, trans, dto);
+                dto.CreditAccountID = newCreditAccountId;
 
                 // عكس أرصدة الخزينة/البنك القديمة باستخدام قيمة القيد القديم، لا قيمة الرأس التي ربما تغيرت.
-                if (hasOldJournal && current.CashBoxID.HasValue && current.CashBoxID.Value > 0)
+                if (current.IsPosted && current.CashBoxID.HasValue && current.CashBoxID.Value > 0)
                 {
                     var reversed = await connection.ExecuteAsync(
                         "UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)+@Amount WHERE CashBoxID=@ID",
                         new { Amount = oldFinancialAmount, ID = current.CashBoxID.Value }, trans);
                     if (reversed != 1) throw new Exception("تعذر تحديد الخزينة القديمة لعكس أثر المصروف؛ لم يتم حفظ التعديل.");
                 }
-                if (hasOldJournal && current.BankAccountID.HasValue && current.BankAccountID.Value > 0)
+                if (current.IsPosted && current.BankAccountID.HasValue && current.BankAccountID.Value > 0)
                 {
                     var reversed = await connection.ExecuteAsync(
                         "UPDATE dbo.BankAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Amount WHERE BankAccountID=@ID",
@@ -1637,7 +2334,7 @@ namespace YKCoatings.Services
                     }
                 }
 
-                if (hasOldJournal)
+                if (current.IsPosted)
                 {
                     foreach (var group in oldJournalLines.GroupBy(x => x.AccountID).OrderBy(x => x.Key))
                     {
@@ -1647,8 +2344,8 @@ namespace YKCoatings.Services
                 }
 
                 var sourceJournalId = (int?)null;
-                var sourceIsPosted = false;
-                if (hasOldJournal && newCreditAccountId.HasValue && newCreditAccountId.Value > 0)
+                var sourceIsPosted = current.IsPosted;
+                if (hasOldJournal)
                 {
                     var headerAffected = await connection.ExecuteAsync(
                         @"UPDATE dbo.JournalEntries
@@ -1676,10 +2373,44 @@ namespace YKCoatings.Services
                     await connection.ExecuteAsync(
                         @"INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID)
                           VALUES(@JournalID,2,@AccountID,0,@Amount,@Description,NULLIF(@CostCenterID,0))",
-                        new { JournalID = oldJournalId, AccountID = newCreditAccountId.Value, dto.Amount, dto.Description, CostCenterID = dto.CostCenterID ?? 0 }, trans);
+                        new { JournalID = oldJournalId, AccountID = newCreditAccountId, dto.Amount, dto.Description, CostCenterID = dto.CostCenterID ?? 0 }, trans);
 
                     sourceJournalId = oldJournalId;
-                    sourceIsPosted = true;
+                    sourceIsPosted = current.IsPosted;
+                }
+                else
+                {
+                    // أصلح المصروفات القديمة التي لا تملك قيداً بإنشاء قيد مسودة؛ لا يُنشأ أي أثر رصيد هنا.
+                    var journalNumber = await GenerateJournalNoCoreAsync(connection, trans);
+                    var newJournalId = await connection.ExecuteScalarAsync<int>(
+                        @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber,
+                                TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate)
+                          VALUES(@JournalNumber, @JournalDate, @Description, @Reference, 'OverheadExpense', @ExpenseID, @ExpenseNumber,
+                                @Amount, @Amount, @FiscalYearID, @PeriodID, 1, 1, 1, @UserID, GETDATE());
+                          SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                        new
+                        {
+                            JournalNumber = journalNumber,
+                            JournalDate = dto.ExpenseDate,
+                            dto.Description,
+                            dto.Reference,
+                            dto.ExpenseID,
+                            dto.ExpenseNumber,
+                            dto.Amount,
+                            dto.FiscalYearID,
+                            dto.PeriodID,
+                            UserID = userId
+                        }, trans);
+                    await connection.ExecuteAsync(
+                        @"INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID)
+                          VALUES(@JournalID,1,@AccountID,@Amount,0,@Description,NULLIF(@CostCenterID,0))",
+                        new { JournalID = newJournalId, dto.AccountID, dto.Amount, dto.Description, CostCenterID = dto.CostCenterID ?? 0 }, trans);
+                    await connection.ExecuteAsync(
+                        @"INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID)
+                          VALUES(@JournalID,2,@AccountID,0,@Amount,@Description,NULLIF(@CostCenterID,0))",
+                        new { JournalID = newJournalId, AccountID = newCreditAccountId, dto.Amount, dto.Description, CostCenterID = dto.CostCenterID ?? 0 }, trans);
+                    sourceJournalId = newJournalId;
+                    sourceIsPosted = false;
                 }
 
                 var hasFiscalYearColumn = await connection.ExecuteScalarAsync<int>(
@@ -1714,7 +2445,7 @@ namespace YKCoatings.Services
                 }, trans);
                 if (updatedExpense != 1) throw new Exception("لم يتم تحديث المصروف؛ ربما تغيرت حالته أثناء العملية.");
 
-                if (sourceIsPosted && newCreditAccountId.HasValue)
+                if (sourceIsPosted)
                 {
                     if (dto.CashBoxID.HasValue && dto.CashBoxID.Value > 0)
                     {
@@ -1738,19 +2469,9 @@ namespace YKCoatings.Services
                         else newDeltas[accountId] = delta;
                     }
                     AddNewDelta(dto.AccountID, dto.Amount);
-                    AddNewDelta(newCreditAccountId.Value, -dto.Amount);
+                    AddNewDelta(newCreditAccountId, -dto.Amount);
                     foreach (var item in newDeltas.OrderBy(x => x.Key))
                         await ApplyAccountDeltaAsync(item.Key, item.Value);
-                }
-
-                // عند إزالة الحساب الدائن، يُعكس القيد القديم ويُزال القيد المسودة؛ لا يُنشأ أثر مالي بديل.
-                if (hasOldJournal && !sourceIsPosted)
-                {
-                    await connection.ExecuteAsync("DELETE FROM dbo.JournalEntryDetails WHERE JournalID=@ID", new { ID = oldJournalId }, trans);
-                    var deletedJournal = await connection.ExecuteAsync(
-                        "DELETE FROM dbo.JournalEntries WHERE JournalID=@ID AND JournalStatus=1 AND IsAutoGenerated=1",
-                        new { ID = oldJournalId }, trans);
-                    if (deletedJournal != 1) throw new Exception("تعذر إزالة القيد الأوتوماتيكي المسودة بعد عكسه؛ أُلغيت العملية.");
                 }
 
                 trans.Commit();
@@ -1761,11 +2482,22 @@ namespace YKCoatings.Services
                     await _audit.WriteAuditLogAsync(userId, 2, "OverheadExpenses", dto.ExpenseID.ToString(),
                         moduleName: "SCR_EXPENSES", description: $"تعديل مصروف وعكس/إعادة تطبيق القيد: {dto.ExpenseNumber}");
                 }
-                catch { }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after updating expense for record {RecordID}.",
+                        dto.ExpenseID);
+                }
             }
             catch
             {
-                try { trans.Rollback(); } catch { }
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating expense {ExpenseID} failed.",
+                        dto.ExpenseID);
+                }
                 throw;
             }
         }
@@ -1780,53 +2512,129 @@ namespace YKCoatings.Services
             using var trans = connection.BeginTransaction();
             try
             {
-                var exp = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT ExpenseStatus, JournalID, Amount, AccountID, CreditAccountID, CashBoxID, BankAccountID FROM dbo.OverheadExpenses WITH (UPDLOCK, HOLDLOCK) WHERE ExpenseID=@ID",
+                var exp = await connection.QueryFirstOrDefaultAsync<(
+                    int? ExpenseStatus, bool IsPosted, int? JournalID, decimal Amount, int AccountID,
+                    int? CreditAccountID, int? CashBoxID, int? BankAccountID)>(
+                    @"SELECT ISNULL(ExpenseStatus,1) AS ExpenseStatus, ISNULL(IsPosted,0) AS IsPosted,
+                             JournalID, Amount, AccountID, CreditAccountID, CashBoxID, BankAccountID
+                      FROM dbo.OverheadExpenses WITH (UPDLOCK, HOLDLOCK) WHERE ExpenseID=@ID",
                     new { ID = id }, trans);
-                if (exp == null) throw new Exception("المصروف غير موجود");
-                if ((int)(exp.ExpenseStatus ?? 1) != 1) throw new Exception("لا يمكن حذف مصروف معتمد");
+                if (!exp.ExpenseStatus.HasValue) throw new Exception("المصروف غير موجود");
+                if (exp.ExpenseStatus.Value != 1) throw new Exception("لا يمكن حذف مصروف معتمد");
 
-                decimal amount = (decimal)(exp.Amount ?? 0);
-                int accountId = (int)(exp.AccountID ?? 0);
-                int? creditAccId = (int?)exp.CreditAccountID;
-                int? cashBoxId = (int?)exp.CashBoxID;
-                int? bankAccId = (int?)exp.BankAccountID;
-                int? journalId = (int?)exp.JournalID;
+                var hasJournal = exp.JournalID.GetValueOrDefault() > 0;
+                if (exp.IsPosted && !hasJournal)
+                    throw new InvalidOperationException("المصروف له أثر مالي لكنه بلا قيد مرتبط؛ لا يمكن حذفه بأمان.");
+                if (exp.IsPosted)
+                    await RequireExpensePermissionAsync(userId, p => p.CanApprove,
+                        "حذف مصروف له أثر مالي يتطلب صلاحية الحذف والاعتماد معاً.");
 
-                // عكس الأرصدة
-                if (cashBoxId.HasValue && cashBoxId.Value > 0)
-                    await connection.ExecuteAsync("UPDATE dbo.CashBoxes SET CurrentBalance = ISNULL(CurrentBalance,0) + @Amt WHERE CashBoxID=@CBID", new { Amt = amount, CBID = cashBoxId.Value }, trans);
-                if (bankAccId.HasValue && bankAccId.Value > 0)
-                    await connection.ExecuteAsync("UPDATE dbo.BankAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) + @Amt WHERE BankAccountID=@BID", new { Amt = amount, BID = bankAccId.Value }, trans);
-                if (accountId > 0)
-                    await connection.ExecuteAsync("UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) - @Amt WHERE AccountID=@AccID", new { Amt = amount, AccID = accountId }, trans);
-                if (creditAccId.HasValue && creditAccId.Value > 0)
-                    await connection.ExecuteAsync("UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) + @Amt WHERE AccountID=@AccID", new { Amt = amount, AccID = creditAccId.Value }, trans);
-
-                // عكس أرصدة الآباء
-                async Task ReverseParents(int accId, decimal delta)
+                var journalLines = new List<(int AccountID, decimal Debit, decimal Credit)>();
+                decimal financialAmount = 0m;
+                if (hasJournal)
                 {
-                    int? cur = accId;
-                    for (int i = 0; i < 10; i++)
+                    var journal = await connection.QueryFirstOrDefaultAsync<(
+                        int? JournalStatus, bool IsAutoGenerated, string? SourceDocType, int? SourceDocID)>(
+                        @"SELECT JournalStatus, ISNULL(IsAutoGenerated,0) AS IsAutoGenerated, SourceDocType, SourceDocID
+                          FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK) WHERE JournalID=@ID",
+                        new { ID = exp.JournalID!.Value }, trans);
+                    if (!journal.JournalStatus.HasValue || journal.JournalStatus.Value != 1 || !journal.IsAutoGenerated
+                        || !string.Equals(journal.SourceDocType, "OverheadExpense", StringComparison.OrdinalIgnoreCase)
+                        || journal.SourceDocID != id)
+                        throw new InvalidOperationException("القيد المرتبط ليس قيد مصروف أوتوماتيكياً مسودة؛ لم يتم حذف المصروف.");
+
+                    journalLines = (await connection.QueryAsync<(int AccountID, decimal Debit, decimal Credit)>(
+                        @"SELECT AccountID, DebitAmount AS Debit, CreditAmount AS Credit
+                          FROM dbo.JournalEntryDetails WITH (UPDLOCK, HOLDLOCK) WHERE JournalID=@ID ORDER BY LineNumber",
+                        new { ID = exp.JournalID.Value }, trans)).ToList();
+                    var debitLines = journalLines.Where(x => x.Debit > 0m && x.Credit == 0m).ToList();
+                    var creditLines = journalLines.Where(x => x.Credit > 0m && x.Debit == 0m).ToList();
+                    if (journalLines.Count != 2 || debitLines.Count != 1 || creditLines.Count != 1
+                        || journalLines.Any(x => x.AccountID <= 0 || x.Debit < 0m || x.Credit < 0m)
+                        || debitLines[0].Debit != creditLines[0].Credit)
+                        throw new InvalidOperationException("تفاصيل القيد المرتبط غير متوازنة أو لا تطابق قيد مصروف قابل للحذف.");
+                    financialAmount = debitLines[0].Debit;
+                }
+
+                if (exp.IsPosted)
+                {
+                    if (exp.CashBoxID.GetValueOrDefault() > 0)
                     {
-                        var pid = await connection.ExecuteScalarAsync<int?>("SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID", new { ID = cur }, trans);
-                        if (!pid.HasValue || pid.Value == 0) break;
-                        await connection.ExecuteAsync("UPDATE dbo.ChartOfAccounts SET CurrentBalance = ISNULL(CurrentBalance,0) + @D WHERE AccountID=@PID", new { D = delta, PID = pid.Value }, trans);
-                        cur = pid.Value;
+                        var affected = await connection.ExecuteAsync(
+                            "UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)+@Amount WHERE CashBoxID=@ID",
+                            new { Amount = financialAmount, ID = exp.CashBoxID!.Value }, trans);
+                        if (affected != 1) throw new InvalidOperationException("تعذر عكس رصيد الخزينة؛ لم يتم حذف المصروف.");
+                    }
+                    if (exp.BankAccountID.GetValueOrDefault() > 0)
+                    {
+                        var affected = await connection.ExecuteAsync(
+                            "UPDATE dbo.BankAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Amount WHERE BankAccountID=@ID",
+                            new { Amount = financialAmount, ID = exp.BankAccountID!.Value }, trans);
+                        if (affected != 1) throw new InvalidOperationException("تعذر عكس رصيد البنك؛ لم يتم حذف المصروف.");
+                    }
+
+                    foreach (var group in journalLines.GroupBy(x => x.AccountID).OrderBy(x => x.Key))
+                    {
+                        var reverseDelta = -group.Sum(x => x.Debit - x.Credit);
+                        if (reverseDelta == 0m) continue;
+                        var affected = await connection.ExecuteAsync(
+                            "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                            new { Delta = reverseDelta, ID = group.Key }, trans);
+                        if (affected != 1) throw new InvalidOperationException("تعذر عكس رصيد حساب القيد؛ لم يتم حذف المصروف.");
+
+                        int? currentAccountId = group.Key;
+                        for (var depth = 0; depth < 10; depth++)
+                        {
+                            var parentId = await connection.ExecuteScalarAsync<int?>(
+                                "SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID",
+                                new { ID = currentAccountId }, trans);
+                            if (!parentId.HasValue || parentId.Value <= 0) break;
+                            var parentAffected = await connection.ExecuteAsync(
+                                "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                                new { Delta = reverseDelta, ID = parentId.Value }, trans);
+                            if (parentAffected != 1) throw new InvalidOperationException("تعذر عكس رصيد الحساب الأب؛ لم يتم حذف المصروف.");
+                            currentAccountId = parentId.Value;
+                        }
                     }
                 }
-                if (accountId > 0) await ReverseParents(accountId, -amount);
-                if (creditAccId.HasValue) await ReverseParents(creditAccId.Value, amount);
 
-                if (journalId.HasValue && journalId.Value > 0)
-                    await connection.ExecuteAsync("DELETE FROM dbo.JournalEntryDetails WHERE JournalID=@JID; DELETE FROM dbo.JournalEntries WHERE JournalID=@JID",
-                        new { JID = journalId.Value }, trans);
+                if (hasJournal)
+                {
+                    await connection.ExecuteAsync("DELETE FROM dbo.JournalEntryDetails WHERE JournalID=@JID",
+                        new { JID = exp.JournalID!.Value }, trans);
+                    var deletedJournal = await connection.ExecuteAsync(
+                        "DELETE FROM dbo.JournalEntries WHERE JournalID=@JID AND JournalStatus=1 AND IsAutoGenerated=1",
+                        new { JID = exp.JournalID.Value }, trans);
+                    if (deletedJournal != 1) throw new InvalidOperationException("تعذر حذف القيد المسودة؛ أُلغيت عملية حذف المصروف.");
+                }
 
-                await connection.ExecuteAsync("DELETE FROM dbo.OverheadExpenses WHERE ExpenseID=@ID", new { ID = id }, trans);
+                var deletedExpense = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.OverheadExpenses WHERE ExpenseID=@ID AND ISNULL(ExpenseStatus,1)=1",
+                    new { ID = id }, trans);
+                if (deletedExpense != 1) throw new InvalidOperationException("تغيرت حالة المصروف أثناء الحذف؛ أُلغيت العملية.");
                 trans.Commit();
-                try { await _audit.WriteAuditLogAsync(userId, 3, "OverheadExpenses", id.ToString(), moduleName: "SCR_EXPENSES", description: "حذف مصروف وعكس الأرصدة"); } catch { }
+                try
+                {
+                    await _audit.WriteAuditLogAsync(userId, 3, "OverheadExpenses", id.ToString(), moduleName: "SCR_EXPENSES", description: "حذف مصروف وعكس الأرصدة");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after deleting expense for record {RecordID}.",
+                        id);
+                }
             }
-            catch { trans.Rollback(); throw; }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting expense {ExpenseID} failed.",
+                        id);
+                }
+                throw;
+            }
         }
 
         public async Task ApproveExpenseAsync(int id, int userId)
@@ -1849,10 +2657,12 @@ namespace YKCoatings.Services
                     int AccountID,
                     int? CreditAccountID,
                     int? CashBoxID,
-                    int? BankAccountID)>(
+                    int? BankAccountID,
+                    int? CostCenterID,
+                    int? PaymentMethod)>(
                     @"SELECT ISNULL(ExpenseStatus,1) AS ExpenseStatus, PeriodID, ExpenseDate,
                              JournalID, ISNULL(IsPosted,0) AS IsPosted, Amount,
-                             AccountID, CreditAccountID, CashBoxID, BankAccountID
+                             AccountID, CreditAccountID, CashBoxID, BankAccountID, CostCenterID, PaymentMethod
                       FROM dbo.OverheadExpenses WITH (UPDLOCK, HOLDLOCK)
                       WHERE ExpenseID=@ID",
                     new { ID = id }, trans);
@@ -1882,14 +2692,25 @@ namespace YKCoatings.Services
                     || expense.ExpenseDate.Value.Date < periodState.StartDate.Date || expense.ExpenseDate.Value.Date > periodState.EndDate.Date)
                     throw new Exception("تاريخ المصروف خارج نطاق السنة أو الفترة المحاسبية المفتوحة.");
 
-                if (expense.IsPosted && (!expense.JournalID.HasValue || expense.JournalID.Value <= 0))
-                    throw new Exception("المصروف معلّم كمرحّل دون قيد مرتبط؛ لا يمكن اعتماده بأمان.");
+                if (!expense.JournalID.HasValue || expense.JournalID.Value <= 0)
+                    throw new InvalidOperationException("لا يمكن اعتماد المصروف دون قيد مرتبط صالح؛ احفظ المصروف مجدداً لإصلاح القيد ثم أعد الاعتماد.");
 
-                if (expense.JournalID.HasValue && expense.JournalID.Value > 0)
+                var expenseForPosting = new ExpenseDto
                 {
-                    if (!expense.IsPosted)
-                        throw new Exception("المصروف مرتبط بقيد لكن حالة أثره غير مؤكدة؛ أُوقف الاعتماد لتجنب تكرار الأرصدة.");
+                    ExpenseID = id,
+                    ExpenseDate = expense.ExpenseDate.Value,
+                    AccountID = expense.AccountID,
+                    CostCenterID = expense.CostCenterID,
+                    CreditAccountID = expense.CreditAccountID,
+                    CashBoxID = expense.CashBoxID,
+                    BankAccountID = expense.BankAccountID,
+                    PaymentMethod = expense.PaymentMethod,
+                    Amount = expense.Amount
+                };
+                await ValidateExpenseDebitAccountAsync(connection, trans, expenseForPosting);
+                var expectedCreditAccountId = await ResolveExpenseCreditAccountIdAsync(connection, trans, expenseForPosting);
 
+                {
                     var journal = await connection.QueryFirstOrDefaultAsync<(
                         int? JournalStatus,
                         bool IsAutoGenerated,
@@ -1932,22 +2753,62 @@ namespace YKCoatings.Services
                         || creditLines[0].Credit != expense.Amount)
                         throw new Exception("تفاصيل القيد لا تطابق حساب ومبلغ المصروف؛ أُوقف الاعتماد دون تغيير الحالة أو الأرصدة.");
 
-                    int? expectedCreditAccountId = expense.CreditAccountID.GetValueOrDefault() > 0
-                        ? expense.CreditAccountID
-                        : null;
-                    if (!expectedCreditAccountId.HasValue && expense.CashBoxID.GetValueOrDefault() > 0)
-                        expectedCreditAccountId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT AccountID FROM dbo.CashBoxes WITH (UPDLOCK, HOLDLOCK) WHERE CashBoxID=@ID",
-                            new { ID = expense.CashBoxID!.Value }, trans);
-                    if (!expectedCreditAccountId.HasValue && expense.BankAccountID.GetValueOrDefault() > 0)
-                        expectedCreditAccountId = await connection.ExecuteScalarAsync<int?>(
-                            "SELECT AccountID FROM dbo.BankAccounts WITH (UPDLOCK, HOLDLOCK) WHERE BankAccountID=@ID",
-                            new { ID = expense.BankAccountID!.Value }, trans);
-                    if (!expectedCreditAccountId.HasValue || expectedCreditAccountId.Value <= 0
-                        || creditLines[0].AccountID != expectedCreditAccountId.Value)
-                        throw new Exception("تعذر إثبات حساب الدائن من المصروف أو الخزينة/البنك المرتبط؛ أُوقف الاعتماد بأمان.");
+                    if (creditLines[0].Credit != expense.Amount
+                        || creditLines[0].AccountID != expectedCreditAccountId)
+                        throw new InvalidOperationException("حساب الدائن في القيد لا يطابق مصدر الدفع/الالتزام المحفوظ؛ أُوقف الاعتماد بأمان.");
 
-                    // الأرصدة حُدّثت عند إنشاء المصروف أو عكسه/إعادة تطبيقه؛ لا تُحدّث ثانيةً عند الاعتماد.
+                    // المسودات الجديدة لا تُحدّث الأرصدة عند الحفظ؛ طبّق الأثر مرة واحدة هنا.
+                    // السجلات القديمة التي سبق تطبيق أثرها (IsPosted=true) لا تُحدّث ثانيةً.
+                    if (!expense.IsPosted)
+                    {
+                        if (expenseForPosting.PaymentMethod == 1)
+                        {
+                            var cashAffected = await connection.ExecuteAsync(
+                                "UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)-@Amount WHERE CashBoxID=@ID",
+                                new { Amount = expense.Amount, ID = expenseForPosting.CashBoxID!.Value }, trans);
+                            if (cashAffected != 1) throw new InvalidOperationException("تعذر تحديث رصيد الخزينة؛ أُلغيت عملية الاعتماد.");
+                        }
+                        else if (expenseForPosting.PaymentMethod == 2)
+                        {
+                            var bankAffected = await connection.ExecuteAsync(
+                                "UPDATE dbo.BankAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)-@Amount WHERE BankAccountID=@ID",
+                                new { Amount = expense.Amount, ID = expenseForPosting.BankAccountID!.Value }, trans);
+                            if (bankAffected != 1) throw new InvalidOperationException("تعذر تحديث رصيد البنك؛ أُلغيت عملية الاعتماد.");
+                        }
+
+                        async Task ApplyApprovedAccountDeltaAsync(int accountId, decimal delta)
+                        {
+                            if (delta == 0m) return;
+                            var affected = await connection.ExecuteAsync(
+                                "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                                new { Delta = delta, ID = accountId }, trans);
+                            if (affected != 1) throw new InvalidOperationException("تعذر تحديث رصيد حساب المصروف؛ أُلغيت عملية الاعتماد.");
+
+                            int? parentCandidate = accountId;
+                            for (var depth = 0; depth < 10; depth++)
+                            {
+                                var parentId = await connection.ExecuteScalarAsync<int?>(
+                                    "SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID",
+                                    new { ID = parentCandidate }, trans);
+                                if (!parentId.HasValue || parentId.Value <= 0) break;
+                                var parentAffected = await connection.ExecuteAsync(
+                                    "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                                    new { Delta = delta, ID = parentId.Value }, trans);
+                                if (parentAffected != 1) throw new InvalidOperationException("تعذر تحديث رصيد الحساب الأب؛ أُلغيت عملية الاعتماد.");
+                                parentCandidate = parentId.Value;
+                            }
+                        }
+
+                        var accountDeltas = new Dictionary<int, decimal>();
+                        accountDeltas[expense.AccountID] = expense.Amount;
+                        if (accountDeltas.ContainsKey(expectedCreditAccountId))
+                            accountDeltas[expectedCreditAccountId] -= expense.Amount;
+                        else
+                            accountDeltas[expectedCreditAccountId] = -expense.Amount;
+                        foreach (var delta in accountDeltas.OrderBy(x => x.Key))
+                            await ApplyApprovedAccountDeltaAsync(delta.Key, delta.Value);
+                    }
+
                     var postedJournal = await connection.ExecuteAsync(
                         @"UPDATE dbo.JournalEntries
                           SET JournalStatus=2, PostedBy=@UserID, PostedDate=GETDATE()
@@ -1959,7 +2820,7 @@ namespace YKCoatings.Services
 
                 var approved = await connection.ExecuteAsync(
                     @"UPDATE dbo.OverheadExpenses
-                      SET ExpenseStatus=2, ApprovedBy=@UserID, ApprovedDate=GETDATE()
+                      SET ExpenseStatus=2, IsPosted=1, ApprovedBy=@UserID, ApprovedDate=GETDATE()
                       WHERE ExpenseID=@ID AND ISNULL(ExpenseStatus,1)=1",
                     new { UserID = userId, ID = id }, trans);
                 if (approved != 1) throw new Exception("تغيرت حالة المصروف أثناء الاعتماد؛ أُلغيت العملية.");
@@ -1967,15 +2828,30 @@ namespace YKCoatings.Services
             }
             catch
             {
-                try { trans.Rollback(); } catch { }
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after approving overhead expense {ExpenseID} failed.",
+                        id);
+                }
                 throw;
             }
 
-            try { await _audit.WriteAuditLogAsync(userId, 2, "OverheadExpenses", id.ToString(), moduleName: "SCR_EXPENSES", description: "اعتماد مصروف وترحيل قيده الأوتوماتيكي"); } catch { }
+            try
+            {
+                await _audit.WriteAuditLogAsync(userId, 2, "OverheadExpenses", id.ToString(), moduleName: "SCR_EXPENSES", description: "اعتماد مصروف وترحيل قيده الأوتوماتيكي");
+            }
+            catch (Exception auditException)
+            {
+                _logger.LogError(auditException,
+                    "Audit logging failed after approving expense for record {RecordID}.",
+                    id);
+            }
         }
 
         // ==========================================
-        // تقارير محاسبية - vw_TrialBalance + vw_AccountLedger
+        // تقارير محاسبية - حساب مباشر من القيود المعتمدة لتفادي اختلاف أعمدة الـ Views
         // ==========================================
         public async Task<List<TrialBalanceDto>> GetTrialBalanceAsync(DateTime? from = null, DateTime? to = null, int? level = null)
         {
@@ -1985,49 +2861,39 @@ namespace YKCoatings.Services
                 ("SCR_TRIALBAL", p => p.CanView),
                 ("SCR_TB", p => p.CanView));
 
+            if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
+                throw new ArgumentException("تاريخ بداية ميزان المراجعة يجب ألا يتجاوز تاريخ النهاية.");
+
             using var connection = CreateConnection();
-            // المحاولة 1: vw_TrialBalance لو موجود وفيه داتا
-            try
-            {
-                var sql = @"SELECT * FROM dbo.vw_TrialBalance ORDER BY AccountCode";
-                var result = await connection.QueryAsync<TrialBalanceDto>(sql);
-                var list = result.ToList();
-                if (list.Any()) return list;
-            }
-            catch { }
-
-            // المحاولة 2: حساب مباشر من القيود المرحلة + الرصيد الافتتاحي
-            try
-            {
-                var sql2 = @"SELECT coa.AccountID, coa.AccountCode, coa.AccountNameAr, coa.AccountLevel, coa.AccountType,
-                                    ISNULL(coa.OpeningBalance,0) AS OpeningBalance,
-                                    ISNULL((SELECT SUM(DebitAmount) FROM dbo.JournalEntryDetails jd JOIN dbo.JournalEntries je ON jd.JournalID=je.JournalID WHERE jd.AccountID=coa.AccountID AND je.JournalStatus=2 AND (@From IS NULL OR je.JournalDate>=@From) AND (@To IS NULL OR je.JournalDate<=@To)),0) AS TotalDebit,
-                                    ISNULL((SELECT SUM(CreditAmount) FROM dbo.JournalEntryDetails jd JOIN dbo.JournalEntries je ON jd.JournalID=je.JournalID WHERE jd.AccountID=coa.AccountID AND je.JournalStatus=2 AND (@From IS NULL OR je.JournalDate>=@From) AND (@To IS NULL OR je.JournalDate<=@To)),0) AS TotalCredit,
-                                    ISNULL(coa.OpeningBalance,0) + ISNULL((SELECT SUM(DebitAmount - CreditAmount) FROM dbo.JournalEntryDetails jd JOIN dbo.JournalEntries je ON jd.JournalID=je.JournalID WHERE jd.AccountID=coa.AccountID AND je.JournalStatus=2 AND (@From IS NULL OR je.JournalDate>=@From) AND (@To IS NULL OR je.JournalDate<=@To)),0) AS CurrentBalance
-                             FROM dbo.ChartOfAccounts coa WHERE (@Level IS NULL OR coa.AccountLevel<=@Level) AND coa.IsActive=1 ORDER BY coa.AccountCode";
-                var result = await connection.QueryAsync<TrialBalanceDto>(sql2, new { From = from, To = to, Level = level });
-                var list = result.ToList();
-                if (list.Any()) return list;
-            }
-            catch { }
-
-            // المحاولة 3: أبسط - كل الحسابات مع افتتاحي وحالي من الجدول مباشرة (حتى لو مفيش قيود)
-            try
-            {
-                var sql3 = @"SELECT AccountID, AccountCode, AccountNameAr, AccountLevel, AccountType,
-                                    ISNULL(OpeningBalance,0) AS OpeningBalance,
-                                    0 AS TotalDebit, 0 AS TotalCredit,
-                                    ISNULL(CurrentBalance, ISNULL(OpeningBalance,0)) AS CurrentBalance
-                             FROM dbo.ChartOfAccounts
-                             WHERE (@Level IS NULL OR AccountLevel<=@Level)
-                             ORDER BY AccountCode";
-                var result = await connection.QueryAsync<TrialBalanceDto>(sql3, new { Level = level });
-                return result.ToList();
-            }
-            catch
-            {
-                return new List<TrialBalanceDto>();
-            }
+            var sql = @";WITH AccountMovements AS
+                        (
+                            SELECT jd.AccountID,
+                                   SUM(CASE WHEN @From IS NOT NULL AND je.JournalDate < @From THEN jd.DebitAmount ELSE 0 END) AS PriorDebit,
+                                   SUM(CASE WHEN @From IS NOT NULL AND je.JournalDate < @From THEN jd.CreditAmount ELSE 0 END) AS PriorCredit,
+                                   SUM(CASE WHEN (@From IS NULL OR je.JournalDate >= @From)
+                                             AND (@To IS NULL OR je.JournalDate < DATEADD(DAY,1,CONVERT(date,@To)))
+                                            THEN jd.DebitAmount ELSE 0 END) AS PeriodDebit,
+                                   SUM(CASE WHEN (@From IS NULL OR je.JournalDate >= @From)
+                                             AND (@To IS NULL OR je.JournalDate < DATEADD(DAY,1,CONVERT(date,@To)))
+                                            THEN jd.CreditAmount ELSE 0 END) AS PeriodCredit
+                            FROM dbo.JournalEntryDetails jd
+                            INNER JOIN dbo.JournalEntries je ON je.JournalID=jd.JournalID
+                            WHERE je.JournalStatus=2
+                              AND (@To IS NULL OR je.JournalDate < DATEADD(DAY,1,CONVERT(date,@To)))
+                            GROUP BY jd.AccountID
+                        )
+                        SELECT coa.AccountID, coa.AccountCode, coa.AccountNameAr, coa.AccountLevel, coa.AccountType,
+                               ISNULL(coa.OpeningBalance,0)+ISNULL(m.PriorDebit,0)-ISNULL(m.PriorCredit,0) AS OpeningBalance,
+                               ISNULL(m.PeriodDebit,0) AS TotalDebit,
+                               ISNULL(m.PeriodCredit,0) AS TotalCredit,
+                               ISNULL(coa.OpeningBalance,0)+ISNULL(m.PriorDebit,0)-ISNULL(m.PriorCredit,0)
+                                   +ISNULL(m.PeriodDebit,0)-ISNULL(m.PeriodCredit,0) AS CurrentBalance
+                        FROM dbo.ChartOfAccounts coa
+                        LEFT JOIN AccountMovements m ON m.AccountID=coa.AccountID
+                        WHERE coa.IsActive=1 AND (@Level IS NULL OR coa.AccountLevel<=@Level)
+                        ORDER BY coa.AccountCode";
+            var result = await connection.QueryAsync<TrialBalanceDto>(sql, new { From = from, To = to, Level = level });
+            return result.ToList();
         }
 
         public async Task<List<AccountLedgerDto>> GetAccountLedgerAsync(int accountId, DateTime? from = null, DateTime? to = null)
@@ -2038,25 +2904,39 @@ namespace YKCoatings.Services
                 ("SCR_ACCLEDGER", p => p.CanView),
                 ("SCR_ACCOUNT_LEDGER", p => p.CanView));
 
+            if (accountId <= 0) throw new ArgumentOutOfRangeException(nameof(accountId), "يجب اختيار حساب صالح.");
+            if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
+                throw new ArgumentException("تاريخ بداية دفتر الأستاذ يجب ألا يتجاوز تاريخ النهاية.");
+
             using var connection = CreateConnection();
-            try
-            {
-                var sql = @"SELECT * FROM dbo.vw_AccountLedger WHERE AccountID=@AccID AND (@From IS NULL OR JournalDate>=@From) AND (@To IS NULL OR JournalDate<=@To) ORDER BY JournalDate, JournalID";
-                var result = await connection.QueryAsync<AccountLedgerDto>(sql, new { AccID = accountId, From = from, To = to });
-                return result.ToList();
-            }
-            catch
-            {
-                var sql2 = @"SELECT jd.JournalDetailID, je.JournalID, je.JournalNumber, je.JournalDate, je.Description, jd.DebitAmount, jd.CreditAmount, coa.AccountCode, coa.AccountNameAr,
-                                    SUM(jd.DebitAmount - jd.CreditAmount) OVER (ORDER BY je.JournalDate, je.JournalID ROWS UNBOUNDED PRECEDING) AS RunningBalance
-                             FROM dbo.JournalEntryDetails jd
-                             JOIN dbo.JournalEntries je ON jd.JournalID=je.JournalID
-                             JOIN dbo.ChartOfAccounts coa ON jd.AccountID=coa.AccountID
-                             WHERE jd.AccountID=@AccID AND je.JournalStatus=2 AND (@From IS NULL OR je.JournalDate>=@From) AND (@To IS NULL OR je.JournalDate<=@To)
-                             ORDER BY je.JournalDate, je.JournalID";
-                var result = await connection.QueryAsync<AccountLedgerDto>(sql2, new { AccID = accountId, From = from, To = to });
-                return result.ToList();
-            }
+            var sql = @";WITH OpeningBalance AS
+                        (
+                            SELECT ISNULL(coa.OpeningBalance,0) + ISNULL(
+                                (
+                                    SELECT SUM(jd0.DebitAmount-jd0.CreditAmount)
+                                    FROM dbo.JournalEntryDetails jd0
+                                    INNER JOIN dbo.JournalEntries je0 ON je0.JournalID=jd0.JournalID
+                                    WHERE jd0.AccountID=coa.AccountID AND je0.JournalStatus=2
+                                      AND @From IS NOT NULL AND je0.JournalDate < @From
+                                ),0) AS Balance
+                            FROM dbo.ChartOfAccounts coa
+                            WHERE coa.AccountID=@AccID
+                        )
+                        SELECT jd.JournalDetailID, je.JournalID, je.JournalNumber, je.JournalDate, je.Description,
+                               jd.DebitAmount, jd.CreditAmount, coa.AccountCode, coa.AccountNameAr,
+                               ob.Balance + SUM(jd.DebitAmount-jd.CreditAmount) OVER
+                                   (ORDER BY je.JournalDate, je.JournalID, jd.LineNumber, jd.JournalDetailID
+                                    ROWS UNBOUNDED PRECEDING) AS RunningBalance
+                        FROM dbo.JournalEntryDetails jd
+                        INNER JOIN dbo.JournalEntries je ON je.JournalID=jd.JournalID
+                        INNER JOIN dbo.ChartOfAccounts coa ON coa.AccountID=jd.AccountID
+                        CROSS JOIN OpeningBalance ob
+                        WHERE jd.AccountID=@AccID AND je.JournalStatus=2
+                          AND (@From IS NULL OR je.JournalDate>=@From)
+                          AND (@To IS NULL OR je.JournalDate < DATEADD(DAY,1,CONVERT(date,@To)))
+                        ORDER BY je.JournalDate, je.JournalID, jd.LineNumber, jd.JournalDetailID";
+            var result = await connection.QueryAsync<AccountLedgerDto>(sql, new { AccID = accountId, From = from, To = to });
+            return result.ToList();
         }
     }
 

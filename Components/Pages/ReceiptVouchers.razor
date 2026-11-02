@@ -8,7 +8,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>سندات القبض -   </PageTitle>
+<PageTitle>سندات القبض</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -35,7 +35,7 @@ else
                         </button>
                     }
                     @if (permissions.CanAdd)
-                    {<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/receipt-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>}
+                    {<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/accounting-vouchers/new/receipt")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>}
                 </div>
             </div>
         </div>
@@ -168,10 +168,21 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_RECV");
-        if (permissions?.CanView == true) await LoadData();
+        if (UserSession.IsLoggedIn)
+        {
+            try
+            {
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                permissions = PermissionService.GetModule("SCR_RECV");
+            }
+            catch
+            {
+                permissions = null;
+            }
+        }
+
+        Navigation.NavigateTo(UserSession.IsLoggedIn ? "/accounting-vouchers?type=receipt" : "/login", replace: true);
     }
 
     private async Task LoadData()
@@ -194,8 +205,8 @@ else
     private void ClearSearch(){ searchText=""; Filter(); }
     private string GetStatusColor(int s) => s switch {1=>"#6b7280",2=>"#10b981",3=>"#ef4444",_=>"#6b7280"};
 
-    private void ViewVoucher(int id) => Navigation.NavigateTo($"/receipt-vouchers/view/{id}");
-    private void EditVoucher(int id) => Navigation.NavigateTo($"/receipt-vouchers/edit/{id}");
+    private void ViewVoucher(int id) => Navigation.NavigateTo($"/accounting-vouchers/receipt/view/{id}");
+    private void EditVoucher(int id) => Navigation.NavigateTo($"/accounting-vouchers/receipt/edit/{id}");
 
     private async Task ApproveVoucher(int id)
     {

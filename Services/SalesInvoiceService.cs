@@ -1,6 +1,7 @@
 using System.Data;
 using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 
@@ -12,18 +13,39 @@ namespace YKCoatings.Services
         private readonly NotificationService _notif;
         private readonly PermissionService _permissionService;
         private readonly UserSessionService _userSession;
+        private readonly ILogger<SalesInvoiceService> _logger;
 
         public SalesInvoiceService(
             IConfiguration configuration,
             AuditService audit,
             NotificationService notif,
             PermissionService permissionService,
-            UserSessionService userSession) : base(configuration)
+            UserSessionService userSession,
+            ILogger<SalesInvoiceService> logger) : base(configuration)
         {
             _audit = audit;
             _notif = notif;
             _permissionService = permissionService;
             _userSession = userSession;
+            _logger = logger;
+        }
+
+        private static async Task EnsureLinkedSalesOrderLocalCurrencyAsync(
+            SqlConnection connection, IDbTransaction? transaction, int? salesOrderId)
+        {
+            var id = salesOrderId.GetValueOrDefault();
+            if (id <= 0) return;
+
+            var order = await connection.QueryFirstOrDefaultAsync<(
+                int? SalesOrderID, int? CurrencyID, decimal ExchangeRate)>(
+                @"SELECT SalesOrderID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                  FROM dbo.SalesOrders WITH (UPDLOCK,HOLDLOCK)
+                  WHERE SalesOrderID=@ID",
+                new { ID = id }, transaction);
+            if (!order.SalesOrderID.HasValue)
+                throw new InvalidOperationException("أمر البيع المرتبط بالفاتورة غير موجود.");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, transaction, order.CurrencyID, order.ExchangeRate);
         }
 
         // ==========================================
@@ -217,6 +239,10 @@ SELECT
 FROM dbo.SalesOrders so
 INNER JOIN dbo.Customers c ON c.CustomerID=so.CustomerID
 WHERE so.SOStatus=3
+  AND ISNULL(so.ExchangeRate,1)=1
+  AND (ISNULL(so.CurrencyID,0)=0 OR EXISTS
+       (SELECT 1 FROM dbo.Currencies cur
+        WHERE cur.CurrencyID=so.CurrencyID AND ISNULL(cur.IsDefault,0)=1))
 ORDER BY so.SODate DESC, so.SalesOrderID DESC;";
 
             var orders = await connection.QueryAsync<SalesOrderHeaderDto>(sql);
@@ -233,6 +259,7 @@ ORDER BY so.SODate DESC, so.SalesOrderID DESC;";
             if (salesOrderId <= 0) throw new ArgumentOutOfRangeException(nameof(salesOrderId));
 
             using var connection = CreateConnection();
+            await EnsureLinkedSalesOrderLocalCurrencyAsync(connection, null, salesOrderId);
             const string sql = @"
 SELECT
     sod.SODetailID AS SalesOrderDetailID,
@@ -328,12 +355,15 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             int newId;
             try
             {
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, header.CurrencyID, header.ExchangeRate);
                 List<SalesOrderLineForInvoiceDto> storedOrderLines = new();
                 if (invoiceSource == 2)
                 {
                     var orderId = header.SalesOrderID!.Value;
-                    var order = await connection.QueryFirstOrDefaultAsync<(int CustomerID, int SOStatus)>(
-                        @"SELECT CustomerID, SOStatus
+                    var order = await connection.QueryFirstOrDefaultAsync<(
+                        int CustomerID, int SOStatus, int? CurrencyID, decimal ExchangeRate)>(
+                        @"SELECT CustomerID, SOStatus, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
                           FROM dbo.SalesOrders WITH (UPDLOCK, HOLDLOCK)
                           WHERE SalesOrderID=@SalesOrderID",
                         new { SalesOrderID = orderId }, transaction);
@@ -341,6 +371,8 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                         throw new KeyNotFoundException("أمر البيع المرتبط غير موجود.");
                     if (order.SOStatus != 3)
                         throw new InvalidOperationException("لا يمكن إنشاء الفاتورة من أمر بيع غير معتمد.");
+                    await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                        connection, transaction, order.CurrencyID, order.ExchangeRate);
                     if (order.CustomerID != header.CustomerID)
                         throw new InvalidOperationException("العميل المحدد لا يطابق عميل أمر البيع.");
 
@@ -447,7 +479,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after creating sales invoice {InvoiceNumber}.",
+                        header.InvoiceNumber);
+                }
                 throw;
             }
 
@@ -483,14 +521,23 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             {
                 var permissions = await GetCurrentInvoicePermissionsAsync(userId);
                 await EnsureCanEditDraftAsync(connection, transaction, header.InvoiceID, userId, permissions);
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, header.CurrencyID, header.ExchangeRate);
 
-                var current = await connection.QueryFirstOrDefaultAsync<(int InvoiceStatus, string? Notes, int? SalesOrderID, int InvoiceSource)>(
-                    @"SELECT InvoiceStatus, Notes, SalesOrderID, ISNULL(InvoiceSource,3) AS InvoiceSource
+                var current = await connection.QueryFirstOrDefaultAsync<(
+                    int InvoiceStatus, string? Notes, int? SalesOrderID, int InvoiceSource,
+                    int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT InvoiceStatus, Notes, SalesOrderID, ISNULL(InvoiceSource,3) AS InvoiceSource,
+                             CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
                       FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
                       WHERE InvoiceID=@ID",
                     new { ID = header.InvoiceID }, transaction);
                 if (current.InvoiceStatus != 1)
                     throw new InvalidOperationException("لا يمكن تعديل فاتورة ليست في حالة مسودة.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, current.CurrencyID, current.ExchangeRate);
+                await EnsureLinkedSalesOrderLocalCurrencyAsync(
+                    connection, transaction, current.SalesOrderID);
                 if (current.InvoiceSource == 1)
                     throw new InvalidOperationException("فاتورة إذن التسليم غير مدعومة بمسار الترحيل الحالي؛ لا يمكن تعديلها.");
                 if (current.InvoiceSource == 2 && current.SalesOrderID.GetValueOrDefault() <= 0)
@@ -563,7 +610,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after updating sales invoice {SalesInvoiceID}.",
+                        header.InvoiceID);
+                }
                 throw;
             }
 
@@ -652,14 +705,20 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                 await EnsureCanEditDraftAsync(connection, transaction, detail.InvoiceID, userId, permissions);
 
                 var invoice = await connection.QueryFirstOrDefaultAsync<(
-                    int InvoiceStatus, int? SalesOrderID, int InvoiceSource, bool IsTaxable, decimal TaxRate)>(
+                    int InvoiceStatus, int? SalesOrderID, int InvoiceSource, bool IsTaxable, decimal TaxRate,
+                    int? CurrencyID, decimal ExchangeRate)>(
                     @"SELECT InvoiceStatus, SalesOrderID, ISNULL(InvoiceSource,3) AS InvoiceSource,
-                             ISNULL(IsTaxable,1) AS IsTaxable, ISNULL(TaxRate,14) AS TaxRate
+                             ISNULL(IsTaxable,1) AS IsTaxable, ISNULL(TaxRate,14) AS TaxRate,
+                             CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
                       FROM dbo.SalesInvoices WITH (UPDLOCK, HOLDLOCK)
                       WHERE InvoiceID=@ID",
                     new { ID = detail.InvoiceID }, transaction);
                 if (invoice.InvoiceStatus != 1)
                     throw new InvalidOperationException("لا يمكن تعديل فاتورة ليست في حالة مسودة.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, invoice.CurrencyID, invoice.ExchangeRate);
+                await EnsureLinkedSalesOrderLocalCurrencyAsync(
+                    connection, transaction, invoice.SalesOrderID);
                 if (invoice.InvoiceSource == 2 && invoice.SalesOrderID.GetValueOrDefault() <= 0)
                     throw new InvalidOperationException("الفاتورة من أمر بيع بلا أمر مرتبط؛ لا يمكن إضافة سطر غير مربوط.");
 
@@ -709,7 +768,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after inserting a sales invoice detail for {SalesInvoiceID}.",
+                        detail.InvoiceID);
+                }
                 throw;
             }
 
@@ -756,7 +821,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting sales invoice detail for {SalesInvoiceDetailID}.",
+                        detailId);
+                }
                 throw;
             }
 
@@ -767,9 +838,9 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
         // ==========================================
         // تحميل سطور من Delivery - معطل لأن جدول DeliveryNotes غير موجود (ملتزم بالجداول الموجودة فقط)
         // ==========================================
-        public async Task<int> ImportLinesFromDeliveryAsync(int invoiceId, int deliveryId, List<DeliveryLineForInvoiceDto> lines, int userId)
+        public Task<int> ImportLinesFromDeliveryAsync(int invoiceId, int deliveryId, List<DeliveryLineForInvoiceDto> lines, int userId)
         {
-            throw new Exception("جدول إذن التسليم غير موجود حالياً - ملتزم بالجداول الموجودة فقط. استخدم أمر بيع أو فاتورة مباشرة.");
+            return Task.FromException<int>(new Exception("جدول إذن التسليم غير موجود حالياً - ملتزم بالجداول الموجودة فقط. استخدم أمر بيع أو فاتورة مباشرة."));
         }
 
         // ==========================================
@@ -788,7 +859,8 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
 
                 var info = await connection.QueryFirstOrDefaultAsync<(
                     string? InvoiceNumber, int InvoiceStatus, int InvoiceSource, int? SalesOrderID,
-                    int DetailCount, int MissingWarehouseCount, int InvalidOrderLineCount)>(
+                    int DetailCount, int MissingWarehouseCount, int InvalidOrderLineCount,
+                    int? CurrencyID, decimal ExchangeRate)>(
                     @"SELECT si.InvoiceNumber, si.InvoiceStatus,
                              ISNULL(si.InvoiceSource,3) AS InvoiceSource, si.SalesOrderID,
                              (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID) AS DetailCount,
@@ -800,13 +872,18 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                                      (SELECT 1 FROM dbo.SalesOrderDetails sod
                                       WHERE sod.SODetailID=d.SODetailID
                                         AND sod.SalesOrderID=si.SalesOrderID
-                                        AND sod.ItemID=d.ItemID AND sod.UnitID=d.UnitID))) AS InvalidOrderLineCount
+                                        AND sod.ItemID=d.ItemID AND sod.UnitID=d.UnitID))) AS InvalidOrderLineCount,
+                             si.CurrencyID, ISNULL(si.ExchangeRate,1) AS ExchangeRate
                       FROM dbo.SalesInvoices si WITH (UPDLOCK, HOLDLOCK)
                       WHERE si.InvoiceID=@ID",
                     new { ID = invoiceId }, transaction);
 
                 if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
                 if (info.InvoiceStatus != 1) throw new InvalidOperationException("لا يمكن إرسال فاتورة ليست في حالة مسودة.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, info.CurrencyID, info.ExchangeRate);
+                await EnsureLinkedSalesOrderLocalCurrencyAsync(
+                    connection, transaction, info.SalesOrderID);
                 if (info.DetailCount == 0) throw new InvalidOperationException("لا يمكن إرسال فاتورة بدون أصناف.");
                 if (info.MissingWarehouseCount > 0)
                     throw new InvalidOperationException("اختر مخزناً للفواتير أو لسطورها قبل إرسالها للاعتماد.");
@@ -827,7 +904,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after submitting sales invoice {SalesInvoiceID}.",
+                        invoiceId);
+                }
                 throw;
             }
 
@@ -844,7 +927,10 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                     relatedRecordId: invoiceId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the pending-approval notification for a sales invoice.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
                 moduleName: "SCR_SINV", description: $"إرسال فاتورة مبيعات للاعتماد: {invoiceNumber}");
@@ -870,14 +956,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             {
                 var info = await connection.QueryFirstOrDefaultAsync<(
                     string? InvoiceNumber, int InvoiceStatus, int InvoiceSource, int? SalesOrderID,
-                    int? DeliveryID, int? CreatedBy, int CustomerID, bool IsTaxable, decimal ExchangeRate,
-                    bool IsDefaultCurrency, decimal PaidAmount, int DetailCount, int MissingWarehouseCount,
+                    int? DeliveryID, int? CreatedBy, int CustomerID, bool IsTaxable, int? CurrencyID,
+                    decimal ExchangeRate, decimal PaidAmount, int DetailCount, int MissingWarehouseCount,
                     int InvalidOrderLineCount)>(
                     @"SELECT si.InvoiceNumber, si.InvoiceStatus, ISNULL(si.InvoiceSource,3) AS InvoiceSource,
                              si.SalesOrderID, si.DeliveryID, si.CreatedBy, si.CustomerID,
-                             ISNULL(si.IsTaxable,1) AS IsTaxable,
+                             ISNULL(si.IsTaxable,1) AS IsTaxable, si.CurrencyID,
                              ISNULL(si.ExchangeRate,1) AS ExchangeRate,
-                             ISNULL(cur.IsDefault,1) AS IsDefaultCurrency,
                              ISNULL(si.PaidAmount,0) AS PaidAmount,
                              (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d WHERE d.InvoiceID=si.InvoiceID) AS DetailCount,
                              (SELECT COUNT(*) FROM dbo.SalesInvoiceDetails d
@@ -890,14 +975,15 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                                         AND sod.SalesOrderID=si.SalesOrderID
                                         AND sod.ItemID=d.ItemID AND sod.UnitID=d.UnitID))) AS InvalidOrderLineCount
                       FROM dbo.SalesInvoices si WITH (UPDLOCK, HOLDLOCK)
-                      LEFT JOIN dbo.Currencies cur ON cur.CurrencyID=si.CurrencyID
                       WHERE si.InvoiceID=@ID",
                     new { ID = invoiceId }, transaction);
 
                 if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new KeyNotFoundException("الفاتورة غير موجودة.");
                 if (info.InvoiceStatus != 2) throw new InvalidOperationException("لا يمكن اعتماد فاتورة ليست في انتظار الاعتماد.");
-                if (!info.IsDefaultCurrency || Math.Abs(info.ExchangeRate - 1m) > 0.000001m)
-                    throw new InvalidOperationException("القيد المحاسبي الحالي لا يدعم العملات غير الافتراضية أو سعر صرف مختلف عن 1؛ لم يتم اعتماد الفاتورة.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, info.CurrencyID, info.ExchangeRate);
+                await EnsureLinkedSalesOrderLocalCurrencyAsync(
+                    connection, transaction, info.SalesOrderID);
                 if (info.PaidAmount > 0)
                     throw new InvalidOperationException("يوجد مبلغ مدفوع مسبقاً لكن مسار ترحيل الدفعات غير متاح لهذه الفاتورة؛ لم يتم اعتمادها.");
                 if (info.DetailCount == 0) throw new InvalidOperationException("لا يمكن اعتماد فاتورة بدون أصناف.");
@@ -1021,21 +1107,48 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                     !journal.PeriodID.HasValue || journal.PeriodID.Value <= 0)
                     throw new InvalidOperationException("قيد فاتورة المبيعات غير مرتبط بسنة وفترة مالية؛ أُلغي الاعتماد.");
 
-                var journalLines = await connection.QueryFirstOrDefaultAsync<(int DetailCount, decimal DebitTotal, decimal CreditTotal)>(
-                    @"SELECT COUNT(*) AS DetailCount,
-                             ISNULL(SUM(DebitAmount),0) AS DebitTotal,
-                             ISNULL(SUM(CreditAmount),0) AS CreditTotal
-                      FROM dbo.JournalEntryDetails
-                      WHERE JournalID=@JournalID",
+                var journalLines = await connection.QueryFirstOrDefaultAsync<(
+                    int DetailCount, decimal DebitTotal, decimal CreditTotal, int InvalidDetailCount)>(
+                    @"SELECT ISNULL(SUM(CASE WHEN ISNULL(jd.DebitAmount,0)>0 OR ISNULL(jd.CreditAmount,0)>0 THEN 1 ELSE 0 END),0) AS DetailCount,
+                             ISNULL(SUM(jd.DebitAmount),0) AS DebitTotal,
+                             ISNULL(SUM(jd.CreditAmount),0) AS CreditTotal,
+                             ISNULL(SUM(CASE WHEN jd.DebitAmount IS NULL OR jd.CreditAmount IS NULL
+                                      OR jd.DebitAmount<0 OR jd.CreditAmount<0
+                                      OR (jd.DebitAmount>0 AND jd.CreditAmount>0)
+                                      OR ((jd.DebitAmount>0 OR jd.CreditAmount>0)
+                                          AND (jd.AccountID IS NULL OR jd.AccountID<=0
+                                               OR coa.AccountID IS NULL
+                                               OR ISNULL(coa.IsActive,1)<>1
+                                               OR ISNULL(coa.IsDetailAccount,0)<>1
+                                               OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
+                                               OR jd.CostCenterID<0
+                                               OR (jd.CostCenterID>0 AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))
+                                          )
+                                      THEN 1 ELSE 0 END),0) AS InvalidDetailCount
+                      FROM dbo.JournalEntryDetails jd WITH (UPDLOCK, HOLDLOCK)
+                      LEFT JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
+                      LEFT JOIN dbo.CostCenters cc WITH (UPDLOCK,HOLDLOCK) ON cc.CostCenterID=jd.CostCenterID
+                      WHERE jd.JournalID=@JournalID",
                     new { JournalID = linkedJournalIds[0] }, transaction);
-                if (journalLines.DetailCount == 0 ||
+                if (journalLines.DetailCount < 2 || journalLines.InvalidDetailCount > 0 ||
+                    journal.TotalDebit <= 0m || journal.TotalCredit <= 0m ||
                     Math.Abs(journal.TotalDebit - journal.TotalCredit) > 0.01m ||
                     Math.Abs(journalLines.DebitTotal - journalLines.CreditTotal) > 0.01m ||
                     Math.Abs(journal.TotalDebit - journalLines.DebitTotal) > 0.01m ||
                     Math.Abs(journal.TotalCredit - journalLines.CreditTotal) > 0.01m)
                     throw new InvalidOperationException(
-                        $"قيد الفاتورة المحاسبي غير متوازن أو لا تطابق تفاصيله رأسه (مدين {journalLines.DebitTotal:#,##0.00} / دائن {journalLines.CreditTotal:#,##0.00}). " +
+                        $"قيد الفاتورة المحاسبي غير مكتمل أو يحتوي تفاصيل غير صالحة أو لا يطابق رأسه (مدين {journalLines.DebitTotal:#,##0.00} / دائن {journalLines.CreditTotal:#,##0.00}). " +
                         "لم يتم اعتماد الفاتورة؛ راجع حسابات الشحن والتكاليف الأخرى وإعدادات الحسابات.");
+
+                var usesRawMaterialsAccountAsSalesCost = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.JournalEntryDetails jd WITH (UPDLOCK,HOLDLOCK)
+                      INNER JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
+                      WHERE jd.JournalID=@JournalID AND LTRIM(RTRIM(coa.AccountCode))=@AccountCode",
+                    new { JournalID = linkedJournalIds[0], AccountCode = "5101" }, transaction);
+                if (usesRawMaterialsAccountAsSalesCost > 0)
+                    throw new InvalidOperationException(
+                        "قيد فاتورة المبيعات يستخدم الحساب 5101، واسمه «مواد خام مستخدمة» وفق الشجرة التي أكدها المستخدم، فلا يُقبل كحساب تكلفة مبيعات. أُلغيت المعاملة؛ لم يتم تخمين حساب بديل.");
 
                 var journalPeriodIsOpen = await connection.ExecuteScalarAsync<int>(
                     @"SELECT COUNT(1)
@@ -1060,11 +1173,25 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after sales-invoice approval failed for invoice {InvoiceID}.",
+                        invoiceId);
+                }
                 throw;
             }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a sales invoice.");
+            }
+
             try
             {
                 if (createdBy.HasValue)
@@ -1081,7 +1208,10 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a sales invoice.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
                 moduleName: "SCR_SINV",
@@ -1128,11 +1258,25 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after rejecting sales invoice {SalesInvoiceID}.",
+                        invoiceId);
+                }
                 throw;
             }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a sales invoice.");
+            }
+
             try
             {
                 if (createdBy.HasValue)
@@ -1149,7 +1293,10 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after rejecting a sales invoice.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
                 moduleName: "SCR_SINV", description: $"رفض فاتورة مبيعات: {invoiceNumber} — {rejectionReason}");
@@ -1189,11 +1336,24 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after cancelling sales invoice {SalesInvoiceID}.",
+                        invoiceId);
+                }
                 throw;
             }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_SINV", invoiceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after cancelling a sales invoice.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "SalesInvoices", invoiceId.ToString(),
                 moduleName: "SCR_SINV", description: $"إلغاء فاتورة مبيعات: {invoiceNumber}");
@@ -1218,12 +1378,24 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
 
                 if (string.IsNullOrWhiteSpace(info.InvoiceNumber))
                 {
-                    transaction.Rollback();
+                    try { transaction.Rollback(); }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogError(rollbackException,
+                            "Rollback failed while returning not-found result for sales invoice {SalesInvoiceID}.",
+                            invoiceId);
+                    }
                     return (false, "الفاتورة غير موجودة.");
                 }
                 if (info.InvoiceStatus != 1)
                 {
-                    transaction.Rollback();
+                    try { transaction.Rollback(); }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogError(rollbackException,
+                            "Rollback failed while rejecting deletion of non-draft sales invoice {SalesInvoiceID}.",
+                            invoiceId);
+                    }
                     return (false, "لا يمكن حذف فاتورة ليست في حالة مسودة.");
                 }
 
@@ -1240,7 +1412,13 @@ ORDER BY sod.LineNumber, sod.SODetailID;";
             }
             catch (Exception ex)
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting sales invoice {SalesInvoiceID} failed.",
+                        invoiceId);
+                }
                 return (false, ex.Message);
             }
 

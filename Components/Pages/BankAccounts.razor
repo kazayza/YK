@@ -6,11 +6,20 @@
 @inject LookupService LookupService
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
+@inject Microsoft.Extensions.Logging.ILogger<BankAccounts> Logger
 
 <PageTitle>الحسابات البنكية</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissionLoadFailed)
+{
+    <div class="msg-luxury msg-error" role="alert"><span>@permissionLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadBankAccountPermissionsAsync" disabled="@isLoadingPermissions">إعادة المحاولة</button></div>
+}
+else if (permissionLoadDenied)
+{
+    <div class="msg-luxury msg-error" role="alert"><span>@permissionLoadError</span><a class="btn-luxury btn-ghost-luxury" href="/login">تسجيل الدخول مجددًا</a></div>
+}
 else if (!permissionChecked)
 {<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات الحسابات البنكية...</p></div>}
 else if (!isAuthorized)
@@ -29,11 +38,11 @@ else
                 </div>
             </div>
             <div class="lh-actions">
-                <span class="lh-badge"><span class="lh-dot"></span>@filteredList.Count حساب</span>
-                <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">إجمالي: @filteredList.Sum(b=>b.CurrentBalance).ToString("#,##0.00")</span>
+                <span class="lh-badge"><span class="lh-dot"></span>@BankAccountCountText</span>
+                <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">إجمالي: @BankAccountsBalanceText</span>
                 @if (HasBankAccountPermission(p => p.CanAdd))
                 {
-                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>حساب بنكي جديد</button>
+                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd" disabled="@isLoadingBankAccountDetails"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>حساب بنكي جديد</button>
                 }
             </div>
         </div>
@@ -43,6 +52,32 @@ else
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الحسابات البنكية...</p></div>}
     else
     {
+        @if (bankAccountsLoadFailed)
+        {
+            <div class="msg-luxury msg-error bank-accounts-load-alert" role="alert">
+                <span>@bankAccountsLoadError</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadBankAccountsAsync" disabled="@isBankAccountsLoading">@(isBankAccountsLoading ? "جارٍ..." : "إعادة المحاولة")</button>
+            </div>
+        }
+        else if (isBankAccountsLoading && bankAccountsLoaded)
+        {
+            <div class="msg-luxury bank-accounts-refreshing" role="status">جارٍ تحديث الحسابات البنكية؛ ستظل آخر البيانات المحمّلة ظاهرة.</div>
+        }
+
+        @if (bankAccountDetailsLoadFailed)
+        {
+            <div class="msg-luxury msg-error bank-accounts-load-alert" role="alert">
+                <span>@bankAccountDetailsLoadError</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadBankAccountDetailsAsync" disabled="@isLoadingBankAccountDetails">@(isLoadingBankAccountDetails ? "جارٍ..." : "إعادة محاولة تحميل الحساب")</button>
+            </div>
+        }
+        else if (isLoadingBankAccountDetails)
+        {
+            <div class="msg-luxury bank-accounts-refreshing" role="status">جارٍ تحميل بيانات الحساب البنكي للتعديل...</div>
+        }
+
+        @if (bankAccountsLoaded)
+        {
         <div class="stats-luxury">
             <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg></div><div class="st-info"><span class="st-value">@allList.Count</span><span class="st-label">إجمالي الحسابات</span></div><div class="st-gold-line"></div></div>
             <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(b=>b.IsActive)</span><span class="st-label">نشطة</span></div><div class="st-gold-line"></div></div>
@@ -60,9 +95,15 @@ else
             <div class="select-wrap-luxury"><select @bind="filterActive" @bind:after="ApplyFilter"><option value="0">الكل</option><option value="1">نشطة</option><option value="2">موقوفة</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
         </div>
 
+        @if (filteredList.Count == 0)
+        {
+            <div class="bank-accounts-empty" role="status">@(allList.Count == 0 ? "لا توجد حسابات بنكية مسجلة." : "لا توجد حسابات بنكية تطابق معايير البحث أو التصفية.")</div>
+        }
+        else
+        {
         <div class="table-card-luxury">
             <div class="card-head-luxury">
-                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg>الحسابات البنكية — @filteredList.Count حساب</h3>
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6h14a2 2 0 0 1 2 2v8"/><path d="M9 21V10"/></svg>الحسابات البنكية — @BankAccountCountText</h3>
                 <div style="display:flex;gap:8px;align-items:center"><span class="legend-dot" style="--c:#D4AF37"></span><span style="font-size:.7rem;color:#6b7280;font-weight:700">جاري</span><span class="legend-dot" style="--c:#10b981"></span><span style="font-size:.7rem;color:#6b7280;font-weight:700">توفير</span></div>
             </div>
             <div class="table-responsive">
@@ -122,7 +163,7 @@ else
                                 <td class="td-center"><div class="actions-wrap-luxury">
                                     @if (HasBankAccountPermission(p => p.CanEdit))
                                     {
-                                        <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(acc.BankAccountID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                        <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(acc.BankAccountID)" disabled="@isLoadingBankAccountDetails"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
                                     }
                                     <button class="act-btn add" title="كشف حساب" @onclick="()=>ViewStatement(acc.BankAccountID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
                                 </div></td>
@@ -132,6 +173,8 @@ else
                 </table>
             </div>
         </div>
+        }
+        }
     }
 </div>
 
@@ -247,6 +290,9 @@ else
 .switch-luxury input:checked+span:before{transform:translateX(20px)}
 .ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
 .msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}
+.bank-accounts-load-alert{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.bank-accounts-refreshing{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.bank-accounts-empty{padding:22px;text-align:center;background:#fcfaf6;color:#6b7280;border:1px dashed #e8e2d0;border-radius:14px;font-weight:700}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
@@ -257,6 +303,14 @@ else
     private List<BankAccountListDto> allList = new();
     private List<BankAccountListDto> filteredList = new();
     private bool isLoading = true;
+    private bool bankAccountsLoaded;
+    private bool bankAccountsLoadFailed;
+    private bool isBankAccountsLoading;
+    private string bankAccountsLoadError = string.Empty;
+    private bool isLoadingBankAccountDetails;
+    private bool bankAccountDetailsLoadFailed;
+    private string bankAccountDetailsLoadError = string.Empty;
+    private int? pendingBankAccountEditId;
     private bool showEdit = false;
     private BankAccountDto editDto = new();
     private bool isSaving = false;
@@ -271,25 +325,115 @@ else
     private List<SearchableItem> accounts = new();
     private bool permissionChecked;
     private bool isAuthorized;
+    private bool isLoadingPermissions;
+    private bool permissionLoadFailed, permissionLoadDenied;
+    private long permissionRequestVersion;
+    private string permissionLoadError = string.Empty;
+    private string BankAccountCountText => bankAccountsLoaded
+        ? $"{filteredList.Count} حساب"
+        : bankAccountsLoadFailed ? "العدد غير متاح" : "جارٍ التحميل";
+    private string BankAccountsBalanceText => bankAccountsLoaded
+        ? filteredList.Sum(b => b.CurrentBalance).ToString("#,##0.00")
+        : bankAccountsLoadFailed ? "غير متاح" : "جارٍ التحميل";
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionChecked = true;
+            return;
+        }
+
+        if (await LoadBankAccountPermissionsAsync() && isAuthorized)
+            await LoadData();
+    }
+
+    private async Task<bool> LoadBankAccountPermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn) return false;
+        if (isLoadingPermissions) return false;
+
+        var requestVersion = ++permissionRequestVersion;
+        var userId = UserSession.UserID;
+        isLoadingPermissions = true;
+        permissionChecked = false;
+        isAuthorized = false;
+        permissionLoadFailed = false;
+        permissionLoadDenied = false;
+        permissionLoadError = string.Empty;
+        StateHasChanged();
 
         try
         {
             if (!PermissionService.IsLoaded)
-                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentBankAccountPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
 
             isAuthorized = HasBankAccountPermission(p => p.CanView);
             permissionChecked = true;
-            if (isAuthorized) await LoadData();
+            return true;
         }
-        catch
+        catch (UnauthorizedAccessException ex)
         {
-            permissionChecked = true;
-            isAuthorized = false;
+            Logger.LogWarning(ex, "Access denied while loading bank-account page permissions for user {UserID}.", userId);
+            if (!IsCurrentBankAccountPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadDenied = true;
+            permissionLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
         }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load bank-account page permissions for user {UserID}.", userId);
+            if (!IsCurrentBankAccountPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadFailed = true;
+            permissionLoadError = "تعذر تحميل صلاحيات الحسابات البنكية. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == permissionRequestVersion)
+            {
+                isLoadingPermissions = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentBankAccountPermissionRequest(long requestVersion, int userId) =>
+        requestVersion == permissionRequestVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadBankAccountPermissionsAsync()
+    {
+        if (isLoadingPermissions || !permissionLoadFailed) return;
+        if (!UserSession.IsLoggedIn) return;
+
+        if (await LoadBankAccountPermissionsAsync() && isAuthorized)
+            await LoadData();
     }
 
     private bool HasBankAccountPermission(Func<ModulePermissionDto, bool> predicate) =>
@@ -302,7 +446,7 @@ else
         isLoading=true; StateHasChanged();
         try
         {
-            allList = await TreasuryService.GetBankAccountsAsync();
+            await LoadBankAccountsAsync();
             currencies = await LookupService.GetCurrenciesAsync();
             accounts = await LookupService.GetChartOfAccountsSearchableAsync();
             ApplyFilter();
@@ -311,22 +455,109 @@ else
         finally{ isLoading=false; }
     }
 
-    private void ApplyFilter()
+    private async Task RetryLoadBankAccountsAsync()
     {
-        filteredList = allList.Where(b =>
-            (filterType==0 || b.AccountType==filterType) &&
-            (filterActive==0 || (filterActive==1 && b.IsActive) || (filterActive==2 && !b.IsActive)) &&
-            (string.IsNullOrWhiteSpace(searchText) ||
-             (b.BankAccountCode?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
-             (b.BankName?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
-             (b.AccountNumber?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
-             (b.IBAN?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false))
-        ).ToList();
+        await LoadBankAccountsAsync();
     }
 
+    private async Task LoadBankAccountsAsync()
+    {
+        if (isBankAccountsLoading) return;
+
+        isBankAccountsLoading = true;
+        try
+        {
+            var loadedList = await TreasuryService.GetBankAccountsAsync();
+            var loadedFilteredList = FilterBankAccounts(loadedList);
+            allList = loadedList;
+            filteredList = loadedFilteredList;
+            bankAccountsLoaded = true;
+            bankAccountsLoadFailed = false;
+            bankAccountsLoadError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load bank accounts list.");
+            bankAccountsLoadFailed = true;
+            bankAccountsLoadError = bankAccountsLoaded
+                ? "تعذر تحديث قائمة الحسابات البنكية؛ تم الاحتفاظ بآخر بيانات ناجحة. أعد المحاولة."
+                : "تعذر تحميل قائمة الحسابات البنكية. أعد المحاولة.";
+        }
+        finally
+        {
+            isBankAccountsLoading = false;
+        }
+    }
+
+    private void ApplyFilter() => filteredList = FilterBankAccounts(allList);
+
+    private List<BankAccountListDto> FilterBankAccounts(List<BankAccountListDto> source) => source.Where(b =>
+        (filterType==0 || b.AccountType==filterType) &&
+        (filterActive==0 || (filterActive==1 && b.IsActive) || (filterActive==2 && !b.IsActive)) &&
+        (string.IsNullOrWhiteSpace(searchText) ||
+         (b.BankAccountCode?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+         (b.BankName?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+         (b.AccountNumber?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false) ||
+         (b.IBAN?.Contains(searchText,StringComparison.OrdinalIgnoreCase)??false))
+    ).ToList();
+
     private void ClearSearch(){ searchText=""; ApplyFilter(); }
-    private void ShowAdd(){ editDto=new BankAccountDto{ IsActive=true, AccountType=1 }; editMsg=""; showEdit=true; }
-    private async Task ShowEdit(int id){ var dto=await TreasuryService.GetBankAccountByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+
+    private void ShowAdd()
+    {
+        if (isLoadingBankAccountDetails) return;
+        bankAccountDetailsLoadFailed = false;
+        bankAccountDetailsLoadError = string.Empty;
+        pendingBankAccountEditId = null;
+        editDto = new BankAccountDto { IsActive = true, AccountType = 1 };
+        editMsg = "";
+        showEdit = true;
+    }
+
+    private Task ShowEdit(int id) => LoadBankAccountDetailsAsync(id);
+
+    private async Task RetryLoadBankAccountDetailsAsync()
+    {
+        if (pendingBankAccountEditId is not int id || id <= 0) return;
+        await LoadBankAccountDetailsAsync(id);
+    }
+
+    private async Task LoadBankAccountDetailsAsync(int id)
+    {
+        if (id <= 0 || isLoadingBankAccountDetails) return;
+
+        pendingBankAccountEditId = id;
+        bankAccountDetailsLoadFailed = false;
+        bankAccountDetailsLoadError = string.Empty;
+        isLoadingBankAccountDetails = true;
+        try
+        {
+            var loaded = await TreasuryService.GetBankAccountByIdAsync(id);
+            if (loaded is null)
+            {
+                pendingBankAccountEditId = null;
+                toast = "الحساب البنكي غير موجود أو لم يعد متاحًا.";
+                toastOk = false;
+                return;
+            }
+
+            editDto = loaded;
+            editMsg = "";
+            showEdit = true;
+            pendingBankAccountEditId = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load bank account details for editing.");
+            bankAccountDetailsLoadFailed = true;
+            bankAccountDetailsLoadError = "تعذر تحميل بيانات الحساب البنكي المحدد للتعديل. أعد المحاولة.";
+        }
+        finally
+        {
+            isLoadingBankAccountDetails = false;
+        }
+    }
+
     private void CloseEdit(){ showEdit=false; }
     private void ViewStatement(int id){ toast="كشف حساب بنكي قريباً"; toastOk=true; }
 

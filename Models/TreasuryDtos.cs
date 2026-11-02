@@ -91,6 +91,22 @@ namespace YKCoatings.Models
         public string? CreatedByName { get; set; }
     }
 
+    public class VoucherInvoiceAllocationDto
+    {
+        public int InvoiceID { get; set; }
+        public string? InvoiceNumber { get; set; }
+        public DateTime InvoiceDate { get; set; }
+        public int PartyID { get; set; }
+        public string? PartyName { get; set; }
+        public decimal TotalAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public decimal AppliedAmount { get; set; }
+        public int? CurrencyID { get; set; }
+        public decimal ExchangeRate { get; set; } = 1;
+        public string? CurrencyCode { get; set; }
+    }
+
     public class ReceiptVoucherDto
     {
         public int ReceiptID { get; set; }
@@ -118,6 +134,8 @@ namespace YKCoatings.Models
         public int? RevenueAccountID { get; set; }
         public string? RevenueAccountNameAr { get; set; }
         public int? CostCenterID { get; set; }
+        public bool IsInvoiceSettlement { get; set; }
+        public List<VoucherInvoiceAllocationDto> InvoiceAllocations { get; set; } = new();
         public int ReceiptStatus { get; set; } = 1; // 1=مسودة 2=معتمد 3=ملغي
         public string StatusName => ReceiptStatus switch { 1 => "مسودة", 2 => "معتمد", 3 => "ملغي", _ => "غير محدد" };
         public int? JournalID { get; set; }
@@ -184,6 +202,8 @@ namespace YKCoatings.Models
         public int? ExpenseAccountID { get; set; }
         public string? ExpenseAccountNameAr { get; set; }
         public int? CostCenterID { get; set; }
+        public bool IsInvoiceSettlement { get; set; }
+        public List<VoucherInvoiceAllocationDto> InvoiceAllocations { get; set; } = new();
         public int PaymentStatus { get; set; } = 1;
         public string StatusName => PaymentStatus switch { 1 => "مسودة", 2 => "معتمد", 3 => "ملغي", _ => "غير محدد" };
         public int? JournalID { get; set; }

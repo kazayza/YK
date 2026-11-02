@@ -11,8 +11,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SalesOrderEdit> Logger
 
-<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
@@ -40,7 +41,7 @@ else
                         <span class="status-badge-luxury" style="--sc:@SalesOrderService.GetStatusColor(header.OrderStatus)">@SalesOrderService.GetStatusName(header.OrderStatus)</span>
                         @if (header.OrderSource > 0){<span class="source-badge-luxury" style="--sc:@SalesOrderService.GetSourceColor(header.OrderSource)">@SalesOrderService.GetSourceName(header.OrderSource)</span>}
                     }
-                    @if (OrderId > 0 && header.OrderStatus == 3 && invoicePermissions?.CanAdd == true)
+                    @if (!pageLoadFailed && OrderId > 0 && header.OrderStatus == 3 && invoicePermissions?.CanAdd == true)
                     {
                         <button class="btn-luxury btn-success-luxury" @onclick="CreateInvoice" title="إنشاء فاتورة من أمر البيع المعتمد">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
@@ -70,6 +71,13 @@ else
         {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
         else
         {
+            @if (pageLoadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">
+                    @pageLoadWarning
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPageLoad">إعادة تحميل البيانات</button>
+                </div>
+            }
             @if (isNewMode && !isSourceLocked)
             {
                 <div class="source-cards-luxury">
@@ -94,7 +102,11 @@ else
                         <div class="tab-panel luxury-fade">
                             @if (header.OrderSource == 2 && ((isNewMode && !isQuotationLoaded) || quotationImportFailed))
                             {
-                                @if (quotationImportFailed)
+                                @if (quotationImportOutcomeUnknown)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">تعذر التحقق من نتيجة تحميل أصناف العرض. أعد فتح الأمر للتحقق من السطور المحفوظة قبل أي إعادة محاولة. <button class="btn-luxury btn-ghost-luxury" @onclick="ReloadOrderForVerification">إعادة فتح الأمر للتحقق</button></div>
+                                }
+                                else if (quotationImportFailed)
                                 {
                                     <div class="msg-luxury msg-error" style="margin-bottom:12px">لم تُحمّل أصناف العرض إلى الأمر. الاختيارات محفوظة؛ يمكنك مراجعتها ثم إعادة المحاولة من زر الحفظ.@if (!string.IsNullOrWhiteSpace(quotationImportError)){<span style="display:block;margin-top:4px">سبب الخطأ: @quotationImportError</span>}</div>
                                 }
@@ -136,6 +148,10 @@ else
                                 <div class="form-field"><label class="field-label">شروط الدفع</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><select class="field-select" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(paymentTerms!=null){@foreach(var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                                 <div class="form-field"><label class="field-label">العملة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><select class="field-select" @bind="header.CurrencyID" @bind:after="OnCurrencyChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(currencies!=null){@foreach(var c in currencies){<option value="@c.Id">@c.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                             </div>
+                            @if (!string.IsNullOrWhiteSpace(customerInfoWarning))
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">@customerInfoWarning</div>
+                            }
                             @if (customerInfo != null)
                             {
                                 <div class="customer-info-luxury"><div class="ml-gold-line"></div><div class="si-grid"><div class="si-item"><span class="si-label">الهاتف</span><span class="si-value">@(customerInfo.Phone1 ?? "—")</span></div><div class="si-item"><span class="si-label">المدينة</span><span class="si-value">@(customerInfo.City ?? "—")</span></div><div class="si-item"><span class="si-label">الرصيد الحالي</span><span class="si-value @(customerInfo.CurrentBalance>0?"si-danger":"")">@customerInfo.CurrentBalance.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">الحد الائتماني</span><span class="si-value">@customerInfo.CreditLimit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">المتاح</span><span class="si-value @(customerInfo.AvailableCredit<0?"si-danger":"si-ok")">@customerInfo.AvailableCredit.ToString("#,##0.00")</span></div><div class="si-item"><span class="si-label">قائمة الأسعار</span><span class="si-value">@(customerInfo.PriceListName ?? "—")</span></div></div></div>
@@ -147,15 +163,19 @@ else
                     {
                         <div class="tab-panel luxury-fade">
                             <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div><h3>أصناف أمر البيع</h3><p>@DisplayedLineCount صنف - الإجمالي: @DisplayedOrderTotal.ToString("#,##0.00")</p></div>@if(!isReadOnly && !isApprovalMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddLine" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة صنف</button>}</div>
+                            @if (quotationImportOutcomeUnknown)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="margin-bottom:12px">تعذر التحقق من نتيجة تحميل الأصناف. أعد فتح الأمر للتحقق من السطور المحفوظة قبل أي إعادة محاولة. <button class="btn-luxury btn-ghost-luxury" @onclick="ReloadOrderForVerification">إعادة فتح الأمر للتحقق</button></div>
+                            }
                             @if (((isNewMode && header.OrderSource == 2) || quotationImportFailed) && quotationLines is { Count: > 0 })
                             {
                                 @if (quotationLines.Any(line => line.IsSelected))
                                 {
-                                    @if (quotationImportFailed)
+                                    @if (quotationImportFailed && !quotationImportOutcomeUnknown)
                                     {
                                         <div class="msg-luxury msg-error" style="margin-bottom:12px">تعذر تحميل الأصناف في المحاولة السابقة. هذه المعاينة تحتفظ بالاختيارات؛ راجع رسالة الخطأ ثم أعد المحاولة.@if (!string.IsNullOrWhiteSpace(quotationImportError)){<span style="display:block;margin-top:4px">سبب الخطأ: @quotationImportError</span>}</div>
                                     }
-                                    else
+                                    else if (!quotationImportOutcomeUnknown)
                                     {
                                         <div class="msg-luxury msg-info" style="margin-bottom:12px">هذه معاينة فقط؛ عند إنشاء أمر البيع تُحمّل تلقائياً كل الأصناف المحددة من العرض. لا تُحفظ السطور فعلياً إلا مع إنشاء الأمر.</div>
                                     }
@@ -257,6 +277,10 @@ else
                     @if (!string.IsNullOrEmpty(modifiedByName)){<div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg><span>آخر تعديل: <strong>@modifiedByName</strong></span><span class="audit-date">@modifiedDate</span></div>}
                     <div class="audit-item-luxury gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>المستخدم الحالي: <strong>@UserSession.FullName</strong></span></div>
                 </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(auditInfoWarning))
+            {
+                <div class="msg-luxury msg-info" role="status" style="margin-top:8px">@auditInfoWarning</div>
             }
 
             @if (!isViewMode && !isApprovalMode)
@@ -483,10 +507,15 @@ else
     private int selectedQuotationId;
     private bool isQuotationLoaded = false;
     private bool quotationImportFailed = false;
+    private bool quotationImportOutcomeUnknown = false;
+    private bool pageLoadFailed = false;
+    private string pageLoadWarning = "";
     private bool isLoading = true;
     private bool isSaving = false;
     private string toast = ""; private bool toastOk = true;
     private string quotationImportError = "";
+    private string customerInfoWarning = "";
+    private string auditInfoWarning = "";
     private bool isSourceLocked = false;
     private bool showLineForm = false;
     private bool isEditLine = false;
@@ -499,13 +528,13 @@ else
     private int activeTab = 0;
     private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
     private bool isNewMode => OrderId == 0;
-    private bool isApprovalMode => !isNewMode && !isViewMode && header.OrderStatus == 2 && (permissions?.CanApprove ?? false);
-    private bool isReadOnly{get{if(isViewMode)return true;if(isNewMode)return permissions?.CanAdd!=true;if(isApprovalMode)return true;return header.OrderStatus!=1||permissions?.CanEdit!=true;}}
+    private bool isApprovalMode => !pageLoadFailed && !isNewMode && !isViewMode && header.OrderStatus == 2 && (permissions?.CanApprove ?? false);
+    private bool isReadOnly{get{if(pageLoadFailed||quotationImportOutcomeUnknown)return true;if(isViewMode)return true;if(isNewMode)return permissions?.CanAdd!=true;if(isApprovalMode)return true;return header.OrderStatus!=1||permissions?.CanEdit!=true;}}
     private bool canSaveOrder
     {
         get
         {
-            if (permissions is null) return false;
+            if (permissions is null || pageLoadFailed || quotationImportOutcomeUnknown) return false;
             if (isNewMode) return permissions.CanAdd;
             if (quotationImportFailed) return header.OrderStatus == 1 && (permissions.CanAdd || permissions.CanEdit);
             return header.OrderStatus == 1 && permissions.CanEdit;
@@ -529,7 +558,7 @@ else
             return details.Sum(line => line.LineTotalWithTax);
         }
     }
-    private bool canSubmitOrder => permissions is not null && !isNewMode && header.OrderStatus == 1 && details.Any() && (permissions.CanAdd || permissions.CanEdit);
+    private bool canSubmitOrder => permissions is not null && !pageLoadFailed && !quotationImportOutcomeUnknown && !isNewMode && header.OrderStatus == 1 && details.Any() && (permissions.CanAdd || permissions.CanEdit);
     private string pageTitle{get{if(isNewMode)return "أمر بيع جديد";if(isViewMode)return "عرض أمر بيع";if(isApprovalMode)return "اعتماد أمر بيع";return "تعديل أمر بيع";}}
 
     protected override async Task OnInitializedAsync()
@@ -549,8 +578,20 @@ else
                 if(source=="quotation"){header.OrderSource=2;approvedQuotations=await SoService.GetApprovedQuotationsSearchableAsync();}
                 else if(source=="manual"){header.OrderSource=1;isSourceLocked=true;}
             }
-        }catch(Exception ex){await ShowToastAsync("خطأ في تحميل الصفحة: "+ex.Message,false);}
-        finally{isLoading=false;StateHasChanged();}
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Failed to initialize sales order editor for sales order {SalesOrderID}.",
+                OrderId);
+            pageLoadFailed = true;
+            pageLoadWarning = "تعذر تحميل بيانات أمر البيع كاملة؛ عُطّل التعديل حتى تعيد المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
     }
     private async Task LoadLookups(){warehouses=await LookupService.GetWarehousesAsync();paymentTerms=await LookupService.GetPaymentTermsAsync();currencies=await LookupService.GetCurrenciesAsync();priceLists=await LookupService.GetPriceListsAsync();salesReps=await LookupService.GetSalesRepsAsync();units=await LookupService.GetUnitsAsync();customersSearchable=await LookupService.GetCustomersSearchableAsync();saleItems=await LookupService.GetItemsForSaleSearchableAsync();}
     private async Task LoadOrderData()
@@ -590,11 +631,43 @@ else
                 if (full != null)
                     customerInfo = new SalesCustomerExtendedDto { CustomerID = full.CustomerID, CustomerNameAr = full.CustomerNameAr, CustomerCode = full.CustomerCode, CreditLimit = full.CreditLimit, CurrentBalance = full.CurrentBalance };
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex,
+                    "Failed to load customer details for sales order {SalesOrderID} and customer {CustomerID}.",
+                    OrderId,
+                    header.CustomerID);
+                customerInfoWarning = "تعذر تحميل معلومات العميل الإضافية؛ تحقق من الرصيد والحد الائتماني يدويًا قبل المتابعة.";
+                toast = customerInfoWarning;
+                toastOk = false;
+            }
         }
         await LoadAuditInfo();
     }
-    private async Task LoadAuditInfo(){try{if(OrderId<=0)return;var audit=await SoService.GetOrderAuditAsync(OrderId);if(audit!=null){createdByName=audit.CreatedByName??"غير محدد";createdDate=audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";modifiedByName=audit.ModifiedByName??"";modifiedDate=audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";}}catch{}}
+
+    private async Task LoadAuditInfo()
+    {
+        if (OrderId <= 0) return;
+
+        try
+        {
+            var audit = await SoService.GetOrderAuditAsync(OrderId);
+            if (audit is null) return;
+
+            createdByName = audit.CreatedByName ?? "غير محدد";
+            createdDate = audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            modifiedByName = audit.ModifiedByName ?? "";
+            modifiedDate = audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            auditInfoWarning = "";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load audit details for sales order {SalesOrderID}.",
+                OrderId);
+            auditInfoWarning = "تعذر تحميل سجل المراجعة الإضافي؛ بيانات أمر البيع الأساسية لم تتأثر.";
+        }
+    }
     private void SelectManualSource(){header.OrderSource=1;isSourceLocked=true;quotationLines=null;selectedQuotationId=0;isQuotationLoaded=false;quotationImportFailed=false;quotationImportError="";header.QuotationID=null;}
     private async Task SelectQuotationSource(){header.OrderSource=2;if(approvedQuotations==null)approvedQuotations=await SoService.GetApprovedQuotationsSearchableAsync();}
     private async Task OnQuotationSelected(SearchableItem? item)
@@ -633,6 +706,16 @@ else
     private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;editLine.UnitPrice=info.SalesPrice>0?info.SalesPrice:info.EstimatedPrice;}StateHasChanged();}
     private async Task SaveOrder()
     {
+        if (pageLoadFailed)
+        {
+            await ShowToastAsync("أعد تحميل بيانات أمر البيع قبل أي تعديل.", false);
+            return;
+        }
+        if (quotationImportOutcomeUnknown)
+        {
+            await ShowToastAsync("أعد فتح أمر البيع للتحقق من السطور قبل أي إعادة محاولة.", false);
+            return;
+        }
         if (!canSaveOrder) { await ShowToastAsync("لا تملك صلاحية حفظ هذا الأمر", false); return; }
         if (header.OrderDate == default) { await ShowToastAsync("حدد تاريخ أمر البيع", false); activeTab = 0; return; }
         if (header.CustomerID <= 0) { await ShowToastAsync("اختر العميل", false); activeTab = 1; return; }
@@ -713,6 +796,7 @@ else
             details = await SoService.GetOrderDetailsAsync(OrderId);
             header = await SoService.GetOrderByIdAsync(OrderId) ?? header;
             quotationImportFailed = false;
+            quotationImportOutcomeUnknown = false;
             quotationImportError = "";
 
             if (isCreating)
@@ -736,19 +820,37 @@ else
         {
             // The service commits the line import transaction before returning. If an error
             // occurs after commit, checking the persisted lines avoids offering a duplicate retry.
+            var lineVerificationCompleted = false;
             if (importWasAttempted && !importCompleted && OrderId > 0)
             {
                 try
                 {
                     details = await SoService.GetOrderDetailsAsync(OrderId);
-                    header = await SoService.GetOrderByIdAsync(OrderId) ?? header;
+                    lineVerificationCompleted = true;
                     importCompleted = details.Count > 0;
+                    header = await SoService.GetOrderByIdAsync(OrderId) ?? header;
                 }
-                catch { }
+                catch (Exception verificationException)
+                {
+                    Logger.LogError(verificationException,
+                        "Failed to verify quotation-line import outcome for sales order {SalesOrderID}.",
+                        OrderId);
+                    if (!lineVerificationCompleted)
+                        quotationImportOutcomeUnknown = true;
+                }
             }
 
-            if (importWasAttempted && OrderId > 0 && !importCompleted)
+            if (quotationImportOutcomeUnknown)
             {
+                quotationImportFailed = true;
+                quotationImportError = "تعذر التحقق من السطور المحفوظة؛ أعد فتح الأمر قبل إعادة المحاولة.";
+                isSourceLocked = true;
+                activeTab = 2;
+                await ShowToastAsync("تعذر تأكيد نتيجة تحميل أصناف عرض السعر. أعد فتح الأمر للتحقق قبل أي إعادة محاولة.", false);
+            }
+            else if (importWasAttempted && OrderId > 0 && !importCompleted)
+            {
+                quotationImportOutcomeUnknown = false;
                 quotationImportFailed = true;
                 quotationImportError = ex.Message;
                 isSourceLocked = true;
@@ -760,6 +862,7 @@ else
             }
             else if (importCompleted)
             {
+                quotationImportOutcomeUnknown = false;
                 quotationImportFailed = false;
                 quotationImportError = "";
                 isSourceLocked = true;
@@ -798,7 +901,7 @@ else
     }
     private async Task ExecuteApprove()
     {
-        if (permissions?.CanApprove != true || OrderId <= 0 || header.OrderStatus != 2 || isSaving) return;
+        if (pageLoadFailed || permissions?.CanApprove != true || OrderId <= 0 || header.OrderStatus != 2 || isSaving) return;
         var confirmed = await JS.InvokeAsync<bool>("confirm", "هل تريد اعتماد أمر البيع؟");
         if (!confirmed) return;
         isSaving = true;
@@ -848,8 +951,15 @@ else
     private async Task PrintDoc(){try{var html=await SoService.GenerateReportHtmlAsync(OrderId, UserSession.UserID);await JS.InvokeVoidAsync("printHtml", html);}catch(Exception ex){await ShowToastAsync("خطأ: "+ex.Message,false);}}
     private void CreateInvoice()
     {
-        if (OrderId <= 0 || header.OrderStatus != 3 || invoicePermissions?.CanAdd != true) return;
+        if (pageLoadFailed || OrderId <= 0 || header.OrderStatus != 3 || invoicePermissions?.CanAdd != true) return;
         Navigation.NavigateTo($"/sales-invoices/new?source=order&orderId={OrderId}");
+    }
+    private void RetryPageLoad() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+
+    private void ReloadOrderForVerification()
+    {
+        if (OrderId <= 0) return;
+        Navigation.NavigateTo($"/sales-orders/edit/{OrderId}", forceLoad: true);
     }
     private void GoBack()=>Navigation.NavigateTo("/sales-orders");
     private async Task ShowToastAsync(string message, bool ok=true){toast=message;toastOk=ok;StateHasChanged();await Task.Delay(4000);toast="";StateHasChanged();}

@@ -7,12 +7,25 @@
 @inject PermissionService PermissionService
 @inject PurchaseRequestService PrService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<PurchaseRequests> Logger
 @inject IJSRuntime JS
 
-<PageTitle>طلبات الشراء - واي كي كوتينج   </PageTitle>
+<PageTitle>طلبات الشراء - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
+else if (isPurchaseRequestPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات طلبات الشراء...</p></div>
+}
+else if (purchaseRequestPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg></div><h4>@purchaseRequestPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPurchaseRequestPermissionsAsync" disabled="@isPurchaseRequestPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (purchaseRequestPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>@purchaseRequestPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
@@ -53,6 +66,32 @@ else
             <div class="wf-step"><span class="wf-num">5</span><span>مرتجع</span></div>
         </div>
 
+        @if (isRequestsLoading && requests != null)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تحديث طلبات الشراء؛ البيانات الناجحة السابقة ما زالت معروضة.</div>
+        }
+        else if (requestsLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@requestsLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPurchaseRequestsAsync" disabled="@isRequestsLoading">إعادة المحاولة</button></div>
+        }
+        else if (requestsLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@requestsLoadError</div>
+        }
+
+        @if (isPrintingPurchaseRequest)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تجهيز تقرير طلب الشراء للطباعة...</div>
+        }
+        else if (printPurchaseRequestLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@printPurchaseRequestLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryPrintPurchaseRequestAsync" disabled="@isPrintingPurchaseRequest">إعادة المحاولة</button></div>
+        }
+        else if (printPurchaseRequestLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@printPurchaseRequestLoadError</div>
+        }
+
         @if (requests != null)
         {
             <div class="stats-luxury">
@@ -68,14 +107,14 @@ else
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم الطلب أو الطالب أو القسم..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">انتظار اعتماد</option><option value="3">معتمد</option><option value="4">مرفوض</option><option value="5">تم التنفيذ</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select @bind="filterPriority" @bind:after="Filter"><option value="0">كل الأولويات</option><option value="1">عاجل</option><option value="2">عادي</option><option value="3">غير عاجل</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
-            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isRequestsLoading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>@(isRequestsLoading ? "جارٍ التحديث..." : "تحديث")</button>
         </div>
 
-        @if (requests == null)
-        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
-        else if (!filtered.Any())
+        @if (requests == null && isRequestsLoading)
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else if (requests != null && !filtered.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>لا توجد طلبات شراء</h4><p style="font-size:.82rem;color:#8B95A5">ابدأ بإنشاء طلب جديد لبدء دورة المشتريات</p></div>}
-        else
+        else if (requests != null)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -97,7 +136,7 @@ else
                                     <td class="td-center"><div class="actions-wrap-luxury">
                                         @if (permissions.CanEdit && req.RequestStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditRequest(req.RequestID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         else{<button class="act-btn view" title="عرض" @onclick="() => ViewRequest(req.RequestID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
-                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintRequest(req.RequestID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
+                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintRequest(req.RequestID)" disabled="@isPrintingPurchaseRequest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
                                         @if (permissions.CanApprove && req.RequestStatus == 2){<button class="act-btn approve" title="اعتماد" @onclick="() => ViewRequest(req.RequestID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
                                         @if (permissions.CanDelete && req.RequestStatus == 1){<button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(req)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                     </div></td>
@@ -193,6 +232,15 @@ else
     private List<PurchaseRequestListDto>? requests;
     private List<PurchaseRequestListDto> filtered = new();
     private ModulePermissionDto? permissions;
+    private int purchaseRequestPermissionsLoadVersion;
+    private bool isPurchaseRequestPermissionsLoading, purchaseRequestPermissionsLoadFailed, purchaseRequestPermissionsLoadDenied;
+    private string purchaseRequestPermissionsLoadError = string.Empty;
+    private int requestsLoadVersion;
+    private bool isRequestsLoading, requestsLoadFailed, requestsLoadDenied;
+    private string requestsLoadError = string.Empty;
+    private int printPurchaseRequestRequestVersion, printingPurchaseRequestId, failedPurchaseRequestPrintId;
+    private bool isPrintingPurchaseRequest, printPurchaseRequestLoadFailed, printPurchaseRequestLoadDenied;
+    private string printPurchaseRequestLoadError = string.Empty;
     private string searchText = "";
     private int filterStatus = 0;
     private int filterPriority = 0;
@@ -206,16 +254,144 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_PR");
-        if (permissions != null && permissions.CanView) await LoadData();
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadPurchaseRequestPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
     }
+
+    private async Task<bool> LoadPurchaseRequestPermissionsAsync()
+    {
+        if (isPurchaseRequestPermissionsLoading) return false;
+
+        var requestVersion = ++purchaseRequestPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        isPurchaseRequestPermissionsLoading = true;
+        purchaseRequestPermissionsLoadFailed = false;
+        purchaseRequestPermissionsLoadDenied = false;
+        purchaseRequestPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentPurchaseRequestPermissionsRequest(requestVersion, userId)) return false;
+            permissions = PermissionService.GetModule("SCR_PR");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading purchase request permissions for user {UserID}.", userId);
+            if (!IsCurrentPurchaseRequestPermissionsRequest(requestVersion, userId)) return false;
+            purchaseRequestPermissionsLoadDenied = true;
+            purchaseRequestPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase request permissions for user {UserID}.", userId);
+            if (!IsCurrentPurchaseRequestPermissionsRequest(requestVersion, userId)) return false;
+            purchaseRequestPermissionsLoadFailed = true;
+            purchaseRequestPermissionsLoadError = "تعذر تحميل صلاحيات طلبات الشراء. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == purchaseRequestPermissionsLoadVersion)
+            {
+                isPurchaseRequestPermissionsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseRequestPermissionsRequest(int requestVersion, int userId) =>
+        requestVersion == purchaseRequestPermissionsLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadPurchaseRequestPermissionsAsync()
+    {
+        if (isPurchaseRequestPermissionsLoading) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadPurchaseRequestPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private void GoToLogin() => Navigation.NavigateTo("/login", forceLoad: true);
 
     private async Task LoadData()
     {
-        requests = await PrService.GetRequestsListAsync();
-        Filter();
+        if (isRequestsLoading) return;
+
+        var requestVersion = ++requestsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isRequestsLoading = true;
+        requestsLoadFailed = false;
+        requestsLoadDenied = false;
+        requestsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedRequests = await PrService.GetRequestsListAsync();
+            if (!IsCurrentPurchaseRequestsLoad(requestVersion, userId, pageUri)) return;
+            requests = loadedRequests ?? new List<PurchaseRequestListDto>();
+            Filter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading purchase request list for user {UserID}.", userId);
+            if (!IsCurrentPurchaseRequestsLoad(requestVersion, userId, pageUri)) return;
+            requests = null;
+            filtered = new List<PurchaseRequestListDto>();
+            requestsLoadDenied = true;
+            requestsLoadError = "ليس لديك صلاحية عرض طلبات الشراء.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase request list for user {UserID}.", userId);
+            if (!IsCurrentPurchaseRequestsLoad(requestVersion, userId, pageUri)) return;
+            requestsLoadFailed = true;
+            requestsLoadError = requests != null
+                ? "تعذر تحديث طلبات الشراء؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل طلبات الشراء. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == requestsLoadVersion)
+            {
+                isRequestsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseRequestsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == requestsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadPurchaseRequestsAsync()
+    {
+        if (isRequestsLoading || !requestsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadData();
     }
 
     private void Filter()
@@ -246,12 +422,59 @@ else
 
     private async Task PrintRequest(int id)
     {
+        if (id <= 0 || isPrintingPurchaseRequest) return;
+
+        var requestVersion = ++printPurchaseRequestRequestVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        printingPurchaseRequestId = id;
+        isPrintingPurchaseRequest = true;
+        printPurchaseRequestLoadFailed = false;
+        printPurchaseRequestLoadDenied = false;
+        printPurchaseRequestLoadError = string.Empty;
+        failedPurchaseRequestPrintId = 0;
+        StateHasChanged();
+
         try
         {
-            var html = await PrService.GenerateReportHtmlAsync(id, UserSession.UserID);
+            var html = await PrService.GenerateReportHtmlAsync(id, userId);
+            if (!IsCurrentPurchaseRequestPrint(requestVersion, id, userId, pageUri)) return;
             await JS.InvokeVoidAsync("printHtml", html);
         }
-        catch (Exception ex) { toast = "خطأ في الطباعة: " + ex.Message; toastOk = false; }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied printing purchase request {RequestID} for user {UserID}.", id, userId);
+            if (!IsCurrentPurchaseRequestPrint(requestVersion, id, userId, pageUri)) return;
+            printPurchaseRequestLoadDenied = true;
+            printPurchaseRequestLoadError = "ليس لديك صلاحية طباعة طلب الشراء.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to prepare purchase request printout {RequestID}.", id);
+            if (!IsCurrentPurchaseRequestPrint(requestVersion, id, userId, pageUri)) return;
+            printPurchaseRequestLoadFailed = true;
+            printPurchaseRequestLoadError = "تعذر تجهيز تقرير طلب الشراء. أعد المحاولة.";
+            failedPurchaseRequestPrintId = id;
+        }
+        finally
+        {
+            if (requestVersion == printPurchaseRequestRequestVersion)
+            {
+                isPrintingPurchaseRequest = false;
+                printingPurchaseRequestId = 0;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseRequestPrint(int requestVersion, int requestId, int userId, string pageUri) =>
+        requestVersion == printPurchaseRequestRequestVersion && printingPurchaseRequestId == requestId &&
+        UserSession.IsLoggedIn && UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryPrintPurchaseRequestAsync()
+    {
+        if (isPrintingPurchaseRequest || !printPurchaseRequestLoadFailed || failedPurchaseRequestPrintId <= 0) return;
+        await PrintRequest(failedPurchaseRequestPrintId);
     }
 
     private async Task ExportExcel()

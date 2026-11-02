@@ -7,6 +7,7 @@
 @inject DepartmentService DepartmentService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Departments> Logger
 
 <PageTitle>الأقسام - واي كي كوتينج</PageTitle>
 
@@ -38,10 +39,10 @@ else
                 <p class="page-subtitle">عرض وإدارة أقسام المنظمة</p>
             </div>
             <div class="header-actions">
-                <span class="result-badge">@filteredDepartments.Count قسم</span>
+                <span class="result-badge">@(hasLoaded ? filteredDepartments.Count + " قسم" : (isLoading ? "جارٍ التحميل" : "العدد غير متاح"))</span>
                 @if (permissions.CanExport)
                 {
-                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting || !filteredDepartments.Any()">
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting || !hasLoaded || !filteredDepartments.Any()">
                         @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
                         else { <span><i class=bi-paperclip></i> تصدير</span> }
                     </button>
@@ -55,8 +56,37 @@ else
             </div>
         </div>
 
-        <!-- Stats Cards - محسنة -->
-        <div class="stats-grid">
+        @if (!hasLoaded)
+        {
+            @if (isLoading)
+            {
+                <div class="loading-state"><div class="loader"></div><p>جاري تحميل الأقسام...</p></div>
+            }
+            else if (!string.IsNullOrWhiteSpace(loadError))
+            {
+                <div class="empty-state" role="alert">
+                    <h4>تعذر تحميل قائمة الأقسام</h4>
+                    <p>@loadError</p>
+                    <button class="btn-modern btn-secondary-modern" @onclick="LoadData" disabled="@isLoading">
+                        @(isLoading ? "جارٍ إعادة المحاولة..." : "إعادة المحاولة")
+                    </button>
+                </div>
+            }
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(loadError))
+            {
+                <div class="load-error-alert" role="alert">
+                    <span>@loadError</span>
+                    <button class="btn-modern btn-secondary-modern" @onclick="LoadData" disabled="@isLoading">
+                        @(isLoading ? "جارٍ إعادة المحاولة..." : "إعادة المحاولة")
+                    </button>
+                </div>
+            }
+
+            <!-- Stats Cards - محسنة -->
+            <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon stat-icon-total"><i class=bi-building></i></div>
                 <div class="stat-content">
@@ -175,6 +205,7 @@ else
                     </table>
                 </div>
             </div>
+        }
         }
     </div>
 
@@ -555,6 +586,18 @@ else
     }
 .toast-success{ background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
 .toast-error{ background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.load-error-alert{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        background: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
 .toast-close{
         background: transparent;
         border: none;
@@ -686,6 +729,8 @@ else
     private string statusFilter = "all";
 
     private bool isLoading = true;
+    private bool hasLoaded = false;
+    private string loadError = string.Empty;
     private bool isExporting = false;
     private bool isChangingStatus = false;
 
@@ -721,16 +766,21 @@ else
     private async Task LoadData()
     {
         isLoading = true;
+        loadError = string.Empty;
 
         try
         {
-            departments = await DepartmentService.GetDepartmentsListAsync();
+            var loadedDepartments = await DepartmentService.GetDepartmentsListAsync();
+            departments = loadedDepartments;
             FilterData();
+            hasLoaded = true;
         }
         catch (Exception ex)
         {
-            resultMessage = "خطأ أثناء تحميل البيانات: " + ex.Message;
-            resultSuccess = false;
+            Logger.LogWarning(ex, "Failed to load departments list.");
+            loadError = hasLoaded
+                ? "تعذر تحديث قائمة الأقسام؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل قائمة الأقسام. يرجى إعادة المحاولة.";
         }
         finally
         {

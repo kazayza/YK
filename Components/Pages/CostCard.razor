@@ -1,0 +1,652 @@
+@page "/cost-card"
+
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject CostCardService CostCards
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject NavigationManager Navigation
+
+<PageTitle>بطاقة التكلفة — واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="cc-access" dir="rtl"><span class="cc-access-icon">🔒</span><h3>يجب تسجيل الدخول أولًا</h3></div>
+}
+else if (!permissionChecked)
+{
+    <div class="cc-loading" dir="rtl"><span class="cc-spinner"></span><span>جاري التحقق من الصلاحية...</span></div>
+}
+else if (permissions is null || !permissions.CanView)
+{
+    <div class="cc-access" dir="rtl"><span class="cc-access-icon">⛔</span><h3>ليس لديك صلاحية عرض بطاقة التكلفة</h3><button class="cc-btn cc-btn-light" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>
+}
+else
+{
+    <main class="cost-card-page" dir="rtl">
+        <header class="cc-header">
+            <div class="cc-header-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></div>
+            <div class="cc-header-text"><span class="cc-eyebrow">التكاليف الصناعية</span><h1>بطاقة التكلفة</h1><p>@(CostCards.SnapshotPersistenceEnabled ? "معاينة وحفظ لقطة تكلفة تقديرية أو فعلية للصنف" : "معاينة تكلفة تقديرية أو فعلية — دون حفظ لقطات حاليًا")</p></div>
+            <div class="cc-header-actions">
+                <button class="cc-help-trigger" type="button" @ref="helpTriggerRef" @onclick="OpenHelpAsync" aria-haspopup="dialog" aria-controls="cc-help-dialog" aria-label="فتح شرح بطاقة التكلفة">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.3 1.8c-1.1 1.1-1.9 1.4-1.9 3M12 17h.01"/></svg>
+                    <span>شرح طريقة الاستخدام</span>
+                </button>
+                <div class="cc-header-side"><span class="cc-status-dot"></span> لا يوجد ترحيل محاسبي أو حركة مخزون</div>
+            </div>
+        </header>
+
+        @if (isLoading)
+        {
+            <div class="cc-loading"><span class="cc-spinner"></span><span>جاري تحميل بيانات بطاقة التكلفة...</span></div>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(pageError))
+            {
+                <div class="cc-alert cc-alert-error"><b>تعذر إكمال العملية</b><span>@pageError</span><button aria-label="إغلاق" @onclick='() => pageError = ""'>×</button></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(pageMessage))
+            {
+                <div class="cc-alert cc-alert-ok"><b>تم</b><span>@pageMessage</span><button aria-label="إغلاق" @onclick='() => pageMessage = ""'>×</button></div>
+            }
+
+            <section class="cc-panel cc-builder">
+                <div class="cc-panel-heading">
+                    <div><span class="cc-step">01</span><div><h2>إعداد البطاقة</h2><p>اختر المنتج ومصدر التكلفة ثم اعرض المعاينة</p></div></div>
+                    <span class="cc-assumption">1 تقديري من BOM · 2 فعلي من أمر</span>
+                </div>
+
+                <div class="cc-type-switch" role="tablist" aria-label="نوع بطاقة التكلفة">
+                    <button class="@(costType == 1 ? "active" : "")" @onclick="() => ChangeCostTypeAsync(1)" disabled="@isBusy">
+                        <span class="cc-type-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>
+                        <span><b>تقديري من الوصفة</b><small>تقدير قبل/أثناء التخطيط من BOM سارية</small></span>
+                        <span class="cc-type-value">CostType 1</span>
+                    </button>
+                    <button class="@(costType == 2 ? "active" : "")" @onclick="() => ChangeCostTypeAsync(2)" disabled="@isBusy">
+                        <span class="cc-type-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-5 5"/><path d="M15 9h4v4"/></svg></span>
+                        <span><b>فعلي</b><small>من صرف أمر تصنيع مكتمل</small></span>
+                        <span class="cc-type-value">CostType 2</span>
+                    </button>
+                </div>
+
+                <div class="cc-form-grid">
+                    <div class="cc-field cc-field-wide">
+                        <label class="cc-field-label"><span>الصنف المنتج <i>*</i></span></label>
+                        <SearchableSelect Items="@searchableProducts"
+                                          @bind-SelectedId="selectedItemId"
+                                          OnSelected="OnProductSearchSelectionChanged"
+                                          Placeholder="اكتب اسم المنتج أو كوده للبحث والاختيار..."
+                                          MaxResults="20"
+                                          MinChars="1"
+                                          IsDisabled="@isBusy" />
+                        <small class="cc-help">اكتب جزءًا من كود الصنف أو اسمه؛ ستُفلتر النتائج فورًا. اختر منتجًا من القائمة للمتابعة.</small>
+                    </div>
+
+                    <label class="cc-field cc-field-wide"><span>@(costType == 1 ? "الوصفة المعتمدة السارية" : "أمر التصنيع المكتمل") <i>*</i></span>
+                        <select @bind="selectedSourceId" @bind:after="InvalidatePreview" disabled="@(isBusy || selectedItemId <= 0 || sourceOptions.Count == 0)">
+                            <option value="0">@(sourceOptions.Count == 0 ? "لا يوجد مصدر متاح لهذا الصنف" : "اختر مصدر الحساب...")</option>
+                            @foreach (var source in sourceOptions)
+                            {
+                                <option value="@source.SourceID">@source.DisplayName</option>
+                            }
+                        </select>
+                        @if (costType == 2)
+                        {
+                            <small class="cc-help">يعرض الأوامر المكتملة ذات الناتج المقبول وإذن صرف معتمد فقط؛ الحساب على مستوى الأمر لا الباتش.</small>
+                        }
+                        else
+                        {
+                            <small class="cc-help">تُستخدم تكاليف مكونات الوصفة المحفوظة، ولا يُعاد تسعير BOM من متوسط المخزون.</small>
+                        }
+                    </label>
+
+                    <label class="cc-field"><span>الفترة المحاسبية</span>
+                        <select @bind="selectedPeriodId" @bind:after="InvalidatePreview" disabled="@isBusy">
+                            <option value="">بدون فترة</option>
+                            @foreach (var period in periods)
+                            {
+                                <option value="@period.PeriodID">@period.DisplayName</option>
+                            }
+                        </select>
+                        <small class="cc-help">@(CostCards.SnapshotPersistenceEnabled ? "تظهر الفترات المفتوحة فقط. الحفظ ينشئ لقطة تكلفة، ولا يقفل الفترة." : "تظهر الفترات المفتوحة للمعلومة فقط؛ حفظ لقطات التكلفة غير مفعل حاليًا.")</small>
+                    </label>
+
+                    <label class="cc-field"><span>الزيادة المستهدفة على التكلفة %</span>
+                        <input type="number" min="0" max="999.99" step="0.01" @bind="targetProfitPercent" @bind:after="InvalidatePreview" disabled="@isBusy" />
+                        <small class="cc-help">السعر المقترح = تكلفة الوحدة × (1 + النسبة ÷ 100)، أي زيادة على التكلفة وليست هامشًا من سعر البيع.</small>
+                    </label>
+                </div>
+
+                <div class="cc-builder-footer">
+                    <div class="cc-source-note"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>الخانات التي لا يوفر مصدر الحساب بياناتها تبقى صفرًا وتظهر في التنبيهات.</span></div>
+                    <button class="cc-btn cc-btn-primary" @onclick="BuildPreviewAsync" disabled="@(isBusy || selectedItemId <= 0 || selectedSourceId <= 0)">
+                        @if (isPreviewing) { <span class="cc-mini-spinner"></span><span>جاري الحساب...</span> }
+                        else { <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14h3l2-5 3 8 2-4h2"/></svg><span>احسب المعاينة</span> }
+                    </button>
+                </div>
+            </section>
+
+            @if (preview is not null)
+            {
+                <section class="cc-panel cc-preview">
+                    <div class="cc-panel-heading">
+                        <div><span class="cc-step">02</span><div><h2>معاينة بطاقة التكلفة</h2><p>@preview.ItemCode — @preview.ItemNameAr</p></div></div>
+                        <div class="cc-preview-badges"><span class="cc-pill @(preview.CostType == 1 ? "pill-blue" : "pill-purple")">@preview.CostTypeName</span><span class="cc-pill pill-muted">المصدر: @preview.SourceReference</span></div>
+                    </div>
+
+                    <div class="cc-scope-note @(preview.CostType == 1 ? "estimate" : "actual")">
+                        <span class="cc-scope-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span>
+                        <div>
+                            @if (preview.CostType == 1)
+                            {
+                                <b>نطاق التقدير:</b><span> يُحسب من كل بنود الوصفة المختارة، بما فيها البنود الاختيارية. لذلك قد يختلف عن أمر تصنيع لم يختر كل البنود أو استخدم بديلًا.</span>
+                            }
+                            else
+                            {
+                                <b>نطاق الفعلي:</b><span> يُحسب من أسطر الصرف المعتمدة للأمر، وليس من تكلفة الوحدة التقديرية المحفوظة على مواد الأمر.</span>
+                                @if (preview.HasApprovedIssueLines && preview.DirectLaborCost == 0 && preview.TotalIndirectCost == 0)
+                                {
+                                    <strong> لا توجد عمالة أو أعباء مسجلة هنا؛ الإجمالي المعروض هو تكلفة المواد المصروفة فقط.</strong>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    @if (preview.HasWarnings)
+                    {
+                        <div class="cc-warning-box">
+                            <div class="cc-warning-title"><svg viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18.2A2 2 0 0 0 3.5 21h17a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg><b>@(CostCards.SnapshotPersistenceEnabled ? "تنبيهات يجب مراجعتها قبل الحفظ" : "تنبيهات المعاينة")</b></div>
+                            <ul>@foreach (var warning in preview.Warnings) { <li>@warning</li> }</ul>
+                            @if (preview.CanPersist && CostCards.SnapshotPersistenceEnabled)
+                            {
+                                <label class="cc-ack"><input type="checkbox" @bind="acknowledgeWarnings" /> راجعت التنبيهات وأوافق على حفظ هذه اللقطة بالقيم المعروضة</label>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="cc-success-note"><span>✓</span> لا توجد موانع في المصدر المحدد.</div>
+                    }
+
+                    @if (!preview.CanPersist)
+                    {
+                        <div class="cc-block-note">الحفظ متوقف حتى معالجة موانع المصدر أعلاه. لن نُسجل تكلفة ناقصة أو غير قابلة للتسوية على أنها بطاقة سليمة.</div>
+                    }
+
+                    <div class="cc-preview-meta">
+                        <div><small>كمية الناتج المعتمدة للحساب</small><b>@preview.OutputQty.ToString("N4") @preview.UnitName</b></div>
+                        <div><small>الفترة</small><b>@(periods.FirstOrDefault(x => x.PeriodID == preview.PeriodID)?.PeriodName ?? "بدون فترة")</b></div>
+                        <div><small>الفاقد (للمعلومية)</small><b>@preview.WastePercent.ToString("N2")%</b></div>
+                    </div>
+
+                    <div class="cc-result-hero">
+                        <div class="cc-result-main">
+                            <small>تكلفة الوحدة</small>
+                            <strong>@Money(preview.CostPerUnit) <em>/ @preview.UnitName</em></strong>
+                            <span>@(preview.CostType == 1 ? "تقدير محسوب من الوصفة المختارة" : "تكلفة فعلية للأمر ÷ الناتج المقبول")</span>
+                        </div>
+                        <div class="cc-result-stat"><small>إجمالي تكلفة المصدر</small><b>@Money(preview.TotalCost)</b><span>للكمية المحددة أعلاه</span></div>
+                        <div class="cc-result-stat"><small>السعر المقترح</small><b>@Money(preview.SuggestedPrice)</b><span>زيادة @preview.TargetProfitPercent.ToString("N2")% على التكلفة</span></div>
+                    </div>
+
+                    <div class="cc-breakdown-grid">
+                        <section class="cc-breakdown-card">
+                            <header><div><span class="cc-breakdown-icon material"><svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg></span><div><h3>المواد المباشرة</h3><small>المواد التي تدخل في المنتج</small></div></div><span class="cc-breakdown-total-chip">@Money(preview.RawMaterialCost + preview.FinishedComponentCost + preview.PackagingCost)</span></header>
+                            <div class="cc-breakdown-row"><span>مواد خام</span><b>@Money(preview.RawMaterialCost)</b></div>
+                            <div class="cc-breakdown-row"><span>مكوّنات منتج نهائي <small>تُجمع مع المواد المباشرة عند الحفظ</small></span><b>@Money(preview.FinishedComponentCost)</b></div>
+                            <div class="cc-breakdown-row"><span>تعبئة وتغليف</span><b>@Money(preview.PackagingCost)</b></div>
+                            @if (preview.UnclassifiedMaterialCost > 0)
+                            {
+                                <div class="cc-breakdown-row cc-row-warning"><span>مواد غير مصنفة <small>مستبعدة من الإجمالي وتمنع الحفظ</small></span><b>@Money(preview.UnclassifiedMaterialCost)</b></div>
+                            }
+                            <div class="cc-breakdown-total-row"><span>إجمالي المواد المباشرة</span><b>@Money(preview.RawMaterialCost + preview.FinishedComponentCost + preview.PackagingCost)</b></div>
+                        </section>
+
+                        <section class="cc-breakdown-card">
+                            <header><div><span class="cc-breakdown-icon conversion"><svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V10l6 3V9l6 4V7h2v14M9 17h1m4 0h1"/></svg></span><div><h3>العمالة والأعباء الصناعية</h3><small>القيم المتاحة من BOM أو أمر التصنيع</small></div></div><span class="cc-breakdown-total-chip">@Money(preview.DirectLaborCost + preview.TotalIndirectCost)</span></header>
+                            <div class="cc-breakdown-row"><span>عمالة مباشرة</span><b>@Money(preview.DirectLaborCost)</b></div>
+                            <div class="cc-breakdown-row"><span>مصاريف صناعية أخرى</span><b>@Money(preview.OtherOverheadCost)</b></div>
+                            <div class="cc-breakdown-row"><span>مواد غير مباشرة</span><b>@Money(preview.IndirectMaterialCost)</b></div>
+                            <div class="cc-breakdown-row"><span>عمالة غير مباشرة</span><b>@Money(preview.IndirectLaborCost)</b></div>
+                            <div class="cc-breakdown-row"><span>طاقة ومرافق</span><b>@Money(preview.UtilityCost)</b></div>
+                            <div class="cc-breakdown-row"><span>إهلاك</span><b>@Money(preview.DepreciationCost)</b></div>
+                            <div class="cc-breakdown-row"><span>صيانة</span><b>@Money(preview.MaintenanceCost)</b></div>
+                            <div class="cc-breakdown-total-row"><span>إجمالي العمالة والأعباء</span><b>@Money(preview.DirectLaborCost + preview.TotalIndirectCost)</b></div>
+                            <div class="cc-breakdown-total-row muted"><span>منها: الأعباء غير المباشرة</span><b>@Money(preview.TotalIndirectCost)</b></div>
+                        </section>
+                    </div>
+
+                    <div class="cc-preview-footer">
+                        @if (CostCards.SnapshotPersistenceEnabled)
+                        {
+                            <p>الحفظ ينشئ سجلًا جديدًا في <code>ProductCostCards</code> فقط؛ لا يرحّل قيدًا ولا يغيّر رصيد المخزون.</p>
+                            @if (permissions.CanAdd)
+                            {
+                                <button class="cc-btn cc-btn-save" @onclick="SaveSnapshotAsync" disabled="@(isBusy || !preview.CanPersist || (preview.HasWarnings && !acknowledgeWarnings))">
+                                    @if (isSaving) { <span class="cc-mini-spinner"></span><span>جاري الحفظ...</span> }
+                                    else { <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span>حفظ لقطة التكلفة</span> }
+                                </button>
+                            }
+                        }
+                        else
+                        {
+                            <p class="cc-block-note">هذه النسخة للمعاينة فقط. حفظ اللقطات متوقف حتى اعتماد سياسة التكلفة وربط المصدر؛ لم تُحفظ هذه المعاينة.</p>
+                        }
+                    </div>
+                </section>
+            }
+
+            <section class="cc-panel cc-history">
+                <div class="cc-panel-heading">
+                    <div><span class="cc-step">03</span><div><h2>آخر بطاقات التكلفة</h2><p>لقطات محفوظة من الجدول الحالي</p></div></div>
+                    <span class="cc-count">@history.Count سجل</span>
+                </div>
+                @if (history.Count == 0)
+                {
+                    <div class="cc-empty"><span><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg></span><b>لا توجد بطاقات محفوظة حتى الآن</b><small>@(CostCards.SnapshotPersistenceEnabled ? "احسب المعاينة ثم احفظ لقطة صريحة لإظهار سجل التكلفة هنا." : "حفظ اللقطات متوقف مؤقتًا؛ يمكن مراجعة المعاينة دون إنشاء سجل.")</small></div>
+                }
+                else
+                {
+                    <div class="cc-table-wrap"><table class="cc-table">
+                        <thead><tr><th>التاريخ</th><th>الصنف</th><th>النوع</th><th>الفترة</th><th>مواد مباشرة (تشمل المكونات)</th><th>عمالة</th><th>مصاريف أخرى</th><th>الإجمالي</th><th>تكلفة الوحدة</th><th>السعر المقترح</th><th>المصدر/التحذير</th></tr></thead>
+                        <tbody>
+                            @foreach (var card in history)
+                            {
+                                <tr>
+                                    <td>@card.CalculationDate.ToString("dd/MM/yyyy")</td>
+                                    <td><b>@card.ItemCode</b><small>@card.ItemNameAr</small></td>
+                                    <td><span class="cc-pill @(card.CostType == 1 ? "pill-blue" : "pill-purple")">@card.CostTypeName</span></td>
+                                    <td>@(card.PeriodName ?? "—")</td>
+                                    <td>@Money(card.RawMaterialCost + card.PackagingCost)</td>
+                                    <td>@Money(card.DirectLaborCost)</td>
+                                    <td>@Money(card.TotalIndirectCost)</td>
+                                    <td><b>@Money(card.TotalCost)</b></td>
+                                    <td><b>@Money(card.CostPerUnit)</b></td>
+                                    <td>@Money(card.SuggestedPrice)</td>
+                                    <td title="@card.Notes"><span class="@(HasSavedWarnings(card) ? "cc-pill pill-purple" : "cc-pill pill-muted")">@(HasSavedWarnings(card) ? "تحذير مُراجع" : "مصدر موثق")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table></div>
+                    <div class="cc-history-foot">المصدر المرجعي محفوظ في الملاحظات؛ لا يوجد عمود ربط مستقل بالوصفة أو الأمر. تكلفة مكوّنات المنتج النهائي تُجمع في خانة المواد المباشرة لعدم وجود خانة مستقلة في الجدول.</div>
+                }
+            </section>
+
+            <footer class="cc-assumption-foot"><b>توضيح مهم:</b> معنى <code>CostType</code> غير موثق في القاعدة؛ 1 هنا تقديري من BOM وليس معيارًا رسميًا مجمّدًا، و2 فعلي من أمر تصنيع. لا يُعتمد معيار رسمي إلا بمسار اعتماد وتثبيت منفصل. السعر المقترح زيادة على التكلفة (Markup)، وليس هامشًا من سعر البيع.</footer>
+        }
+
+        @if (showHelp)
+        {
+            <div class="cc-help-backdrop" @onclick="CloseHelpAsync">
+                <section id="cc-help-dialog" class="cc-help-dialog" role="dialog" aria-modal="true" aria-labelledby="cc-help-title" tabindex="-1" @ref="helpDialogRef" @onclick:stopPropagation="true" @onkeydown="HandleHelpDialogKeyDown">
+                    <header class="cc-help-head">
+                        <div class="cc-help-heading">
+                            <span class="cc-help-heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>
+                            <div><span class="cc-help-eyebrow">دليل المستخدم والمسؤول</span><h2 id="cc-help-title">شرح بطاقة التكلفة خطوة بخطوة</h2><p>هذا الشرح متاح لكل من لديه صلاحية عرض الشاشة.</p></div>
+                        </div>
+                        <button class="cc-help-close" type="button" aria-label="إغلاق الشرح" @onclick="CloseHelpAsync">×</button>
+                    </header>
+
+                    <div class="cc-help-content">
+                        <section class="cc-help-block">
+                            <div class="cc-help-block-title"><span>01</span><div><h3>ما هدف البطاقة؟</h3><p>أن تعرف تكلفة إنتاج الصنف للوحدة أو للكمية، وتراجع أساس التسعير. حفظ اللقطات @(CostCards.SnapshotPersistenceEnabled ? "متاح حسب الصلاحية" : "متوقف مؤقتًا حتى اعتماد السياسة").</p></div></div>
+                            <div class="cc-help-note"><b>مهم:</b> البطاقة سجل تكلفة وتحليل؛ ليست فاتورة أو إذن صرف أو قيدًا محاسبيًا، ولا تغيّر رصيد المخزون. المعاينة وحدها لا تحفظ شيئًا.</div>
+                        </section>
+
+                        <section class="cc-help-block">
+                            <div class="cc-help-block-title"><span>02</span><div><h3>افهم الأنواع قبل الاختيار</h3><p>ببساطة: التقديري = ما نتوقعه، المعياري = الهدف المعتمد، الفعلي = ما حدث بالفعل.</p></div></div>
+                            <div class="cc-help-type-grid">
+                                <article class="cc-help-type estimate"><span class="cc-help-state">متاح الآن</span><h4>تقديري من الوصفة</h4><p>توقع تكلفة قبل الإنتاج، محسوب من الوصفة السارية وتكاليف مكوناتها والمدخلات المتاحة. يتغير إذا تغيّرت الوصفة أو تكاليفها؛ لذلك لا يُعد معيارًا رسميًا مجمّدًا.</p></article>
+                                <article class="cc-help-type standard"><span class="cc-help-state">غير متاح حاليًا</span><h4>معياري</h4><p>تكلفة مستهدفة تعتمدها الإدارة وتثبتها لفترة أو نسخة محددة، ثم تقارن الفعلي بها. هذه الشاشة لا تنشئ معيارًا ولا تعتمده أو تجمّده.</p></article>
+                                <article class="cc-help-type actual"><span class="cc-help-state">متاح الآن</span><h4>فعلي من أمر تصنيع</h4><p>تكلفة أمر مكتمل وفق الصرف المعتمد والعمالة والأعباء المسجلة، مقسومة على الناتج المقبول. الحساب على مستوى الأمر، وليس على مستوى الباتش.</p></article>
+                            </div>
+                        </section>
+
+                        <section class="cc-help-block">
+                            <div class="cc-help-block-title"><span>03</span><div><h3>طريقة الاستخدام</h3><p>اتبع الخطوات بالترتيب؛ لا تحفظ قبل مراجعة مصدر الحساب والنتيجة.</p></div></div>
+                            <ol class="cc-help-steps">
+                                <li><span>1</span><div><b>اختر نوع البطاقة</b><p>ابدأ بالتقديري إذا كنت تخطط قبل الإنتاج، أو بالفعلي إذا كان لديك أمر تصنيع مكتمل تريد مراجعة تكلفته.</p></div></li>
+                                <li><span>2</span><div><b>ابحث عن المنتج</b><p>اكتب جزءًا من اسم الصنف أو كوده، ثم اختره من النتائج. تُحمّل مصادر التكلفة الخاصة به بعد الاختيار.</p></div></li>
+                                <li><span>3</span><div><b>تأكد من المصدر</b><p>للتقديري اختر الوصفة السارية المقصودة. للفعلي اختر الأمر المكتمل الصحيح؛ لا يُعرض إلا الأمر ذو ناتج مقبول وإذن صرف معتمد.</p></div></li>
+                                <li><span>4</span><div><b>حدد الفترة ونسبة الزيادة</b><p>الفترة اختيارية وتكون مفتوحة فقط؛ اختيارها لا يقفلها. أدخل نسبة الزيادة على التكلفة إذا أردت سعرًا مقترحًا؛ اتركها صفرًا إذا لم ترد زيادة.</p></div></li>
+                                <li><span>5</span><div><b>احسب المعاينة وراجعها</b><p>ستظهر تكلفة الوحدة والإجمالي والسعر المقترح وتفصيل المواد والعمالة والأعباء. اقرأ التنبيهات، وتأكد أن الأصفار مقصودة وأن المصدر صحيح.</p></div></li>
+                                <li><span>6</span><div><b>@(CostCards.SnapshotPersistenceEnabled ? "احفظ عند التأكد فقط" : "المعاينة دون حفظ")</b><p>@(CostCards.SnapshotPersistenceEnabled ? "زر الحفظ ينشئ لقطة جديدة في سجل البطاقات. راجع التنبيهات وأكد الاطلاع؛ وإذا وُجد مانع فلن يسمح النظام بالحفظ." : "حفظ اللقطات متوقف افتراضيًا حتى اعتماد سياسة التكلفة وربط المصدر. لا تُنشأ سجلات عند حساب المعاينة.")</p></div></li>
+                            </ol>
+                        </section>
+
+                        <section class="cc-help-block">
+                            <div class="cc-help-block-title"><span>04</span><div><h3>كيف أقرأ الأرقام؟</h3><p>الإجمالي يجمع مكونات التكلفة التي وفرها المصدر، وتكلفة الوحدة تقسمه على كمية الناتج المستخدمة في الحساب.</p></div></div>
+                            <div class="cc-help-example">
+                                <div class="cc-help-example-title"><b>مثال مبسط</b><span>كمية الناتج 10 وحدات</span></div>
+                                <div class="cc-help-math"><span>مواد خام 60 + تعبئة 10 + عمالة 20 + أعباء 10</span><b>= إجمالي 100</b></div>
+                                <div class="cc-help-math"><span>100 ÷ 10 وحدات</span><b>= تكلفة الوحدة 10</b></div>
+                                <div class="cc-help-math highlight"><span>زيادة 20% على تكلفة الوحدة</span><b>10 × 1.20 = سعر مقترح 12</b></div>
+                            </div>
+                            <div class="cc-help-note cc-help-compare-note"><b>مهم عند مقارنة التقديري بالفعلي:</b> التقديري من BOM يجمع كل بنود الوصفة، بما فيها البنود الاختيارية. الفعلي يجمع أسطر الصرف المعتمدة التي استُخدمت فعلًا؛ وقد يختلف إذا اختير بديل أو لم يُستخدم مكوّن اختياري. وتكلفة الوحدة المسجلة على مادة أمر التصنيع تقديرية للتخطيط؛ الفعلي في البطاقة يعتمد تكلفة أسطر الصرف المعتمدة المحفوظة.</div>
+                            <p class="cc-help-extra"><b>تنبيه على السعر:</b> نسبة الحقل زيادة على التكلفة (Markup)، وليست هامشًا من سعر البيع. تكلفة 100 مع زيادة 20% تعطي سعرًا 120؛ أما هامش ربح 20% من سعر البيع فيعني سعرًا 125.</p>
+                            <p class="cc-help-extra"><b>مثال معياري للمقارنة فقط:</b> إذا كان المعيار المعتمد 9 للوحدة والفعلي 10، فالانحراف +1 للوحدة. الشاشة الحالية لا تحسب هذا الانحراف تلقائيًا؛ ولا يوجد فيها مسار لإنشاء المعيار واعتماده.</p>
+                        </section>
+
+                        <section class="cc-help-block">
+                            <div class="cc-help-block-title"><span>05</span><div><h3>التنبيهات ومتى أتوقف عن الحفظ؟</h3><p>الأرقام الصفرية أو غير المصنفة لا تعني دائمًا أن تكلفتها الحقيقية صفر.</p></div></div>
+                            <div class="cc-help-warning-grid">
+                                <div><b>راجع قبل الإقرار</b><ul><li>قد تبقى بعض الأعباء غير المباشرة صفرًا إذا لم يوفرها المصدر.</li><li>في التكلفة الفعلية راجع صفر العمالة أو المصاريف الصناعية، وتأكد أنه مقصود.</li><li>مكونات المنتج النهائي تظهر منفصلة، لكنها تُجمع في خانة المواد المباشرة عند الحفظ لحدود أعمدة الجدول.</li></ul></div>
+                                <div class="blocked"><b>لن يسمح بالحفظ عند</b><ul><li>وجود مرتجعات مواد مسجلة؛ فالشاشة لا تستطيع تسوية صافي تكلفتها تلقائيًا.</li><li>وجود مواد غير مصنفة أو عدم وجود أسطر صرف معتمدة.</li><li>اختلاف مجموع مواد الأمر عن أسطر الصرف المعتمدة بأكثر من 0.01.</li></ul></div>
+                            </div>
+                        </section>
+
+                        <section class="cc-help-block cc-help-limits">
+                            <div class="cc-help-block-title"><span>06</span><div><h3>حدود مهمة للمستخدم والمسؤول</h3><p>حتى لا تُفسّر اللقطة على أنها شيء لا توفره الشاشة.</p></div></div>
+                            <ul><li>الحفظ ينشئ سجل تكلفة وسجل تدقيق؛ لا يرحّل قيدًا محاسبيًا ولا ينفذ حركة مخزون.</li><li>المصدر محفوظ كمرجع في الملاحظات؛ لا يوجد ربط مستقل بالوصفة أو الأمر، ولا توزيع تلقائي لتكلفة الأمر على دفعات الإنتاج.</li><li>القيم 1 و2 في <code>CostType</code> افتراض تنفيذي غير موثق في قاعدة البيانات: 1 تقديري، و2 فعلي. المعياري يحتاج مسار اعتماد وتثبيت منفصلًا.</li></ul>
+                        </section>
+                    </div>
+                    <footer class="cc-help-footer"><span>@(CostCards.SnapshotPersistenceEnabled ? "المعاينة لا تكتب بيانات؛ لا تحفظ لقطة إلا بعد مراجعة الأرقام والمصدر." : "هذه النسخة للمعاينة فقط؛ لا تحفظ أي بيانات بطاقة.")</span><button type="button" class="cc-btn cc-btn-primary" @onclick="CloseHelpAsync">فهمت، إغلاق الشرح</button></footer>
+                </section>
+            </div>
+        }
+    </main>
+}
+
+<style>
+.cost-card-page{--ink:#131a2b;--muted:#718096;--gold:#c7a84a;--gold-dark:#987c2e;--line:#e7eaf0;--surface:#fff;--bg:#f6f7f9;max-width:1450px;margin:0 auto;padding:10px 0 28px;display:flex;flex-direction:column;gap:18px;color:var(--ink);font-family:'Tajawal','Segoe UI',sans-serif}
+.cc-header{position:relative;overflow:hidden;display:flex;align-items:center;gap:17px;padding:21px 24px;border-radius:20px;background:linear-gradient(118deg,#101727 0%,#18253a 58%,#222d42 100%);box-shadow:0 12px 32px #10172718;color:#fff}
+.cc-header:after{content:"";position:absolute;width:290px;height:290px;border-radius:50%;border:1px solid #d2b45b20;left:-78px;top:-170px;box-shadow:0 0 0 28px #d2b45b08,0 0 0 58px #d2b45b05}
+.cc-header-mark{width:58px;height:58px;border:1px solid #d2b45b66;border-radius:17px;display:grid;place-items:center;background:#d2b45b12;color:#e0c56d;flex:none}
+.cc-header-mark svg{width:29px;height:29px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cc-header-text{position:relative;z-index:1}.cc-eyebrow{color:#d7bd6d;font-size:.72rem;font-weight:800;letter-spacing:.08em}.cc-header h1{margin:1px 0;font-size:1.55rem;font-weight:900;color:#f4d46b!important;text-shadow:0 1px 8px #0008}.cc-header p{margin:0;color:#e3e8ef;font-size:.87rem}
+.cc-header-actions{position:relative;z-index:2;margin-right:auto;display:flex;align-items:center;gap:9px;flex:none}.cc-header-side{border:1px solid #ffffff22;border-radius:30px;padding:9px 13px;color:#e0e4eb;font-size:.76rem;display:flex;align-items:center;gap:8px;white-space:nowrap}.cc-status-dot{width:7px;height:7px;border-radius:50%;background:#72c59b;box-shadow:0 0 0 4px #72c59b1c;flex:none}.cc-help-trigger{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 13px;border:1px solid #d5bd6e77;border-radius:11px;background:#d2b45b16;color:#f3df9c;font:inherit;font-size:.75rem;font-weight:900;cursor:pointer;transition:.18s;white-space:nowrap}.cc-help-trigger:hover{background:#d2b45b2c;border-color:#e5cf82;transform:translateY(-1px)}.cc-help-trigger:focus-visible,.cc-help-close:focus-visible,.cc-help-footer button:focus-visible{outline:3px solid #e7c95e;outline-offset:3px}.cc-help-trigger svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cc-help-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:22px;background:#0e1728bd;backdrop-filter:blur(4px)}.cc-help-dialog{width:min(100%,980px);max-height:min(91vh,960px);display:flex;flex-direction:column;overflow:hidden;background:#f5f7fa;border:1px solid #ffffff66;border-radius:19px;box-shadow:0 25px 80px #08101f70;outline:none}.cc-help-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:18px 22px;background:linear-gradient(118deg,#111a2b,#243653);color:#fff;flex:none}.cc-help-heading{display:flex;align-items:center;gap:12px;min-width:0}.cc-help-heading-icon{width:44px;height:44px;display:grid;place-items:center;border:1px solid #d4bd6a66;border-radius:13px;background:#d2b45b16;color:#e9d27e;flex:none}.cc-help-heading-icon svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.cc-help-eyebrow{font-size:.66rem;font-weight:900;letter-spacing:.04em;color:#dec875}.cc-help-head h2{margin:2px 0;font-size:1.08rem;font-weight:900;color:#fff}.cc-help-heading p{margin:0;color:#d0d8e4;font-size:.7rem}.cc-help-close{width:34px;height:34px;display:grid;place-items:center;border:1px solid #ffffff38;border-radius:10px;background:#ffffff10;color:#fff;font:inherit;font-size:1.35rem;line-height:1;cursor:pointer;flex:none}.cc-help-close:hover{background:#ffffff23}.cc-help-content{display:flex;flex:1 1 auto;flex-direction:column;gap:11px;padding:14px 16px;min-height:0;overflow:auto;overscroll-behavior:contain}.cc-help-block{padding:13px 14px;border:1px solid #e4e9f0;border-radius:13px;background:#fff;box-shadow:0 3px 12px #18263a06}.cc-help-block-title{display:flex;align-items:flex-start;gap:10px;margin-bottom:11px}.cc-help-block-title>span{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;border:1px solid #efe4c3;background:#fbf7e9;color:#987c2e;font-size:.68rem;font-weight:900;flex:none}.cc-help-block-title h3{margin:1px 0 3px;color:#27364c;font-size:.84rem;font-weight:900}.cc-help-block-title p{margin:0;color:#788496;font-size:.69rem;line-height:1.6}.cc-help-note{padding:10px 12px;border:1px solid #f0e4b9;border-radius:9px;background:#fffbef;color:#685925;font-size:.71rem;line-height:1.7}.cc-help-note b{color:#705b20}.cc-help-type-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.cc-help-type{position:relative;padding:12px;border:1px solid #e8ecf1;border-radius:11px;background:#fafbfd;min-width:0}.cc-help-type.estimate{border-color:#d6e7f3;background:#f7fbff}.cc-help-type.standard{border-color:#e7e1d2;background:#fbfaf6}.cc-help-type.actual{border-color:#ded5f1;background:#faf8ff}.cc-help-state{display:inline-flex;padding:4px 7px;border-radius:20px;background:#eef1f5;color:#687588;font-size:.61rem;font-weight:900}.cc-help-type.estimate .cc-help-state{background:#e5f2fc;color:#2e6388}.cc-help-type.actual .cc-help-state{background:#f0eafa;color:#674b93}.cc-help-type h4{margin:8px 0 5px;color:#29374c;font-size:.76rem;font-weight:900}.cc-help-type p{margin:0;color:#6f7b8d;font-size:.67rem;line-height:1.7}.cc-help-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.cc-help-steps li{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid #edf0f4;border-radius:10px;background:#fafbfc;min-width:0}.cc-help-steps li>span{width:24px;height:24px;display:grid;place-items:center;border-radius:8px;background:#eff2f7;color:#435875;font-size:.68rem;font-weight:900;flex:none}.cc-help-steps b{display:block;margin:1px 0 3px;color:#334158;font-size:.7rem}.cc-help-steps p{margin:0;color:#748094;font-size:.66rem;line-height:1.65}.cc-help-example{padding:10px 12px;border:1px solid #e6eaf0;border-radius:10px;background:#fafbfd}.cc-help-example-title,.cc-help-math{display:flex;align-items:center;justify-content:space-between;gap:10px}.cc-help-example-title{padding-bottom:8px;border-bottom:1px solid #e9edf2}.cc-help-example-title b{color:#35445b;font-size:.73rem}.cc-help-example-title span{color:#758194;font-size:.66rem}.cc-help-math{padding:7px 1px;border-bottom:1px dashed #e6eaf0;color:#647185;font-size:.68rem}.cc-help-math:last-child{border-bottom:0}.cc-help-math b{color:#29384e;font-size:.7rem;white-space:nowrap}.cc-help-math.highlight{margin-top:3px;padding-inline:8px;border:0;border-radius:7px;background:#f8f3df}.cc-help-math.highlight b{color:#806722}.cc-help-extra{margin:9px 1px 0;color:#6f7b8c;font-size:.68rem;line-height:1.7}.cc-help-extra b{color:#3c4c62}.cc-help-warning-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.cc-help-warning-grid>div{padding:10px 12px;border:1px solid #f0e4b9;border-radius:10px;background:#fffbef;color:#725d26}.cc-help-warning-grid>div.blocked{border-color:#efcece;background:#fff7f7;color:#9a4545}.cc-help-warning-grid b{font-size:.7rem}.cc-help-warning-grid ul,.cc-help-limits ul{margin:5px 0 0;padding:0 19px 0 0;font-size:.66rem;line-height:1.75}.cc-help-limits>ul{margin:0;color:#687588}.cc-help-limits code{padding:1px 4px;border-radius:4px;background:#f0f2f5;font-family:monospace;color:#3e4b60}.cc-help-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid #e6eaf0;background:#fff;flex:none}.cc-help-footer>span{color:#718095;font-size:.67rem;line-height:1.6}.cc-help-footer .cc-btn{flex:none}
+
+.cc-panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 5px 18px #1b294008;overflow:hidden}.cc-panel.cc-builder{overflow:visible;position:relative;z-index:30}.cc-panel-heading{display:flex;align-items:center;justify-content:space-between;padding:19px 21px;border-bottom:1px solid #edf0f4;gap:15px}.cc-panel-heading>div:first-child{display:flex;align-items:center;gap:12px}.cc-panel-heading h2{margin:0;font-size:1.06rem;font-weight:900}.cc-panel-heading p{margin:3px 0 0;color:var(--muted);font-size:.78rem}.cc-step{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#fbf6e8;border:1px solid #efe3bc;color:var(--gold-dark);font-weight:900;font-size:.78rem;flex:none}.cc-assumption{font-size:.72rem;font-weight:800;color:#7b6628;background:#fbf7e9;border:1px solid #efe3bc;padding:8px 11px;border-radius:20px;white-space:nowrap}
+.cc-type-switch{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:18px 21px 0}.cc-type-switch button{display:flex;align-items:center;gap:11px;text-align:right;border:1px solid var(--line);border-radius:14px;padding:13px 14px;background:#fff;cursor:pointer;color:var(--ink);transition:.18s}.cc-type-switch button.active{border-color:#d9c37b;background:linear-gradient(120deg,#fffdf6,#fbf8ee);box-shadow:0 3px 12px #a4893014}.cc-type-switch button:disabled{opacity:.65;cursor:wait}.cc-type-switch b{display:block;font-size:.86rem}.cc-type-switch small{display:block;color:var(--muted);font-size:.73rem;margin-top:2px}.cc-type-icon{width:38px;height:38px;border-radius:11px;background:#f2f4f7;color:#59677d;display:grid;place-items:center;flex:none}.active .cc-type-icon{background:#f3ecd4;color:#9b7f32}.cc-type-icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.cc-type-value{margin-right:auto;font-size:.65rem;color:#8a93a0;font-family:monospace}
+.cc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;padding:18px 21px 20px}.cc-field{display:flex;flex-direction:column;gap:7px;min-width:0}.cc-field-wide{grid-column:span 2}.cc-field>span,.cc-field-label{display:block;font-size:.77rem;font-weight:800;color:#354155}.cc-field>span i,.cc-field-label i{color:#bd4b4b;font-style:normal}.cc-field>select,.cc-field>input{width:100%;min-height:42px;border:1px solid #dfe4ec;border-radius:10px;padding:9px 12px;background:#fff;color:#263247;font:inherit;font-size:.82rem;outline:none;transition:.15s}.cc-field>select:focus,.cc-field>input:focus{border-color:#c5a74c;box-shadow:0 0 0 3px #c5a74c20}.cc-field>select:disabled,.cc-field>input:disabled{background:#f4f5f7;color:#8a93a0}.cc-help{font-size:.69rem;color:#818b9a;line-height:1.55}.cc-builder-footer{padding:14px 21px;border-top:1px solid #edf0f4;background:#fcfcfd;display:flex;justify-content:space-between;align-items:center;gap:12px}.cc-source-note{display:flex;align-items:center;gap:8px;color:#798394;font-size:.72rem}.cc-source-note svg{width:17px;height:17px;fill:none;stroke:#b59642;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cc-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;padding:10px 15px;font:inherit;font-size:.8rem;font-weight:900;cursor:pointer;transition:.18s;white-space:nowrap}.cc-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cc-btn:disabled{opacity:.5;cursor:not-allowed}.cc-btn-primary{background:#19243a;color:#fff;box-shadow:0 5px 12px #19243a20}.cc-btn-primary:hover:not(:disabled){background:#283956;transform:translateY(-1px)}.cc-btn-save{background:linear-gradient(120deg,#b69a45,#d4bb6b);color:#171b23;box-shadow:0 5px 14px #b69a4530}.cc-btn-save:hover:not(:disabled){filter:brightness(1.03);transform:translateY(-1px)}.cc-btn-light{background:#fff;border:1px solid var(--line);color:#243047}
+.cc-preview{border-color:#e5dfcc}.cc-preview-badges{display:flex;gap:7px;flex-wrap:wrap}.cc-pill{display:inline-flex;align-items:center;padding:5px 9px;border-radius:20px;font-size:.68rem;font-weight:800;white-space:nowrap}.pill-blue{color:#285a85;background:#edf6ff;border:1px solid #cde4f7}.pill-purple{color:#674792;background:#f4effc;border:1px solid #e2d5f4}.pill-muted{background:#f4f5f7;color:#657083;border:1px solid #e6e9ee;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.cc-scope-note{display:flex;align-items:flex-start;gap:9px;margin:12px 20px 0;padding:10px 12px;border:1px solid #dce7f0;border-radius:10px;background:#f6f9fc;color:#425a72;font-size:.71rem;line-height:1.7}.cc-scope-note.estimate{border-color:#d8e7f2;background:#f4f9fd;color:#315b77}.cc-scope-note.actual{border-color:#e9dfbd;background:#fcfaf1;color:#685a2f}.cc-scope-note>div{min-width:0}.cc-scope-note b{font-weight:900}.cc-scope-note strong{display:block;margin-top:2px;color:#8a5b16;font-weight:900}.cc-scope-icon{width:22px;height:22px;display:grid;place-items:center;flex:none;border-radius:7px;background:#e9eff5;color:#49627c}.cc-scope-note.estimate .cc-scope-icon{background:#e3f0f8;color:#326788}.cc-scope-note.actual .cc-scope-icon{background:#f1ebd4;color:#92772b}.cc-scope-icon svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.cc-warning-box{margin:17px 20px 0;padding:13px 15px;border-radius:12px;background:#fff9eb;border:1px solid #f1dfaa;color:#735b1e}.cc-warning-title{display:flex;align-items:center;gap:8px;font-size:.79rem}.cc-warning-title svg{width:19px;height:19px;fill:none;stroke:#be8b18;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.cc-warning-box ul{margin:8px 0;padding:0 22px 0 0;font-size:.74rem;line-height:1.75}.cc-ack{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid #f1e4bc;font-size:.74rem;font-weight:800;cursor:pointer}.cc-ack input{accent-color:#a2822c}.cc-success-note{margin:16px 20px 0;padding:10px 13px;border-radius:10px;background:#effaf4;border:1px solid #d0efdc;color:#26734a;font-size:.75rem;font-weight:800}.cc-success-note span{font-size:1rem;margin-left:6px}.cc-block-note{margin:16px 20px 0;padding:10px 13px;border-radius:10px;background:#fff0f0;border:1px solid #f2cccc;color:#a93c3c;font-size:.75rem;font-weight:800}.cc-preview-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:17px 20px;padding:12px;border:1px solid #edf0f4;border-radius:12px;background:#fafbfc}.cc-preview-meta div{display:flex;flex-direction:column;gap:4px}.cc-preview-meta small{font-size:.68rem;color:#7e8897}.cc-preview-meta b{font-size:.82rem;color:#26334a}.cc-result-hero{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:10px;margin:17px 20px 0}
+.cc-result-main,.cc-result-stat{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:15px 17px;border:1px solid #e6eaf0;border-radius:14px;background:#fff;min-width:0}
+.cc-result-main{background:linear-gradient(125deg,#17243a,#253956);border-color:#253956;color:#fff;box-shadow:0 8px 20px #17243a18}
+.cc-result-main small,.cc-result-stat small{font-size:.69rem;color:#7b8797;font-weight:700}
+.cc-result-main small{color:#c6d0df}
+.cc-result-main strong{font-size:1.55rem;line-height:1.2;color:#f2d575;font-variant-numeric:tabular-nums}
+.cc-result-main em{font-size:.76rem;font-style:normal;font-weight:600;color:#d5dce6}
+.cc-result-main span,.cc-result-stat span{font-size:.68rem;color:#8b95a3;line-height:1.45}
+.cc-result-main span{color:#c2cbd8}
+.cc-result-stat b{font-size:1.13rem;color:#27344a;font-variant-numeric:tabular-nums}
+.cc-result-stat:last-child b{color:#96782a}
+.cc-breakdown-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:13px 20px 0;align-items:start}
+.cc-breakdown-card{border:1px solid #e6eaf0;border-radius:14px;background:#fff;padding:14px 15px;min-width:0}
+.cc-breakdown-card>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:11px;margin-bottom:3px;border-bottom:1px solid #edf0f4}
+.cc-breakdown-card>header>div{display:flex;align-items:center;gap:9px;min-width:0}
+.cc-breakdown-card h3{margin:0;font-size:.82rem;font-weight:900;color:#28354a}
+.cc-breakdown-card header small{display:block;color:#8791a0;font-size:.65rem;margin-top:3px}
+.cc-breakdown-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:#f7f3e7;color:#9c7d2a;flex:none}
+.cc-breakdown-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.cc-breakdown-icon.conversion{background:#eef3fa;color:#455e7c}
+.cc-breakdown-total-chip{padding:5px 8px;border-radius:8px;background:#f8f6ed;color:#82691f;font-size:.72rem;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cc-breakdown-row,.cc-breakdown-total-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid #f1f3f6;font-size:.73rem}
+.cc-breakdown-row>span,.cc-breakdown-total-row>span{color:#657184;line-height:1.4}
+.cc-breakdown-row span small{display:block;color:#9aa2ae;font-size:.62rem;margin-top:2px}
+.cc-breakdown-row b,.cc-breakdown-total-row b{color:#2c384c;font-size:.76rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc-breakdown-row:last-of-type{border-bottom:0}
+.cc-breakdown-total-row{margin-top:6px;padding:9px 10px;background:#f8f9fb;border:0;border-radius:8px;font-weight:900}
+.cc-breakdown-total-row span,.cc-breakdown-total-row b{color:#26354b;font-weight:900}
+.cc-breakdown-total-row.muted{margin-top:5px;background:#f4f6f8}
+.cc-row-warning{background:#fff8eb;border-radius:7px;padding-inline:8px}
+.cc-row-warning span,.cc-row-warning b{color:#8a5b16}
+.cc-preview-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;margin-top:14px;border-top:1px solid #edf0f4;background:#fcfcfd}.cc-preview-footer p{margin:0;color:#788394;font-size:.7rem;line-height:1.6}.cc-preview-footer code,.cc-assumption-foot code{background:#f0f2f5;border-radius:5px;padding:2px 5px;color:#3f4c62;font-family:monospace}
+.cc-count{border:1px solid #e6e9ee;background:#fafbfc;color:#6a7585;padding:6px 10px;border-radius:20px;font-size:.7rem;font-weight:800}.cc-empty{min-height:155px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:#58667a}.cc-empty>span{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#f6f3e9;color:#a78b39;margin-bottom:2px}.cc-empty svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.cc-empty b{font-size:.82rem}.cc-empty small{color:#8a94a2;font-size:.7rem}.cc-table-wrap{overflow:auto}.cc-table{width:100%;border-collapse:collapse;min-width:950px}.cc-table th{background:#fafbfc;color:#687487;padding:11px 12px;text-align:right;font-size:.68rem;white-space:nowrap;border-bottom:1px solid #e9edf2}.cc-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;font-size:.74rem;white-space:nowrap;color:#4f5b6e;font-variant-numeric:tabular-nums}.cc-table tr:last-child td{border-bottom:0}.cc-table td b{color:#243148}.cc-table td small{display:block;margin-top:3px;color:#8a93a1;font-size:.67rem}.cc-history-foot{padding:10px 18px;border-top:1px solid #edf0f4;background:#fcfcfd;color:#7a8593;font-size:.69rem}.cc-assumption-foot{padding:12px 15px;border:1px solid #e8e1ce;border-radius:11px;background:#fcfaf3;color:#746743;font-size:.72rem;line-height:1.65}.cc-assumption-foot b{color:#6c5721}
+.cc-alert{position:relative;display:flex;align-items:center;gap:10px;padding:11px 42px 11px 14px;border-radius:10px;font-size:.76rem}.cc-alert button{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:0;font-size:1.2rem;cursor:pointer;color:inherit}.cc-alert-error{background:#fff0f0;border:1px solid #f2d0d0;color:#9f3737}.cc-alert-ok{background:#effaf3;border:1px solid #d0efdc;color:#287349}.cc-alert span{color:#505d6e}.cc-loading,.cc-access{display:flex;align-items:center;justify-content:center;gap:12px;min-height:170px;color:#657083}.cc-access{flex-direction:column;text-align:center}.cc-access h3{font-size:1rem;margin:0}.cc-access-icon{font-size:1.5rem}.cc-spinner,.cc-mini-spinner{width:22px;height:22px;border:2px solid #e9e3d0;border-top-color:#b69a45;border-radius:50%;animation:cc-spin .7s linear infinite}.cc-mini-spinner{width:15px;height:15px;border-color:#ffffff55;border-top-color:#fff}.cc-loading{font-size:.84rem}.cc-access .cc-btn{margin-top:8px}@@keyframes cc-spin{to{transform:rotate(360deg)}}
+@@media(max-width:900px){.cc-breakdown-grid{grid-template-columns:1fr}.cc-result-hero{grid-template-columns:1fr 1fr}.cc-result-main{grid-column:span 2}.cc-header-side{display:none}.cc-preview-meta{grid-template-columns:1fr 1fr}.cc-preview-meta div:last-child{grid-column:span 2}.cc-panel-heading{align-items:flex-start}.cc-preview-badges{justify-content:flex-end}.cc-help-backdrop{padding:14px}}
+@@media(max-width:620px){.cost-card-page{gap:12px}.cc-header{padding:17px;border-radius:15px;flex-wrap:wrap;align-items:flex-start}.cc-header-mark{width:47px;height:47px}.cc-header-text{flex:1;min-width:0}.cc-header h1{font-size:1.25rem}.cc-header p{font-size:.74rem}.cc-header-actions{width:100%;margin-right:0}.cc-help-trigger{width:100%}.cc-panel{border-radius:14px}.cc-panel-heading{padding:15px;flex-direction:column}.cc-panel-heading h2{font-size:.95rem}.cc-type-switch{grid-template-columns:1fr;padding:14px 14px 0}.cc-form-grid{grid-template-columns:1fr;padding:14px}.cc-field-wide{grid-column:auto}.cc-builder-footer,.cc-preview-footer{align-items:stretch;flex-direction:column}.cc-builder-footer .cc-btn,.cc-preview-footer .cc-btn{width:100%}.cc-preview-meta{margin:13px;grid-template-columns:1fr 1fr}.cc-preview-meta div:last-child{grid-column:span 2}.cc-result-hero{grid-template-columns:1fr;margin:13px}.cc-result-main{grid-column:auto}.cc-breakdown-grid{grid-template-columns:1fr;margin:12px 13px 0}.cc-breakdown-card{padding:12px}.cc-preview-footer{padding:13px}.cc-help-backdrop{padding:6px}.cc-help-dialog{max-height:calc(100vh - 12px);border-radius:13px}.cc-scope-note{margin:12px 13px 0}.cc-help-head{padding:12px}.cc-help-heading-icon{width:38px;height:38px}.cc-help-head h2{font-size:.92rem}.cc-help-heading p{font-size:.63rem}.cc-help-content{padding:9px;gap:8px}.cc-help-block{padding:10px}.cc-help-type-grid,.cc-help-steps,.cc-help-warning-grid{grid-template-columns:1fr}.cc-help-math{align-items:flex-start;flex-direction:column;gap:3px}.cc-help-footer{align-items:stretch;flex-direction:column}.cc-help-footer .cc-btn{width:100%}.cc-assumption{white-space:normal}.cc-assumption-foot{font-size:.68rem}}
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private bool permissionChecked;
+    private bool showHelp;
+    private bool focusHelpDialogAfterRender;
+    private bool restoreHelpTriggerAfterRender;
+    private ElementReference helpTriggerRef;
+    private ElementReference helpDialogRef;
+    private bool isLoading;
+    private bool isBusy;
+    private bool isPreviewing;
+    private bool isSaving;
+    private bool acknowledgeWarnings;
+    private int costType = 1;
+    private int selectedItemId;
+    private int selectedSourceId;
+    private int? selectedPeriodId;
+    private decimal targetProfitPercent;
+    private string pageError = "";
+    private string pageMessage = "";
+
+    private List<CostCardProductOptionDto> products = new();
+    private List<SearchableItem> searchableProducts = new();
+    private List<CostCardPeriodOptionDto> periods = new();
+    private List<CostCardSourceOptionDto> sourceOptions = new();
+    private List<CostCardHistoryDto> history = new();
+    private CostCardPreviewDto? preview;
+
+    private Task OpenHelpAsync()
+    {
+        showHelp = true;
+        focusHelpDialogAfterRender = true;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseHelpAsync()
+    {
+        showHelp = false;
+        restoreHelpTriggerAfterRender = true;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleHelpDialogKeyDown(KeyboardEventArgs args) =>
+        args.Key == "Escape" ? CloseHelpAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusHelpDialogAfterRender)
+        {
+            focusHelpDialogAfterRender = false;
+            await helpDialogRef.FocusAsync();
+        }
+
+        if (restoreHelpTriggerAfterRender)
+        {
+            restoreHelpTriggerAfterRender = false;
+            await helpTriggerRef.FocusAsync();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_COSTCARD");
+            permissionChecked = true;
+            if (permissions?.CanView != true) return;
+
+            isLoading = true;
+            products = await CostCards.GetProductsAsync();
+            searchableProducts = products.Select(item => new SearchableItem
+            {
+                Id = item.ItemID,
+                Name = item.ItemNameAr,
+                Code = item.ItemCode,
+                Extra = item.UnitName
+            }).ToList();
+            periods = await CostCards.GetOpenPeriodsAsync();
+            var today = DateTime.Today;
+            var currentPeriod = periods.FirstOrDefault(p => p.StartDate.Date <= today && p.EndDate.Date >= today)
+                                ?? periods.FirstOrDefault();
+            selectedPeriodId = currentPeriod?.PeriodID;
+            history = await CostCards.GetHistoryAsync();
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            pageError = ex.Message;
+            isLoading = false;
+            permissionChecked = true;
+        }
+    }
+
+    private async Task ChangeCostTypeAsync(int value)
+    {
+        if (value is not (1 or 2) || isBusy) return;
+        if (costType == value) return;
+        costType = value;
+        preview = null;
+        acknowledgeWarnings = false;
+        await LoadSourcesAsync();
+    }
+
+    private async Task OnProductSearchSelectionChanged(SearchableItem? item)
+    {
+        selectedItemId = item?.Id ?? 0;
+        await OnProductChanged();
+    }
+
+    private async Task OnProductChanged()
+    {
+        preview = null;
+        acknowledgeWarnings = false;
+        await LoadSourcesAsync();
+        await LoadHistoryAsync();
+    }
+
+    private async Task LoadSourcesAsync()
+    {
+        pageError = "";
+        selectedSourceId = 0;
+        sourceOptions.Clear();
+        if (selectedItemId <= 0) return;
+
+        try
+        {
+            isBusy = true;
+            sourceOptions = costType == 1
+                ? await CostCards.GetEstimatedSourcesAsync(selectedItemId)
+                : await CostCards.GetActualSourcesAsync(selectedItemId);
+            // Require an explicit source choice; never calculate against the first row silently.
+            selectedSourceId = 0;
+        }
+        catch (Exception ex)
+        {
+            pageError = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task BuildPreviewAsync()
+    {
+        pageError = "";
+        pageMessage = "";
+        preview = null;
+        acknowledgeWarnings = false;
+        if (selectedItemId <= 0 || selectedSourceId <= 0)
+        {
+            pageError = "اختر الصنف ومصدر التكلفة أولًا.";
+            return;
+        }
+
+        try
+        {
+            isPreviewing = true;
+            isBusy = true;
+            preview = costType == 1
+                ? await CostCards.PreviewEstimatedAsync(selectedItemId, selectedSourceId, selectedPeriodId, targetProfitPercent)
+                : await CostCards.PreviewActualAsync(selectedItemId, selectedSourceId, selectedPeriodId, targetProfitPercent);
+        }
+        catch (Exception ex)
+        {
+            pageError = ex.Message;
+        }
+        finally
+        {
+            isPreviewing = false;
+            isBusy = false;
+        }
+    }
+
+    private async Task SaveSnapshotAsync()
+    {
+        if (!CostCards.SnapshotPersistenceEnabled)
+        {
+            pageError = "حفظ لقطات بطاقة التكلفة متوقف مؤقتًا؛ هذه الشاشة للمعاينة فقط.";
+            return;
+        }
+        if (preview is null || permissions?.CanAdd != true || isBusy) return;
+        pageError = "";
+        pageMessage = "";
+        try
+        {
+            isSaving = true;
+            isBusy = true;
+            var cardId = await CostCards.SaveSnapshotAsync(new CostCardSaveRequest
+            {
+                ItemID = selectedItemId,
+                PeriodID = selectedPeriodId,
+                CostType = costType,
+                BOMID = costType == 1 ? selectedSourceId : null,
+                ProductionOrderID = costType == 2 ? selectedSourceId : null,
+                TargetProfitPercent = targetProfitPercent,
+                PreviewFingerprint = preview.PreviewFingerprint,
+                AcknowledgeWarnings = acknowledgeWarnings
+            }, UserSession.UserID);
+
+            pageMessage = $"تم حفظ لقطة بطاقة التكلفة رقم {cardId}. لم يحدث ترحيل محاسبي أو تغيير في المخزون.";
+            preview = null;
+            acknowledgeWarnings = false;
+            await LoadHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            pageError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+            isBusy = false;
+        }
+    }
+
+    private void InvalidatePreview()
+    {
+        preview = null;
+        acknowledgeWarnings = false;
+    }
+
+    private static bool HasSavedWarnings(CostCardHistoryDto card) =>
+        card.Notes?.Contains("تحذيرات تمت مراجعتها", StringComparison.Ordinal) == true;
+
+    private async Task LoadHistoryAsync()
+    {
+        if (permissions?.CanView != true) return;
+        try
+        {
+            history = await CostCards.GetHistoryAsync(selectedItemId > 0 ? selectedItemId : null);
+        }
+        catch (Exception ex)
+        {
+            pageError = ex.Message;
+        }
+    }
+
+    private static string Money(decimal amount) => amount.ToString("N2");
+}

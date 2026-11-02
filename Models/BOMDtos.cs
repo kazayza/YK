@@ -109,6 +109,7 @@
 
         public bool IsOptional { get; set; }
         public int? SubstituteItemID { get; set; }
+        public string? SubstituteItemCode { get; set; }
         public string? SubstituteItemName { get; set; }
 
         public int Sequence { get; set; }

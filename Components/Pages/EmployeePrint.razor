@@ -8,6 +8,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<EmployeePrint> Logger
 
 <PageTitle>طباعة بيانات الموظف - واي كي كوتينج</PageTitle>
 
@@ -25,6 +26,14 @@ else if (permissions == null || !permissions.CanView)
 else if (isLoading)
 {
     <div class="loading-state"><div class="loader"></div><p>جاري التحميل...</p></div>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="no-access-card" role="alert">
+        <div class="no-access-icon"><i class=bi-exclamation-triangle-fill></i></div>
+        <h4>@loadError</h4>
+        <button class="btn-modern btn-secondary-modern" @onclick="LoadEmployeePrintData" disabled="@isLoading">إعادة المحاولة</button>
+    </div>
 }
 else if (model == null)
 {
@@ -227,6 +236,7 @@ else
     private List<LookupDto>? jobTitles;
     private List<LookupDto>? managers;
     private bool isLoading = true;
+    private string loadError = string.Empty;
 
     private decimal TotalSalary =>
         model != null ? model.BasicSalary + model.TransportAllowance + model.HousingAllowance
@@ -242,7 +252,13 @@ else
         permissions = PermissionService.GetModule("SCR_EMP");
         if (permissions == null || !permissions.CanView) { isLoading = false; return; }
 
+        await LoadEmployeePrintData();
+    }
+
+    private async Task LoadEmployeePrintData()
+    {
         isLoading = true;
+        loadError = string.Empty;
         try
         {
             departments = await LookupService.GetDepartmentsLookupAsync();
@@ -250,8 +266,17 @@ else
             managers = await LookupService.GetManagersLookupAsync();
             model = await EmployeeService.GetEmployeeByIdAsync(EmployeeId);
         }
-        catch { model = null; }
-        finally { isLoading = false; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load employee print data; the user can retry the read.");
+            model = null;
+            loadError = "تعذر تحميل بيانات الموظف للطباعة. أعد المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
     private async Task DoPrint() => await JS.InvokeVoidAsync("print");

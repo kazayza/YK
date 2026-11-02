@@ -11,11 +11,24 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<StockBalances> Logger
 
-<PageTitle>أرصدة المخزون - واي كي كوتينج   </PageTitle>
+<PageTitle>أرصدة المخزون - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
+else if (isStockPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات المخزون...</p></div>
+}
+else if (stockPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg></div><h4>@stockPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadStockBalancesPermissionsAsync" disabled="@isStockPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (stockPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>@stockPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToStockBalancesLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
@@ -30,7 +43,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">أرصدة المخزون</h2><p class="lh-subtitle">مراقبة الأرصدة والتنبيهات وإدارة المخزون — تحديث لحظي</p></div>
                 </div>
                 <div class="lh-actions">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count صنف</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(IsBalancesForCurrentFilters ? filtered.Count.ToString() : "—") صنف</span>
                     <button class="btn-luxury btn-alert-luxury" @onclick="CheckAlerts" disabled="@isChecking">
                         @if (isChecking){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 6 5 6 10H0s6-3 6-10"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>}
                         فحص التنبيهات
@@ -42,32 +55,101 @@ else
             </div>
         </div>
 
-        @if (dashboard != null)
+        @if (isDashboardLoading && IsDashboardForCurrentUser)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">
+                جارٍ تحديث ملخص المخزون؛ آخر البيانات الناجحة ما زالت معروضة.
+            </div>
+        }
+        @if (dashboardLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@dashboardLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadDashboardAsync" disabled="@isDashboardLoading">إعادة المحاولة</button>
+            </div>
+        }
+        else if (dashboardLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@dashboardLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+            </div>
+        }
+        @if (isDashboardLoading && !IsDashboardForCurrentUser)
+        {
+            <div class="loading-luxury" role="status" style="padding:16px">جاري تحميل ملخص المخزون...</div>
+        }
+
+        @if (IsDashboardForCurrentUser && dashboard is { } currentDashboard)
         {
             <div class="stats-luxury">
-                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsWithStock</span><span class="st-label">أصناف بمخزون</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@dashboard.TotalStockValue.ToString("#,##0")</span><span class="st-label">قيمة المخزون ج.م</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsBelowMin</span><span class="st-label">تحت الحد الأدنى</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="st-info"><span class="st-value">@dashboard.ItemsOutOfStock</span><span class="st-label">نفد المخزون</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@dashboard.BatchesNearExpiry</span><span class="st-label">قرب الانتهاء</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div><div class="st-info"><span class="st-value">@dashboard.BatchesExpired</span><span class="st-label">منتهي الصلاحية</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.ItemsWithStock</span><span class="st-label">أصناف بمخزون</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.TotalStockValue.ToString("#,##0")</span><span class="st-label">قيمة المخزون ج.م</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.ItemsBelowMin</span><span class="st-label">تحت الحد الأدنى</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.ItemsOutOfStock</span><span class="st-label">نفد المخزون</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.BatchesNearExpiry</span><span class="st-label">قرب الانتهاء</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div><div class="st-info"><span class="st-value">@currentDashboard.BatchesExpired</span><span class="st-label">منتهي الصلاحية</span></div><div class="st-gold-line"></div></div>
             </div>
         }
 
         <div class="filter-luxury">
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث بالكود أو الصنف أو المخزن..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
-            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="M3 9V7a2 2 0 0 1 2-2h2"/><path d="M19 9V7a2 2 0 0 0-2-2h-2"/></svg><select @bind="filterWarehouse" @bind:after="LoadBalances"><option value="0">كل المخازن</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="M3 9V7a2 2 0 0 1 2-2h2"/><path d="M19 9V7a2 2 0 0 0-2-2h-2"/></svg><select @bind="filterWarehouse" @bind:after="LoadBalances"><option value="0">كل المخازن</option>@if (WarehousesLoadedForCurrentUser){@foreach (var w in warehouses!){<option value="@w.Id">@w.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterType" @bind:after="LoadBalances"><option value="0">كل الأنواع</option><option value="1">خام</option><option value="2">تعبئة</option><option value="3">نصف مصنع</option><option value="4">تام</option><option value="5">تشغيل</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><select @bind="filterAlert" @bind:after="Filter"><option value="-1">كل الحالات</option><option value="0">طبيعي</option><option value="1">أقل من الحد</option><option value="2">تحت نقطة الطلب</option><option value="3">نفد</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             @if (ItemIdParam > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="ClearItemFilter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>عرض الكل</button>}
             <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if (balances == null)
-        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
-        else if (!filtered.Any())
-        {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أرصدة</h4></div>}
-        else
+        @if (isLoadingWarehouses && WarehousesLoadedForCurrentUser)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تحديث خيارات المخازن؛ آخر الخيارات الناجحة ما زالت متاحة.</div>
+        }
+        else if (isLoadingWarehouses)
+        {
+            <div class="msg-luxury" role="status" style="margin:12px 0">جارٍ تحميل خيارات المخازن...</div>
+        }
+        @if (warehousesLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@warehousesLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehousesAsync" disabled="@isLoadingWarehouses">إعادة المحاولة</button>
+            </div>
+        }
+        else if (warehousesLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@warehousesLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+            </div>
+        }
+
+        @if (isLoadingBalances && balances is not null)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">
+                @(IsBalancesForCurrentFilters ? "جارٍ تحديث الأرصدة؛ آخر البيانات الناجحة ما زالت معروضة." : "جارٍ تحميل أرصدة المرشحات الحالية؛ نتيجة المرشحات السابقة محفوظة مؤقتًا.")
+            </div>
+        }
+        @if (balancesLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@balancesLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadBalancesAsync" disabled="@isLoadingBalances">إعادة المحاولة</button>
+            </div>
+        }
+        else if (balancesLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0">
+                <span>@balancesLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button>
+            </div>
+        }
+
+        @if (isLoadingBalances && (balances == null || !IsBalancesForCurrentFilters))
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل أرصدة المخزون...</p></div>}
+        else if (balances is not null && IsBalancesForCurrentFilters && !filtered.Any())
+        {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1.73 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد أرصدة</h4></div>}
+        else if (balances is not null && IsBalancesForCurrentFilters)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -75,7 +157,11 @@ else
                         <thead><tr><th class="th-num">#</th><th>الكود</th><th>الصنف</th><th>النوع</th><th>المخزن</th><th>الوحدة</th><th class="th-center">الرصيد</th><th class="th-center">المحجوز</th><th class="th-center">المتاح</th><th>التكلفة</th><th>القيمة</th><th class="th-center">الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
                         <tbody>
                             @{int n=0;}
-                            @foreach (var b in filtered){n++;
+                            @foreach (var b in filtered)
+                            {
+                                n++;
+                                var batchKey = GetBatchKey(b);
+                                var batchExpanded = expandedBatchKeys.Contains(batchKey);
                                 <tr class="@(b.StockAlert>=2?"row-alert":"") @(b.CurrentQty<0?"row-negative":"")">
                                     <td class="td-num">@n</td>
                                     <td><code class="code-tag-luxury">@b.ItemCode</code></td>
@@ -88,9 +174,84 @@ else
                                     <td class="td-center"><strong class="qty-luxury @(b.AvailableQty<=0?"danger":"")">@b.AvailableQty.ToString("#,##0.##")</strong></td>
                                     <td class="td-muted num">@b.AverageCost.ToString("#,##0.00")</td>
                                     <td><span class="amount-luxury">@b.TotalValue.ToString("#,##0.00")</span></td>
-                                    <td class="td-center"><span class="alert-badge-luxury" style="--ac:@GetAlertColor(b.StockAlert)"><span class="alert-dot" style="background:var(--ac)"></span>@b.StockAlertName</span></td>
-                                    <td class="td-center"><button class="act-btn-luxury view" title="كارت الصنف" @onclick="() => ViewCard(b.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button></td>
+                                    <td class="td-center"><span class="alert-badge-luxury" style="--ac:@GetAlertColor(b.StockAlert)"><span class="alert-dot" style="background:var(--ac)"></span>@GetAlertLabel(b.StockAlert, b.StockAlertName)</span></td>
+                                    <td class="td-center"><div class="balance-actions">
+                                        <button class="act-btn-luxury batch-toggle @(batchExpanded?"open":"")" title="@(batchExpanded ? "إخفاء تفاصيل الباتشات" : "عرض تفاصيل الباتشات")" aria-expanded="@batchExpanded" @onclick="() => ToggleBatchDetailsAsync(b)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/></svg></button>
+                                        <button class="act-btn-luxury view" title="حركات الصنف" @onclick="() => ViewCard(b.ItemID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+                                    </div></td>
                                 </tr>
+                                @if (batchExpanded)
+                                {
+                                    <tr class="batch-detail-row">
+                                        <td colspan="13">
+                                            <div class="batch-detail-panel">
+                                                <div class="batch-detail-heading">
+                                                    <div><strong>تفاصيل أرصدة الباتشات</strong><span>@b.ItemCode — @b.ItemNameAr / @b.WarehouseNameAr</span></div>
+                                                    <span class="batch-readonly-tag">عرض فقط</span>
+                                                </div>
+                                                @if (loadingBatchKeys.Contains(batchKey))
+                                                {
+                                                    <div class="batch-state"><span class="batch-spinner"></span>جاري تحميل أرصدة الباتشات...</div>
+                                                }
+                                                else if (batchDeniedKeys.Contains(batchKey))
+                                                {
+                                                    <div class="batch-state batch-error" role="alert">
+                                                        <span>لا تتوفر صلاحية مؤكدة لعرض تفاصيل الباتشات.</span>
+                                                        <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="() => RetryBatchDetailsAsync(b)" disabled="@loadingBatchKeys.Contains(batchKey)">إعادة فحص الصلاحية</button>
+                                                    </div>
+                                                }
+                                                else if (batchErrors.TryGetValue(batchKey, out var batchError))
+                                                {
+                                                    <div class="batch-state batch-error" role="alert">
+                                                        <span>@batchError</span>
+                                                        <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="() => RetryBatchDetailsAsync(b)" disabled="@loadingBatchKeys.Contains(batchKey)">إعادة المحاولة</button>
+                                                    </div>
+                                                }
+                                                else if (batchBalancesByKey.TryGetValue(batchKey, out var batchRows) && batchRows.Count > 0)
+                                                {
+                                                    var batchQtyTotal = batchRows.Sum(x => x.CurrentQty);
+                                                    var qtyMatches = decimal.Round(batchQtyTotal, 4) == decimal.Round(b.CurrentQty, 4);
+                                                    <div class="batch-summary">
+                                                        <span>الرصيد الإجمالي: <b>@b.CurrentQty.ToString("#,##0.####") @b.PrimaryUnitName</b></span>
+                                                        <span>مجموع الباتشات: <b>@batchQtyTotal.ToString("#,##0.####") @b.PrimaryUnitName</b></span>
+                                                        @if (!qtyMatches)
+                                                        {
+                                                            <strong class="batch-mismatch">فرق @((batchQtyTotal - b.CurrentQty).ToString("+#,##0.####;-#,##0.####;0")) — يلزم مراجعة مصدر الفرق؛ لا تُجرِ تسوية تلقائية.</strong>
+                                                        }
+                                                        else
+                                                        {
+                                                            <strong class="batch-match">مجموع الباتشات مطابق للرصيد الإجمالي</strong>
+                                                        }
+                                                    </div>
+                                                    <div class="batch-table-scroll"><table class="batch-table">
+                                                        <thead><tr><th>رقم الباتش</th><th class="tc">الرصيد</th><th class="tc">تكلفة الوحدة</th><th class="tc">قيمة الباتش</th><th>تاريخ الاستلام</th><th>تاريخ التصنيع</th><th>الصلاحية</th><th>حالة الصلاحية</th><th>المصدر</th><th>رقم المستند</th></tr></thead>
+                                                        <tbody>
+                                                            @foreach (var batch in batchRows)
+                                                            {
+                                                                <tr>
+                                                                    <td><code class="batch-number">@(string.IsNullOrWhiteSpace(batch.BatchNumber) ? "—" : batch.BatchNumber)</code></td>
+                                                                    <td class="tc">@batch.CurrentQty.ToString("#,##0.####") @batch.UnitName</td>
+                                                                    <td class="tc">@batch.UnitCost.ToString("#,##0.00") ج.م</td>
+                                                                    <td class="tc">@batch.BatchValue.ToString("#,##0.00") ج.م</td>
+                                                                    <td>@(batch.ReceiptDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                                                    <td>@(batch.ManufactureDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                                                    <td>@(batch.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                                                    <td><span class="batch-expiry-tag">@(string.IsNullOrWhiteSpace(batch.ExpiryAlertName) ? "—" : batch.ExpiryAlertName)</span></td>
+                                                                    <td>@(string.IsNullOrWhiteSpace(batch.SourceTypeName) ? "—" : batch.SourceTypeName)</td>
+                                                                    <td>@(string.IsNullOrWhiteSpace(batch.SourceDocNumber) ? "—" : batch.SourceDocNumber)</td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table></div>
+                                                }
+                                                else if (batchBalancesByKey.ContainsKey(batchKey))
+                                                {
+                                                    <div class="batch-state">لا توجد أرصدة باتش مسجلة لهذا الصنف في هذا المخزن.</div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
                             }
                         </tbody>
                         <tfoot><tr class="total-row-luxury"><td colspan="10" class="tl"><strong>إجمالي القيمة</strong></td><td class="tl"><span class="amount-luxury total">@filtered.Sum(b => b.TotalValue).ToString("#,##0.00") ج.م</span></td><td colspan="2"></td></tr></tfoot>
@@ -106,12 +267,56 @@ else
             <div class="ml-gold-line"></div>
             <div class="modal-head-luxury"><div class="mh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></div><div><h4>إضافة رصيد افتتاحي</h4><p>إدخال رصيد بداية المدة للصنف في المخزن</p></div><button class="btn-close-x-luxury" @onclick="() => showOBDialog = false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
             <div class="ob-form-luxury">
-                <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@allItems" @bind-SelectedId="obItem" Placeholder="اختر الصنف..." /></div>
-                <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="obWarehouse"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                @if (isLoadingWarehouses && !WarehousesLoadedForCurrentUser)
+                {
+                    <div class="msg-luxury" role="status">جارٍ تحميل خيارات المخازن...</div>
+                }
+                @if (warehousesLoadFailed)
+                {
+                    <div class="form-msg-luxury err" role="alert">@warehousesLoadError <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehousesAsync" disabled="@isLoadingWarehouses">إعادة المحاولة</button></div>
+                }
+                else if (warehousesLoadDenied)
+                {
+                    <div class="form-msg-luxury err" role="alert">@warehousesLoadError</div>
+                }
+                @if (openingBalanceItemsLoadFailed)
+                {
+                    <div class="form-msg-luxury err" role="alert">
+                        @openingBalanceItemsLoadError
+                        <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadOpeningBalanceItemsAsync" disabled="@isLoadingOpeningBalanceItems">إعادة المحاولة</button>
+                    </div>
+                }
+                else if (openingBalanceItemsLoadDenied)
+                {
+                    <div class="form-msg-luxury err" role="alert">@openingBalanceItemsLoadError</div>
+                }
+                <div class="f-field-luxury">
+                    <label class="f-label-luxury required">الصنف</label>
+                    @if (OpeningBalanceItemsLoadedForCurrentUser)
+                    {
+                        @if (allItems!.Count == 0)
+                        {
+                            <div class="msg-luxury" role="status">لا توجد أصناف نشطة متاحة.</div>
+                        }
+                        else
+                        {
+                            <SearchableSelect Items="@allItems" @bind-SelectedId="obItem" Placeholder="اختر الصنف..." />
+                        }
+                    }
+                    else if (isLoadingOpeningBalanceItems)
+                    {
+                        <div class="msg-luxury" role="status">جاري تحميل قائمة الأصناف...</div>
+                    }
+                    else
+                    {
+                        <div class="msg-luxury" role="status">خيارات الأصناف غير متاحة حتى نجاح إعادة التحميل.</div>
+                    }
+                </div>
+                <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="obWarehouse"><option value="0">-- اختر --</option>@if (WarehousesLoadedForCurrentUser){@foreach (var w in warehouses!){<option value="@w.Id">@w.Name</option>}}</select></div>
                 <div class="form-grid-luxury c2"><div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="obQty" step="0.01" /></div><div class="f-field-luxury"><label class="f-label-luxury required">تكلفة الوحدة</label><input type="number" class="f-input-luxury" @bind="obCost" step="0.01" /></div></div>
             </div>
             @if (!string.IsNullOrEmpty(obMsg)){<div class="form-msg-luxury @(obMsgOk?"ok":"err")">@obMsg</div>}
-            <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveOpeningBalance" disabled="@isSavingOB">@if(isSavingOB){<div class="btn-spinner-sm"></div>}حفظ الرصيد</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showOBDialog = false">إلغاء</button></div>
+            <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveOpeningBalance" disabled="@(!WarehousesLoadedForCurrentUser || !OpeningBalanceItemsLoadedForCurrentUser || isSavingOB)">@if(isSavingOB){<div class="btn-spinner-sm"></div>}حفظ الرصيد</button><button class="btn-luxury btn-ghost-luxury" @onclick="() => showOBDialog = false">إلغاء</button></div>
         </div></div>
     }
 
@@ -158,6 +363,7 @@ else
 .act-btn-luxury.view{color:#2563eb;border-color:#bfdbfe}
 .act-btn-luxury.view:hover{background:#eff6ff}
 .act-btn-luxury svg{width:14px;height:14px}
+.balance-actions{display:flex;align-items:center;justify-content:center;gap:5px}.act-btn-luxury.batch-toggle{color:#0f766e;border-color:#99f6e4}.act-btn-luxury.batch-toggle:hover,.act-btn-luxury.batch-toggle.open{background:#ecfeff;border-color:#5eead4}.batch-detail-row>td{padding:0!important;background:#f8fafc;border-bottom:1px solid #e2e8f0}.batch-detail-panel{padding:16px 18px;background:linear-gradient(135deg,#f8fafc,#f3f7fa);border-inline-start:3px solid #0f766e}.batch-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.batch-detail-heading>div{display:flex;flex-direction:column;gap:3px}.batch-detail-heading strong{font-size:.88rem;color:#0f172a}.batch-detail-heading span{font-size:.72rem;color:#64748b}.batch-readonly-tag{padding:4px 9px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#475569!important;font-weight:800;white-space:nowrap}.batch-summary{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;margin-bottom:11px;padding:9px 11px;border:1px solid #dbe4eb;border-radius:10px;background:#fff;font-size:.74rem;color:#475569}.batch-summary b{color:#0f172a;font-family:monospace}.batch-match{color:#047857}.batch-mismatch{color:#b45309}.batch-table-scroll{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff}.batch-table{width:100%;min-width:960px;border-collapse:collapse}.batch-table th{padding:9px 10px;background:#edf2f6;color:#475569;text-align:right;font-size:.71rem;white-space:nowrap}.batch-table td{padding:9px 10px;border-top:1px solid #edf1f4;color:#334155;font-size:.74rem;white-space:nowrap}.batch-table tbody tr:hover{background:#f8fafc}.batch-number{padding:3px 7px;border-radius:6px;background:#eff6ff;color:#1d4ed8;font-weight:800}.batch-expiry-tag{display:inline-block;padding:3px 7px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.68rem;font-weight:800}.batch-state{padding:14px 12px;border:1px dashed #cbd5e1;border-radius:10px;background:#fff;color:#64748b;text-align:center;font-size:.8rem}.batch-state.batch-error{border-color:#fecaca;background:#fef2f2;color:#b91c1c}.batch-spinner{display:inline-block;width:14px;height:14px;margin-inline-end:7px;vertical-align:-2px;border:2px solid #dbe4eb;border-top-color:#0f766e;border-radius:50%;animation:spin .7s linear infinite}
 .total-row-luxury{background:#fcfaf6 !important}
 .total-row-luxury td{border-top:2px solid #e8e2d0;padding:12px}
 .modal-card-luxury{position:relative;background:#fff;border-radius:20px;width:100%;max-width:500px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.2);animation:modalIn .3s ease;border:1px solid #e8e2d0}
@@ -183,6 +389,7 @@ else
 .empty-icon-luxury svg{width:28px;height:28px}
 .no-access-luxury .na-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
 .no-access-luxury .na-icon svg{width:32px;height:32px}
+@@media(max-width:700px){.batch-detail-panel{padding:12px 9px}.batch-detail-heading{align-items:flex-start}.batch-summary{align-items:flex-start;flex-direction:column;gap:5px}.batch-table{min-width:960px}}
 </style>
 
 @code {
@@ -190,15 +397,52 @@ else
 
     private List<StockBalanceDto>? balances;
     private List<StockBalanceDto> filtered = new();
+    private bool isStockPermissionsLoading;
+    private bool stockPermissionsLoadFailed, stockPermissionsLoadDenied;
+    private int stockPermissionsLoadVersion;
+    private string stockPermissionsLoadError = string.Empty;
+    private bool isLoadingBalances = true;
+    private bool balancesLoadFailed, balancesLoadDenied;
+    private int balancesLoadVersion;
+    private int? balancesLoadedWarehouseFilter, balancesLoadedItemTypeFilter;
+    private int? balancesLoadedUserId;
+    private string balancesLoadError = string.Empty;
     private InventoryDashboardDto? dashboard;
+    private bool isDashboardLoading = true;
+    private bool dashboardLoadFailed, dashboardLoadDenied;
+    private int dashboardLoadVersion;
+    private int? dashboardLoadedUserId;
+    private string dashboardLoadError = string.Empty;
+    private bool IsDashboardForCurrentUser =>
+        UserSession.IsLoggedIn && dashboard is not null && dashboardLoadedUserId == UserSession.UserID;
     private ModulePermissionDto? permissions;
     private List<LookupDto>? warehouses;
+    private bool isLoadingWarehouses = true;
+    private bool warehousesLoadFailed, warehousesLoadDenied;
+    private int warehousesLoadVersion;
+    private int? warehousesLoadedUserId;
+    private string warehousesLoadError = string.Empty;
+    private bool WarehousesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && warehouses is not null && warehousesLoadedUserId == UserSession.UserID;
     private List<SearchableItem>? allItems;
+    private bool isLoadingOpeningBalanceItems;
+    private bool openingBalanceItemsLoadFailed, openingBalanceItemsLoadDenied;
+    private int openingBalanceItemsLoadVersion;
+    private int? openingBalanceItemsLoadedUserId;
+    private string openingBalanceItemsLoadError = string.Empty;
+    private bool OpeningBalanceItemsLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && allItems is not null && openingBalanceItemsLoadedUserId == UserSession.UserID;
 
     private string searchText = "";
     private int filterWarehouse = 0;
     private int filterType = 0;
     private int filterAlert = -1;
+
+    private int? SelectedWarehouseFilter => filterWarehouse > 0 ? filterWarehouse : null;
+    private int? SelectedItemTypeFilter => filterType > 0 ? filterType : null;
+    private bool IsBalancesForCurrentFilters =>
+        UserSession.IsLoggedIn && balances is not null && balancesLoadedUserId == UserSession.UserID &&
+        balancesLoadedWarehouseFilter == SelectedWarehouseFilter && balancesLoadedItemTypeFilter == SelectedItemTypeFilter;
 
     private bool isExporting = false;
     private bool isChecking = false;
@@ -214,45 +458,418 @@ else
     private string obMsg = "";
     private bool obMsgOk = true;
 
+    private readonly HashSet<string> expandedBatchKeys = new();
+    private readonly HashSet<string> loadingBatchKeys = new();
+    private readonly HashSet<string> batchDeniedKeys = new();
+    private readonly Dictionary<string, List<BatchBalanceDto>> batchBalancesByKey = new();
+    private readonly Dictionary<string, string> batchErrors = new();
+    private readonly Dictionary<string, int> batchLoadVersions = new();
+    private int batchReadEpoch;
+
     protected override async Task OnInitializedAsync()
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_STOCK");
+        if (await LoadStockBalancesPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockBalancesPageDataAsync(checkStartupAlerts: true);
+    }
 
-        if (permissions != null && permissions.CanView)
+    private async Task<bool> LoadStockBalancesPermissionsAsync()
+    {
+        if (isStockPermissionsLoading) return false;
+
+        var requestVersion = ++stockPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isStockPermissionsLoading = true;
+        stockPermissionsLoadFailed = false;
+        stockPermissionsLoadDenied = false;
+        stockPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
+        try
         {
-            warehouses = await LookupService.GetWarehousesAsync();
-            await LoadData();
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
 
-            if (ItemIdParam > 0 && balances != null)
+            if (!IsCurrentStockBalancesPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            permissions = PermissionService.GetModule("SCR_STOCK");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock balance page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockBalancesPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockPermissionsLoadDenied = true;
+            stockPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock balance page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockBalancesPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockPermissionsLoadFailed = true;
+            stockPermissionsLoadError = "تعذر تحميل صلاحيات المخزون. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == stockPermissionsLoadVersion)
             {
-                filtered = balances.Where(b => b.ItemID == ItemIdParam).ToList();
-                if (!filtered.Any())
-                {
-                    Navigation.NavigateTo($"/stock-movements?itemId={ItemIdParam}");
-                    return;
-                }
+                isStockPermissionsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
             }
+        }
+    }
 
+    private bool IsCurrentStockBalancesPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == stockPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadStockBalancesPermissionsAsync()
+    {
+        if (isStockPermissionsLoading || !stockPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadStockBalancesPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockBalancesPageDataAsync(checkStartupAlerts: false);
+    }
+
+    private void GoToStockBalancesLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private async Task LoadStockBalancesPageDataAsync(bool checkStartupAlerts)
+    {
+        await LoadWarehousesAsync();
+        await LoadData();
+
+        if (ItemIdParam > 0 && balances != null)
+        {
+            filtered = balances.Where(b => b.ItemID == ItemIdParam).ToList();
+            if (!filtered.Any())
+            {
+                Navigation.NavigateTo($"/stock-movements?itemId={ItemIdParam}");
+                return;
+            }
+        }
+
+        if (checkStartupAlerts)
+        {
             try { await InvService.CheckAndSendStockAlertsAsync(UserSession.UserID); }
             catch { }
         }
     }
 
+    private static string GetBatchKey(StockBalanceDto balance) => $"{balance.ItemID}|{balance.WarehouseID}";
+
+    private async Task ToggleBatchDetailsAsync(StockBalanceDto balance)
+    {
+        var key = GetBatchKey(balance);
+        if (expandedBatchKeys.Remove(key)) return;
+
+        expandedBatchKeys.Add(key);
+        if (loadingBatchKeys.Contains(key) || batchBalancesByKey.ContainsKey(key)) return;
+
+        await LoadBatchDetailsAsync(balance);
+    }
+
+    private async Task RetryBatchDetailsAsync(StockBalanceDto balance)
+    {
+        var key = GetBatchKey(balance);
+        if (loadingBatchKeys.Contains(key) ||
+            (!batchErrors.ContainsKey(key) && !batchDeniedKeys.Contains(key))) return;
+
+        expandedBatchKeys.Add(key);
+        await LoadBatchDetailsAsync(balance);
+    }
+
+    private async Task LoadBatchDetailsAsync(StockBalanceDto balance)
+    {
+        var key = GetBatchKey(balance);
+        if (loadingBatchKeys.Contains(key)) return;
+
+        var requestVersion = batchLoadVersions.TryGetValue(key, out var previousVersion)
+            ? previousVersion + 1
+            : 1;
+        batchLoadVersions[key] = requestVersion;
+        var readEpoch = batchReadEpoch;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        loadingBatchKeys.Add(key);
+        batchErrors.Remove(key);
+        batchDeniedKeys.Remove(key);
+        StateHasChanged();
+
+        try
+        {
+            var loadedBalances = await InvService.GetBatchBalancesAsync(balance.ItemID, balance.WarehouseID);
+            if (!IsCurrentBatchLoad(key, requestVersion, readEpoch, userId, pageUri)) return;
+
+            batchBalancesByKey[key] = loadedBalances ?? new List<BatchBalanceDto>();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex,
+                "Access denied loading batch balances for item {ItemID} in warehouse {WarehouseID} for user {UserID}.",
+                balance.ItemID, balance.WarehouseID, userId);
+            if (!IsCurrentBatchLoad(key, requestVersion, readEpoch, userId, pageUri)) return;
+
+            batchBalancesByKey.Remove(key);
+            batchDeniedKeys.Add(key);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load batch balances for item {ItemID} in warehouse {WarehouseID} for user {UserID}.",
+                balance.ItemID, balance.WarehouseID, userId);
+            if (!IsCurrentBatchLoad(key, requestVersion, readEpoch, userId, pageUri)) return;
+
+            batchErrors[key] = "تعذر تحميل تفاصيل الباتشات. أعد المحاولة.";
+        }
+        finally
+        {
+            if (IsCurrentBatchLoad(key, requestVersion, readEpoch, userId, pageUri))
+                loadingBatchKeys.Remove(key);
+        }
+    }
+
+    private bool IsCurrentBatchLoad(string key, int requestVersion, int readEpoch, int userId, string pageUri) =>
+        readEpoch == batchReadEpoch &&
+        batchLoadVersions.TryGetValue(key, out var currentVersion) && currentVersion == requestVersion &&
+        UserSession.IsLoggedIn && UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private void ClearBatchDetails()
+    {
+        batchReadEpoch++;
+        expandedBatchKeys.Clear();
+        loadingBatchKeys.Clear();
+        batchDeniedKeys.Clear();
+        batchBalancesByKey.Clear();
+        batchErrors.Clear();
+        batchLoadVersions.Clear();
+    }
+
+    private async Task<bool> LoadWarehousesAsync()
+    {
+        var requestVersion = ++warehousesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isLoadingWarehouses = true;
+        warehousesLoadFailed = false;
+        warehousesLoadDenied = false;
+        warehousesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedWarehouses = await LookupService.GetWarehousesAsync();
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return false;
+
+            warehouses = loadedWarehouses ?? new List<LookupDto>();
+            warehousesLoadedUserId = userId;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading warehouse options for user {UserID}.", userId);
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return false;
+
+            warehouses = null;
+            warehousesLoadedUserId = null;
+            obWarehouse = 0;
+            warehousesLoadDenied = true;
+            warehousesLoadError = "ليس لديك صلاحية مؤكدة لعرض خيارات المخازن.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load warehouse options for user {UserID}.", userId);
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return false;
+
+            warehousesLoadFailed = true;
+            warehousesLoadError = WarehousesLoadedForCurrentUser
+                ? "تعذر تحديث خيارات المخازن؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات المخازن. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == warehousesLoadVersion)
+            {
+                isLoadingWarehouses = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentWarehousesLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == warehousesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadWarehousesAsync()
+    {
+        if (isLoadingWarehouses || !warehousesLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadWarehousesAsync();
+    }
+
     private async Task LoadData()
     {
-        dashboard = await InvService.GetDashboardAsync();
+        await LoadDashboardAsync();
         await LoadBalances();
+    }
+
+    private async Task<bool> LoadDashboardAsync()
+    {
+        var requestVersion = ++dashboardLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isDashboardLoading = true;
+        dashboardLoadFailed = false;
+        dashboardLoadDenied = false;
+        dashboardLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedDashboard = await InvService.GetDashboardAsync();
+            if (!IsCurrentDashboardLoad(requestVersion, userId, pageUri)) return false;
+
+            dashboard = loadedDashboard ?? new InventoryDashboardDto();
+            dashboardLoadedUserId = userId;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading the inventory dashboard for user {UserID}.", userId);
+            if (!IsCurrentDashboardLoad(requestVersion, userId, pageUri)) return false;
+
+            dashboard = null;
+            dashboardLoadedUserId = null;
+            dashboardLoadDenied = true;
+            dashboardLoadError = "ليس لديك صلاحية عرض ملخص المخزون.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load the inventory dashboard for user {UserID}.", userId);
+            if (!IsCurrentDashboardLoad(requestVersion, userId, pageUri)) return false;
+
+            dashboardLoadFailed = true;
+            dashboardLoadError = dashboard is null || dashboardLoadedUserId != userId
+                ? "تعذر تحميل ملخص المخزون. أعد المحاولة."
+                : "تعذر تحديث ملخص المخزون؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == dashboardLoadVersion)
+            {
+                isDashboardLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentDashboardLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == dashboardLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadDashboardAsync()
+    {
+        if (isDashboardLoading || !dashboardLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadDashboardAsync();
     }
 
     private async Task LoadBalances()
     {
-        balances = await InvService.GetStockBalancesAsync(
-            filterWarehouse > 0 ? filterWarehouse : null,
-            filterType > 0 ? filterType : null,
-            null);
-        Filter();
+        var requestVersion = ++balancesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        var warehouseId = SelectedWarehouseFilter;
+        var itemType = SelectedItemTypeFilter;
+        isLoadingBalances = true;
+        balancesLoadFailed = false;
+        balancesLoadDenied = false;
+        balancesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedBalances = await InvService.GetStockBalancesAsync(warehouseId, itemType, null);
+            if (!IsCurrentStockBalancesLoad(requestVersion, userId, pageUri, warehouseId, itemType)) return;
+
+            balances = loadedBalances ?? new List<StockBalanceDto>();
+            balancesLoadedUserId = userId;
+            balancesLoadedWarehouseFilter = warehouseId;
+            balancesLoadedItemTypeFilter = itemType;
+            ClearBatchDetails();
+            Filter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock balances for user {UserID}.", userId);
+            if (!IsCurrentStockBalancesLoad(requestVersion, userId, pageUri, warehouseId, itemType)) return;
+
+            balances = null;
+            filtered = new List<StockBalanceDto>();
+            balancesLoadedUserId = null;
+            balancesLoadedWarehouseFilter = null;
+            balancesLoadedItemTypeFilter = null;
+            ClearBatchDetails();
+            balancesLoadDenied = true;
+            balancesLoadError = "ليس لديك صلاحية عرض أرصدة المخزون.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock balances for user {UserID}.", userId);
+            if (!IsCurrentStockBalancesLoad(requestVersion, userId, pageUri, warehouseId, itemType)) return;
+
+            balancesLoadFailed = true;
+            balancesLoadError = balances is null || balancesLoadedUserId != userId
+                ? "تعذر تحميل أرصدة المخزون. أعد المحاولة."
+                : IsBalancesForCurrentFilters
+                    ? "تعذر تحديث أرصدة المخزون؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة."
+                    : "تعذر تحميل أرصدة المخزون للمرشحات الحالية؛ آخر نتيجة ناجحة محفوظة لمعايير أخرى. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == balancesLoadVersion)
+            {
+                isLoadingBalances = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentStockBalancesLoad(int requestVersion, int userId, string pageUri, int? warehouseId, int? itemType) =>
+        requestVersion == balancesLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId &&
+        Navigation.Uri == pageUri && SelectedWarehouseFilter == warehouseId && SelectedItemTypeFilter == itemType;
+
+    private async Task RetryLoadBalancesAsync()
+    {
+        if (isLoadingBalances || !balancesLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadBalances();
     }
 
     private void Filter()
@@ -285,7 +902,7 @@ else
         try
         {
             var count = await InvService.CheckAndSendStockAlertsAsync(UserSession.UserID);
-            dashboard = await InvService.GetDashboardAsync();
+            await LoadDashboardAsync();
             toast = count > 0 ? $"تم إرسال {count} تنبيه " : "لا توجد تنبيهات حالياً ";
             toastOk = true;
         }
@@ -295,9 +912,83 @@ else
 
     private async Task ShowOpeningBalance()
     {
-        if (allItems == null) allItems = await LookupService.GetItemsSearchableAsync();
         obItem = 0; obWarehouse = 0; obQty = 0; obCost = 0; obMsg = "";
         showOBDialog = true;
+        StateHasChanged();
+
+        if (!OpeningBalanceItemsLoadedForCurrentUser && !isLoadingOpeningBalanceItems)
+            await LoadOpeningBalanceItemsAsync();
+    }
+
+    private async Task<bool> LoadOpeningBalanceItemsAsync()
+    {
+        if (isLoadingOpeningBalanceItems) return false;
+
+        var requestVersion = ++openingBalanceItemsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isLoadingOpeningBalanceItems = true;
+        openingBalanceItemsLoadFailed = false;
+        openingBalanceItemsLoadDenied = false;
+        openingBalanceItemsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedItems = await LookupService.GetItemsSearchableAsync();
+            if (!IsCurrentOpeningBalanceItemsLoad(requestVersion, userId, pageUri)) return false;
+
+            allItems = loadedItems ?? new List<SearchableItem>();
+            openingBalanceItemsLoadedUserId = userId;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading opening-balance item options for user {UserID}.", userId);
+            if (!IsCurrentOpeningBalanceItemsLoad(requestVersion, userId, pageUri)) return false;
+
+            allItems = null;
+            openingBalanceItemsLoadedUserId = null;
+            obItem = 0;
+            openingBalanceItemsLoadDenied = true;
+            openingBalanceItemsLoadError = "ليس لديك صلاحية مؤكدة لعرض الأصناف لإضافة رصيد افتتاحي.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load opening-balance item options for user {UserID}.", userId);
+            if (!IsCurrentOpeningBalanceItemsLoad(requestVersion, userId, pageUri)) return false;
+
+            openingBalanceItemsLoadFailed = true;
+            openingBalanceItemsLoadError = OpeningBalanceItemsLoadedForCurrentUser
+                ? "تعذر تحديث خيارات الأصناف؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات الأصناف. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == openingBalanceItemsLoadVersion)
+            {
+                isLoadingOpeningBalanceItems = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentOpeningBalanceItemsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == openingBalanceItemsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadOpeningBalanceItemsAsync()
+    {
+        if (isLoadingOpeningBalanceItems || !openingBalanceItemsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadOpeningBalanceItemsAsync();
     }
 
     private async Task SaveOpeningBalance()
@@ -342,7 +1033,7 @@ else
             n++;
             var alertStyle = b.StockAlert switch { 3 => "color:#dc2626;font-weight:800;", 2 => "color:#f97316;font-weight:700;", 1 => "color:#f59e0b;", _ => "" };
             var typeColor = GetItemTypeColor(b.ItemType);
-            rows += $"<tr><td style='text-align:center'>{n}</td><td style='font-weight:700;color:#2563eb'>{b.ItemCode}</td><td style='font-weight:800'>{b.ItemNameAr}</td><td style='font-weight:800;color:{typeColor}'>{b.ItemTypeName}</td><td style='font-weight:600'>{b.WarehouseNameAr}</td><td>{b.PrimaryUnitName}</td><td style='text-align:center;font-weight:800;{(b.CurrentQty <= 0 ? "color:#dc2626;" : "")}'>{b.CurrentQty:#,##0.##}</td><td style='text-align:center'>{b.AvailableQty:#,##0.##}</td><td style='text-align:left;font-family:monospace'>{b.AverageCost:#,##0.00}</td><td style='text-align:left;font-weight:700;font-family:monospace'>{b.TotalValue:#,##0.00}</td><td style='{alertStyle}'>{b.StockAlertName}</td></tr>";
+            rows += $"<tr><td style='text-align:center'>{n}</td><td style='font-weight:700;color:#2563eb'>{b.ItemCode}</td><td style='font-weight:800'>{b.ItemNameAr}</td><td style='font-weight:800;color:{typeColor}'>{b.ItemTypeName}</td><td style='font-weight:600'>{b.WarehouseNameAr}</td><td>{b.PrimaryUnitName}</td><td style='text-align:center;font-weight:800;{(b.CurrentQty <= 0 ? "color:#dc2626;" : "")}'>{b.CurrentQty:#,##0.##}</td><td style='text-align:center'>{b.AvailableQty:#,##0.##}</td><td style='text-align:left;font-family:monospace'>{b.AverageCost:#,##0.00}</td><td style='text-align:left;font-weight:700;font-family:monospace'>{b.TotalValue:#,##0.00}</td><td style='{alertStyle}'>{GetAlertLabel(b.StockAlert, b.StockAlertName)}</td></tr>";
         }
         var totalValue = filtered.Sum(b => b.TotalValue);
         var alertItems = filtered.Count(b => b.StockAlert >= 2);
@@ -351,5 +1042,24 @@ else
     }
 
     private static string GetItemTypeColor(int t) => t switch { 1 => "#1d4ed8", 2 => "#0891b2", 3 => "#f97316", 4 => "#059669", 5 => "#64748b", _ => "#6b7280" };
+
+    private static string GetAlertLabel(int alert, string? label)
+    {
+        var fallback = alert switch
+        {
+            0 => "طبيعي",
+            1 => "أقل من الحد",
+            2 => "تحت نقطة الطلب",
+            3 => "نفد",
+            _ => "غير محدد"
+        };
+        var source = string.IsNullOrWhiteSpace(label) ? fallback : label;
+        // Keep readable Arabic words; emojis and other symbols are intentionally omitted.
+        var words = source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => new string(word.Where(char.IsLetterOrDigit).ToArray()))
+            .Where(word => word.Length > 0);
+        return string.Join(" ", words);
+    }
+
     private static string GetAlertColor(int a) => a switch { 0 => "#10b981", 1 => "#f59e0b", 2 => "#f97316", 3 => "#ef4444", _ => "#6b7280" };
 }

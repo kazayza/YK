@@ -1,17 +1,35 @@
 ﻿using Dapper;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class CurrencyService : BaseDbService
     {
+        private const string ModuleCode = "SCR_CURRENCIES";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<CurrencyService> _logger;
 
-        public CurrencyService(IConfiguration configuration, AuditService audit)
-            : base(configuration) { _audit = audit; }
+        public CurrencyService(
+            IConfiguration configuration,
+            AuditService audit,
+            ModuleAuthorizationService authorization,
+            ILogger<CurrencyService> logger) : base(configuration)
+        {
+            _audit = audit;
+            _authorization = authorization;
+            _logger = logger;
+        }
+
+        private Task RequireCurrencyPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentCurrencyPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<CurrencyListDto>> GetAllAsync(bool includeInactive = false)
         {
+            await RequireCurrentCurrencyPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض العملات.");
             using var connection = CreateConnection();
             var sql = @"SELECT CurrencyID, CurrencyCode, CurrencyNameAr, CurrencyNameEn,
                                Symbol, ExchangeRate, IsDefault, IsActive
@@ -23,6 +41,7 @@ namespace YKCoatings.Services
 
         public async Task<CurrencyEditDto?> GetByIdAsync(int id)
         {
+            await RequireCurrentCurrencyPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض العملات.");
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<CurrencyEditDto>(
                 @"SELECT CurrencyID, CurrencyCode, CurrencyNameAr, CurrencyNameEn,
@@ -32,6 +51,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertAsync(CurrencyEditDto dto, int userId)
         {
+            await RequireCurrencyPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة العملات.");
             using var connection = CreateConnection();
 
             // لو هي الافتراضية، شيل الافتراضية من الباقي
@@ -58,6 +78,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateAsync(CurrencyEditDto dto, int userId)
         {
+            await RequireCurrencyPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل العملات.");
             using var connection = CreateConnection();
 
             if (dto.IsDefault)
@@ -84,14 +105,15 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteAsync(int id, int userId)
 {
+            await RequireCurrencyPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية تعطيل العملات.");
     using var connection = CreateConnection();
 
     var isDefault = await connection.QueryFirstOrDefaultAsync<bool>(
         "SELECT ISNULL(IsDefault, 0) FROM dbo.Currencies WHERE CurrencyID = @ID", new { ID = id });
     if (isDefault) return (false, "لا يمكن حذف العملة الافتراضية");
 
-    // عدّ الاستخدام بأمان
-    int usedCount = 0;
+    // لا نسمح بالتعطيل إذا تعذر التحقق من الاستخدام؛ فالخطأ لا يعني أنها غير مستخدمة.
+    int usedCount;
     try
     {
         usedCount = await connection.QueryFirstOrDefaultAsync<int>(@"
@@ -100,7 +122,13 @@ namespace YKCoatings.Services
                  + ISNULL((SELECT COUNT(*) FROM dbo.PriceLists WHERE CurrencyID = @ID AND IsActive = 1), 0)",
             new { ID = id });
     }
-    catch { usedCount = 0; }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex,
+            "Failed to verify currency usage before deactivation for currency {CurrencyID}.",
+            id);
+        return (false, "تعذر التحقق من استخدام العملة؛ لم يتم تعطيلها.");
+    }
 
     if (usedCount > 0) return (false, $"لا يمكن الحذف — مستخدمة في {usedCount} مكان");
 

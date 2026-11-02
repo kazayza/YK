@@ -4,8 +4,9 @@
 @inject AccountingService AccountingService
 @inject LookupService LookupService
 @inject UserSessionService UserSession
+@inject Microsoft.Extensions.Logging.ILogger<AccountLedger> Logger
 
-<PageTitle>كشف حساب -   </PageTitle>
+<PageTitle>كشف حساب</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -23,9 +24,12 @@ else
                 </div>
             </div>
             <div class="lh-actions">
-                <div class="select-wrap-luxury" style="min-width:280px"><select @bind="selectedAccountId" @bind:after="LoadLedger" style="height:42px;border:1.5px solid rgba(212,175,55,.3);border-radius:12px;padding:0 12px;font-family:'Tajawal';background:#0A0F1E;color:#F5E6C8;min-width:280px"><option value="0">— اختر حساب —</option>@foreach(var acc in accounts){<option value="@acc.Id">@acc.Code - @acc.Name</option>}</select></div>
-                <span class="lh-badge"><span class="lh-dot"></span>@ledger.Count حركة</span>
-                @if(ledger.Any()){<span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669">رصيد: @ledger.LastOrDefault()?.RunningBalance.ToString("#,##0.00")</span>}
+                <div class="select-wrap-luxury" style="min-width:280px"><select @bind="selectedAccountId" @bind:after="LoadLedger" disabled="@isAccountsLoading" style="height:42px;border:1.5px solid rgba(212,175,55,.3);border-radius:12px;padding:0 12px;font-family:'Tajawal';background:#0A0F1E;color:#F5E6C8;min-width:280px"><option value="0">— اختر حساب —</option>@foreach(var acc in accounts){<option value="@acc.Id">@acc.Code - @acc.Name</option>}</select></div>
+                @if (selectedAccountId != 0 && !isAccountsLoading && !isLoading && string.IsNullOrWhiteSpace(accountsLoadError) && string.IsNullOrWhiteSpace(loadError))
+                {
+                    <span class="lh-badge"><span class="lh-dot"></span>@ledger.Count حركة</span>
+                    @if(ledger.Any()){<span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669">رصيد: @ledger.LastOrDefault()?.RunningBalance.ToString("#,##0.00")</span>}
+                }
             </div>
         </div>
     </div>
@@ -38,8 +42,24 @@ else
 
     @if (isLoading)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل كشف الحساب...</p></div>}
+    else if (isAccountsLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل قائمة الحسابات...</p></div>}
+    else if (!string.IsNullOrWhiteSpace(accountsLoadError))
+    {
+        <div class="loading-luxury" role="alert">
+            <p style="color:#dc2626">@accountsLoadError</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadAccountsAsync" disabled="@isAccountsLoading">إعادة محاولة تحميل الحسابات</button>
+        </div>
+    }
     else if (selectedAccountId==0)
     {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div><h4>اختر حساب لعرض كشف الحساب</h4><p class="empty-sub">اختر حساب من القائمة العلوية</p></div>}
+    else if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <div class="loading-luxury" role="alert">
+            <p style="color:#dc2626">@loadError</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadLedger">إعادة المحاولة</button>
+        </div>
+    }
     else if (!ledger.Any())
     {<div class="empty-luxury"><h4>لا توجد حركات لهذا الحساب</h4><p class="empty-sub">في الفترة المحددة</p></div>}
     else
@@ -70,7 +90,7 @@ else
     }
 </div>
 
-@if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='()=>toast=""'><i class=bi-x-lg></i></button></div></div>}
+
 }
 
 <style>
@@ -105,23 +125,64 @@ else
     private List<SearchableItem> accounts = new();
     private List<AccountLedgerDto> ledger = new();
     private bool isLoading = false;
+    private bool isAccountsLoading = true;
+    private string accountsLoadError = string.Empty;
     private int selectedAccountId = 0;
     private DateTime? filterFrom = null;
     private DateTime? filterTo = null;
-    private string toast = "";
-    private bool toastOk = true;
+    private string loadError = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        accounts = await LookupService.GetChartOfAccountsSearchableAsync();
+        await LoadAccountsAsync();
+    }
+
+    private async Task LoadAccountsAsync()
+    {
+        isAccountsLoading = true;
+        accountsLoadError = string.Empty;
+
+        try
+        {
+            accounts = await LookupService.GetChartOfAccountsSearchableAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load account ledger account options.");
+            accountsLoadError = "تعذر تحميل قائمة الحسابات. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isAccountsLoading = false;
+        }
+    }
+
+    private async Task RetryLoadAccountsAsync()
+    {
+        if (isAccountsLoading) return;
+        await LoadAccountsAsync();
     }
 
     private async Task LoadLedger()
     {
-        if(selectedAccountId==0) return;
-        isLoading=true; StateHasChanged();
-        try{ ledger = await AccountingService.GetAccountLedgerAsync(selectedAccountId, filterFrom, filterTo); }
-        catch(Exception ex){ toast=ex.Message; toastOk=false; }
-        finally{ isLoading=false; }
+        if (selectedAccountId == 0) return;
+
+        isLoading = true;
+        loadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            ledger = await AccountingService.GetAccountLedgerAsync(selectedAccountId, filterFrom, filterTo);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load account ledger.");
+            loadError = "تعذر تحميل كشف الحساب. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 }

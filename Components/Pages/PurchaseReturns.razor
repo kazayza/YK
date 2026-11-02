@@ -7,12 +7,25 @@
 @inject PermissionService PermissionService
 @inject PurchaseReturnService ReturnService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<PurchaseReturns> Logger
 @inject IJSRuntime JS
 
 <PageTitle>مرتجعات المشتريات - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
+else if (isPurchaseReturnPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات مرتجعات المشتريات...</p></div>
+}
+else if (purchaseReturnPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg></div><h4>@purchaseReturnPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPurchaseReturnPermissionsAsync" disabled="@isPurchaseReturnPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (purchaseReturnPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>@purchaseReturnPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
 else
@@ -67,6 +80,32 @@ else
             <div class="wf-step active"><span class="wf-num">5</span><span>مرتجع</span></div>
         </div>
 
+        @if (isReturnsLoading && returns != null)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تحديث مرتجعات المشتريات؛ البيانات الناجحة السابقة ما زالت معروضة.</div>
+        }
+        else if (returnsLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@returnsLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadReturnsAsync" disabled="@isReturnsLoading">إعادة المحاولة</button></div>
+        }
+        else if (returnsLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@returnsLoadError</div>
+        }
+
+        @if (isPrintingReturn)
+        {
+            <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تجهيز تقرير المرتجع للطباعة...</div>
+        }
+        else if (returnPrintLoadFailed || returnPrintOpenFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@returnPrintError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryPrintReturnAsync" disabled="@isPrintingReturn">إعادة المحاولة</button></div>
+        }
+        else if (returnPrintDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="margin:12px 0">@returnPrintError</div>
+        }
+
         @if (returns != null)
         {
             <div class="stats-luxury">
@@ -82,14 +121,14 @@ else
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث برقم المرتجع أو المورد أو الفاتورة..." @bind="searchText" @bind:event="oninput" @onkeyup="Filter" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg><select @bind="filterStatus" @bind:after="Filter"><option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">انتظار اعتماد</option><option value="3">معتمد</option><option value="4">ملغي</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterType" @bind:after="Filter"><option value="0">كل الأنواع</option><option value="1">معيب</option><option value="2">غير مطابق</option><option value="3">زائد</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
-            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isReturnsLoading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>@(isReturnsLoading ? "جارٍ التحديث..." : "تحديث")</button>
         </div>
 
-        @if (returns == null)
-        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
-        else if (!filtered.Any())
+        @if (returns == null && isReturnsLoading)
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        else if (returns != null && !filtered.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a2.5 2.5 0 0 1 0 5H11"/></svg></div><h4>لا توجد مرتجعات</h4></div>}
-        else
+        else if (returns != null)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -111,7 +150,7 @@ else
                                     <td class="td-center"><div class="actions-wrap-luxury">
                                         @if (permissions.CanEdit && ret.ReturnStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         else{<button class="act-btn view" title="عرض" @onclick="() => ViewReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
-                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
+                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReturn(ret.ReturnID)" disabled="@isPrintingReturn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
                                         @if (permissions.CanApprove && ret.ReturnStatus == 2){<button class="act-btn approve" title="اعتماد" @onclick="() => EditReturn(ret.ReturnID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
                                         @if (permissions.CanDelete && ret.ReturnStatus == 1){<button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(ret)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                     </div></td>
@@ -222,6 +261,17 @@ else
     private List<PurchaseReturnListDto>? returns;
     private List<PurchaseReturnListDto> filtered = new();
     private ModulePermissionDto? permissions;
+    private int purchaseReturnPermissionsLoadVersion;
+    private bool isPurchaseReturnPermissionsLoading, purchaseReturnPermissionsLoadFailed, purchaseReturnPermissionsLoadDenied;
+    private string purchaseReturnPermissionsLoadError = string.Empty;
+    private int returnsLoadVersion;
+    private bool isReturnsLoading, returnsLoadFailed, returnsLoadDenied;
+    private string returnsLoadError = string.Empty;
+    private int printReturnRequestVersion, printingReturnId, failedPrintReturnId;
+    private bool isPrintingReturn, returnPrintLoadFailed, returnPrintOpenFailed, returnPrintDenied;
+    private string returnPrintError = string.Empty;
+    private string? pendingReturnPrintHtml;
+    private int pendingReturnPrintUserId;
     private string searchText = "";
     private int filterStatus = 0;
     private int filterType = 0;
@@ -235,16 +285,144 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_PRET");
-        if (permissions != null && permissions.CanView) await LoadData();
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadPurchaseReturnPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
     }
+
+    private async Task<bool> LoadPurchaseReturnPermissionsAsync()
+    {
+        if (isPurchaseReturnPermissionsLoading) return false;
+
+        var requestVersion = ++purchaseReturnPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        isPurchaseReturnPermissionsLoading = true;
+        purchaseReturnPermissionsLoadFailed = false;
+        purchaseReturnPermissionsLoadDenied = false;
+        purchaseReturnPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentPurchaseReturnPermissionsRequest(requestVersion, userId)) return false;
+            permissions = PermissionService.GetModule("SCR_PRET");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading purchase return permissions for user {UserID}.", userId);
+            if (!IsCurrentPurchaseReturnPermissionsRequest(requestVersion, userId)) return false;
+            purchaseReturnPermissionsLoadDenied = true;
+            purchaseReturnPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase return permissions for user {UserID}.", userId);
+            if (!IsCurrentPurchaseReturnPermissionsRequest(requestVersion, userId)) return false;
+            purchaseReturnPermissionsLoadFailed = true;
+            purchaseReturnPermissionsLoadError = "تعذر تحميل صلاحيات مرتجعات المشتريات. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == purchaseReturnPermissionsLoadVersion)
+            {
+                isPurchaseReturnPermissionsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseReturnPermissionsRequest(int requestVersion, int userId) =>
+        requestVersion == purchaseReturnPermissionsLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadPurchaseReturnPermissionsAsync()
+    {
+        if (isPurchaseReturnPermissionsLoading) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadPurchaseReturnPermissionsAsync() && permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private void GoToLogin() => Navigation.NavigateTo("/login", forceLoad: true);
 
     private async Task LoadData()
     {
-        returns = await ReturnService.GetReturnsListAsync();
-        Filter();
+        if (isReturnsLoading) return;
+
+        var requestVersion = ++returnsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isReturnsLoading = true;
+        returnsLoadFailed = false;
+        returnsLoadDenied = false;
+        returnsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedReturns = await ReturnService.GetReturnsListAsync();
+            if (!IsCurrentPurchaseReturnsLoad(requestVersion, userId, pageUri)) return;
+            returns = loadedReturns ?? new List<PurchaseReturnListDto>();
+            Filter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading purchase return list for user {UserID}.", userId);
+            if (!IsCurrentPurchaseReturnsLoad(requestVersion, userId, pageUri)) return;
+            returns = null;
+            filtered = new List<PurchaseReturnListDto>();
+            returnsLoadDenied = true;
+            returnsLoadError = "ليس لديك صلاحية عرض مرتجعات المشتريات.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase return list for user {UserID}.", userId);
+            if (!IsCurrentPurchaseReturnsLoad(requestVersion, userId, pageUri)) return;
+            returnsLoadFailed = true;
+            returnsLoadError = returns != null
+                ? "تعذر تحديث مرتجعات المشتريات؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل مرتجعات المشتريات. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == returnsLoadVersion)
+            {
+                isReturnsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseReturnsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == returnsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadReturnsAsync()
+    {
+        if (isReturnsLoading || !returnsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadData();
     }
 
     private void Filter()
@@ -289,12 +467,143 @@ else
 
     private async Task PrintReturn(int id)
     {
+        if (id <= 0 || isPrintingReturn) return;
+
+        var requestVersion = ++printReturnRequestVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        printingReturnId = id;
+        isPrintingReturn = true;
+        returnPrintLoadFailed = false;
+        returnPrintOpenFailed = false;
+        returnPrintDenied = false;
+        returnPrintError = string.Empty;
+        failedPrintReturnId = 0;
+        pendingReturnPrintHtml = null;
+        pendingReturnPrintUserId = 0;
+        StateHasChanged();
+
         try
         {
-            var html = await ReturnService.GenerateReportHtmlAsync(id, UserSession.UserID);
-            await JS.InvokeVoidAsync("printHtml", html);
+            string reportHtml;
+            try
+            {
+                reportHtml = await ReturnService.GenerateReportHtmlAsync(id, userId);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.LogWarning(ex, "Access denied preparing purchase return printout {ReturnID} for user {UserID}.", id, userId);
+                if (!IsCurrentPurchaseReturnPrint(requestVersion, id, userId, pageUri)) return;
+                returnPrintDenied = true;
+                returnPrintError = "ليس لديك صلاحية طباعة مرتجعات المشتريات.";
+                return;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to prepare purchase return printout {ReturnID} for user {UserID}.", id, userId);
+                if (!IsCurrentPurchaseReturnPrint(requestVersion, id, userId, pageUri)) return;
+                returnPrintLoadFailed = true;
+                returnPrintError = "تعذر تجهيز تقرير المرتجع. أعد المحاولة.";
+                failedPrintReturnId = id;
+                return;
+            }
+
+            if (!IsCurrentPurchaseReturnPrint(requestVersion, id, userId, pageUri)) return;
+            pendingReturnPrintHtml = reportHtml;
+            pendingReturnPrintUserId = userId;
+
+            try
+            {
+                await JS.InvokeVoidAsync("printHtml", reportHtml);
+                if (!IsCurrentPurchaseReturnPrint(requestVersion, id, userId, pageUri)) return;
+                pendingReturnPrintHtml = null;
+                pendingReturnPrintUserId = 0;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Prepared purchase return printout {ReturnID} but could not open the browser print window.", id);
+                if (!IsCurrentPurchaseReturnPrint(requestVersion, id, userId, pageUri)) return;
+                returnPrintOpenFailed = true;
+                returnPrintError = "تم تجهيز التقرير لكن تعذر فتح نافذة الطباعة. أعد المحاولة.";
+                failedPrintReturnId = id;
+            }
         }
-        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        finally
+        {
+            if (requestVersion == printReturnRequestVersion)
+            {
+                isPrintingReturn = false;
+                printingReturnId = 0;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentPurchaseReturnPrint(int requestVersion, int returnId, int userId, string pageUri) =>
+        requestVersion == printReturnRequestVersion && printingReturnId == returnId &&
+        UserSession.IsLoggedIn && UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryPrintReturnAsync()
+    {
+        if (isPrintingReturn || failedPrintReturnId <= 0) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (returnPrintLoadFailed)
+        {
+            await PrintReturn(failedPrintReturnId);
+            return;
+        }
+
+        var pendingHtml = pendingReturnPrintHtml;
+        if (!returnPrintOpenFailed || string.IsNullOrWhiteSpace(pendingHtml)) return;
+        if (pendingReturnPrintUserId != UserSession.UserID) return;
+        await RetryOpenPurchaseReturnPrintAsync(failedPrintReturnId, pendingHtml);
+    }
+
+    private async Task RetryOpenPurchaseReturnPrintAsync(int returnId, string reportHtml)
+    {
+        if (returnId <= 0 || isPrintingReturn || !returnPrintOpenFailed ||
+            returnId != failedPrintReturnId || pendingReturnPrintUserId != UserSession.UserID || !UserSession.IsLoggedIn) return;
+
+        var requestVersion = ++printReturnRequestVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        printingReturnId = returnId;
+        isPrintingReturn = true;
+        returnPrintOpenFailed = false;
+        returnPrintError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            if (!IsCurrentPurchaseReturnPrint(requestVersion, returnId, userId, pageUri)) return;
+            await JS.InvokeVoidAsync("printHtml", reportHtml);
+            if (!IsCurrentPurchaseReturnPrint(requestVersion, returnId, userId, pageUri)) return;
+            pendingReturnPrintHtml = null;
+            pendingReturnPrintUserId = 0;
+            failedPrintReturnId = 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not reopen cached purchase return printout {ReturnID} for user {UserID}.", returnId, userId);
+            if (!IsCurrentPurchaseReturnPrint(requestVersion, returnId, userId, pageUri)) return;
+            returnPrintOpenFailed = true;
+            returnPrintError = "تم تجهيز التقرير لكن تعذر فتح نافذة الطباعة. أعد المحاولة.";
+            failedPrintReturnId = returnId;
+        }
+        finally
+        {
+            if (requestVersion == printReturnRequestVersion)
+            {
+                isPrintingReturn = false;
+                printingReturnId = 0;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
     }
 
     private async Task ExportExcel()

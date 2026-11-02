@@ -2,6 +2,8 @@
 @using YKCoatings.Services
 @using YKCoatings.Models
 @inject ProductionOrderService OrderService
+@inject ProductionBatchService BatchService
+@inject MaterialIssueService IssueService
 @inject DashboardService DashboardService
 @inject NavigationManager NavigationManager
 @inject UserSessionService UserSession
@@ -269,6 +271,15 @@ else
                                     </td>
                                     <td class="tc">
                                         <div class="actions-wrap">
+                                            @if (CanShowNextAction(order))
+                                            {
+                                                <button class="next-action-btn" title="@GetNextActionHint(order)"
+                                                        disabled="@isProcessing" @onclick:stopPropagation
+                                                        @onclick="() => OpenNextAction(order)">
+                                                    <i class="bi bi-arrow-up-right-circle-fill"></i>
+                                                    <span>@GetNextActionLabel(order)</span>
+                                                </button>
+                                            }
                                             @if (order.OrderStatus == 1 && permissions.CanEdit)
                                             {
                                                 <button class="ico-btn edit-btn"
@@ -819,6 +830,16 @@ else
     .actions-wrap{
         display: flex; align-items: center; justify-content: center; gap: .4rem;
     }
+.next-action-btn{
+        display:inline-flex; align-items:center; justify-content:center; gap:.35rem;
+        border:1px solid rgba(156,124,46,.35); border-radius:8px;
+        background:linear-gradient(135deg,#171b22,#2b3038); color:#e6c96f;
+        padding:.38rem .58rem; min-height:32px; font-size:.73rem; font-weight:800;
+        white-space:nowrap; cursor:pointer; transition:all .18s ease;
+    }
+.next-action-btn:hover{background:linear-gradient(135deg,#252b34,#3c3320);border-color:#c6a34a;transform:translateY(-1px);}
+.next-action-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.next-action-btn i{font-size:.86rem;}
 .ico-btn{
         width: 32px; height: 32px; border-radius: 8px; border: none;
         background: transparent; display: inline-flex; align-items: center;
@@ -1219,6 +1240,173 @@ private bool trackingLoading = false;
     private void NavigateToEdit(int orderId)
     {
         NavigationManager.NavigateTo($"/production-orders/edit/{orderId}");
+    }
+
+    private bool CanShowNextAction(ProductionOrderListDto order)
+    {
+        if (order.OrderStatus == 2)
+            return PermissionService.CanView("SCR_MATISS") &&
+                (PermissionService.CanAdd("SCR_MATISS") || PermissionService.CanEdit("SCR_MATISS"));
+
+        if (order.OrderStatus is 3 or 4)
+            return CanViewBatchTracking && (PermissionService.CanAdd("SCR_BATCH") ||
+                PermissionService.CanEdit("SCR_BATCH") || PermissionService.CanApprove("SCR_BATCH") ||
+                PermissionService.CanPost("SCR_BATCH"));
+
+        if (order.OrderStatus == 5)
+            return CanViewBatchTracking && (PermissionService.CanEdit("SCR_BATCH") ||
+                PermissionService.CanApprove("SCR_BATCH") || PermissionService.CanPost("SCR_BATCH"));
+
+        return false;
+    }
+
+    private string GetNextActionLabel(ProductionOrderListDto order) => order.OrderStatus switch
+    {
+        2 => "إذن صرف",
+        3 => "فتح / تجهيز دفعة",
+        4 => "متابعة التصنيع",
+        5 => "متابعة الجودة",
+        _ => "الخطوة التالية"
+    };
+
+    private string GetNextActionHint(ProductionOrderListDto order) => order.OrderStatus == 2
+        ? "يفتح إذن الصرف لهذا الأمر أو يعيد فتح مسودته القائمة؛ لن يُحفظ أو يُعتمد تلقائيًا."
+        : "يفتح الدفعة القائمة المناسبة، أو يجهز نموذج دفعة مرتبطًا بالأمر دون حفظ أو بدء تلقائي.";
+
+    private async Task OpenNextAction(ProductionOrderListDto order)
+    {
+        if (!UserSession.IsLoggedIn || isProcessing || !CanShowNextAction(order))
+            return;
+
+        isProcessing = true;
+        try
+        {
+            if (order.OrderStatus == 2)
+            {
+                var draftIssues = await IssueService.GetDraftIssueIdsForOrderAsync(order.ProductionOrderID);
+                if (draftIssues.Count > 1)
+                {
+                    isSuccess = false;
+                    resultMessage = "يوجد أكثر من إذن صرف مسودة لهذا الأمر؛ راجع قائمة الأذون بدل إنشاء إذن إضافي.";
+                    return;
+                }
+                if (draftIssues.Count == 1)
+                {
+                    if (!PermissionService.CanEdit("SCR_MATISS"))
+                    {
+                        isSuccess = false;
+                        resultMessage = "يوجد إذن صرف مسودة لهذا الأمر، لكن صلاحية تعديله غير متاحة لك.";
+                        return;
+                    }
+                    NavigationManager.NavigateTo($"/material-issues/edit/{draftIssues[0]}");
+                    return;
+                }
+
+                var pendingMaterials = await IssueService.GetPendingMaterialsAsync(order.ProductionOrderID);
+                if (!pendingMaterials.Any())
+                {
+                    isSuccess = false;
+                    resultMessage = "لا توجد كميات مواد متبقية للصرف لهذا الأمر؛ راجع تفاصيل أمر التصنيع قبل إنشاء إذن جديد.";
+                    return;
+                }
+                if (!PermissionService.CanAdd("SCR_MATISS"))
+                {
+                    isSuccess = false;
+                    resultMessage = "لا تملك صلاحية إنشاء إذن صرف جديد لهذا الأمر.";
+                    return;
+                }
+
+                NavigationManager.NavigateTo($"/material-issues/edit/0?orderId={order.ProductionOrderID}");
+                return;
+            }
+
+            if (!CanViewBatchTracking)
+                return;
+
+            var relatedBatches = (await BatchService.GetListAsync(order.OrderNumber))
+                .Where(x => x.ProductionOrderID == order.ProductionOrderID)
+                .ToList();
+
+            ProductionBatchListDto? targetBatch = null;
+            var openBatches = relatedBatches.Where(x => x.BatchStatus is 1 or 2 or 3 or 4);
+            if (order.OrderStatus == 5)
+            {
+                targetBatch = openBatches
+                    .OrderBy(x => x.BatchStatus is 3 or 4 ? 0 : x.BatchStatus == 2 ? 1 : 2)
+                    .ThenByDescending(x => x.BatchDate)
+                    .ThenByDescending(x => x.BatchID)
+                    .FirstOrDefault();
+            }
+            else
+            {
+                targetBatch = openBatches
+                    .OrderBy(x => x.BatchStatus == 2 ? 0 : x.BatchStatus == 1 ? 1 : 2)
+                    .ThenByDescending(x => x.BatchDate)
+                    .ThenByDescending(x => x.BatchID)
+                    .FirstOrDefault();
+            }
+
+            if (targetBatch is null)
+            {
+                foreach (var acceptedBatch in relatedBatches.Where(x => x.BatchStatus == 5)
+                             .OrderByDescending(x => x.BatchDate).ThenByDescending(x => x.BatchID))
+                {
+                    if (!await BatchService.HasInventoryEntryAsync(acceptedBatch.BatchID))
+                    {
+                        targetBatch = acceptedBatch;
+                        break;
+                    }
+                }
+            }
+
+            if (targetBatch is not null)
+            {
+                var tab = targetBatch.BatchStatus == 2 ? "stages" :
+                    targetBatch.BatchStatus is 3 or 4 ? "qc" : "main";
+                NavigationManager.NavigateTo($"/production-batches/edit/{targetBatch.BatchID}?tab={tab}");
+                return;
+            }
+
+            if (order.OrderStatus is 3 or 4)
+            {
+                if (!PermissionService.CanAdd("SCR_BATCH"))
+                {
+                    isSuccess = false;
+                    resultMessage = "لا توجد دفعة مفتوحة، ولا تملك صلاحية إنشاء دفعة جديدة.";
+                    return;
+                }
+
+                var eligibleOrders = await BatchService.GetProductionOrdersLookupAsync();
+                if (!eligibleOrders.Any(x => x.Id == order.ProductionOrderID))
+                {
+                    isSuccess = false;
+                    resultMessage = "لا توجد كمية مخططة متبقية لهذا الأمر لإنشاء دفعة أخرى.";
+                    return;
+                }
+
+                NavigationManager.NavigateTo($"/production-batches/edit/0?orderId={order.ProductionOrderID}");
+                return;
+            }
+
+            isSuccess = true;
+            resultMessage = "لا توجد دفعة بانتظار متابعة الجودة أو إدخال المخزن لهذا الأمر.";
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            isSuccess = false;
+            resultMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            resultMessage = $"تعذر فتح الخطوة التالية: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+            if (!string.IsNullOrEmpty(resultMessage))
+                _ = ClearMessage();
+        }
     }
 
     // ===== Approve =====

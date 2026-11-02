@@ -5,11 +5,21 @@
 @inject LookupService LookupService
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
+@inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<CostCenters> Logger
 
-<PageTitle>مراكز التكلفة -   </PageTitle>
+<PageTitle>مراكز التكلفة</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (costCenterPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@costCenterPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterPermissionsAsync" disabled="@isLoadingCostCenterPermissions">إعادة المحاولة</button></div>
+}
+else if (costCenterPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@costCenterPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToCostCentersLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (!permissionChecked)
 {<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات مراكز التكلفة...</p></div>}
 else if (!isAuthorized)
@@ -32,7 +42,7 @@ else
                     <button class="vt-btn @(viewMode==0?"active":"")" @onclick="()=>viewMode=0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>شجري</button>
                     <button class="vt-btn @(viewMode==1?"active":"")" @onclick="()=>viewMode=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>تفصيلي</button>
                 </div>
-                <span class="lh-badge"><span class="lh-dot"></span>@totalCount مركز</span>
+                <span class="lh-badge"><span class="lh-dot"></span>@(CostCenterTreeLoadedForCurrentUser ? totalCount.ToString() : "—") مركز</span>
                 @if (HasCostCenterPermission(p => p.CanAdd))
                 {
                     <button class="btn-luxury btn-primary-luxury" @onclick="ShowAddRoot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>مركز رئيسي</button>
@@ -54,14 +64,72 @@ else
             <button class="btn-luxury btn-ghost-luxury" @onclick="ToggleAll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>@(isAllExpanded?"طي":"توسيع")</button>
         </div>
 
+        @if (isLoadingCostCenterFlatList && CostCenterFlatListLoadedForCurrentUser)
+        {
+            <div class="msg-luxury" role="status">جارٍ تحديث القائمة التفصيلية؛ آخر قائمة ناجحة ما زالت معروضة.</div>
+        }
+        else if (costCenterFlatListLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span>@costCenterFlatListLoadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterFlatListAsync" disabled="@isLoadingCostCenterFlatList">إعادة المحاولة</button>
+            </div>
+        }
+        else if (costCenterFlatListLoadDenied)
+        {
+            <div class="msg-luxury msg-error" role="alert">@costCenterFlatListLoadError</div>
+        }
+        else if (isLoadingCostCenterFlatList)
+        {
+            <div class="empty-sub" role="status">جارٍ تحميل القائمة التفصيلية لمراكز التكلفة...</div>
+        }
+        else if (CostCenterFlatListLoadedForCurrentUser && flatList.Count == 0)
+        {
+            <div class="empty-sub" role="status">لا توجد مراكز تكلفة نشطة متاحة في القائمة التفصيلية.</div>
+        }
+
         @if (viewMode==0)
         {
             <div class="coa-split">
                 <div class="tree-panel">
-                    <div class="panel-head"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M19 3h2a2 2 0 0 1 2 2v2"/></svg>الهيكل الشجري — @filteredCount مركز</h3></div>
+                    <div class="panel-head"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M19 3h2a2 2 0 0 1 2 2v2"/></svg>الهيكل الشجري — @(CostCenterTreeLoadedForCurrentUser ? filteredCount.ToString() : "—") مركز</h3></div>
                     <div class="tree-body">
-                        @if (!filteredRoots.Any()){<div class="empty-mini">لا توجد نتائج</div>}
-                        else{ @foreach(var root in filteredRoots){ @RenderTreeNode(root, 0) } }
+                        @if (isLoadingCostCenterTree && CostCenterTreeLoadedForCurrentUser)
+                        {
+                            <div class="msg-luxury" role="status">جارٍ تحديث شجرة مراكز التكلفة؛ آخر شجرة ناجحة ما زالت معروضة.</div>
+                        }
+                        else if (costCenterTreeLoadFailed && CostCenterTreeLoadedForCurrentUser)
+                        {
+                            <div class="msg-luxury msg-error" role="alert">@costCenterTreeLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterTreeAsync" disabled="@isLoadingCostCenterTree">إعادة المحاولة</button></div>
+                        }
+
+                        @if (isLoadingCostCenterTree && !CostCenterTreeLoadedForCurrentUser)
+                        {
+                            <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل شجرة مراكز التكلفة...</p></div>
+                        }
+                        else if (costCenterTreeLoadFailed && !CostCenterTreeLoadedForCurrentUser)
+                        {
+                            <div class="msg-luxury msg-error" role="alert">@costCenterTreeLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterTreeAsync" disabled="@isLoadingCostCenterTree">إعادة المحاولة</button></div>
+                        }
+                        else if (costCenterTreeLoadDenied)
+                        {
+                            <div class="msg-luxury msg-error" role="alert">@costCenterTreeLoadError</div>
+                        }
+                        else if (!CostCenterTreeLoadedForCurrentUser)
+                        {
+                            <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل شجرة مراكز التكلفة...</p></div>
+                        }
+                        else if (!filteredRoots.Any())
+                        {
+                            <div class="empty-mini">لا توجد نتائج</div>
+                        }
+                        else
+                        {
+                            @foreach (var root in filteredRoots)
+                            {
+                                @RenderTreeNode(root, 0)
+                            }
+                        }
                     </div>
                 </div>
                 <div class="details-panel">
@@ -108,13 +176,40 @@ else
         else
         {
             <div class="table-card-luxury">
-                <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>العرض التفصيلي — @filteredFlat.Count مركز</h3></div>
+                <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>العرض التفصيلي — @(CostCenterFlatListLoadedForCurrentUser ? filteredFlat.Count.ToString() : "—") مركز</h3></div>
                 <div class="table-responsive">
                     <table class="table-luxury detailed">
                         <thead><tr><th class="th-num">#</th><th>الكود</th><th>المركز</th><th>الأب</th><th>المستوى</th><th>القسم</th><th>التصنيف</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
                         <tbody>
                             @{int n=0;}
-                            @foreach(var cc in filteredFlat.OrderBy(c=>c.CostCenterCode)){n++;
+                            @if (!CostCenterFlatListLoadedForCurrentUser)
+                            {
+                                <tr><td colspan="9" class="td-muted" role="status">
+                                    @if (isLoadingCostCenterFlatList)
+                                    {
+                                        <span>جارٍ تحميل القائمة التفصيلية...</span>
+                                    }
+                                    else if (costCenterFlatListLoadDenied)
+                                    {
+                                        <span>@costCenterFlatListLoadError</span>
+                                    }
+                                    else if (costCenterFlatListLoadFailed)
+                                    {
+                                        <span>@costCenterFlatListLoadError</span>
+                                    }
+                                    else
+                                    {
+                                        <span>لم تُحمّل قائمة مراكز التكلفة بعد.</span>
+                                    }
+                                </td></tr>
+                            }
+                            else if (!filteredFlat.Any())
+                            {
+                                <tr><td colspan="9" class="td-muted" role="status">لا توجد نتائج.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach(var cc in filteredFlat.OrderBy(c=>c.CostCenterCode)){n++;
                                 <tr @key="cc.CostCenterID">
                                     <td class="td-num">@n</td>
                                     <td><span class="doc-num-luxury">@cc.CostCenterCode</span></td>
@@ -129,12 +224,34 @@ else
                                         @if (HasCostCenterPermission(p => p.CanEdit)){<button class="act-btn edit" @onclick="()=>ShowEdit(cc.CostCenterID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                     </div></td>
                                 </tr>
+                                }
                             }
                         </tbody>
                     </table>
                 </div>
             </div>
         }
+    }
+
+    @if (isLoadingCostCenterEdit)
+    {
+        <div class="msg-luxury" role="status">جارٍ تحميل تفاصيل مركز التكلفة...</div>
+    }
+    else if (costCenterEditLoadFailed)
+    {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span>@costCenterEditLoadError</span>
+            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterEditAsync" disabled="@isLoadingCostCenterEdit">إعادة المحاولة</button>
+            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="DismissCostCenterEditLoadStatus">إغلاق</button>
+        </div>
+    }
+    else if (costCenterEditLoadDenied)
+    {
+        <div class="msg-luxury msg-error" role="alert"><span>@costCenterEditLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="DismissCostCenterEditLoadStatus">إغلاق</button></div>
+    }
+    else if (costCenterEditNotFound)
+    {
+        <div class="msg-luxury msg-error" role="alert"><span>@costCenterEditLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="DismissCostCenterEditLoadStatus">إغلاق</button></div>
     }
 </div>
 
@@ -146,10 +263,84 @@ else
         <div class="ml-body">
             <div class="form-grid-luxury">
                 <div class="fg"><label>الكود</label><input type="text" @bind="editDto.CostCenterCode" /></div>
-                <div class="fg"><label>الأب</label><select @bind="editDto.ParentCostCenterID"><option value="0">— رئيسي —</option>@foreach(var cc in flatList){<option value="@cc.CostCenterID">@cc.CostCenterCode - @cc.CostCenterNameAr</option>}</select></div>
+                <div class="fg">
+                    <label>الأب</label>
+                    <select @bind="editDto.ParentCostCenterID">
+                        <option value="0">— رئيسي —</option>
+                        @foreach (var center in GetCostCenterParentOptions())
+                        {
+                            <option value="@center.CostCenterID">@center.CostCenterCode - @center.CostCenterNameAr</option>
+                        }
+                    </select>
+                    @if (isLoadingCostCenterFlatList && CostCenterFlatListLoadedForCurrentUser)
+                    {
+                        <div class="empty-sub" role="status">جارٍ تحديث خيارات الأب؛ الخيارات السابقة ما زالت متاحة.</div>
+                    }
+                    else if (isLoadingCostCenterFlatList)
+                    {
+                        <div class="empty-sub" role="status">جارٍ تحميل خيارات الأب...</div>
+                    }
+                    else if (costCenterFlatListLoadFailed)
+                    {
+                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                            <span>@costCenterFlatListLoadError</span>
+                            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterFlatListAsync" disabled="@isLoadingCostCenterFlatList">إعادة المحاولة</button>
+                        </div>
+                    }
+                    else if (costCenterFlatListLoadDenied)
+                    {
+                        <div class="msg-luxury msg-error" role="alert">@costCenterFlatListLoadError</div>
+                    }
+                    else if (CostCenterFlatListLoadedForCurrentUser && flatList.Count == 0)
+                    {
+                        <div class="empty-sub" role="status">لا توجد خيارات لمراكز تكلفة أب.</div>
+                    }
+                </div>
                 <div class="fg full"><label>الاسم عربي *</label><input type="text" @bind="editDto.CostCenterNameAr" /></div>
                 <div class="fg full"><label>الاسم انجليزي</label><input type="text" @bind="editDto.CostCenterNameEn" /></div>
-                <div class="fg"><label>القسم</label><select @bind="editDto.DepartmentID"><option value="0">— اختر —</option>@foreach(var d in departments){<option value="@d.Id">@d.Name</option>}</select></div>
+                <div class="fg">
+                    <label>القسم</label>
+                    <select @bind="editDto.DepartmentID">
+                        <option value="0">— اختر —</option>
+                        @if (CostCenterDepartmentsLoadedForCurrentUser && departments is { } loadedDepartments)
+                        {
+                            @foreach (var department in loadedDepartments)
+                            {
+                                <option value="@department.Id">@department.Name</option>
+                            }
+                        }
+                    </select>
+                    @if (isLoadingCostCenterDepartments && CostCenterDepartmentsLoadedForCurrentUser)
+                    {
+                        <div class="empty-sub" role="status">جارٍ تحديث الأقسام؛ الخيارات السابقة ما زالت متاحة.</div>
+                    }
+                    else if (isLoadingCostCenterDepartments || (isLoading && costCenterDepartmentsLoadVersion == 0))
+                    {
+                        <div class="empty-sub" role="status">جارٍ تحميل الأقسام...</div>
+                    }
+                    else if (costCenterDepartmentsLoadFailed)
+                    {
+                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                            <span>@costCenterDepartmentsLoadError</span>
+                            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCostCenterDepartmentsAsync" disabled="@isLoadingCostCenterDepartments">إعادة المحاولة</button>
+                        </div>
+                    }
+                    else if (costCenterDepartmentsLoadDenied)
+                    {
+                        <div class="msg-luxury msg-error" role="alert">@costCenterDepartmentsLoadError</div>
+                    }
+                    else if (CostCenterDepartmentsLoadedForCurrentUser && departments.Count == 0)
+                    {
+                        <div class="empty-sub" role="status">لا توجد أقسام نشطة متاحة.</div>
+                    }
+                    else if (!CostCenterDepartmentsLoadedForCurrentUser && costCenterDepartmentsLoadVersion == 0)
+                    {
+                        <div class="msg-luxury msg-info" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                            <span>لم تُحمّل خيارات الأقسام بعد.</span>
+                            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadCostCenterDepartmentsAsync" disabled="@isLoadingCostCenterDepartments">تحميل الخيارات</button>
+                        </div>
+                    }
+                </div>
                 <div class="fg"><label>نشط؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsActive" /><span></span></label></div>
             </div>
             @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
@@ -288,7 +479,26 @@ else
     private int totalCount = 0;
     private int filteredCount = 0;
     private bool isLoading = true;
+    private bool isLoadingCostCenterTree;
+    private bool isLoadingCostCenterFlatList;
+    private bool costCenterFlatListLoadFailed, costCenterFlatListLoadDenied;
+    private int costCenterFlatListLoadVersion;
+    private int? costCenterFlatListLoadedUserId;
+    private string costCenterFlatListLoadError = string.Empty;
+    private bool CostCenterFlatListLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && costCenterFlatListLoadedUserId == UserSession.UserID;
+    private bool costCenterTreeLoadFailed, costCenterTreeLoadDenied;
+    private int costCenterTreeLoadVersion;
+    private int? costCenterTreeLoadedUserId;
+    private string costCenterTreeLoadError = string.Empty;
+    private bool CostCenterTreeLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && costCenterTreeLoadedUserId == UserSession.UserID;
     private bool showEdit = false;
+    private bool isLoadingCostCenterEdit;
+    private bool costCenterEditLoadFailed, costCenterEditLoadDenied, costCenterEditNotFound;
+    private int costCenterEditLoadVersion;
+    private int? costCenterEditLoadId;
+    private string costCenterEditLoadError = string.Empty;
     private CostCenterDto editDto = new();
     private bool isSaving = false;
     private string editMsg = "";
@@ -301,28 +511,101 @@ else
     private bool isAllExpanded = true;
     private CostCenterListDto? selected = null;
     private List<LookupDto> departments = new();
+    private bool isLoadingCostCenterDepartments;
+    private bool costCenterDepartmentsLoadFailed, costCenterDepartmentsLoadDenied;
+    private int costCenterDepartmentsLoadVersion;
+    private int? costCenterDepartmentsLoadedUserId;
+    private string costCenterDepartmentsLoadError = string.Empty;
+    private bool CostCenterDepartmentsLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && costCenterDepartmentsLoadedUserId == UserSession.UserID;
+    private bool isLoadingCostCenterPermissions;
+    private bool costCenterPermissionsLoadFailed, costCenterPermissionsLoadDenied;
+    private int costCenterPermissionsLoadVersion;
+    private string costCenterPermissionsLoadError = string.Empty;
     private bool permissionChecked;
     private bool isAuthorized;
 
     protected override async Task OnInitializedAsync()
     {
         if (!UserSession.IsLoggedIn) return;
+        if (await LoadCostCenterPermissionsAsync() && isAuthorized)
+            await LoadData();
+    }
+
+    private async Task<bool> LoadCostCenterPermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+        if (isLoadingCostCenterPermissions) return false;
+
+        var requestVersion = ++costCenterPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isLoadingCostCenterPermissions = true;
+        permissionChecked = false;
+        isAuthorized = false;
+        costCenterPermissionsLoadFailed = false;
+        costCenterPermissionsLoadDenied = false;
+        costCenterPermissionsLoadError = string.Empty;
+        StateHasChanged();
 
         try
         {
             if (!PermissionService.IsLoaded)
-                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                await PermissionService.LoadPermissionsAsync(userId);
 
+            if (!IsCurrentCostCenterPermissionsRequest(requestVersion, userId, pageUri)) return false;
             isAuthorized = HasCostCenterPermission(p => p.CanView);
             permissionChecked = true;
-            if (isAuthorized) await LoadData();
+            return true;
         }
-        catch
+        catch (UnauthorizedAccessException ex)
         {
-            permissionChecked = true;
-            isAuthorized = false;
+            Logger.LogWarning(ex, "Access denied loading cost-center page permissions for user {UserID}.", userId);
+            if (!IsCurrentCostCenterPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            costCenterPermissionsLoadDenied = true;
+            costCenterPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center page permissions for user {UserID}.", userId);
+            if (!IsCurrentCostCenterPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            costCenterPermissionsLoadFailed = true;
+            costCenterPermissionsLoadError = "تعذر تحميل صلاحيات مراكز التكلفة. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == costCenterPermissionsLoadVersion)
+            {
+                isLoadingCostCenterPermissions = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
         }
     }
+
+    private bool IsCurrentCostCenterPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == costCenterPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCostCenterPermissionsAsync()
+    {
+        if (isLoadingCostCenterPermissions || !costCenterPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadCostCenterPermissionsAsync() && isAuthorized)
+            await LoadData();
+    }
+
+    private void GoToCostCentersLogin() => Navigation.NavigateTo("/login", forceLoad: true);
 
     private bool HasCostCenterPermission(Func<ModulePermissionDto, bool> predicate) =>
         PermissionService.Permissions.Any(p =>
@@ -335,16 +618,94 @@ else
         isLoading=true; StateHasChanged();
         try
         {
-            roots = await TreasuryService.GetCostCentersTreeAsync();
-            flatList = await TreasuryService.GetCostCentersFlatAsync();
-            totalCount = CountAll(roots);
-            expandedIds = new HashSet<int>(flatList.Where(c=>c.CenterLevel<=2).Select(c=>c.CostCenterID));
-            if (flatList.Any()) selected = FindNode(roots, flatList.First().CostCenterID);
-            departments = await LookupService.GetDepartmentsAsync();
+            await LoadCostCenterTreeAsync();
+            await LoadCostCenterFlatListAsync();
+            await LoadCostCenterDepartmentsAsync();
             ApplyFilter();
         }
         catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
         finally{ isLoading=false; }
+    }
+
+    private async Task LoadCostCenterTreeAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+        if (isLoadingCostCenterTree) return;
+
+        var requestVersion = ++costCenterTreeLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (costCenterTreeLoadedUserId.HasValue && costCenterTreeLoadedUserId != userId)
+        {
+            roots = new List<CostCenterListDto>();
+            filteredRoots.Clear();
+            selected = null;
+            costCenterTreeLoadedUserId = null;
+            totalCount = 0;
+            filteredCount = 0;
+        }
+
+        isLoadingCostCenterTree = true;
+        costCenterTreeLoadFailed = false;
+        costCenterTreeLoadDenied = false;
+        costCenterTreeLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await TreasuryService.GetCostCentersTreeAsync();
+            if (!IsCurrentCostCenterTreeLoad(requestVersion, userId, pageUri)) return;
+            var selectedId = selected?.CostCenterID ?? flatList.FirstOrDefault()?.CostCenterID;
+            roots = result ?? new List<CostCenterListDto>();
+            costCenterTreeLoadedUserId = userId;
+            totalCount = CountAll(roots);
+            selected = selectedId.HasValue ? FindNode(roots, selectedId.Value) : null;
+            ApplyFilter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading cost-center tree for user {UserID}.", userId);
+            if (!IsCurrentCostCenterTreeLoad(requestVersion, userId, pageUri)) return;
+            roots = new List<CostCenterListDto>();
+            filteredRoots.Clear();
+            selected = null;
+            costCenterTreeLoadedUserId = null;
+            totalCount = 0;
+            filteredCount = 0;
+            costCenterTreeLoadDenied = true;
+            costCenterTreeLoadError = "ليس لديك صلاحية عرض شجرة مراكز التكلفة.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center tree for user {UserID}.", userId);
+            if (!IsCurrentCostCenterTreeLoad(requestVersion, userId, pageUri)) return;
+            costCenterTreeLoadFailed = true;
+            costCenterTreeLoadError = CostCenterTreeLoadedForCurrentUser
+                ? "تعذر تحديث شجرة مراكز التكلفة؛ آخر شجرة ناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل شجرة مراكز التكلفة. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == costCenterTreeLoadVersion)
+            {
+                isLoadingCostCenterTree = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCostCenterTreeLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == costCenterTreeLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCostCenterTreeAsync()
+    {
+        if (isLoadingCostCenterTree || !costCenterTreeLoadFailed) return;
+        await LoadCostCenterTreeAsync();
     }
 
     private void ApplyFilter()
@@ -365,6 +726,149 @@ else
         filteredFlat=flatList.Where(Matches).ToList();
         filteredCount=CountAll(filteredRoots);
         if(!string.IsNullOrWhiteSpace(searchText)){ var all=new HashSet<int>(); void Collect(List<CostCenterListDto> ns){ foreach(var n in ns){ all.Add(n.CostCenterID); Collect(n.Children);} } Collect(filteredRoots); expandedIds=all; isAllExpanded=true; }
+    }
+
+    private async Task LoadCostCenterFlatListAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+        if (isLoadingCostCenterFlatList) return;
+
+        var requestVersion = ++costCenterFlatListLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (costCenterFlatListLoadedUserId.HasValue && costCenterFlatListLoadedUserId != userId)
+        {
+            flatList = new List<CostCenterListDto>();
+            filteredFlat.Clear();
+            costCenterFlatListLoadedUserId = null;
+        }
+
+        isLoadingCostCenterFlatList = true;
+        costCenterFlatListLoadFailed = false;
+        costCenterFlatListLoadDenied = false;
+        costCenterFlatListLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await TreasuryService.GetCostCentersForCostCenterManagementAsync();
+            if (!IsCurrentCostCenterFlatListLoad(requestVersion, userId, pageUri)) return;
+            flatList = result ?? new List<CostCenterListDto>();
+            costCenterFlatListLoadedUserId = userId;
+            expandedIds = new HashSet<int>(flatList.Where(c => c.CenterLevel <= 2).Select(c => c.CostCenterID));
+            if (flatList.Any()) selected = FindNode(roots, flatList.First().CostCenterID);
+            ApplyFilter();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading detailed cost-center list for user {UserID}.", userId);
+            if (!IsCurrentCostCenterFlatListLoad(requestVersion, userId, pageUri)) return;
+            flatList = new List<CostCenterListDto>();
+            filteredFlat.Clear();
+            costCenterFlatListLoadedUserId = null;
+            costCenterFlatListLoadDenied = true;
+            costCenterFlatListLoadError = "ليس لديك صلاحية قراءة القائمة التفصيلية لمراكز التكلفة.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load detailed cost-center list for user {UserID}.", userId);
+            if (!IsCurrentCostCenterFlatListLoad(requestVersion, userId, pageUri)) return;
+            costCenterFlatListLoadFailed = true;
+            costCenterFlatListLoadError = CostCenterFlatListLoadedForCurrentUser
+                ? "تعذر تحديث القائمة التفصيلية؛ آخر قائمة ناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل القائمة التفصيلية لمراكز التكلفة. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == costCenterFlatListLoadVersion)
+            {
+                isLoadingCostCenterFlatList = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCostCenterFlatListLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == costCenterFlatListLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCostCenterFlatListAsync()
+    {
+        if (isLoadingCostCenterFlatList || !costCenterFlatListLoadFailed) return;
+        await LoadCostCenterFlatListAsync();
+    }
+
+    private async Task LoadCostCenterDepartmentsAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+        if (isLoadingCostCenterDepartments) return;
+
+        var requestVersion = ++costCenterDepartmentsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (costCenterDepartmentsLoadedUserId.HasValue && costCenterDepartmentsLoadedUserId != userId)
+        {
+            departments = new List<LookupDto>();
+            costCenterDepartmentsLoadedUserId = null;
+        }
+
+        isLoadingCostCenterDepartments = true;
+        costCenterDepartmentsLoadFailed = false;
+        costCenterDepartmentsLoadDenied = false;
+        costCenterDepartmentsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetDepartmentsAsync();
+            if (!IsCurrentCostCenterDepartmentsLoad(requestVersion, userId, pageUri)) return;
+            departments = result ?? new List<LookupDto>();
+            costCenterDepartmentsLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading cost-center department options for user {UserID}.", userId);
+            if (!IsCurrentCostCenterDepartmentsLoad(requestVersion, userId, pageUri)) return;
+            departments = new List<LookupDto>();
+            costCenterDepartmentsLoadedUserId = null;
+            costCenterDepartmentsLoadDenied = true;
+            costCenterDepartmentsLoadError = "ليس لديك صلاحية قراءة قائمة الأقسام.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center department options for user {UserID}.", userId);
+            if (!IsCurrentCostCenterDepartmentsLoad(requestVersion, userId, pageUri)) return;
+            costCenterDepartmentsLoadFailed = true;
+            costCenterDepartmentsLoadError = CostCenterDepartmentsLoadedForCurrentUser
+                ? "تعذر تحديث قائمة الأقسام؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات الأقسام. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == costCenterDepartmentsLoadVersion)
+            {
+                isLoadingCostCenterDepartments = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCostCenterDepartmentsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == costCenterDepartmentsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCostCenterDepartmentsAsync()
+    {
+        if (isLoadingCostCenterDepartments || !costCenterDepartmentsLoadFailed) return;
+        await LoadCostCenterDepartmentsAsync();
     }
 
     private int CountAll(List<CostCenterListDto> nodes){ int c=0; foreach(var n in nodes){ c++; c+=CountAll(n.Children);} return c; }
@@ -391,9 +895,136 @@ else
         </div>;
     };
 
-    private void ShowAddRoot(){ editDto=new CostCenterDto{ IsActive=true, CenterLevel=1 }; editMsg=""; showEdit=true; }
-    private void ShowAddChild(int parentId){ var p=flatList.FirstOrDefault(c=>c.CostCenterID==parentId); editDto=new CostCenterDto{ IsActive=true, ParentCostCenterID=parentId, CenterLevel=(p?.CenterLevel??0)+1 }; editMsg=""; showEdit=true; }
-    private async Task ShowEdit(int id){ var dto=await TreasuryService.GetCostCenterByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+    private IEnumerable<CostCenterListDto> GetCostCenterParentOptions()
+    {
+        if (editDto.CostCenterID <= 0) return flatList;
+
+        var excludedIds = new HashSet<int> { editDto.CostCenterID };
+        bool added;
+        do
+        {
+            added = false;
+            foreach (var center in flatList)
+            {
+                if (center.ParentCostCenterID.HasValue
+                    && excludedIds.Contains(center.ParentCostCenterID.Value)
+                    && excludedIds.Add(center.CostCenterID))
+                    added = true;
+            }
+        } while (added);
+
+        return flatList.Where(center => !excludedIds.Contains(center.CostCenterID));
+    }
+
+    private void ShowAddRoot()
+    {
+        ResetCostCenterEditLoadStatus();
+        editDto = new CostCenterDto { IsActive = true, CenterLevel = 1 };
+        editMsg = "";
+        showEdit = true;
+    }
+
+    private void ShowAddChild(int parentId)
+    {
+        ResetCostCenterEditLoadStatus();
+        var parent = flatList.FirstOrDefault(center => center.CostCenterID == parentId);
+        editDto = new CostCenterDto
+        {
+            IsActive = true,
+            ParentCostCenterID = parentId,
+            CenterLevel = (parent?.CenterLevel ?? 0) + 1
+        };
+        editMsg = "";
+        showEdit = true;
+    }
+
+    private Task ShowEdit(int id) => id > 0 ? LoadCostCenterForEditAsync(id) : Task.CompletedTask;
+
+    private async Task LoadCostCenterForEditAsync(int costCenterId)
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++costCenterEditLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        costCenterEditLoadId = costCenterId;
+        isLoadingCostCenterEdit = true;
+        costCenterEditLoadFailed = false;
+        costCenterEditLoadDenied = false;
+        costCenterEditNotFound = false;
+        costCenterEditLoadError = string.Empty;
+        showEdit = false;
+        StateHasChanged();
+
+        try
+        {
+            var result = await TreasuryService.GetCostCenterByIdAsync(costCenterId);
+            if (!IsCurrentCostCenterEditLoad(requestVersion, userId, pageUri, costCenterId)) return;
+            if (result is null)
+            {
+                costCenterEditLoadId = null;
+                costCenterEditNotFound = true;
+                costCenterEditLoadError = "مركز التكلفة غير موجود.";
+                return;
+            }
+
+            editDto = result;
+            editMsg = string.Empty;
+            editOk = true;
+            costCenterEditLoadId = null;
+            showEdit = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading cost-center details for user {UserID}, cost center {CostCenterID}.", userId, costCenterId);
+            if (!IsCurrentCostCenterEditLoad(requestVersion, userId, pageUri, costCenterId)) return;
+            costCenterEditLoadId = null;
+            costCenterEditLoadDenied = true;
+            costCenterEditLoadError = "ليس لديك صلاحية عرض تفاصيل مركز التكلفة.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cost-center details for user {UserID}, cost center {CostCenterID}.", userId, costCenterId);
+            if (!IsCurrentCostCenterEditLoad(requestVersion, userId, pageUri, costCenterId)) return;
+            costCenterEditLoadFailed = true;
+            costCenterEditLoadError = "تعذر تحميل تفاصيل مركز التكلفة. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == costCenterEditLoadVersion)
+            {
+                isLoadingCostCenterEdit = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCostCenterEditLoad(int requestVersion, int userId, string pageUri, int costCenterId) =>
+        requestVersion == costCenterEditLoadVersion && costCenterEditLoadId == costCenterId &&
+        UserSession.IsLoggedIn && UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCostCenterEditAsync()
+    {
+        if (isLoadingCostCenterEdit || !costCenterEditLoadFailed || !costCenterEditLoadId.HasValue) return;
+        await LoadCostCenterForEditAsync(costCenterEditLoadId.Value);
+    }
+
+    private void ResetCostCenterEditLoadStatus()
+    {
+        costCenterEditLoadVersion++;
+        costCenterEditLoadId = null;
+        isLoadingCostCenterEdit = false;
+        costCenterEditLoadFailed = false;
+        costCenterEditLoadDenied = false;
+        costCenterEditNotFound = false;
+        costCenterEditLoadError = string.Empty;
+    }
+
+    private void DismissCostCenterEditLoadStatus() => ResetCostCenterEditLoadStatus();
     private void CloseEdit(){ showEdit=false; }
 
     private async Task Save()

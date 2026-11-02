@@ -665,6 +665,8 @@ else
         int n = 1;
         foreach (var d in details)
         {
+            var batchNumber = System.Net.WebUtility.HtmlEncode(d.BatchNumber ?? "—");
+            var expiryDate = d.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—";
             rows.Append($@"<tr>
                 <td style='{tdStyle}text-align:center;color:#94a3b8;'>{n++}</td>
                 <td style='{tdStyle}font-family:monospace;color:#9C7C2E;font-weight:700;'>{d.ItemCode}</td>
@@ -672,6 +674,8 @@ else
                 <td style='{tdStyle}text-align:center;'>{d.MaterialTypeName}</td>
                 <td style='{tdStyle}text-align:center;font-weight:600;'>{d.RequiredQty:N3}</td>
                 <td style='{tdStyle}text-align:center;color:#10b981;font-weight:700;'>{d.IssueQty:N3}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{batchNumber}</td>
+                <td style='{tdStyle}text-align:center;color:#64748b;'>{expiryDate}</td>
                 <td style='{tdStyle}text-align:center;color:#64748b;'>{d.UnitName}</td>
                 <td style='{tdStyle}text-align:left;font-weight:700;color:#10b981;'>{d.LineCost:N2}</td>
             </tr>");
@@ -701,9 +705,10 @@ else
 <thead><tr style='background:#f8f6f0;'>
 <th style='{thStyle}text-align:center;width:40px;'>#</th><th style='{thStyle}'>كود الصنف</th><th style='{thStyle}'>اسم الصنف</th><th style='{thStyle}text-align:center;'>النوع</th>
 <th style='{thStyle}text-align:center;'>المطلوب</th><th style='{thStyle}text-align:center;'>المصروف</th>
+<th style='{thStyle}text-align:center;'>دفعة FIFO</th><th style='{thStyle}text-align:center;'>الصلاحية</th>
 <th style='{thStyle}text-align:center;'>الوحدة</th><th style='{thStyle}text-align:left;'>التكلفة (ج.م)</th>
 </tr></thead><tbody>{rows}</tbody>
-<tfoot><tr style='background:#f8f6f0;'><td colspan='7' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>الإجمالي</td>
+<tfoot><tr style='background:#f8f6f0;'><td colspan='9' style='{tdStyle}font-weight:700;text-align:left;color:#374151;'>الإجمالي</td>
 <td style='{tdStyle}text-align:left;font-weight:800;color:#10b981;font-size:14px;'>{issue.TotalCost:N2}</td></tr></tfoot>
 </table>
 <div style='margin-top:40px;padding-top:18px;border-top:2px solid #e8e2d0;text-align:center;color:#94a3b8;font-size:12px;'>

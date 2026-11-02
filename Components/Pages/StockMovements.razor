@@ -10,11 +10,24 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<StockMovements> Logger
 
-<PageTitle>حركات المخزون - واي كي كوتينج   </PageTitle>
+<PageTitle>حركات المخزون - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
+else if (isStockMovementPermissionsLoading)
+{
+    <div class="loading-luxury" role="status" dir="rtl"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات حركات المخزون...</p></div>
+}
+else if (stockMovementPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockMovementPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadStockMovementPermissionsAsync" disabled="@isStockMovementPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (stockMovementPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockMovementPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToStockMovementsLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
@@ -29,7 +42,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">@(selectedItemId > 0 ? "كارت صنف" : "حركات المخزون")</h2><p class="lh-subtitle">@(selectedItemId > 0 ? "جميع حركات الصنف — كارت تفصيلي" : "متابعة حركات الدخول والخروج لحظياً")</p></div>
                 </div>
                 <div class="lh-actions">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count حركة</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(IsMovementsForCurrentFilters ? filtered.Count.ToString() : "—") حركة</span>
                     @if (permissions.CanExport){<button class="btn-luxury btn-export-luxury" @onclick="ExportExcel" disabled="@isExporting">@if(isExporting){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>}Excel</button>}
                     @if (selectedItemId > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="ClearItemFilter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>عرض الكل</button>}
                 </div>
@@ -38,16 +51,51 @@ else
 
         <div class="filter-luxury">
             <div class="search-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="text" placeholder="بحث بالصنف أو المستند..." @bind="searchText" @bind:event="oninput" @onkeyup="FilterLocal" />@if (!string.IsNullOrEmpty(searchText)){<button class="clear-search-luxury" @onclick="ClearSearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>}</div>
-            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/></svg><select @bind="filterWarehouse" @bind:after="LoadMovements"><option value="0">كل المخازن</option>@if(warehouses!=null){@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/></svg><select @bind="filterWarehouse" @bind:after="LoadMovements"><option value="0">كل المخازن</option>@if(WarehousesLoadedForCurrentUser){@foreach(var w in warehouses!){<option value="@w.Id">@w.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <div class="select-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select @bind="filterType" @bind:after="LoadMovements"><option value="0">كل الأنواع</option><option value="1">استلام مشتريات</option><option value="2">صرف للإنتاج</option><option value="3">استلام إنتاج</option><option value="4">صرف للبيع</option><option value="5">مرتجع مشتريات</option><option value="6">مرتجع مبيعات</option><option value="7">تحويل صادر</option><option value="8">تحويل وارد</option><option value="9">تسوية زيادة</option><option value="10">تسوية نقص</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
             <input type="date" class="date-input-luxury" @bind="filterFrom" @bind:after="LoadMovements" />
             <input type="date" class="date-input-luxury" @bind="filterTo" @bind:after="LoadMovements" />
             <button class="btn-luxury btn-ghost-luxury" @onclick="LoadMovements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if(movements==null){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
-        else if(!filtered.Any()){<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h4>لا توجد حركات</h4></div>}
-        else
+        @if (isLoadingWarehouses && warehouses is null)
+        {
+            <div class="loading-luxury" role="status"><p>جارٍ تحميل خيارات المخازن؛ يمكن متابعة قراءة الحركات.</p></div>
+        }
+        else if (isLoadingWarehouses && WarehousesLoadedForCurrentUser)
+        {
+            <div class="loading-luxury" role="status"><p>جارٍ تحديث خيارات المخازن؛ آخر الخيارات الناجحة ما زالت متاحة.</p></div>
+        }
+        else if (warehousesLoadFailed)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@warehousesLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehousesAsync" disabled="@isLoadingWarehouses">إعادة المحاولة</button></div>
+        }
+        else if (warehousesLoadDenied)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@warehousesLoadError</h4></div>
+        }
+
+        @if (isLoadingMovements && movements is not null)
+        {
+            <div class="loading-luxury" role="status"><p>@(IsMovementsForCurrentFilters ? "جاري تحديث حركات المخزون؛ آخر نتيجة ناجحة ما زالت معروضة." : "جاري تحميل الحركات وفق المرشحات الحالية؛ لن تُعرض نتائج المرشحات السابقة على أنها حالية.")</p></div>
+        }
+        @if (movementsLoadFailed)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@movementsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadMovementsAsync" disabled="@isLoadingMovements">إعادة المحاولة</button></div>
+        }
+        @if (movementsLoadDenied)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@movementsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToStockMovementsDashboard">العودة للرئيسية</button></div>
+        }
+        @if (isLoadingMovements && (movements is null || !IsMovementsForCurrentFilters))
+        {
+            <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل حركات المخزون...</p></div>
+        }
+        else if (movements is not null && IsMovementsForCurrentFilters && !filtered.Any())
+        {
+            <div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h4>لا توجد حركات</h4></div>
+        }
+        else if (movements is not null && IsMovementsForCurrentFilters)
         {
             <div class="table-card-luxury">
                 <div class="table-responsive">
@@ -120,22 +168,122 @@ else
 
     private List<StockMovementDto>? movements;
     private List<StockMovementDto> filtered = new();
+    private bool isStockMovementPermissionsLoading;
+    private bool stockMovementPermissionsLoadFailed, stockMovementPermissionsLoadDenied;
+    private int stockMovementPermissionsLoadVersion;
+    private string stockMovementPermissionsLoadError = string.Empty;
+    private bool isLoadingMovements = true;
+    private bool movementsLoadFailed, movementsLoadDenied;
+    private int movementsLoadVersion;
+    private string movementsLoadError = string.Empty;
+    private int? movementsLoadedItemId, movementsLoadedWarehouseId, movementsLoadedTransType;
+    private DateTime? movementsLoadedFromDate, movementsLoadedToDate;
+    private int? movementsLoadedUserId;
     private ModulePermissionDto? permissions;
     private List<LookupDto>? warehouses;
+    private bool isLoadingWarehouses = true;
+    private bool warehousesLoadFailed, warehousesLoadDenied;
+    private int warehousesLoadVersion;
+    private string warehousesLoadError = string.Empty;
+    private int? warehousesLoadedUserId;
+    private bool WarehousesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && warehouses is not null && warehousesLoadedUserId == UserSession.UserID;
     private string searchText = "";
     private int filterWarehouse = 0, filterType = 0;
     private DateTime? filterFrom, filterTo;
     private int selectedItemId = 0;
+    private int? SelectedMovementItemId => selectedItemId > 0 ? selectedItemId : null;
+    private int? SelectedMovementWarehouseId => filterWarehouse > 0 ? filterWarehouse : null;
+    private int? SelectedMovementTransType => filterType > 0 ? filterType : null;
+    private bool IsMovementsForCurrentFilters =>
+        UserSession.IsLoggedIn && movements is not null && movementsLoadedUserId == UserSession.UserID &&
+        movementsLoadedItemId == SelectedMovementItemId && movementsLoadedWarehouseId == SelectedMovementWarehouseId &&
+        movementsLoadedTransType == SelectedMovementTransType && movementsLoadedFromDate == filterFrom &&
+        movementsLoadedToDate == filterTo;
     private bool isExporting = false;
     private string toast = ""; private bool toastOk = true;
 
     protected override async Task OnInitializedAsync()
     {
         if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_TRANS");
-        if (permissions == null || !permissions.CanView) return;
-        warehouses = await LookupService.GetWarehousesAsync();
+        if (await LoadStockMovementPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockMovementPageDataAsync();
+    }
+
+    private async Task<bool> LoadStockMovementPermissionsAsync()
+    {
+        if (isStockMovementPermissionsLoading) return false;
+
+        var requestVersion = ++stockMovementPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isStockMovementPermissionsLoading = true;
+        stockMovementPermissionsLoadFailed = false;
+        stockMovementPermissionsLoadDenied = false;
+        stockMovementPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentStockMovementPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            permissions = PermissionService.GetModule("SCR_TRANS");
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock movement page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockMovementPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockMovementPermissionsLoadDenied = true;
+            stockMovementPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock movement page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockMovementPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockMovementPermissionsLoadFailed = true;
+            stockMovementPermissionsLoadError = "تعذر تحميل صلاحيات حركات المخزون. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == stockMovementPermissionsLoadVersion)
+            {
+                isStockMovementPermissionsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentStockMovementPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == stockMovementPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadStockMovementPermissionsAsync()
+    {
+        if (isStockMovementPermissionsLoading || !stockMovementPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadStockMovementPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockMovementPageDataAsync();
+    }
+
+    private void GoToStockMovementsLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private async Task LoadStockMovementPageDataAsync()
+    {
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        await LoadWarehousesAsync();
+        if (!UserSession.IsLoggedIn || UserSession.UserID != userId || Navigation.Uri != pageUri) return;
 
         if (ItemIdParam > 0) selectedItemId = ItemIdParam;
         else
@@ -147,15 +295,175 @@ else
         await LoadMovements();
     }
 
+    private async Task LoadWarehousesAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++warehousesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (warehousesLoadedUserId.HasValue && warehousesLoadedUserId != userId)
+        {
+            warehouses = null;
+            warehousesLoadedUserId = null;
+            filterWarehouse = 0;
+        }
+
+        isLoadingWarehouses = true;
+        warehousesLoadFailed = false;
+        warehousesLoadDenied = false;
+        warehousesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetWarehousesAsync();
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return;
+            warehouses = result;
+            warehousesLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock movement warehouse options for user {UserID}.", userId);
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return;
+            warehouses = null;
+            warehousesLoadedUserId = null;
+            filterWarehouse = 0;
+            warehousesLoadDenied = true;
+            warehousesLoadError = "تعذر تحميل خيارات المخازن لهذه الجلسة؛ يمكنك متابعة عرض الحركات بدون مرشح مخزن.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock movement warehouse options for user {UserID}.", userId);
+            if (!IsCurrentWarehousesLoad(requestVersion, userId, pageUri)) return;
+            warehousesLoadFailed = true;
+            warehousesLoadError = WarehousesLoadedForCurrentUser
+                ? "تعذر تحديث خيارات المخازن؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات المخازن؛ يمكنك متابعة قراءة الحركات وإعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == warehousesLoadVersion)
+            {
+                isLoadingWarehouses = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentWarehousesLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == warehousesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadWarehousesAsync()
+    {
+        if (isLoadingWarehouses || !warehousesLoadFailed) return;
+        await LoadWarehousesAsync();
+    }
+
     private async Task LoadMovements()
     {
-        movements = await InvService.GetMovementsAsync(
-            selectedItemId > 0 ? selectedItemId : null,
-            filterWarehouse > 0 ? filterWarehouse : null,
-            filterType > 0 ? filterType : null,
-            filterFrom, filterTo);
-        FilterLocal();
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++movementsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        var itemIdParam = ItemIdParam;
+        int? itemId = SelectedMovementItemId;
+        int? warehouseId = SelectedMovementWarehouseId;
+        int? transType = SelectedMovementTransType;
+        var fromDate = filterFrom;
+        var toDate = filterTo;
+
+        if (movementsLoadedUserId.HasValue && movementsLoadedUserId != userId)
+        {
+            movements = null;
+            filtered.Clear();
+            ClearLoadedMovementFilters();
+        }
+
+        isLoadingMovements = true;
+        movementsLoadFailed = false;
+        movementsLoadDenied = false;
+        movementsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await InvService.GetMovementsAsync(itemId, warehouseId, transType, fromDate, toDate);
+            if (!IsCurrentMovementsLoad(requestVersion, userId, pageUri, itemIdParam, itemId, warehouseId, transType, fromDate, toDate)) return;
+
+            movements = result;
+            movementsLoadedItemId = itemId;
+            movementsLoadedWarehouseId = warehouseId;
+            movementsLoadedTransType = transType;
+            movementsLoadedFromDate = fromDate;
+            movementsLoadedToDate = toDate;
+            movementsLoadedUserId = userId;
+            FilterLocal();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock movements for user {UserID}.", userId);
+            if (!IsCurrentMovementsLoad(requestVersion, userId, pageUri, itemIdParam, itemId, warehouseId, transType, fromDate, toDate)) return;
+            movements = null;
+            filtered.Clear();
+            ClearLoadedMovementFilters();
+            movementsLoadDenied = true;
+            movementsLoadError = "ليس لديك صلاحية عرض حركات المخزون.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock movements for user {UserID}.", userId);
+            if (!IsCurrentMovementsLoad(requestVersion, userId, pageUri, itemIdParam, itemId, warehouseId, transType, fromDate, toDate)) return;
+            movementsLoadFailed = true;
+            movementsLoadError = movements is not null && !IsMovementsForCurrentFilters
+                ? "تعذر تحميل الحركات وفق المرشحات الحالية. آخر نتيجة ناجحة تخص مرشحات سابقة؛ أعد المحاولة."
+                : "تعذر تحميل حركات المخزون. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == movementsLoadVersion)
+            {
+                isLoadingMovements = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
     }
+
+    private bool IsCurrentMovementsLoad(
+        int requestVersion, int userId, string pageUri, int itemIdParam, int? itemId,
+        int? warehouseId, int? transType, DateTime? fromDate, DateTime? toDate) =>
+        requestVersion == movementsLoadVersion && UserSession.IsLoggedIn && UserSession.UserID == userId &&
+        Navigation.Uri == pageUri && ItemIdParam == itemIdParam && SelectedMovementItemId == itemId &&
+        SelectedMovementWarehouseId == warehouseId && SelectedMovementTransType == transType &&
+        filterFrom == fromDate && filterTo == toDate;
+
+    private void ClearLoadedMovementFilters()
+    {
+        movementsLoadedItemId = null;
+        movementsLoadedWarehouseId = null;
+        movementsLoadedTransType = null;
+        movementsLoadedFromDate = null;
+        movementsLoadedToDate = null;
+        movementsLoadedUserId = null;
+    }
+
+    private async Task RetryLoadMovementsAsync()
+    {
+        if (isLoadingMovements || !movementsLoadFailed) return;
+        await LoadMovements();
+    }
+
+    private void GoToStockMovementsDashboard() => Navigation.NavigateTo("/dashboard");
 
     private void FilterLocal()
     {
@@ -169,7 +477,13 @@ else
     }
 
     private void ClearSearch() { searchText = ""; FilterLocal(); }
-    private void ClearItemFilter() { selectedItemId = 0; _ = LoadMovements(); Navigation.NavigateTo("/stock-movements", forceLoad: false); }
+    private async Task ClearItemFilter()
+    {
+        selectedItemId = 0;
+        ItemIdParam = 0;
+        await LoadMovements();
+        Navigation.NavigateTo("/stock-movements", forceLoad: false);
+    }
 
     private async Task ExportExcel()
     {

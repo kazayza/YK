@@ -1,25 +1,35 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class ItemService : BaseDbService
     {
+        private const string ModuleCode = "SCR_ITEMS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public ItemService(IConfiguration configuration, AuditService audit) : base(configuration)
+        public ItemService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
+
+        private Task RequireItemPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentItemPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         // ==========================================
         // قائمة الأصناف
         // ==========================================
         public async Task<List<ItemListDto>> GetItemsListAsync()
         {
+            await RequireCurrentItemPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض الأصناف.");
             using var connection = CreateConnection();
             var sql = @"SELECT i.ItemID, i.ItemCode, i.ItemNameAr, i.ItemNameEn,
-                               i.ItemType, u.UnitNameAr AS UnitName,
+                               i.CategoryID, i.ItemType, u.UnitNameAr AS UnitName,
                                ISNULL(i.AverageCost, 0) AS AverageCost,
                                ISNULL(i.DefaultSellingPrice, 0) AS DefaultSellingPrice,
                                i.IsActive
@@ -36,6 +46,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<ItemEditDto?> GetItemByIdAsync(int itemId)
         {
+            await RequireCurrentItemPermissionAsync(p => p.CanView || p.CanEdit, "ليس لديك صلاحية عرض أو تعديل الأصناف.");
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID, ItemCode, Barcode, ItemNameAr, ItemNameEn,
                                CategoryID, ItemType, PrimaryUnitID,
@@ -64,6 +75,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertItemAsync(ItemEditDto item, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة الأصناف.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.Items 
                         (ItemCode, Barcode, ItemNameAr, ItemNameEn, CategoryID, ItemType,
@@ -114,6 +126,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateItemAsync(ItemEditDto item, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل الأصناف.");
             using var connection = CreateConnection();
 
             var oldItem = await connection.QueryFirstOrDefaultAsync<ItemEditDto>(
@@ -185,6 +198,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task DeactivateItemAsync(int itemId, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية تعطيل الأصناف.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(
                 "UPDATE dbo.Items SET IsActive=0, ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE ItemID=@ItemID",
@@ -199,6 +213,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<bool> DeleteItemAsync(int itemId, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف الأصناف.");
             using var connection = CreateConnection();
             try
             {
@@ -219,6 +234,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateItemCodeAsync(int itemType)
         {
+            await RequireCurrentItemPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إضافة الأصناف.");
             using var connection = CreateConnection();
             string seqCode = itemType switch
             {
@@ -247,6 +263,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<ItemAuditDto?> GetItemAuditAsync(int itemId)
         {
+            await RequireCurrentItemPermissionAsync(p => p.CanView || p.CanEdit, "ليس لديك صلاحية عرض سجل الأصناف.");
             using var connection = CreateConnection();
             var sql = @"SELECT ISNULL(uc.FullName, N'غير محدد') AS CreatedByName, i.CreatedDate,
                                ISNULL(um.FullName, N'') AS ModifiedByName, i.ModifiedDate
@@ -262,6 +279,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<byte[]> ExportItemsToExcelAsync(List<ItemListDto> items, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير الأصناف.");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("الأصناف");
             ws.RightToLeft = true;
@@ -336,6 +354,7 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<string> GenerateItemReportHtmlAsync(int itemId, int userId)
         {
+            await RequireItemPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة بطاقة الصنف.");
             using var connection = CreateConnection();
             var item = await GetItemByIdAsync(itemId);
             if (item == null) return "<h3>الصنف غير موجود</h3>";

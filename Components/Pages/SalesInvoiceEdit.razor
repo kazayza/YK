@@ -11,6 +11,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SalesInvoiceEdit> Logger
 
 <PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
 
@@ -683,7 +684,14 @@ else
                 if (info.CurrencyID.HasValue) header.CurrencyID = info.CurrencyID;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load selected-customer defaults for sales invoice {CustomerID}.",
+                item.Id);
+            toast = "تعذر تحميل العملة أو شروط الدفع تلقائيًا؛ راجع بيانات الفاتورة قبل الحفظ.";
+            toastOk = false;
+        }
         StateHasChanged();
     }
 
@@ -703,7 +711,14 @@ else
                 else if (info.EstimatedPrice > 0) editLine.UnitPrice = info.EstimatedPrice;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load selected-item defaults for sales invoice {ItemID}.",
+                item.Id);
+            toast = "تعذر تحميل وحدة الصنف أو سعره تلقائيًا؛ تحقق من السطر قبل الحفظ.";
+            toastOk = false;
+        }
         StateHasChanged();
     }
 

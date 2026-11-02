@@ -25,6 +25,9 @@ namespace YKCoatings.Services
 
         public async Task LoadPermissionsAsync(int userId)
         {
+            if (!_userSession.IsLoggedIn || userId <= 0 || _userSession.UserID != userId)
+                throw new UnauthorizedAccessException("لا يمكن تحميل صلاحيات مستخدم آخر أو جلسة غير صالحة.");
+
             _permissions = await _authService.GetUserModulesAsync(userId);
             IsLoaded = true;
             PermissionsChanged?.Invoke();

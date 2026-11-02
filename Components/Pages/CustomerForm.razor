@@ -10,15 +10,30 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<CustomerForm> Logger
 
-<PageTitle>@PageTitleText - واي كي كوتينج   </PageTitle>
+<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
+else if (isPermissionLoading && permissions == null)
+{<div class="loading-luxury" dir="rtl"><div class="loader-luxury"></div><p>جاري التحقق من الصلاحيات...</p></div>}
+else if (permissionLoadDenied)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية قراءة بيانات الوصول</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/customers")'>العودة للقائمة</button></div>}
+else if (permissionLoadFailed)
+{<div class="loading-luxury" dir="rtl"><div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>تعذر التحقق من صلاحية الوصول. يرجى إعادة المحاولة.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPermissionsAsync" disabled="@isPermissionLoading">إعادة المحاولة</button></div></div>}
 else if (permissions == null || !HasAccessToCurrentMode())
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/customers")'>العودة للقائمة</button></div>}
 else if (isLoading)
 {<div class="loading-luxury" dir="rtl"><div class="loader-luxury"></div><p>جاري تحميل البيانات...</p></div>}
+else if (!isNewMode && isCustomerRecordLoading && !customerRecordLoaded)
+{<div class="loading-luxury" dir="rtl"><div class="loader-luxury"></div><p>جاري تحميل بيانات العميل...</p></div>}
+else if (!isNewMode && customerRecordLoadDenied && !customerRecordLoaded)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية قراءة بيانات هذا العميل</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/customers")'>العودة للقائمة</button></div>}
+else if (!isNewMode && customerRecordNotFound)
+{<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg></div><h4>العميل غير موجود</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/customers")'>العودة للقائمة</button></div>}
+else if (!isNewMode && customerRecordLoadFailed && !customerRecordLoaded)
+{<div class="loading-luxury" dir="rtl"><div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>تعذر تحميل بيانات العميل. يرجى إعادة المحاولة.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCustomerRecordAsync" disabled="@isCustomerRecordLoading">إعادة المحاولة</button></div></div>}
 else
 {
     <div class="luxury-edit-page" dir="rtl">
@@ -47,10 +62,21 @@ else
         <div class="stats-luxury">
             <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@(string.IsNullOrWhiteSpace(model.CustomerCode)?"تلقائي":model.CustomerCode)</span><span class="st-label">كود العميل</span></div><div class="st-gold-line"></div></div>
             <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@model.CurrentBalance.ToString("#,##0.00")</span><span class="st-label">الرصيد الحالي</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@GetLookupName(currencies, model.CurrencyID)</span><span class="st-label">العملة</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@GetLookupName(salesReps, model.SalesRepID)</span><span class="st-label">المندوب</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@CurrencySummaryText</span><span class="st-label">العملة</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@SalesRepSummaryText</span><span class="st-label">المندوب</span></div><div class="st-gold-line"></div></div>
         </div>
 
+        @if (!isNewMode && customerRecordLoaded && isCustomerRecordLoading)
+        {
+            <div class="field-hint" role="status">جارٍ تحديث بيانات العميل...</div>
+        }
+        else if (!isNewMode && customerRecordLoaded && customerRecordLoadFailed)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                <span>تعذر تحديث بيانات العميل. المعروض آخر بيانات ناجحة.</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCustomerRecordAsync" disabled="@isCustomerRecordLoading">إعادة المحاولة</button>
+            </div>
+        }
         @if (!string.IsNullOrWhiteSpace(formMessage)){<div class="msg-luxury @(formSuccess?"msg-success":"msg-error")">@formMessage</div>}
 
         <div class="mudtabs-luxury">
@@ -58,7 +84,7 @@ else
                 <button class="mudtab-btn @(activeTab=="basic"?"active":"")" @onclick='() => activeTab="basic"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>البيانات الأساسية</button>
                 <button class="mudtab-btn @(activeTab=="contact"?"active":"")" @onclick='() => activeTab="contact"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg></span>التواصل والموقع</button>
                 <button class="mudtab-btn @(activeTab=="finance"?"active":"")" @onclick='() => activeTab="finance"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>المالية والمبيعات</button>
-                <button class="mudtab-btn @(activeTab=="contacts"?"active":"")" @onclick='() => activeTab="contacts"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>جهات الاتصال <span class="mt-count">@contacts.Count</span></button>
+                <button class="mudtab-btn @(activeTab=="contacts"?"active":"")" @onclick='() => activeTab="contacts"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>جهات الاتصال <span class="mt-count">@(contactsLoaded ? contacts.Count.ToString() : (contactsLoadFailed ? "!" : "—"))</span></button>
                 <button class="mudtab-btn @(activeTab=="notes"?"active":"")" @onclick='() => activeTab="notes"'><span class="mt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>ملاحظات وسجل</button>
                 <div class="mudtab-indicator" style="--tab:@GetTabIndex(activeTab);--total:5"></div>
             </div>
@@ -73,7 +99,42 @@ else
                             <div class="form-field"><label class="field-label required">اسم العميل (عربي)</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" class="field-input" @bind="model.CustomerNameAr" disabled="@isViewMode" placeholder="اسم العميل..." /></div></div>
                             <div class="form-field"><label class="field-label">اسم العميل (إنجليزي)</label><div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input type="text" class="field-input" @bind="model.CustomerNameEn" dir="ltr" disabled="@isViewMode" placeholder="Customer name..." /></div></div>
                             <div class="form-field"><label class="field-label required">نوع العميل</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><select class="field-select" @bind="model.CustomerType" disabled="@isViewMode"><option value="0">-- اختر --</option><option value="1">جملة</option><option value="2">نص جملة</option><option value="3">تجزئة</option><option value="4">أونلاين</option><option value="5">مؤسسي</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                            <div class="form-field"><label class="field-label">مجموعة العميل</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg><select class="field-select" @bind="model.CustomerGroupID" disabled="@isViewMode"><option value="0">-- بدون --</option>@if(customerGroups!=null){@foreach(var item in customerGroups){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                            <div class="form-field">
+                                <label class="field-label">مجموعة العميل</label>
+                                <div class="select-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                                    <select class="field-select" @bind="model.CustomerGroupID" disabled="@(isViewMode || !hasLoadedCustomerGroupsLookup || isLoadingCustomerGroupsLookup || customerGroupsLookupReadDenied)">
+                                        <option value="0">-- بدون --</option>
+                                        @if (customerGroups != null)
+                                        {
+                                            @foreach (var item in customerGroups)
+                                            {
+                                                <option value="@item.Id">@item.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingCustomerGroupsLookup)
+                                {
+                                    <span class="field-hint" role="status">جاري تحميل مجموعات العملاء...</span>
+                                }
+                                else if (customerGroupsLookupReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                                        <span>@(hasLoadedCustomerGroupsLookup ? "تعذر تحديث مجموعات العملاء. المعروض آخر تحميل ناجح." : "تعذر تحميل مجموعات العملاء. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCustomerGroupsLookupAsync" disabled="@isLoadingCustomerGroupsLookup">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (customerGroupsLookupReadDenied)
+                                {
+                                    <span class="field-hint error" role="alert">ليس لديك صلاحية قراءة مجموعات العملاء.</span>
+                                }
+                                else if (hasLoadedCustomerGroupsLookup && customerGroups?.Count == 0)
+                                {
+                                    <span class="field-hint" role="status">لا توجد مجموعات عملاء نشطة.</span>
+                                }
+                            </div>
                             <div class="form-field"><label class="field-label">التقييم</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><select class="field-select" @bind="model.Rating" disabled="@isViewMode"><option value="1">ضعيف</option><option value="2">مقبول</option><option value="3">جيد</option><option value="4">ممتاز</option><option value="5">مميز</option></select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                         </div>
                         <div class="form-grid cols-3">
@@ -110,10 +171,150 @@ else
                     <div class="tab-panel luxury-fade">
                         <div class="tab-header"><div class="tab-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><h3>البيانات المالية والمبيعات</h3><p>الائتمان والعملة والمندوب وقائمة الأسعار</p></div></div>
                         <div class="form-grid cols-4">
-                            <div class="form-field"><label class="field-label">شروط الدفع</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><select class="field-select" @bind="model.PaymentTermID" disabled="@isViewMode"><option value="0">-- اختر --</option>@if(paymentTerms!=null){@foreach(var item in paymentTerms){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                            <div class="form-field"><label class="field-label required">العملة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><select class="field-select" @bind="model.CurrencyID" disabled="@isViewMode"><option value="0">-- اختر --</option>@if(currencies!=null){@foreach(var item in currencies){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                            <div class="form-field"><label class="field-label">قائمة الأسعار</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/></svg><select class="field-select" @bind="model.PriceListID" disabled="@isViewMode"><option value="0">-- اختر --</option>@if(priceLists!=null){@foreach(var item in priceLists){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                            <div class="form-field"><label class="field-label">مندوب المبيعات</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><select class="field-select" @bind="model.SalesRepID" disabled="@isViewMode"><option value="0">-- بدون --</option>@if(salesReps!=null){@foreach(var item in salesReps){<option value="@item.Id">@item.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                            <div class="form-field">
+                                <label class="field-label">شروط الدفع</label>
+                                <div class="select-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                                    <select class="field-select" @bind="model.PaymentTermID" disabled="@(isViewMode || !hasLoadedPaymentTermsLookup || isLoadingPaymentTermsLookup || paymentTermsLookupReadDenied)">
+                                        <option value="0">-- اختر --</option>
+                                        @if (paymentTerms != null)
+                                        {
+                                            @foreach (var item in paymentTerms)
+                                            {
+                                                <option value="@item.Id">@item.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingPaymentTermsLookup)
+                                {
+                                    <span class="field-hint" role="status">جاري تحميل شروط الدفع...</span>
+                                }
+                                else if (paymentTermsLookupReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                                        <span>@(hasLoadedPaymentTermsLookup ? "تعذر تحديث شروط الدفع. المعروض آخر تحميل ناجح." : "تعذر تحميل شروط الدفع. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPaymentTermsLookupAsync" disabled="@isLoadingPaymentTermsLookup">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (paymentTermsLookupReadDenied)
+                                {
+                                    <span class="field-hint error" role="alert">ليس لديك صلاحية قراءة شروط الدفع.</span>
+                                }
+                                else if (hasLoadedPaymentTermsLookup && paymentTerms?.Count == 0)
+                                {
+                                    <span class="field-hint" role="status">لا توجد شروط دفع نشطة.</span>
+                                }
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label required">العملة</label>
+                                <div class="select-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                    <select class="field-select" @bind="model.CurrencyID" disabled="@(isViewMode || !hasLoadedCurrenciesLookup || isLoadingCurrenciesLookup || currenciesLookupReadDenied)">
+                                        <option value="0">-- اختر --</option>
+                                        @if (currencies != null)
+                                        {
+                                            @foreach (var item in currencies)
+                                            {
+                                                <option value="@item.Id">@item.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingCurrenciesLookup)
+                                {
+                                    <span class="field-hint" role="status">جاري تحميل العملات...</span>
+                                }
+                                else if (currenciesLookupReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                                        <span>@(hasLoadedCurrenciesLookup ? "تعذر تحديث العملات. المعروض آخر تحميل ناجح." : "تعذر تحميل العملات. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCurrenciesLookupAsync" disabled="@isLoadingCurrenciesLookup">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (currenciesLookupReadDenied)
+                                {
+                                    <span class="field-hint error" role="alert">ليس لديك صلاحية قراءة العملات.</span>
+                                }
+                                else if (hasLoadedCurrenciesLookup && currencies?.Count == 0)
+                                {
+                                    <span class="field-hint" role="status">لا توجد عملات نشطة.</span>
+                                }
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">قائمة الأسعار</label>
+                                <div class="select-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/></svg>
+                                    <select class="field-select" @bind="model.PriceListID" disabled="@(isViewMode || !hasLoadedPriceListLookup || isLoadingPriceListLookup || priceListLookupReadDenied)">
+                                        <option value="0">-- اختر --</option>
+                                        @if (priceLists != null)
+                                        {
+                                            @foreach (var item in priceLists)
+                                            {
+                                                <option value="@item.Id">@item.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingPriceListLookup)
+                                {
+                                    <span class="field-hint" role="status">جاري تحميل قوائم الأسعار...</span>
+                                }
+                                else if (priceListLookupReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                                        <span>@(hasLoadedPriceListLookup ? "تعذر تحديث قوائم الأسعار. المعروض آخر خيارات ناجحة." : "تعذر تحميل قوائم الأسعار. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPriceListLookupAsync" disabled="@isLoadingPriceListLookup">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (priceListLookupReadDenied)
+                                {
+                                    <span class="field-hint error" role="alert">ليس لديك صلاحية قراءة قوائم الأسعار.</span>
+                                }
+                                else if (hasLoadedPriceListLookup && priceLists?.Count == 0)
+                                {
+                                    <span class="field-hint" role="status">لا توجد قوائم أسعار نشطة.</span>
+                                }
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">مندوب المبيعات</label>
+                                <div class="select-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    <select class="field-select" @bind="model.SalesRepID" disabled="@(isViewMode || !hasLoadedSalesRepLookup || isLoadingSalesRepLookup || salesRepLookupReadDenied)">
+                                        <option value="0">-- بدون --</option>
+                                        @if (salesReps != null)
+                                        {
+                                            @foreach (var item in salesReps)
+                                            {
+                                                <option value="@item.Id">@item.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingSalesRepLookup)
+                                {
+                                    <span class="field-hint" role="status">جاري تحميل مندوبي المبيعات...</span>
+                                }
+                                else if (salesRepLookupReadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                                        <span>@(hasLoadedSalesRepLookup ? "تعذر تحديث قائمة مندوبي المبيعات. المعروض آخر تحميل ناجح." : "تعذر تحميل قائمة مندوبي المبيعات. لم تُحمّل خيارات سابقة.")</span>
+                                        <button class="btn-luxury btn-ghost-luxury" @onclick="RetrySalesRepLookupAsync" disabled="@isLoadingSalesRepLookup">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (salesRepLookupReadDenied)
+                                {
+                                    <span class="field-hint error" role="alert">ليس لديك صلاحية قراءة مندوبي المبيعات.</span>
+                                }
+                                else if (hasLoadedSalesRepLookup && salesReps?.Count == 0)
+                                {
+                                    <span class="field-hint" role="status">لا يوجد مندوبو مبيعات نشطون.</span>
+                                }
+                            </div>
                         </div>
                         <div class="form-grid cols-3">
                             <div class="form-field"><label class="field-label">حد الائتمان</label><div class="input-with-suffix"><input type="number" class="field-input" @bind="model.CreditLimit" step="0.01" disabled="@isViewMode" /><span class="field-suffix">ج.م</span></div><span class="field-hint">الحد الأقصى للمديونية</span></div>
@@ -128,11 +329,46 @@ else
                 @if (activeTab == "contacts")
                 {
                     <div class="tab-panel luxury-fade">
-                        <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><h3>جهات الاتصال</h3><p>@contacts.Count جهة - @contacts.Count(c=>c.IsPrimary) أساسي</p></div>@if(!isViewMode && model.CustomerID>0){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddContactDialog" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة جهة اتصال</button>}</div>
-                        @if (model.CustomerID<=0){<div class="notice-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>يجب حفظ العميل أولاً قبل إضافة جهات الاتصال</div>}
-                        else if (isContactsLoading){<div class="loading-luxury small"><div class="loader-luxury"></div>جاري تحميل جهات الاتصال...</div>}
-                        else if (!contacts.Any()){<div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا توجد جهات اتصال مسجلة</h4></div>}
-                        else{<div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>الاسم</th><th>الوظيفة</th><th>الهاتف</th><th>الموبايل</th><th>البريد</th><th class="th-center">أساسي</th>@if(!isViewMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@foreach(var item in contacts){<tr><td class="td-name">@item.ContactName</td><td class="td-muted">@(item.JobTitle ?? "—")</td><td dir="ltr">@(item.Phone ?? "—")</td><td dir="ltr">@(item.Mobile ?? "—")</td><td dir="ltr">@(item.Email ?? "—")</td><td class="td-center">@if(item.IsPrimary){<span class="primary-badge-luxury">أساسي</span>}else{<span class="td-muted">—</span>}</td>@if(!isViewMode){<td class="td-actions"><div class="actions-wrap-luxury"><button class="act-btn edit" @onclick="() => ShowEditContactDialog(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button><button class="act-btn delete" @onclick="() => DeleteContact(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button></div></td>}</tr>}</tbody></table></div></div>}
+                        <div class="tab-header"><div class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div><h3>جهات الاتصال</h3><p>@ContactsSummaryText</p></div>@if(!isViewMode && model.CustomerID>0){<button class="btn-luxury btn-primary-luxury" @onclick="ShowAddContactDialog" style="margin-right:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>إضافة جهة اتصال</button>}</div>
+                        @if (model.CustomerID<=0){<div class="notice-luxury" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>يجب حفظ العميل أولاً قبل إضافة جهات الاتصال</div>}
+                        else if (isContactsLoading && !contactsLoaded){<div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحميل جهات الاتصال...</div>}
+                        else if (contactsLoadFailed && !contactsLoaded)
+                        {
+                            <div class="msg-luxury msg-error contacts-load-state" role="alert">
+                                <span>@contactsLoadError</span>
+                                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadContactsAsync" disabled="@isContactsLoading">إعادة المحاولة</button>
+                            </div>
+                        }
+                        else if (!contactsLoaded)
+                        {
+                            <div class="notice-luxury" role="status">بيانات جهات الاتصال غير متاحة حتى يتم تحميل بيانات العميل.</div>
+                        }
+                        else
+                        {
+                            @if (contactsLoadFailed)
+                            {
+                                <div class="msg-luxury msg-error contacts-load-state" role="alert">
+                                    <span>@contactsLoadError</span>
+                                    <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadContactsAsync" disabled="@isContactsLoading">إعادة المحاولة</button>
+                                </div>
+                            }
+                            @if (isContactsLoading)
+                            {
+                                <div class="loading-luxury small" role="status"><div class="loader-luxury"></div>جاري تحديث القائمة مع الاحتفاظ بآخر نتيجة محمّلة...</div>
+                            }
+                            @if (contactsLoadFailed && !contacts.Any())
+                            {
+                                <div class="empty-luxury small" role="status"><h4>آخر نتيجة ناجحة لم تتضمن جهات اتصال؛ تعذّر التحقق من التحديث الحالي.</h4></div>
+                            }
+                            else if (!contacts.Any())
+                            {
+                                <div class="empty-luxury small"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>لا توجد جهات اتصال مسجلة</h4></div>
+                            }
+                            else
+                            {
+                                <div class="table-card-luxury"><div class="table-responsive"><table class="table-luxury"><thead><tr><th>الاسم</th><th>الوظيفة</th><th>الهاتف</th><th>الموبايل</th><th>البريد</th><th class="th-center">أساسي</th>@if(!isViewMode){<th class="th-actions">إجراءات</th>}</tr></thead><tbody>@foreach(var item in contacts){<tr><td class="td-name">@item.ContactName</td><td class="td-muted">@(item.JobTitle ?? "—")</td><td dir="ltr">@(item.Phone ?? "—")</td><td dir="ltr">@(item.Mobile ?? "—")</td><td dir="ltr">@(item.Email ?? "—")</td><td class="td-center">@if(item.IsPrimary){<span class="primary-badge-luxury">أساسي</span>}else{<span class="td-muted">—</span>}</td>@if(!isViewMode){<td class="td-actions"><div class="actions-wrap-luxury"><button class="act-btn edit" @onclick="() => ShowEditContactDialog(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button><button class="act-btn delete" @onclick="() => DeleteContact(item)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button></div></td>}</tr>}</tbody></table></div></div>
+                            }
+                        }
                         @if (!string.IsNullOrWhiteSpace(contactMessage)){<div class="msg-luxury @(contactSuccess?"msg-success":"msg-error")">@contactMessage</div>}
                     </div>
                 }
@@ -147,7 +383,7 @@ else
                             @if (!string.IsNullOrEmpty(modifiedByName)){<div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>آخر تعديل: @modifiedByName</strong><span>@modifiedDate</span></div></div>}
                             <div class="tl-item"><div class="tl-dot" style="background:var(--gold)"></div><div class="tl-content"><strong>المستخدم الحالي: @UserSession.FullName</strong><span>يعمل الآن</span></div></div>
                             <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>الرصيد الحالي: @model.CurrentBalance.ToString("#,##0.00")</strong><span>يتم تحديثه تلقائياً من الفواتير والمدفوعات</span></div></div>
-                            <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>جهات اتصال: @contacts.Count</strong><span>@contacts.Count(c=>c.IsPrimary) جهة أساسية</span></div></div>
+                            <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><strong>جهات اتصال: @ContactsCountText</strong><span>@PrimaryContactsCountText</span></div></div>
                         </div>
                     </div>
                 }
@@ -160,6 +396,20 @@ else
                 <div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>أنشئ بواسطة: <strong>@(string.IsNullOrEmpty(createdByName)?"غير محدد":createdByName)</strong></span><span class="audit-date">@createdDate</span></div>
                 @if (!string.IsNullOrEmpty(modifiedByName)){<div class="audit-item-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg><span>آخر تعديل: <strong>@modifiedByName</strong></span><span class="audit-date">@modifiedDate</span></div>}
                 <div class="audit-item-luxury gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>المستخدم الحالي: <strong>@UserSession.FullName</strong></span></div>
+            </div>
+        }
+        @if (isAuditInfoLoading)
+        {
+            <div class="field-hint" role="status" style="margin-top:8px">جاري تحميل سجل مراجعة العميل...</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(auditInfoWarning))
+        {
+            <div class="msg-luxury msg-info" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px">
+                <span>@auditInfoWarning</span>
+                @if (auditInfoLoadFailed && !auditInfoLoadDenied)
+                {
+                    <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadAuditInfoAsync" disabled="@isAuditInfoLoading">إعادة المحاولة</button>
+                }
             </div>
         }
 
@@ -203,6 +453,8 @@ else
 .msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.contacts-load-state{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.contacts-load-state button{flex-shrink:0;white-space:nowrap}
 .mudtabs-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05);position:relative}
 .mudtabs-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;z-index:2}
 .mudtabs-header{position:relative;display:flex;gap:0;background:linear-gradient(135deg,#fcfaf6 0%,#f8f6f0 100%);border-bottom:1px solid #e8e2d0;padding:0 8px;overflow-x:auto;scrollbar-width:none}
@@ -320,51 +572,614 @@ else
 @code {
     [Parameter] public int CustomerId { get; set; }
     private ModulePermissionDto? permissions;
+    private int permissionLoadVersion;
+    private bool isPermissionLoading;
+    private bool permissionLoadFailed;
+    private bool permissionLoadDenied;
     private CustomerEditDto model = new();
     private List<CustomerContactDto> contacts = new();
     private List<LookupDto>? paymentTerms;
+    private long paymentTermsLookupLoadVersion;
+    private bool isLoadingPaymentTermsLookup;
+    private bool hasLoadedPaymentTermsLookup;
+    private bool paymentTermsLookupReadFailed;
+    private bool paymentTermsLookupReadDenied;
     private List<LookupDto>? currencies;
+    private long currenciesLookupLoadVersion;
+    private bool isLoadingCurrenciesLookup;
+    private bool hasLoadedCurrenciesLookup;
+    private bool currenciesLookupReadFailed;
+    private bool currenciesLookupReadDenied;
     private List<LookupDto>? customerGroups;
+    private long customerGroupsLookupLoadVersion;
+    private bool isLoadingCustomerGroupsLookup;
+    private bool hasLoadedCustomerGroupsLookup;
+    private bool customerGroupsLookupReadFailed;
+    private bool customerGroupsLookupReadDenied;
     private List<LookupDto>? priceLists;
+    private long priceListLookupLoadVersion;
+    private bool isLoadingPriceListLookup;
+    private bool hasLoadedPriceListLookup;
+    private bool priceListLookupReadFailed;
+    private bool priceListLookupReadDenied;
     private List<LookupDto>? salesReps;
+    private long salesRepLookupLoadVersion;
+    private bool isLoadingSalesRepLookup;
+    private bool hasLoadedSalesRepLookup;
+    private bool salesRepLookupReadFailed;
+    private bool salesRepLookupReadDenied;
     private bool isLoading = true;
+    private int customerRecordLoadVersion;
+    private int customerRecordContextId = int.MinValue;
+    private bool isCustomerRecordLoading;
+    private bool customerRecordLoaded;
+    private bool customerRecordLoadFailed;
+    private bool customerRecordLoadDenied;
+    private bool customerRecordNotFound;
     private bool isSaving = false;
     private bool isContactsLoading = false;
+    private bool contactsLoaded;
+    private bool contactsLoadFailed;
+    private string contactsLoadError = string.Empty;
+    private int contactsContextCustomerId = int.MinValue;
+    private int contactsLoadVersion;
     private string activeTab = "basic";
     private string currentMode = "new";
     private bool isNewMode => currentMode == "new";
     private bool isEditMode => currentMode == "edit";
     private bool isViewMode => currentMode == "view";
     private string PageTitleText => isNewMode ? "إضافة عميل" : isEditMode ? "تعديل عميل" : "عرض عميل";
+    private string ContactsSummaryText => contactsLoaded
+        ? $"{contacts.Count} جهة - {contacts.Count(c => c.IsPrimary)} أساسي"
+        : contactsLoadFailed ? "تعذر تحميل القائمة" : "جارٍ تحميل القائمة";
+    private string ContactsCountText => contactsLoaded
+        ? contacts.Count.ToString()
+        : contactsLoadFailed ? "غير متاح" : "جارٍ التحميل";
+    private string PrimaryContactsCountText => contactsLoaded
+        ? $"{contacts.Count(c => c.IsPrimary)} جهة أساسية"
+        : contactsLoadFailed ? "غير متاح" : "جارٍ التحميل";
+    private string CurrencySummaryText => hasLoadedCurrenciesLookup
+        ? currencies?.Count == 0 ? "لا توجد عملات نشطة" : GetLookupName(currencies, model.CurrencyID)
+        : isLoadingCurrenciesLookup ? "جارٍ التحميل"
+        : currenciesLookupReadFailed || currenciesLookupReadDenied ? "غير متاح" : "—";
+    private string SalesRepSummaryText => hasLoadedSalesRepLookup
+        ? GetLookupName(salesReps, model.SalesRepID)
+        : isLoadingSalesRepLookup ? "جارٍ التحميل"
+        : salesRepLookupReadFailed || salesRepLookupReadDenied ? "غير متاح" : "—";
     private string formMessage = ""; private bool formSuccess = true;
     private string resultMessage = ""; private bool resultSuccess = true;
     private bool showContactDialog = false; private bool isContactSaving = false;
     private CustomerContactDto contactModel = new(); private string contactDialogMessage = ""; private string contactMessage = ""; private bool contactSuccess = true;
     private string createdByName = ""; private string createdDate = ""; private string modifiedByName = ""; private string modifiedDate = "";
+    private string auditInfoWarning = "";
+    private int auditInfoLoadVersion;
+    private int auditInfoContextCustomerId = int.MinValue;
+    private bool isAuditInfoLoading;
+    private bool auditInfoLoaded;
+    private bool auditInfoLoadFailed;
+    private bool auditInfoLoadDenied;
     protected override async Task OnParametersSetAsync()
     {
         if (!UserSession.IsLoggedIn){Navigation.NavigateTo("/login");return;}
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_CUSTOMERS");
         DetectMode();
+        await LoadCustomerPermissionsAsync();
         if (permissions == null || !HasAccessToCurrentMode()){isLoading=false;return;}
         await LoadPageAsync();
     }
+
+    private async Task RetryLoadPermissionsAsync()
+    {
+        if (isPermissionLoading) return;
+        await LoadCustomerPermissionsAsync();
+        if (permissions == null || !HasAccessToCurrentMode())
+        {
+            isLoading = false;
+            return;
+        }
+        await LoadPageAsync();
+    }
+
+    private async Task LoadCustomerPermissionsAsync()
+    {
+        var userId = UserSession.UserID;
+        var requestVersion = ++permissionLoadVersion;
+        isPermissionLoading = true;
+        permissionLoadFailed = false;
+        permissionLoadDenied = false;
+        permissions = null;
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+            if (requestVersion != permissionLoadVersion || UserSession.UserID != userId) return;
+
+            permissions = PermissionService.GetModule("SCR_CUSTOMERS");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != permissionLoadVersion || UserSession.UserID != userId) return;
+
+            permissionLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer form permissions.");
+            if (requestVersion != permissionLoadVersion || UserSession.UserID != userId) return;
+
+            permissionLoadFailed = true;
+        }
+        finally
+        {
+            if (requestVersion == permissionLoadVersion)
+                isPermissionLoading = false;
+        }
+    }
+
     private void DetectMode(){var path=Navigation.ToBaseRelativePath(Navigation.Uri).ToLowerInvariant();if(path.StartsWith("customers/edit/"))currentMode="edit";else if(path.StartsWith("customers/view/"))currentMode="view";else currentMode="new";}
     private bool HasAccessToCurrentMode(){if(permissions==null)return false;if(isNewMode)return permissions.CanAdd;if(isEditMode)return permissions.CanEdit;return permissions.CanView;}
     private async Task LoadPageAsync()
     {
         isLoading=true;formMessage="";contactMessage="";
+        if (customerRecordContextId != CustomerId)
+        {
+            customerRecordLoadVersion++;
+            customerRecordContextId = CustomerId;
+            customerRecordLoaded = false;
+            customerRecordLoadFailed = false;
+            customerRecordLoadDenied = false;
+            customerRecordNotFound = false;
+            isCustomerRecordLoading = false;
+        }
+        if (contactsContextCustomerId != CustomerId)
+        {
+            contactsLoadVersion++;
+            contactsContextCustomerId = CustomerId;
+            contacts = new List<CustomerContactDto>();
+            contactsLoaded = false;
+            contactsLoadFailed = false;
+            contactsLoadError = string.Empty;
+            isContactsLoading = false;
+        }
         try{
             await LoadLookupsAsync();
-            if(isNewMode){model=new CustomerEditDto{Country="مصر",Rating=3,IsActive=true,CurrencyID=currencies?.FirstOrDefault()?.Id ?? 0};contacts=new List<CustomerContactDto>();}
-            else{var loaded=await CustomerService.GetCustomerByIdAsync(CustomerId);if(loaded==null){formMessage="العميل غير موجود";formSuccess=false;model=new CustomerEditDto();}else{model=loaded;await LoadContactsAsync();await LoadAuditInfo();}}
+            if(isNewMode){model=new CustomerEditDto{Country="مصر",Rating=3,IsActive=true,CurrencyID=currencies?.FirstOrDefault()?.Id ?? 0};contacts=new List<CustomerContactDto>();contactsLoaded=true;contactsLoadFailed=false;contactsLoadError=string.Empty;}
+            else
+            {
+                await LoadCustomerRecordAsync();
+                if (customerRecordLoaded)
+                {
+                    await LoadContactsAsync();
+                    await LoadAuditInfo();
+                }
+            }
         }catch(Exception ex){formMessage="خطأ أثناء تحميل البيانات: "+ex.Message;formSuccess=false;}
         finally{isLoading=false;}
     }
-    private async Task LoadLookupsAsync(){paymentTerms=await LookupService.GetPaymentTermsAsync();currencies=await LookupService.GetCurrenciesAsync();customerGroups=await LookupService.GetCustomerGroupsAsync();priceLists=await LookupService.GetPriceListsAsync();salesReps=await LookupService.GetSalesRepsAsync();}
-    private async Task LoadContactsAsync(){if(model.CustomerID<=0){contacts=new List<CustomerContactDto>();return;}isContactsLoading=true;try{contacts=await CustomerService.GetCustomerContactsAsync(model.CustomerID);}catch(Exception ex){contactMessage="خطأ أثناء تحميل جهات الاتصال: "+ex.Message;contactSuccess=false;}finally{isContactsLoading=false;}}
-    private async Task LoadAuditInfo(){try{if(model.CustomerID<=0)return;var audit=await CustomerService.GetCustomerAuditAsync(model.CustomerID);if(audit!=null){createdByName=audit.CreatedByName??"غير محدد";createdDate=audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";modifiedByName=audit.ModifiedByName??"";modifiedDate=audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt")??"";}}catch{}}
+
+    private async Task RetryLoadCustomerRecordAsync()
+    {
+        if (isCustomerRecordLoading) return;
+        await LoadCustomerRecordAsync();
+        if (customerRecordLoaded)
+        {
+            await LoadContactsAsync();
+            await LoadAuditInfo();
+        }
+    }
+
+    private async Task LoadCustomerRecordAsync()
+    {
+        var customerId = CustomerId;
+        var requestVersion = ++customerRecordLoadVersion;
+        isCustomerRecordLoading = true;
+        customerRecordLoadFailed = false;
+        customerRecordLoadDenied = false;
+        customerRecordNotFound = false;
+        try
+        {
+            var loaded = await CustomerService.GetCustomerByIdAsync(customerId);
+            if (requestVersion != customerRecordLoadVersion || CustomerId != customerId) return;
+
+            if (loaded is null)
+            {
+                customerRecordLoaded = false;
+                customerRecordNotFound = true;
+                model = new CustomerEditDto();
+                contactsLoadVersion++;
+                isContactsLoading = false;
+                contacts = new List<CustomerContactDto>();
+                contactsLoaded = true;
+                contactsLoadFailed = false;
+                contactsLoadError = string.Empty;
+                return;
+            }
+
+            model = loaded;
+            customerRecordLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != customerRecordLoadVersion || CustomerId != customerId) return;
+
+            customerRecordLoaded = false;
+            customerRecordLoadDenied = true;
+            model = new CustomerEditDto();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer record for customer form.");
+            if (requestVersion != customerRecordLoadVersion || CustomerId != customerId) return;
+
+            customerRecordLoadFailed = true;
+        }
+        finally
+        {
+            if (requestVersion == customerRecordLoadVersion && CustomerId == customerId)
+                isCustomerRecordLoading = false;
+        }
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        await LoadPaymentTermsLookupAsync();
+        await LoadCurrenciesLookupAsync();
+        await LoadCustomerGroupsLookupAsync();
+        await LoadPriceListLookupAsync();
+        await LoadSalesRepLookupAsync();
+    }
+
+    private async Task RetryPaymentTermsLookupAsync()
+    {
+        if (isLoadingPaymentTermsLookup) return;
+        await LoadPaymentTermsLookupAsync();
+    }
+
+    private async Task LoadPaymentTermsLookupAsync()
+    {
+        var loadVersion = ++paymentTermsLookupLoadVersion;
+        isLoadingPaymentTermsLookup = true;
+        paymentTermsLookupReadFailed = false;
+        paymentTermsLookupReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedPaymentTerms = await LookupService.GetPaymentTermsAsync();
+            if (loadVersion != paymentTermsLookupLoadVersion) return;
+
+            paymentTerms = loadedPaymentTerms;
+            hasLoadedPaymentTermsLookup = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != paymentTermsLookupLoadVersion) return;
+
+            paymentTerms = new();
+            hasLoadedPaymentTermsLookup = false;
+            paymentTermsLookupReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load payment terms for customer form.");
+            if (loadVersion != paymentTermsLookupLoadVersion) return;
+
+            paymentTermsLookupReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == paymentTermsLookupLoadVersion)
+                isLoadingPaymentTermsLookup = false;
+        }
+    }
+
+    private async Task RetryCurrenciesLookupAsync()
+    {
+        if (isLoadingCurrenciesLookup) return;
+        await LoadCurrenciesLookupAsync();
+    }
+
+    private async Task LoadCurrenciesLookupAsync()
+    {
+        var loadVersion = ++currenciesLookupLoadVersion;
+        isLoadingCurrenciesLookup = true;
+        currenciesLookupReadFailed = false;
+        currenciesLookupReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedCurrencies = await LookupService.GetCurrenciesAsync();
+            if (loadVersion != currenciesLookupLoadVersion) return;
+
+            currencies = loadedCurrencies;
+            hasLoadedCurrenciesLookup = true;
+            if (isNewMode && (model.CurrencyID ?? 0) == 0 && loadedCurrencies.Count > 0)
+                model.CurrencyID = loadedCurrencies[0].Id;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != currenciesLookupLoadVersion) return;
+
+            currencies = new();
+            hasLoadedCurrenciesLookup = false;
+            currenciesLookupReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load currencies for customer form.");
+            if (loadVersion != currenciesLookupLoadVersion) return;
+
+            currenciesLookupReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == currenciesLookupLoadVersion)
+                isLoadingCurrenciesLookup = false;
+        }
+    }
+
+    private async Task RetryCustomerGroupsLookupAsync()
+    {
+        if (isLoadingCustomerGroupsLookup) return;
+        await LoadCustomerGroupsLookupAsync();
+    }
+
+    private async Task LoadCustomerGroupsLookupAsync()
+    {
+        var loadVersion = ++customerGroupsLookupLoadVersion;
+        isLoadingCustomerGroupsLookup = true;
+        customerGroupsLookupReadFailed = false;
+        customerGroupsLookupReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedCustomerGroups = await LookupService.GetCustomerGroupsAsync();
+            if (loadVersion != customerGroupsLookupLoadVersion) return;
+
+            customerGroups = loadedCustomerGroups;
+            hasLoadedCustomerGroupsLookup = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != customerGroupsLookupLoadVersion) return;
+
+            customerGroups = new();
+            hasLoadedCustomerGroupsLookup = false;
+            customerGroupsLookupReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer groups for customer form.");
+            if (loadVersion != customerGroupsLookupLoadVersion) return;
+
+            customerGroupsLookupReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == customerGroupsLookupLoadVersion)
+                isLoadingCustomerGroupsLookup = false;
+        }
+    }
+
+    private async Task RetryPriceListLookupAsync()
+    {
+        if (isLoadingPriceListLookup) return;
+        await LoadPriceListLookupAsync();
+    }
+
+    private async Task LoadPriceListLookupAsync()
+    {
+        var loadVersion = ++priceListLookupLoadVersion;
+        isLoadingPriceListLookup = true;
+        priceListLookupReadFailed = false;
+        priceListLookupReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedPriceLists = await LookupService.GetPriceListsAsync();
+            if (loadVersion != priceListLookupLoadVersion) return;
+
+            priceLists = loadedPriceLists;
+            hasLoadedPriceListLookup = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != priceListLookupLoadVersion) return;
+
+            priceLists = new();
+            hasLoadedPriceListLookup = false;
+            priceListLookupReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load price lists for customer form.");
+            if (loadVersion != priceListLookupLoadVersion) return;
+
+            priceListLookupReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == priceListLookupLoadVersion)
+                isLoadingPriceListLookup = false;
+        }
+    }
+    private async Task RetrySalesRepLookupAsync()
+    {
+        if (isLoadingSalesRepLookup) return;
+        await LoadSalesRepLookupAsync();
+    }
+
+    private async Task LoadSalesRepLookupAsync()
+    {
+        var loadVersion = ++salesRepLookupLoadVersion;
+        isLoadingSalesRepLookup = true;
+        salesRepLookupReadFailed = false;
+        salesRepLookupReadDenied = false;
+        StateHasChanged();
+        try
+        {
+            var loadedSalesReps = await LookupService.GetSalesRepsAsync();
+            if (loadVersion != salesRepLookupLoadVersion) return;
+
+            salesReps = loadedSalesReps;
+            hasLoadedSalesRepLookup = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (loadVersion != salesRepLookupLoadVersion) return;
+
+            salesReps = new();
+            hasLoadedSalesRepLookup = false;
+            salesRepLookupReadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load sales representatives for customer form.");
+            if (loadVersion != salesRepLookupLoadVersion) return;
+
+            salesRepLookupReadFailed = true;
+        }
+        finally
+        {
+            if (loadVersion == salesRepLookupLoadVersion)
+                isLoadingSalesRepLookup = false;
+        }
+    }
+
+    private async Task LoadContactsAsync()
+    {
+        var customerId = model.CustomerID;
+        if (customerId <= 0)
+        {
+            contactsLoadVersion++;
+            contactsContextCustomerId = customerId;
+            contacts = new List<CustomerContactDto>();
+            contactsLoaded = true;
+            contactsLoadFailed = false;
+            contactsLoadError = string.Empty;
+            isContactsLoading = false;
+            return;
+        }
+
+        if (contactsContextCustomerId != customerId)
+        {
+            contactsLoadVersion++;
+            contactsContextCustomerId = customerId;
+            contacts = new List<CustomerContactDto>();
+            contactsLoaded = false;
+            contactsLoadFailed = false;
+            contactsLoadError = string.Empty;
+        }
+
+        var requestVersion = ++contactsLoadVersion;
+        isContactsLoading = true;
+        try
+        {
+            var loadedContacts = await CustomerService.GetCustomerContactsAsync(customerId);
+            if (requestVersion != contactsLoadVersion || model.CustomerID != customerId) return;
+
+            contacts = loadedContacts ?? new List<CustomerContactDto>();
+            contactsLoaded = true;
+            contactsLoadFailed = false;
+            contactsLoadError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            if (requestVersion != contactsLoadVersion || model.CustomerID != customerId) return;
+
+            Logger.LogWarning(ex,
+                "Failed to load contacts for customer {CustomerID}.",
+                customerId);
+            contactsLoadFailed = true;
+            contactsLoadError = contactsLoaded
+                ? "تعذر تحديث جهات الاتصال؛ ما زالت آخر قائمة ناجحة معروضة. أعد المحاولة."
+                : "تعذر تحميل جهات الاتصال. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == contactsLoadVersion)
+                isContactsLoading = false;
+        }
+    }
+    private async Task LoadAuditInfo()
+    {
+        var customerId = model.CustomerID;
+        if (customerId <= 0) return;
+
+        if (auditInfoContextCustomerId != customerId)
+        {
+            auditInfoLoadVersion++;
+            auditInfoContextCustomerId = customerId;
+            auditInfoLoaded = false;
+            auditInfoLoadFailed = false;
+            auditInfoLoadDenied = false;
+            auditInfoWarning = string.Empty;
+            isAuditInfoLoading = false;
+            ClearAuditInfoValues();
+        }
+
+        var requestVersion = ++auditInfoLoadVersion;
+        isAuditInfoLoading = true;
+        auditInfoLoadFailed = false;
+        auditInfoLoadDenied = false;
+        auditInfoWarning = string.Empty;
+        try
+        {
+            var audit = await CustomerService.GetCustomerAuditAsync(customerId);
+            if (requestVersion != auditInfoLoadVersion || model.CustomerID != customerId) return;
+
+            if (audit is null)
+            {
+                ClearAuditInfoValues();
+                auditInfoLoaded = true;
+                return;
+            }
+
+            createdByName = audit.CreatedByName ?? "غير محدد";
+            createdDate = audit.CreatedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            modifiedByName = audit.ModifiedByName ?? "";
+            modifiedDate = audit.ModifiedDate?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+            auditInfoLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != auditInfoLoadVersion || model.CustomerID != customerId) return;
+
+            ClearAuditInfoValues();
+            auditInfoLoaded = false;
+            auditInfoLoadDenied = true;
+            auditInfoWarning = "ليس لديك صلاحية قراءة سجل مراجعة العميل.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Failed to load audit details for customer {CustomerID}.",
+                customerId);
+            if (requestVersion != auditInfoLoadVersion || model.CustomerID != customerId) return;
+
+            auditInfoLoadFailed = true;
+            auditInfoWarning = auditInfoLoaded
+                ? "تعذر تحديث سجل مراجعة العميل؛ ما زال آخر سجل ناجح معروضًا."
+                : "تعذر تحميل سجل مراجعة العميل الإضافي؛ بيانات العميل الأساسية لم تتأثر.";
+        }
+        finally
+        {
+            if (requestVersion == auditInfoLoadVersion && model.CustomerID == customerId)
+                isAuditInfoLoading = false;
+        }
+    }
+
+    private async Task RetryLoadAuditInfoAsync()
+    {
+        if (isAuditInfoLoading) return;
+        await LoadAuditInfo();
+    }
+
+    private void ClearAuditInfoValues()
+    {
+        createdByName = string.Empty;
+        createdDate = string.Empty;
+        modifiedByName = string.Empty;
+        modifiedDate = string.Empty;
+    }
     private async Task SaveCustomer()
     {
         if(isViewMode)return;formMessage="";

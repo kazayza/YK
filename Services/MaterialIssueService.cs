@@ -110,7 +110,7 @@ LEFT JOIN dbo.SystemUsers uc ON n.CreatedBy = uc.UserID
 LEFT JOIN (
     SELECT
         IssueID,
-        COUNT(*) AS TotalItems,
+        COUNT(DISTINCT ItemID) AS TotalItems,
         SUM(IssuedQty) AS TotalQty,
         SUM(ISNULL(LineCost, IssuedQty * ISNULL(UnitCost, 0))) AS TotalCost
     FROM dbo.MaterialIssueDetails
@@ -175,7 +175,7 @@ INNER JOIN dbo.Warehouses w ON n.WarehouseID = w.WarehouseID
 LEFT JOIN (
     SELECT
         IssueID,
-        COUNT(*) AS TotalItems,
+        COUNT(DISTINCT ItemID) AS TotalItems,
         SUM(IssuedQty) AS TotalQty,
         SUM(ISNULL(LineCost, IssuedQty * ISNULL(UnitCost, 0))) AS TotalCost
     FROM dbo.MaterialIssueDetails
@@ -277,6 +277,22 @@ ORDER BY pom.MaterialType, pom.LineNumber";
             return result.ToList();
         }
 
+        public async Task<List<int>> GetDraftIssueIdsForOrderAsync(int productionOrderId)
+        {
+            await _authorization.RequireCurrentUserPermissionAsync("SCR_MATISS", p => p.CanView,
+                "لا تملك صلاحية عرض أذون الصرف.");
+            if (productionOrderId <= 0) return new List<int>();
+
+            using var connection = CreateConnection();
+            var ids = await connection.QueryAsync<int>(@"
+SELECT IssueID
+FROM dbo.MaterialIssueNotes
+WHERE ProductionOrderID=@ProductionOrderID AND IssueStatus=1
+ORDER BY IssueID DESC",
+                new { ProductionOrderID = productionOrderId });
+            return ids.ToList();
+        }
+
         // ==========================================
         // نوع الصرف المقترح
         // ==========================================
@@ -319,7 +335,8 @@ ORDER BY pom.MaterialType, pom.LineNumber";
             try
             {
                 await ValidateIssueDraftAsync(
-                    connection, transaction, header.ProductionOrderID, header.SourceWarehouseID, details);
+                    connection, transaction, header.ProductionOrderID, header.SourceWarehouseID, details,
+                    requireSingleDraft: true);
                 var issueNumber = await GenerateIssueNumberAsync(connection, transaction);
 
                 var sql = @"
@@ -817,7 +834,8 @@ SELECT @NextNum;";
             System.Data.IDbTransaction transaction,
             int productionOrderId,
             int warehouseId,
-            List<MaterialIssueDetailDto> details)
+            List<MaterialIssueDetailDto> details,
+            bool requireSingleDraft = false)
         {
             if (productionOrderId <= 0 || warehouseId <= 0)
                 throw new InvalidOperationException("حدد أمر التصنيع ومخزن الصرف.");
@@ -830,6 +848,17 @@ SELECT @NextNum;";
                 new { ProductionOrderID = productionOrderId }, transaction);
             if (!orderStatus.HasValue || orderStatus.Value is < 2 or > 4)
                 throw new InvalidOperationException("لا يمكن إنشاء إذن صرف لأمر تصنيع غير نشط أو ملغى.");
+
+            if (requireSingleDraft)
+            {
+                var existingDrafts = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*)
+                      FROM dbo.MaterialIssueNotes WITH (UPDLOCK,HOLDLOCK)
+                      WHERE ProductionOrderID=@ProductionOrderID AND IssueStatus=1",
+                    new { ProductionOrderID = productionOrderId }, transaction);
+                if (existingDrafts > 0)
+                    throw new InvalidOperationException("يوجد إذن صرف مسودة لهذا الأمر بالفعل؛ افتحه وعدّله بدل إنشاء إذن مكرر.");
+            }
 
             var activeWarehouse = await connection.ExecuteScalarAsync<int>(
                 @"SELECT COUNT(*) FROM dbo.Warehouses WITH (UPDLOCK,HOLDLOCK)

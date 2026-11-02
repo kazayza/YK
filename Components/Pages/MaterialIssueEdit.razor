@@ -157,6 +157,9 @@ else
                         <span>منتجات تامة: <strong>@pendingMaterials.Count(m => m.MaterialType == 3)</strong></span>
                     </div>
                 </div>
+                <div style="margin:0 1rem 1rem;padding:.7rem .9rem;border:1px solid #fde68a;border-radius:8px;background:#fffbeb;color:#854d0e;font-size:.9rem;">
+                    تكلفة المسودة تقديرية من تكلفة المادة المسجلة في أمر التصنيع أو متوسط تكلفة الصنف، وليست تسعير FIFO نهائياً. عند الاعتماد تُحسب التكلفة الفعلية من طبقات FIFO المتاحة في المخزن، وقد تختلف إذا تغيّر الرصيد قبل الترحيل.
+                </div>
 
                 <div class="table-scroll">
                     <table class="mat-table">
@@ -170,8 +173,8 @@ else
                                 <th class="tc">مصروف سابقاً</th>
                                 <th class="tc">المتبقي</th>
                                 <th class="tc">الكمية المراد صرفها</th>
-                                <th class="tr">تكلفة الوحدة</th>
-                                <th class="tr">الإجمالي</th>
+                                <th class="tr">تكلفة الوحدة التقديرية</th>
+                                <th class="tr">الإجمالي التقديري</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -250,7 +253,7 @@ else
                 <div class="form-card-header">
                     <i class="bi bi-list-check"></i>
                     تفاصيل المواد المصروفة
-                    <span class="mat-count-badge">@savedDetails.Count صنف</span>
+                    <span class="mat-count-badge">@savedDetails.Count سطر FIFO</span>
                 </div>
                 <div class="table-scroll">
                     <table class="mat-table">
@@ -262,6 +265,8 @@ else
                                 <th>النوع</th>
                                 <th class="tc">المطلوب</th>
                                 <th class="tc">المصروف</th>
+                                <th class="tc">دفعة FIFO</th>
+                                <th class="tc">الصلاحية</th>
                                 <th class="tr">تكلفة الوحدة</th>
                                 <th class="tr">الإجمالي</th>
                             </tr>
@@ -277,6 +282,8 @@ else
                                     <td><span class="type-chip @GetMaterialTypeClass(d.MaterialType)">@d.MaterialTypeName</span></td>
                                     <td class="tc fw600">@d.RequiredQty.ToString("N3")</td>
                                     <td class="tc issued-val">@d.IssueQty.ToString("N3")</td>
+                                    <td class="tc">@(string.IsNullOrWhiteSpace(d.BatchNumber) ? "—" : d.BatchNumber)</td>
+                                    <td class="tc">@(d.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td>
                                     <td class="tr">@d.UnitCost.ToString("N2")</td>
                                     <td class="tr fw700 cost-col">@d.LineCost.ToString("N2")</td>
                                 </tr>
@@ -284,7 +291,7 @@ else
                         </tbody>
                         <tfoot>
                             <tr class="total-row">
-                                <td colspan="7" class="tr fw700">الإجمالي</td>
+                                <td colspan="9" class="tr fw700">الإجمالي</td>
                                 <td class="tr fw800 cost-col">@header.TotalCost.ToString("N2")</td>
                             </tr>
                         </tfoot>

@@ -3,8 +3,9 @@
 @using YKCoatings.Models
 @inject AccountingService AccountingService
 @inject UserSessionService UserSession
+@inject Microsoft.Extensions.Logging.ILogger<FiscalYears> Logger
 
-<PageTitle>السنوات المالية -   </PageTitle>
+<PageTitle>السنوات المالية</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -22,15 +23,49 @@ else
                 </div>
             </div>
             <div class="lh-actions">
-                <span class="lh-badge"><span class="lh-dot"></span>@allList.Count سنة</span>
+                @if (hasLoadedFiscalYears)
+                {
+                    <span class="lh-badge"><span class="lh-dot"></span>@allList.Count سنة</span>
+                }
                 <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سنة مالية جديدة</button>
             </div>
         </div>
     </div>
 
-    @if (isLoading)
+    @if (fiscalYearListReadDenied)
+    {
+        <div class="fiscal-year-list-read-alert" role="alert">ليس لديك صلاحية عرض السنوات المالية.</div>
+    }
+    @if (fiscalYearListReadFailed)
+    {
+        <div class="fiscal-year-list-read-alert" role="alert">
+            <span>تعذر تحميل قائمة السنوات المالية.@(hasLoadedFiscalYears ? " المعروض هو آخر تحميل ناجح." : " لا توجد قائمة سابقة يمكن عرضها.")</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">
+                @(isLoading ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل السنوات")
+            </button>
+        </div>
+    }
+    @if (fiscalYearEditReadDenied)
+    {
+        <div class="fiscal-year-edit-read-alert" role="alert">ليس لديك صلاحية عرض تفاصيل السنة المالية.</div>
+    }
+    @if (fiscalYearEditReadFailed)
+    {
+        <div class="fiscal-year-edit-read-alert" role="alert">
+            <span>تعذر تحميل بيانات السنة المالية. لم يُفتح نموذج التعديل.</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryFiscalYearEditLoadAsync" disabled="@isLoadingFiscalYearEdit">
+                @(isLoadingFiscalYearEdit ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل السنة")
+            </button>
+        </div>
+    }
+    @if (isLoadingFiscalYearEdit)
+    {
+        <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل بيانات السنة المالية...</p></div>
+    }
+
+    @if (isLoading && !hasLoadedFiscalYears)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل السنوات المالية...</p></div>}
-    else
+    else if (hasLoadedFiscalYears)
     {
         <div class="stats-luxury">
             <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="st-info"><span class="st-value">@allList.Count</span><span class="st-label">إجمالي السنوات</span></div><div class="st-gold-line"></div></div>
@@ -57,8 +92,8 @@ else
                                 <td><span class="coa-type type-1">@fy.PeriodsCount فترة</span> <span class="coa-type type-4" style="margin-right:4px">@fy.JournalsCount قيد</span></td>
                                 <td class="td-muted">@fy.CreatedDate.ToString("dd/MM/yyyy")</td>
                                 <td class="td-center"><div class="actions-wrap-luxury">
-                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
-                                    <button class="act-btn add" title="الفترات" @onclick="()=>ViewPeriods(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></button>
+                                    <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(fy.FiscalYearID, fy.PeriodsCount)" disabled="@isLoadingFiscalYearEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                    <button class="act-btn add" title="الفترات" @onclick="()=>ViewPeriods(fy.FiscalYearID)" disabled="@isLoadingPeriods"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></button>
                                     @if(fy.YearStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="إغلاق السنة" @onclick="()=>CloseYear(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
                                 </div></td>
                             </tr>
@@ -72,30 +107,54 @@ else
         {
             <div class="table-card-luxury" style="margin-top:16px">
                 <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>الفترات المحاسبية — سنة @allList.FirstOrDefault(f=>f.FiscalYearID==selectedYearId)?.YearName</h3><button class="btn-luxury btn-ghost-luxury" @onclick="()=>selectedYearId=null">إخفاء</button></div>
-                <div class="table-responsive">
-                    <table class="table-luxury">
-                        <thead><tr><th class="th-num">#</th><th>رقم الفترة</th><th>اسم الفترة</th><th>من</th><th>إلى</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
-                        <tbody>
-                            @{int pn=0;}
-                            @foreach(var p in periods.OrderBy(p=>p.PeriodNumber)){pn++;
-                                <tr>
-                                    <td class="td-num">@pn</td>
-                                    <td><span class="doc-num-luxury">@p.PeriodNumber</span></td>
-                                    <td class="td-muted">@p.PeriodName</td>
-                                    <td class="td-muted">@p.StartDate.ToString("dd/MM/yyyy")</td>
-                                    <td class="td-muted">@p.EndDate.ToString("dd/MM/yyyy")</td>
-                                    <td>@if(p.PeriodStatus==1){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>مفتوحة</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>مغلقة</span>}</td>
-                                    <td class="td-center"><div class="actions-wrap-luxury">
-                                        @if(p.PeriodStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" @onclick="()=>ClosePeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
-                                        else{<button class="act-btn add" @onclick="()=>OpenPeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
-                                    </div></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                @if (periodsReadDenied)
+                {
+                    <div class="period-read-alert" role="alert">ليس لديك صلاحية عرض الفترات المحاسبية.</div>
+                }
+                @if (periodsReadFailed)
+                {
+                    <div class="period-read-alert" role="alert">
+                        <span>تعذر تحميل فترات السنة المالية.@(hasLoadedPeriods ? " المعروض هو آخر تحميل ناجح." : " لا توجد فترات محمّلة لهذا الاختيار.")</span>
+                        <button class="btn-luxury btn-ghost-luxury" @onclick="ReloadSelectedYearPeriodsAsync" disabled="@isLoadingPeriods">
+                            @(isLoadingPeriods ? "جاري إعادة المحاولة..." : "إعادة محاولة تحميل الفترات")
+                        </button>
+                    </div>
+                }
+                @if (isLoadingPeriods && !hasLoadedPeriods)
+                {
+                    <div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل الفترات المحاسبية...</p></div>
+                }
+                else if (hasLoadedPeriods)
+                {
+                    <div class="table-responsive">
+                        <table class="table-luxury">
+                            <thead><tr><th class="th-num">#</th><th>رقم الفترة</th><th>اسم الفترة</th><th>من</th><th>إلى</th><th>الحالة</th><th class="th-actions">إجراءات</th></tr></thead>
+                            <tbody>
+                                @{int pn=0;}
+                                @foreach(var p in periods.OrderBy(p=>p.PeriodNumber)){pn++;
+                                    <tr>
+                                        <td class="td-num">@pn</td>
+                                        <td><span class="doc-num-luxury">@p.PeriodNumber</span></td>
+                                        <td class="td-muted">@p.PeriodName</td>
+                                        <td class="td-muted">@p.StartDate.ToString("dd/MM/yyyy")</td>
+                                        <td class="td-muted">@p.EndDate.ToString("dd/MM/yyyy")</td>
+                                        <td>@if(p.PeriodStatus==1){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>مفتوحة</span>}else if(p.PeriodStatus==2){<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>مغلقة</span>}else{<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>غير محدد</span>}</td>
+                                        <td class="td-center"><div class="actions-wrap-luxury">
+                                            @if(p.PeriodStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" @onclick="()=>ClosePeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
+                                            else if(p.PeriodStatus==2){<button class="act-btn add" @onclick="()=>OpenPeriod(p.PeriodID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
+                                        </div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
             </div>
         }
+    }
+    else if (!fiscalYearListReadDenied)
+    {
+        <div class="empty-luxury" role="status"><h4>ستظهر السنوات المالية بعد نجاح القراءة</h4></div>
     }
 </div>
 
@@ -109,13 +168,14 @@ else
                 <div class="fg"><label>كود السنة</label><input type="text" @bind="editDto.YearCode" placeholder="FY-2026" /></div>
                 <div class="fg"><label>حالية؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsCurrent" /><span></span></label></div>
                 <div class="fg full"><label>اسم السنة *</label><input type="text" @bind="editDto.YearName" /></div>
-                <div class="fg"><label>من تاريخ *</label><input type="date" @bind="editDto.StartDate" /></div>
-                <div class="fg"><label>إلى تاريخ *</label><input type="date" @bind="editDto.EndDate" /></div>
+                <div class="fg"><label>من تاريخ *</label><input type="date" @bind="editDto.StartDate" disabled="@fiscalYearDatesLocked" /></div>
+                <div class="fg"><label>إلى تاريخ *</label><input type="date" @bind="editDto.EndDate" disabled="@fiscalYearDatesLocked" /></div>
                 <div class="fg full"><label>ملاحظات</label><textarea @bind="editDto.Notes" rows="2"></textarea></div>
             </div>
+            @if(fiscalYearDatesLocked){<div class="msg-luxury" style="background:#f8fafc;color:#475569;border:1px solid #e2e8f0">تواريخ السنة مقفلة لوجود فترات محاسبية؛ لا يمكن تعديل النطاق.</div>}
             @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
         </div>
-        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ (سينشئ 12 فترة تلقائياً)</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="Save" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ (إنشاء فترات شهرية تلقائيًا)</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
     </div></div>
 }
 
@@ -191,6 +251,8 @@ else
 .ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
 .msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.period-read-alert,.fiscal-year-list-read-alert,.fiscal-year-edit-read-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px;padding:10px 14px;border-radius:12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.82rem;font-weight:700}
+.btn-luxury:disabled,.act-btn:disabled{opacity:.55;cursor:not-allowed}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
 .loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
@@ -201,9 +263,22 @@ else
     private List<AccountingPeriodListDto> periods = new();
     private int? selectedYearId = null;
     private bool isLoading = true;
+    private bool hasLoadedFiscalYears;
+    private bool fiscalYearListReadFailed;
+    private bool fiscalYearListReadDenied;
+    private bool isLoadingFiscalYearEdit;
+    private bool fiscalYearEditReadFailed;
+    private bool fiscalYearEditReadDenied;
+    private int? fiscalYearEditRetryId;
+    private int fiscalYearEditRetryPeriodsCount;
+    private bool isLoadingPeriods;
+    private bool hasLoadedPeriods;
+    private bool periodsReadFailed;
+    private bool periodsReadDenied;
     private bool showEdit = false;
     private FiscalYearDto editDto = new();
     private bool isSaving = false;
+    private bool fiscalYearDatesLocked = false;
     private string editMsg = "";
     private bool editOk = true;
     private string toast = "";
@@ -213,15 +288,85 @@ else
 
     private async Task LoadData()
     {
-        isLoading=true; StateHasChanged();
-        try{ allList = await AccountingService.GetFiscalYearsAsync(); }
-        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
-        finally{ isLoading=false; }
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            allList = await AccountingService.GetFiscalYearsForManagementPageAsync();
+            hasLoadedFiscalYears = true;
+            fiscalYearListReadFailed = false;
+            fiscalYearListReadDenied = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            allList = new();
+            hasLoadedFiscalYears = false;
+            fiscalYearListReadFailed = false;
+            fiscalYearListReadDenied = true;
+            selectedYearId = null;
+            periods = new();
+            hasLoadedPeriods = false;
+            periodsReadFailed = false;
+            periodsReadDenied = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load the fiscal-year list.");
+            fiscalYearListReadFailed = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
-    private void ShowAdd(){ editDto=new FiscalYearDto{ YearCode=$"FY-{DateTime.Now.Year}", YearName=$"السنة المالية {DateTime.Now.Year}", StartDate=new DateTime(DateTime.Now.Year,1,1), EndDate=new DateTime(DateTime.Now.Year,12,31), YearStatus=1, IsCurrent=true }; editMsg=""; showEdit=true; }
-    private async Task ShowEdit(int id){ var dto=await AccountingService.GetFiscalYearByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
-    private void CloseEdit(){ showEdit=false; }
+    private void ShowAdd(){ fiscalYearDatesLocked=false; editDto=new FiscalYearDto{ YearCode=$"FY-{DateTime.Now.Year}", YearName=$"السنة المالية {DateTime.Now.Year}", StartDate=new DateTime(DateTime.Now.Year,1,1), EndDate=new DateTime(DateTime.Now.Year,12,31), YearStatus=1, IsCurrent=true }; editMsg=""; showEdit=true; }
+    private Task ShowEdit(int id, int periodsCount) => LoadFiscalYearEditAsync(id, periodsCount);
+
+    private Task RetryFiscalYearEditLoadAsync()
+    {
+        if (!fiscalYearEditRetryId.HasValue) return Task.CompletedTask;
+        return LoadFiscalYearEditAsync(fiscalYearEditRetryId.Value, fiscalYearEditRetryPeriodsCount);
+    }
+
+    private async Task LoadFiscalYearEditAsync(int id, int periodsCount)
+    {
+        if (isLoadingFiscalYearEdit) return;
+
+        fiscalYearEditRetryId = id;
+        fiscalYearEditRetryPeriodsCount = periodsCount;
+        isLoadingFiscalYearEdit = true;
+        fiscalYearEditReadDenied = false;
+        try
+        {
+            var dto = await AccountingService.GetFiscalYearByIdForManagementPageAsync(id);
+            fiscalYearEditReadFailed = false;
+            fiscalYearEditRetryId = null;
+            if (dto is null) return;
+
+            editDto = dto;
+            fiscalYearDatesLocked = periodsCount > 0;
+            editMsg = "";
+            showEdit = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            fiscalYearEditReadFailed = false;
+            fiscalYearEditReadDenied = true;
+            fiscalYearEditRetryId = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load fiscal year {FiscalYearID} for editing.", id);
+            fiscalYearEditReadFailed = true;
+        }
+        finally
+        {
+            isLoadingFiscalYearEdit = false;
+        }
+    }
+
+    private void CloseEdit(){ showEdit=false; fiscalYearDatesLocked=false; }
 
     private async Task Save()
     {
@@ -230,7 +375,7 @@ else
         isSaving=true; StateHasChanged();
         try
         {
-            if(editDto.FiscalYearID==0){ await AccountingService.InsertFiscalYearAsync(editDto, UserSession.UserID); toast="تم إنشاء السنة المالية + 12 فترة تلقائياً "; toastOk=true; }
+            if(editDto.FiscalYearID==0){ await AccountingService.InsertFiscalYearAsync(editDto, UserSession.UserID); toast="تم إنشاء السنة المالية والفترات الشهرية تلقائيًا "; toastOk=true; }
             else{ await AccountingService.UpdateFiscalYearAsync(editDto, UserSession.UserID); toast="تم تحديث السنة المالية "; toastOk=true; }
             showEdit=false; await LoadData();
         }
@@ -240,9 +385,58 @@ else
 
     private async Task ViewPeriods(int fyId)
     {
-        selectedYearId=fyId;
-        periods = await AccountingService.GetAccountingPeriodsAsync(fyId);
-        StateHasChanged();
+        if (isLoadingPeriods) return;
+
+        if (selectedYearId != fyId)
+        {
+            periods = new();
+            hasLoadedPeriods = false;
+            periodsReadFailed = false;
+            periodsReadDenied = false;
+        }
+
+        selectedYearId = fyId;
+        await LoadSelectedYearPeriodsAsync();
+    }
+
+    private Task ReloadSelectedYearPeriodsAsync() => LoadSelectedYearPeriodsAsync();
+
+    private async Task LoadSelectedYearPeriodsAsync()
+    {
+        if (!selectedYearId.HasValue || isLoadingPeriods) return;
+
+        var fiscalYearId = selectedYearId.Value;
+        isLoadingPeriods = true;
+        periodsReadDenied = false;
+        try
+        {
+            var loadedPeriods = await AccountingService.GetAccountingPeriodsForFiscalYearViewAsync(fiscalYearId);
+            if (selectedYearId != fiscalYearId) return;
+
+            periods = loadedPeriods;
+            hasLoadedPeriods = true;
+            periodsReadFailed = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (selectedYearId == fiscalYearId)
+            {
+                periods = new();
+                hasLoadedPeriods = false;
+                periodsReadFailed = false;
+                periodsReadDenied = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load accounting periods for fiscal year {FiscalYearID}.", fiscalYearId);
+            if (selectedYearId == fiscalYearId)
+                periodsReadFailed = true;
+        }
+        finally
+        {
+            isLoadingPeriods = false;
+        }
     }
 
     private async Task CloseYear(int id)
@@ -253,13 +447,13 @@ else
 
     private async Task ClosePeriod(int id)
     {
-        try{ await AccountingService.ClosePeriodAsync(id, UserSession.UserID); toast="تم إغلاق الفترة "; toastOk=true; if(selectedYearId.HasValue) periods = await AccountingService.GetAccountingPeriodsAsync(selectedYearId); }
+        try{ await AccountingService.ClosePeriodAsync(id, UserSession.UserID); toast="تم إغلاق الفترة "; toastOk=true; if(selectedYearId.HasValue) await LoadSelectedYearPeriodsAsync(); }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }
     }
 
     private async Task OpenPeriod(int id)
     {
-        try{ await AccountingService.OpenPeriodAsync(id, UserSession.UserID); toast="تم فتح الفترة "; toastOk=true; if(selectedYearId.HasValue) periods = await AccountingService.GetAccountingPeriodsAsync(selectedYearId); }
+        try{ await AccountingService.OpenPeriodAsync(id, UserSession.UserID); toast="تم فتح الفترة "; toastOk=true; if(selectedYearId.HasValue) await LoadSelectedYearPeriodsAsync(); }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }
     }
 }

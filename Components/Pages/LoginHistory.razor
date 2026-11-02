@@ -6,8 +6,9 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<LoginHistory> Logger
 
-<PageTitle>سجل الدخول -    Tabs</PageTitle>
+<PageTitle>سجل الدخول</PageTitle>
 
 @if (!_authorized)
 {<div class="no-access-luxury" dir="rtl"><h4>جاري التحقق...</h4></div>}
@@ -74,6 +75,13 @@ else
         <div class="mudtabs-body-luxury">
             @if (_loading)
             {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل سجل الدخول...</p></div>}
+            else if (!string.IsNullOrWhiteSpace(_loadError))
+            {
+                <div role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b">
+                    <span>@_loadError</span>
+                    <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+                </div>
+            }
             else if (!filteredRecords.Any())
             {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><h4>لا يوجد سجلات</h4></div>}
             else
@@ -168,6 +176,7 @@ else
 @code {
     private bool _authorized = false;
     private bool _loading = true;
+    private string _loadError = string.Empty;
     private List<LoginHistoryDto> _records = new();
     private List<LoginHistoryDto> filteredRecords => _records.Where(r=>
         activeTab switch{
@@ -189,11 +198,50 @@ else
         {
             if (!UserSession.IsLoggedIn){var restored=await UserSession.TryRestoreSessionAsync(); if(!restored){Navigation.NavigateTo("/login"); return;} if(!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);}
             if (!PermissionService.CanView("SCR_LOGINLOG")){Navigation.NavigateTo("/access-denied"); return;}
-            _authorized=true; _filter.DateFrom=DateTime.Today.AddDays(-7); _filter.DateTo=DateTime.Today; _usersLookup=await LoginHistoryService.GetUsersLookupAsync(); await LoadData(); StateHasChanged();
+
+            _authorized = true;
+            _filter.DateFrom = DateTime.Today.AddDays(-7);
+            _filter.DateTo = DateTime.Today;
+            try
+            {
+                _usersLookup = await LoginHistoryService.GetUsersLookupAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to load login-history user filter options.");
+                _usersLookup = new();
+            }
+
+            await LoadData();
+            StateHasChanged();
         }
     }
 
-    private async Task LoadData(){try{_loading=true; StateHasChanged(); _records=await LoginHistoryService.GetAllAsync(_filter); _stats=await LoginHistoryService.GetStatsAsync(_filter.DateFrom, _filter.DateTo);}catch{}finally{_loading=false;}}
+    private async Task LoadData()
+    {
+        _loading = true;
+        _loadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var records = await LoginHistoryService.GetAllAsync(_filter);
+            var stats = await LoginHistoryService.GetStatsAsync(_filter.DateFrom, _filter.DateTo);
+            _records = records;
+            _stats = stats;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load login-history records and statistics.");
+            _records = new();
+            _stats = new();
+            _loadError = "تعذر تحميل سجل الدخول. لم تُعرض بيانات غير مكتملة؛ أعد المحاولة.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
     private async Task ApplyFilters()=>await LoadData();
     private void OnSearchKeyUp(KeyboardEventArgs e){_searchTimer?.Stop(); _searchTimer?.Dispose(); _searchTimer=new System.Timers.Timer(400); _searchTimer.Elapsed+=async (s,args)=>{_searchTimer?.Stop(); await InvokeAsync(async()=>{await LoadData(); StateHasChanged();});}; _searchTimer.AutoReset=false; _searchTimer.Start();}
     private async Task ResetFilters(){_filter=new LoginHistoryFilterDto{DateFrom=DateTime.Today.AddDays(-7), DateTo=DateTime.Today}; await LoadData();}

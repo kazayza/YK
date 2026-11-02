@@ -8,6 +8,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Items> Logger
 
 <PageTitle>المواد والمنتجات - واي كي كوتينج</PageTitle>
 
@@ -40,7 +41,7 @@ else
                     <div class="ph-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="ph-logo" /></div>
                     <div class="ph-text">
                         <h2 class="page-title-hybrid">المواد والمنتجات</h2>
-                        <p class="page-subtitle-hybrid">إدارة الأصناف والخامات والمنتجات التامة - @filteredItems.Count صنف متاح</p>
+                        <p class="page-subtitle-hybrid">إدارة الأصناف والخامات والمنتجات التامة - @(ItemsLoadedForCurrentUser ? filteredItems.Count.ToString() : "—") صنف متاح</p>
                     </div>
                 </div>
                 <div class="header-actions-hybrid">
@@ -52,7 +53,7 @@ else
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
                         </button>
                     </div>
-                    <span class="result-badge-hybrid"><span class="rb-dot"></span>@filteredItems.Count صنف</span>
+                    <span class="result-badge-hybrid"><span class="rb-dot"></span>@(ItemsLoadedForCurrentUser ? filteredItems.Count.ToString() : "—") صنف</span>
                     @if (permissions.CanExport)
                     {
                         <button class="btn-modern btn-export-hybrid" @onclick="ExportToExcel" disabled="@isExporting">
@@ -80,23 +81,23 @@ else
         <div class="stats-section-compact">
             <div class="stats-grid-compact">
                 <div class="stat-card-compact" style="--ac:#D4AF37">
-                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div><span class="scc-count">@(items?.Count ?? 0)</span></div>
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div><span class="scc-count">@(ItemsLoadedForCurrentUser ? items!.Count.ToString() : "—")</span></div>
                     <div class="scc-label">إجمالي الأصناف</div>
                 </div>
                 <div class="stat-card-compact" style="--ac:#2563eb">
-                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 1) ?? 0)</span></div>
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><span class="scc-count">@(ItemsLoadedForCurrentUser ? items!.Count(i => i.ItemType == 1).ToString() : "—")</span></div>
                     <div class="scc-label">مواد خام</div>
                 </div>
                 <div class="stat-card-compact" style="--ac:#06b6d4">
-                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 16h.01"/><path d="M2 16l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M2 7l10 5 10-5"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 2) ?? 0)</span></div>
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 16h.01"/><path d="M2 16l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M2 7l10 5 10-5"/></svg></div><span class="scc-count">@(ItemsLoadedForCurrentUser ? items!.Count(i => i.ItemType == 2).ToString() : "—")</span></div>
                     <div class="scc-label">مواد تعبئة</div>
                 </div>
                 <div class="stat-card-compact" style="--ac:#f59e0b">
-                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 3) ?? 0)</span></div>
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><span class="scc-count">@(ItemsLoadedForCurrentUser ? items!.Count(i => i.ItemType == 3).ToString() : "—")</span></div>
                     <div class="scc-label">نصف مصنع</div>
                 </div>
                 <div class="stat-card-compact" style="--ac:#10b981">
-                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg></div><span class="scc-count">@(items?.Count(i => i.ItemType == 4) ?? 0)</span></div>
+                    <div class="scc-top"><div class="scc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg></div><span class="scc-count">@(ItemsLoadedForCurrentUser ? items!.Count(i => i.ItemType == 4).ToString() : "—")</span></div>
                     <div class="scc-label">منتج تام</div>
                 </div>
             </div>
@@ -125,7 +126,7 @@ else
                     </select>
                     <svg class="fs-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
-                <button class="btn-sm-luxury" @onclick="LoadItems"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg>تحديث</button>
+                <button class="btn-sm-luxury" @onclick="LoadItems" disabled="@isLoadingItems"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v5h5"/></svg>تحديث</button>
             </div>
         </div>
 
@@ -155,10 +156,31 @@ else
             </div>
         }
 
-        <!-- Content -->
-        @if (items == null)
+        @if (isLoadingItems && ItemsLoadedForCurrentUser)
         {
-            <div class="loading-state-luxury"><div class="loader-luxury"></div><p>جاري تحميل البيانات...</p></div>
+            <div class="loading-state-luxury" role="status"><p>جارٍ تحديث قائمة الأصناف؛ آخر قائمة ناجحة ما زالت معروضة.</p></div>
+        }
+        else if (itemsLoadFailed && ItemsLoadedForCurrentUser)
+        {
+            <div class="error-msg-luxury" role="alert">@itemsLoadError <button class="btn-sm-luxury" @onclick="RetryLoadItemsAsync" disabled="@isLoadingItems">إعادة المحاولة</button></div>
+        }
+
+        <!-- Content -->
+        @if (isLoadingItems && !ItemsLoadedForCurrentUser)
+        {
+            <div class="loading-state-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل البيانات...</p></div>
+        }
+        else if (itemsLoadFailed && !ItemsLoadedForCurrentUser)
+        {
+            <div class="error-msg-luxury" role="alert">@itemsLoadError <button class="btn-sm-luxury" @onclick="RetryLoadItemsAsync" disabled="@isLoadingItems">إعادة المحاولة</button></div>
+        }
+        else if (itemsLoadDenied)
+        {
+            <div class="no-access-card" dir="rtl" role="alert"><h4>@itemsLoadError</h4><button class="btn-modern btn-secondary-modern" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>
+        }
+        else if (!ItemsLoadedForCurrentUser)
+        {
+            <div class="loading-state-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل البيانات...</p></div>
         }
         else if (!filteredItems.Any())
         {
@@ -521,24 +543,31 @@ else
 @code {
     private List<ItemListDto>? items;
     private List<ItemListDto> filteredItems = new();
+    private bool isLoadingItems = true;
+    private bool itemsLoadFailed, itemsLoadDenied;
+    private int itemsLoadVersion;
+    private int? itemsLoadedUserId;
+    private string itemsLoadError = string.Empty;
+    private bool ItemsLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && items is not null && itemsLoadedUserId == UserSession.UserID;
     private ModulePermissionDto? permissions;
     private string viewMode = "table"; // table or grid
-    
+
     // Filters
     private string searchText = "";
     private int filterType = 0;
     private string sortColumn = "ItemNameAr";
     private bool sortAsc = true;
-    
+
     // Bulk actions
     private HashSet<int> selectedItems = new();
-    
+
     // Export
     private bool isExporting = false;
-    
+
     // Dropdown
     private int? activeDropdownId = null;
-    
+
     // Action modal
     private bool showActionModal = false;
     private bool isDeactivateAction = false;
@@ -548,7 +577,7 @@ else
     private string deactivateReason = "";
     private string actionModalError = "";
     private bool isActionLoading = false;
-    
+
     // Notification
     private string resultMessage = "";
     private bool resultIsError = false;
@@ -563,8 +592,75 @@ else
 
     private async Task LoadItems()
     {
-        items = await ItemService.GetItemsListAsync();
-        Search();
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++itemsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (itemsLoadedUserId.HasValue && itemsLoadedUserId != userId)
+        {
+            items = null;
+            filteredItems.Clear();
+            selectedItems.Clear();
+            itemsLoadedUserId = null;
+        }
+
+        isLoadingItems = true;
+        itemsLoadFailed = false;
+        itemsLoadDenied = false;
+        itemsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ItemService.GetItemsListAsync();
+            if (!IsCurrentItemsLoad(requestVersion, userId, pageUri)) return;
+            items = result ?? new List<ItemListDto>();
+            itemsLoadedUserId = userId;
+            Search();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading item list for user {UserID}.", userId);
+            if (!IsCurrentItemsLoad(requestVersion, userId, pageUri)) return;
+            items = null;
+            filteredItems.Clear();
+            selectedItems.Clear();
+            itemsLoadedUserId = null;
+            itemsLoadDenied = true;
+            itemsLoadError = "ليس لديك صلاحية عرض الأصناف.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load item list for user {UserID}.", userId);
+            if (!IsCurrentItemsLoad(requestVersion, userId, pageUri)) return;
+            itemsLoadFailed = true;
+            itemsLoadError = ItemsLoadedForCurrentUser
+                ? "تعذر تحديث قائمة الأصناف؛ آخر قائمة ناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل قائمة الأصناف. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == itemsLoadVersion)
+            {
+                isLoadingItems = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentItemsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == itemsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadItemsAsync()
+    {
+        if (isLoadingItems || !itemsLoadFailed) return;
+        await LoadItems();
     }
 
     private void Search()

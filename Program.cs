@@ -53,6 +53,7 @@ builder.Services.AddScoped<SequenceService>();
 builder.Services.AddScoped<CurrencyService>();
 builder.Services.AddScoped<PaymentTermService>();
 builder.Services.AddScoped<BOMService>();
+builder.Services.AddScoped<CostCardService>();
 builder.Services.AddScoped<ProductionStageService>();
 builder.Services.AddScoped<ProductionTreeService>();
 builder.Services.AddScoped<ProductionOrderService>();

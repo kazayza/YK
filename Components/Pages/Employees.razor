@@ -8,6 +8,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Employees> Logger
 
 <PageTitle>الموظفين - واي كي كوتينج</PageTitle>
 
@@ -33,7 +34,7 @@ else
                 <p class="page-subtitle">إدارة بيانات الموظفين والعقود</p>
             </div>
             <div class="header-actions">
-                <span class="result-badge">@pagedResult.TotalCount موظف</span>
+                <span class="result-badge">@(hasLoaded ? pagedResult.TotalCount + " موظف" : (isLoading ? "جارٍ التحميل" : "العدد غير متاح"))</span>
                 @if (permissions.CanPrint)
                 {
                     <button class="btn-icon-only" @onclick="PrintList" title="طباعة">
@@ -42,7 +43,7 @@ else
                 }
                 @if (permissions.CanExport)
                 {
-                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting || !pagedResult.Items.Any()">
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting || isLoading || !hasLoaded || !string.IsNullOrWhiteSpace(loadError) || !pagedResult.Items.Any()">
                         @if (isExporting) { <div class="btn-spinner-sm"></div><span>جاري...</span> }
                         else { <span><i class=bi-paperclip></i> تصدير</span> }
                     </button>
@@ -150,9 +151,29 @@ else
         </div>
 
         <!-- Table - محسنة -->
+        @if (hasLoaded && !string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="load-error-alert" role="alert">
+                <span>@loadError</span>
+                <button class="btn-modern btn-secondary-modern" @onclick="LoadData" disabled="@isLoading">
+                    @(isLoading ? "جارٍ إعادة المحاولة..." : "إعادة المحاولة")
+                </button>
+            </div>
+        }
+
         @if (isLoading)
         {
             <div class="loading-state"><div class="loader"></div><p>جاري تحميل البيانات...</p></div>
+        }
+        else if (!hasLoaded && !string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="empty-state" role="alert">
+                <h4>تعذر تحميل قائمة الموظفين</h4>
+                <p>@loadError</p>
+                <button class="btn-modern btn-secondary-modern" @onclick="LoadData" disabled="@isLoading">
+                    @(isLoading ? "جارٍ إعادة المحاولة..." : "إعادة المحاولة")
+                </button>
+            </div>
         }
         else if (!pagedResult.Items.Any())
         {
@@ -689,6 +710,18 @@ else
     }
 .toast-success{ background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
 .toast-error{ background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.load-error-alert{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        background: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
 .toast-close{
         background: transparent;
         border: none;
@@ -807,6 +840,8 @@ else
     private List<LookupDto>? jobTitles;
 
     private bool isLoading = true, isExporting = false, isChangingStatus = false;
+    private bool hasLoaded = false;
+    private string loadError = string.Empty;
     private bool showStatusDialog = false;
     private EmployeeListDto? selectedEmployee;
     private string dialogMessage = "";
@@ -835,10 +870,25 @@ else
     private async Task LoadData()
     {
         isLoading = true;
+        loadError = string.Empty;
         ApplyStatusFilter();
-        try { pagedResult = await EmployeeService.GetEmployeesPagedAsync(filters); }
-        catch (Exception ex) { resultMessage = "خطأ: " + ex.Message; resultSuccess = false; }
-        finally { isLoading = false; }
+        try
+        {
+            var loadedPage = await EmployeeService.GetEmployeesPagedAsync(filters);
+            pagedResult = loadedPage;
+            hasLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load employees list.");
+            loadError = hasLoaded
+                ? "تعذر تحديث قائمة الموظفين؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل قائمة الموظفين. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
     private void ApplyStatusFilter()

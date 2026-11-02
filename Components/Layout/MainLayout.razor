@@ -5,6 +5,7 @@
 @using YKCoatings.Models
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.JSInterop
+@using Microsoft.Extensions.Logging
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
@@ -13,8 +14,21 @@
 @inject IJSRuntime JS
 @inject SettingService SettingService
 @inject LoginHistoryService LoginHistoryService
+@inject ILogger<MainLayout> Logger
 
-@if (!sessionReady)
+@if (_permissionLoadFailed)
+{
+    <main class="d-flex align-items-center justify-content-center min-vh-100 bg-light" dir="rtl">
+        <section class="alert alert-danger shadow m-3" role="alert" style="max-width:560px">
+            <h1 class="h5">تعذر تحميل الصلاحيات</h1>
+            <p>لم نعرض محتوى النظام لأن التحقق من الصلاحيات لم يكتمل. تحقق من الاتصال ثم أعد المحاولة.</p>
+            <button class="btn btn-primary" type="button" @onclick="ReloadAfterPermissionFailure">
+                إعادة المحاولة
+            </button>
+        </section>
+    </main>
+}
+else if (!sessionReady)
 {
     <div class="app-boot" dir="rtl">
         <img src="/images/yk-logo-white.png" alt="واي كي كوتينج" class="app-boot-logo" style="height:56px" />
@@ -57,29 +71,10 @@ else
             }
         </div>
 
-        <div class="sb-user">
-            <div class="sb-avatar">@GetInitials()</div>
-            <div class="sb-user-text">
-                <span class="sb-user-name">@UserSession.FullName</span>
-                <span class="sb-user-role"><span class="online-dot"></span>@UserSession.RoleName</span>
-            </div>
-        </div>
-
         <div class="sb-nav-area">
-            <NavMenu IsCollapsed="false" SearchText="@navSearch" OnScreenSelected="CloseMobileNavigation" />
+            <NavMenu IsCollapsed="false" SearchText="@navSearch" OnScreenSelected="CloseSidebarAfterScreenSelected" />
         </div>
 
-        <div class="sb-footer">
-            <div class="sb-footer-content">
-                <div class="sb-footer-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                </div>
-                <div class="sb-footer-text">
-                    <span>الإصدار 2.0   </span>
-                    <span class="sb-footer-status"><i class=bi-circle-fill></i> جميع الأنظمة تعمل</span>
-                </div>
-            </div>
-        </div>
     </aside>
 
     <!-- MAIN -->
@@ -178,23 +173,44 @@ else
                                 @if (unreadCount > 0){<button class="notif-read-all" @onclick="MarkAllRead" @onclick:stopPropagation="true">تحديد الكل كمقروء</button>}
                             </div>
                             <div class="notif-panel-body">
-                                @if (notifications == null || !notifications.Any())
+                                @if (_notificationsLoading && !_notificationsLoaded)
                                 {
-                                    <div class="notif-empty"><div class="notif-empty-icon"><i class="bi bi-bell-slash"></i></div><span>لا توجد إشعارات جديدة</span></div>
+                                    <div class="notif-empty" role="status"><span>جارٍ تحميل الإشعارات...</span></div>
+                                }
+                                else if (_notificationsLoadFailed && !_notificationsLoaded)
+                                {
+                                    <div class="notif-empty" role="alert" style="color:#b42318">
+                                        <span>تعذر تحميل الإشعارات. يرجى إعادة المحاولة.</span>
+                                        <button class="notif-read-all" type="button" @onclick="RetryLoadNotificationsAsync" @onclick:stopPropagation="true" disabled="@_notificationsLoading">إعادة المحاولة</button>
+                                    </div>
                                 }
                                 else
                                 {
-                                    @foreach (var notif in notifications)
+                                    @if (_notificationsLoadFailed)
                                     {
-                                        <button class="notif-item @(!notif.IsRead ? "unread" : "")" @onclick="@(() => OnNotifClick(notif))" @onclick:stopPropagation="true">
-                                            <div class="notif-item-icon"><i class="@NotificationService.GetTypeIcon(notif.NotificationType)"></i></div>
-                                            <div class="notif-item-body">
-                                                <div class="notif-item-title">@notif.Title</div>
-                                                <div class="notif-item-msg">@notif.Message</div>
-                                                <div class="notif-item-time"><i class="bi bi-clock"></i> @GetTimeAgo(notif.NotificationDate)</div>
-                                            </div>
-                                            @if (!notif.IsRead){<div class="notif-unread-dot" style="background:@NotificationService.GetPriorityColor(notif.Priority)"></div>}
-                                        </button>
+                                        <div role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;color:#b42318">
+                                            <span>تعذر تحديث الإشعارات؛ نعرض آخر بيانات محمّلة.</span>
+                                            <button class="notif-read-all" type="button" @onclick="RetryLoadNotificationsAsync" @onclick:stopPropagation="true" disabled="@_notificationsLoading">إعادة المحاولة</button>
+                                        </div>
+                                    }
+                                    @if (notifications == null || !notifications.Any())
+                                    {
+                                        <div class="notif-empty"><div class="notif-empty-icon"><i class="bi bi-bell-slash"></i></div><span>لا توجد إشعارات جديدة</span></div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var notif in notifications)
+                                        {
+                                            <button class="notif-item @(!notif.IsRead ? "unread" : "")" @onclick="@(() => OnNotifClick(notif))" @onclick:stopPropagation="true">
+                                                <div class="notif-item-icon"><i class="@NotificationService.GetTypeIcon(notif.NotificationType)"></i></div>
+                                                <div class="notif-item-body">
+                                                    <div class="notif-item-title">@notif.Title</div>
+                                                    <div class="notif-item-msg">@notif.Message</div>
+                                                    <div class="notif-item-time"><i class="bi bi-clock"></i> @GetTimeAgo(notif.NotificationDate)</div>
+                                                </div>
+                                                @if (!notif.IsRead){<div class="notif-unread-dot" style="background:@NotificationService.GetPriorityColor(notif.Priority)"></div>}
+                                            </button>
+                                        }
                                     }
                                 }
                             </div>
@@ -233,13 +249,34 @@ else
         </div>
 
         <footer class="app-footer">
-            <span>© @DateTime.Now.Year <strong style="color:#D4AF37">YK COATINGS</strong>   </span>
-            <span class="footer-sep">·</span><span>الإصدار 2.0</span>
-            <span class="footer-sep">·</span><span class="footer-status"><span class="status-dot"></span>جميع الأنظمة تعمل</span>
+            <span>© @DateTime.Now.Year <strong style="color:#D4AF37">YK COATINGS</strong></span>
             <span class="footer-sep">·</span><span class="footer-dev-main">تصميم وتطوير : أحمد محمد الرفاعى | 01122050119</span>
         </footer>
     </main>
 </div>
+@if (showSessionWarning)
+{
+    <div class="session-timeout-overlay" role="alertdialog" aria-modal="true"
+         aria-labelledby="session-timeout-title" aria-describedby="session-timeout-text" dir="rtl">
+        <div class="session-timeout-modal">
+            <div class="session-timeout-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                </svg>
+            </div>
+            <h2 id="session-timeout-title" class="session-timeout-title">تنبيه انتهاء الجلسة</h2>
+            <p id="session-timeout-text" class="session-timeout-text">
+                ستنتهي جلستك تلقائيًا بعد @(_sessionWarningMinutes == 1 ? "دقيقة واحدة" : "دقيقتين") بسبب عدم النشاط.
+                يمكنك اختيار البقاء مسجلًا أو تسجيل الخروج الآن.
+            </p>
+            <div class="session-timeout-actions">
+                <button type="button" class="session-btn session-btn-primary" @onclick="StayLoggedIn">البقاء مسجلًا</button>
+                <button type="button" class="session-btn session-btn-danger" @onclick="() => DoLogout(false)">تسجيل الخروج</button>
+            </div>
+        </div>
+    </div>
+}
 }
 
 <style>
@@ -287,23 +324,9 @@ html,body{height:100%}
 .sb-search-clear{position:absolute;left:8px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:7px;border:none;background:rgba(255,255,255,.06);color:#8B95A5;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
 .sb-search-clear:hover{background:rgba(212,175,55,.16);color:#D4AF37}
 .sb-search-clear svg{position:static;transform:none;width:12px;height:12px;stroke:currentColor}
-.sb-user{margin:10px 12px 0;padding:10px 12px;display:flex;align-items:center;gap:11px;background:linear-gradient(to left,rgba(212,175,55,.07),rgba(255,255,255,.015));border:1px solid rgba(212,175,55,.12);border-radius:14px;flex-shrink:0;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
-.sb-user::after{content:'';position:absolute;right:0;top:14px;bottom:14px;width:2px;border-radius:2px;background:linear-gradient(to bottom,transparent,rgba(212,175,55,.6),transparent)}
-.sb-avatar{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));display:flex;align-items:center;justify-content:center;font-weight:900;color:var(--black2);font-size:.88rem;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.sb-user-text{display:flex;flex-direction:column;min-width:0;overflow:hidden;flex:1}
-.sb-user-name{font-weight:700;font-size:.85rem;color:#F5E6C8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sb-user-role{font-size:.72rem;color:#8B95A5;display:flex;align-items:center;gap:6px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.online-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.15);animation:pulse 2s infinite}
-@@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,.15)}50%{box-shadow:0 0 0 6px rgba(34,197,94,.08)}}
 .sb-nav-area{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 8px;scrollbar-width:thin;scrollbar-color:rgba(212,175,55,.15) transparent}
 .sb-nav-area::-webkit-scrollbar{width:4px}
 .sb-nav-area::-webkit-scrollbar-thumb{background:rgba(212,175,55,.15);border-radius:99px}
-.sb-footer{padding:12px;border-top:1px solid rgba(212,175,55,.08);background:rgba(0,0,0,.2);flex-shrink:0}
-.sb-footer-content{display:flex;align-items:center;gap:10px}
-.sb-footer-icon{width:32px;height:32px;border-radius:8px;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.12);color:var(--gold);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.sb-footer-icon svg{width:15px;height:15px}
-.sb-footer-text{display:flex;flex-direction:column;font-size:.72rem;color:#5A6577}
-.sb-footer-status{color:var(--gold);margin-top:2px;font-weight:600;font-size:.68rem}
 
 /* MAIN - WITH MARGIN FOR SIDEBAR */
 .app-main{flex:1;display:flex;flex-direction:column;min-width:0;margin-right:var(--sb-width);transition:margin-right var(--transition);min-height:100vh}
@@ -414,7 +437,7 @@ html,body{height:100%}
 .app-body{flex:1;padding:24px;background:var(--body-bg);min-height:calc(100vh - var(--topbar-h) - 48px);overflow-x:hidden;margin-top:var(--topbar-h)}
 .app-body-inner{max-width:1600px;margin:0 auto;width:100%}
 .app-footer{padding:12px 24px;border-top:1px solid #e8e2d0;background:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center;gap:8px;font-size:.72rem;color:#94a3b8;font-weight:600;flex-wrap:wrap}
-.footer-sep{opacity:.4}.footer-status{display:flex;align-items:center;gap:5px;color:#16a34a}.status-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+.footer-sep{opacity:.4}
 .footer-dev-main{color:#0A0F1E;font-weight:700;font-size:.72rem;opacity:.7}
 
 .notif-wrap{position:relative;z-index:100}.notif-bg{position:fixed;inset:0;z-index:200;background:transparent}
@@ -438,6 +461,7 @@ html,body{height:100%}
 .session-timeout-overlay{position:fixed;inset:0;background:rgba(7,11,20,.6);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:5000;padding:20px}
 .session-timeout-modal{width:100%;max-width:420px;background:#fff;border-radius:20px;box-shadow:0 24px 60px rgba(0,0,0,.25);border:1px solid var(--border-gold);padding:28px 24px;text-align:center;animation:dropIn .25s}
 .session-timeout-icon{width:64px;height:64px;margin:0 auto 14px;border-radius:18px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:var(--black2);display:flex;align-items:center;justify-content:center;font-size:1.8rem}
+.session-timeout-icon svg{width:30px;height:30px}
 .session-timeout-title{font-size:1.1rem;font-weight:800;color:var(--black2);margin-bottom:10px}
 .session-timeout-text{font-size:.9rem;line-height:1.8;color:#475569;font-weight:600}
 .session-timeout-actions{display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap}
@@ -477,11 +501,16 @@ html,body{height:100%}
     private System.Threading.Timer? _searchDebounce;
     private List<NotificationDto>? notifications;
     private int unreadCount = 0;
+    private bool _notificationsLoaded;
+    private bool _notificationsLoading;
+    private bool _notificationsLoadFailed;
     private bool _notificationSoundEnabled = true;
     private int _lastUnreadCount = -1;
     private System.Threading.Timer? _notifTimer;
     private bool _initialized = false;
     private bool sessionReady = false;
+    private bool _permissionLoadFailed;
+    private void ReloadAfterPermissionFailure() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     private DotNetObjectReference<MainLayout>? _sessionTimeoutRef;
     private bool showSessionWarning = false;
     private int _sessionTimeoutMinutes = 30;
@@ -495,10 +524,37 @@ html,body{height:100%}
             UserSession.OnChange += Refresh;
             Navigation.LocationChanged += OnLocationChanged;
             var restored = await UserSession.EnsureRestoredAsync();
+            if (!restored)
+            {
+                sessionReady = true;
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            try
+            {
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            }
+            catch (Exception ex)
+            {
+                _permissionLoadFailed = true;
+                sessionReady = true;
+                Logger.LogError(ex, "Failed to load permissions during application layout initialization.");
+                StateHasChanged();
+                return;
+            }
+
             sessionReady = true;
-            if (!restored){Navigation.NavigateTo("/login");return;}
-            if (!PermissionService.IsLoaded){try{await PermissionService.LoadPermissionsAsync(UserSession.UserID);}catch{}}
-            try{_notificationSoundEnabled = await NotificationService.IsSoundEnabledAsync();}catch{}
+            await ConfigureCompanyPrintProfileAsync();
+            try
+            {
+                _notificationSoundEnabled = await NotificationService.IsSoundEnabledAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Could not load the notification sound preference; keeping the default.");
+            }
             if (UserSession.RequiresPasswordChange)
             {
                 var currentPath = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/').ToLower();
@@ -506,20 +562,96 @@ html,body{height:100%}
             }
             await LoadNotifications();
             await InitializeSessionTimeoutAsync();
-            _notifTimer = new System.Threading.Timer(async _ =>{if (UserSession.IsLoggedIn){try{await LoadNotifications();await InvokeAsync(StateHasChanged);}catch{}}}, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            _notifTimer = new System.Threading.Timer(async _ =>
+            {
+                if (!UserSession.IsLoggedIn) return;
+                try
+                {
+                    await LoadNotifications();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogDebug(ex, "Notification refresh failed; the next scheduled refresh will retry.");
+                }
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
             StateHasChanged();
         }
     }
-    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    private int _printProfileUserId;
+    private bool _printProfileLoading;
+
+    private void Refresh() => _ = InvokeAsync(async () =>
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            _printProfileUserId = 0;
+            try { await JS.InvokeVoidAsync("ykPrintBranding.clearProfile"); }
+            catch (Exception ex) { Logger.LogDebug(ex, "Could not clear the print profile in the browser session."); }
+        }
+        else
+        {
+            await ConfigureCompanyPrintProfileAsync();
+        }
+        StateHasChanged();
+    });
+
+    private async Task ConfigureCompanyPrintProfileAsync()
+    {
+        if (_printProfileLoading) return;
+        _printProfileLoading = true;
+        try
+        {
+            if (!UserSession.IsLoggedIn || UserSession.UserID <= 0)
+            {
+                _printProfileUserId = 0;
+                try { await JS.InvokeVoidAsync("ykPrintBranding.clearProfile"); }
+                catch (Exception ex) { Logger.LogDebug(ex, "Could not clear the print profile for an anonymous session."); }
+                return;
+            }
+
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+
+            if (!PermissionService.Permissions.Any(permission => permission.CanPrint))
+            {
+                _printProfileUserId = 0;
+                try { await JS.InvokeVoidAsync("ykPrintBranding.clearProfile"); }
+                catch (Exception ex) { Logger.LogDebug(ex, "Could not clear the print profile because no print permission is present."); }
+                return;
+            }
+
+            var profileUserId = UserSession.UserID;
+            if (_printProfileUserId == profileUserId) return;
+
+            var profile = await SettingService.GetCompanyPrintProfileAsync();
+            if (!UserSession.IsLoggedIn || UserSession.UserID != profileUserId) return;
+            await JS.InvokeVoidAsync("ykPrintBranding.setProfile", profile);
+            _printProfileUserId = profileUserId;
+        }
+        catch (Exception ex)
+        {
+            // Branding is a presentation enhancement; do not block navigation or printing.
+            Logger.LogWarning(ex, "Could not configure the company print profile; continuing without the profile.");
+        }
+        finally
+        {
+            _printProfileLoading = false;
+        }
+    }
     private async void OnLocationChanged(object? s, LocationChangedEventArgs e)
     {
-        // Close the mobile drawer on navigation without changing the desktop sidebar state.
-        isMobileOpen = false;
+        // Close the sidebar after navigation at every viewport size.
+        CloseSidebarAfterScreenSelected();
         showNotifications = false;
         showUserMenu = false;
         showGlobalSearch = false;
         await InvokeAsync(StateHasChanged);
-        if (UserSession.IsLoggedIn){try{await LoadNotifications();}catch{}}
+        if (UserSession.IsLoggedIn)
+        {
+            try { await LoadNotifications(); }
+            catch (Exception ex) { Logger.LogDebug(ex, "Could not refresh notifications after navigation."); }
+        }
         await InvokeAsync(StateHasChanged);
     }
     private void ToggleCollapse()
@@ -540,11 +672,11 @@ html,body{height:100%}
         showGlobalSearch = false;
     }
     private void OpenMobile(){isMobileOpen = true; isCollapsed = false;}
-    private void CloseMobile(){isMobileOpen = false; isCollapsed = true;}
-    private void CloseMobileNavigation()
+    private void CloseMobile() => CloseSidebarAfterScreenSelected();
+    private void CloseSidebarAfterScreenSelected()
     {
-        // The mobile-open class controls the phone drawer; do not collapse the desktop sidebar.
         isMobileOpen = false;
+        isCollapsed = true;
     }
     private void ToggleUserMenu(){showUserMenu = !showUserMenu;showNotifications = false; showGlobalSearch=false;}
 
@@ -609,8 +741,9 @@ html,body{height:100%}
             showGlobalSearch = globalScreenResults.Any() || globalDataResults.Any();
             _searchLoading = false;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "Global search failed; clearing transient search results.");
             globalScreenResults.Clear(); globalDataResults.Clear(); showGlobalSearch = false; _searchLoading = false;
         }
         await InvokeAsync(StateHasChanged);
@@ -642,6 +775,12 @@ html,body{height:100%}
     private string GetPageTitle()
     {
         var uri = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/').ToLower();
+        if (uri.StartsWith("accounting-vouchers/receipt/edit/", StringComparison.Ordinal)) return "تعديل سند قبض";
+        if (uri.StartsWith("accounting-vouchers/receipt/view/", StringComparison.Ordinal)) return "عرض سند قبض";
+        if (uri.StartsWith("accounting-vouchers/payment/edit/", StringComparison.Ordinal)) return "تعديل سند صرف";
+        if (uri.StartsWith("accounting-vouchers/payment/view/", StringComparison.Ordinal)) return "عرض سند صرف";
+        if (uri == "accounting-vouchers/new/receipt") return "سند قبض جديد";
+        if (uri == "accounting-vouchers/new/payment") return "سند صرف جديد";
         return uri switch
         {
             "" or "dashboard" => "لوحة التحكم",
@@ -673,6 +812,7 @@ html,body{height:100%}
             "receipt-vouchers" => "سندات القبض", "payment-vouchers" => "سندات الصرف",
             "expenses" => "المصروفات", "cheques" => "الشيكات", "cost-centers" => "مراكز التكلفة",
             // الحسابات
+            "accounting-vouchers" => "سندات القبض والصرف",
             "chart-of-accounts" => "شجرة الحسابات", "journal-entries" => "القيود اليومية",
             "trial-balance" => "ميزان المراجعة", "account-ledger" => "دفتر الأستاذ",
             "fiscal-years" => "السنوات المالية",
@@ -697,24 +837,69 @@ html,body{height:100%}
     }
     private async Task DoLogout(bool isAutoLogout = false)
     {
-        try{if (UserSession.UserID > 0) await LoginHistoryService.RecordLogoutAsync(UserSession.UserID);}catch{}
-        try{await JS.InvokeVoidAsync("sessionTimeoutManager.stop");}catch{}
+        try
+        {
+            if (UserSession.UserID > 0)
+                await LoginHistoryService.RecordLogoutAsync(UserSession.UserID);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not record the logout event; completing logout locally.");
+        }
+
+        try { await JS.InvokeVoidAsync("sessionTimeoutManager.stop"); }
+        catch (Exception ex) { Logger.LogDebug(ex, "Could not stop the browser session-timeout monitor during logout."); }
+        try { await JS.InvokeVoidAsync("ykPrintBranding.clearProfile"); }
+        catch (Exception ex) { Logger.LogDebug(ex, "Could not clear browser print settings during logout."); }
+
+        _printProfileUserId = 0;
         showSessionWarning = false;
         PermissionService.Clear();
         await UserSession.LogoutAsync();
-        if (isAutoLogout) Navigation.NavigateTo("/login", true);
-        else Navigation.NavigateTo("/login");
+        Navigation.NavigateTo("/login", forceLoad: isAutoLogout);
     }
     private async Task LoadNotifications()
     {
+        if (_notificationsLoading) return;
+
+        var userId = UserSession.UserID;
+        var roleId = UserSession.RoleID;
+        _notificationsLoading = true;
         try
         {
-            notifications = await NotificationService.GetUserNotificationsAsync(UserSession.UserID, UserSession.RoleID);
-            var newCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
-            if (_notificationSoundEnabled && newCount > _lastUnreadCount && _lastUnreadCount >= 0){try{await JS.InvokeVoidAsync("playNotificationSound");}catch{}}
-            _lastUnreadCount = newCount;unreadCount = newCount;
-        }catch{}
+            var loadedNotifications = await NotificationService.GetUserNotificationsAsync(userId, roleId);
+            var newCount = await NotificationService.GetUnreadCountAsync(userId, roleId);
+            if (!UserSession.IsLoggedIn || UserSession.UserID != userId || UserSession.RoleID != roleId) return;
+
+            if (_notificationSoundEnabled && newCount > _lastUnreadCount && _lastUnreadCount >= 0)
+            {
+                try { await JS.InvokeVoidAsync("playNotificationSound"); }
+                catch (Exception ex) { Logger.LogDebug(ex, "Could not play the notification sound in the browser."); }
+            }
+
+            notifications = loadedNotifications;
+            _lastUnreadCount = newCount;
+            unreadCount = newCount;
+            _notificationsLoaded = true;
+            _notificationsLoadFailed = false;
+        }
+        catch (Exception ex)
+        {
+            _notificationsLoadFailed = true;
+            Logger.LogDebug(ex, "Could not refresh the notification list; keeping the last successfully loaded state.");
+        }
+        finally
+        {
+            _notificationsLoading = false;
+        }
     }
+
+    private async Task RetryLoadNotificationsAsync()
+    {
+        if (_notificationsLoading) return;
+        await LoadNotifications();
+    }
+
     private async Task ToggleNotifications(){showNotifications = !showNotifications;showUserMenu = false;if (showNotifications) await LoadNotifications();}
     private async Task MarkAllRead()
     {
@@ -732,7 +917,10 @@ html,body{height:100%}
             unreadCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
             _lastUnreadCount = unreadCount;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not reconcile the unread count after marking notifications as read.");
+        }
 
         await InvokeAsync(StateHasChanged);
     }
@@ -748,8 +936,9 @@ html,body{height:100%}
             {
                 unreadCount = await NotificationService.GetUnreadCountAsync(UserSession.UserID, UserSession.RoleID);
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogDebug(ex, "Could not refresh the unread count after opening a notification.");
                 unreadCount = Math.Max(0, previousUnreadCount - 1);
             }
             _lastUnreadCount = unreadCount;
@@ -769,6 +958,8 @@ html,body{height:100%}
         {
             return moduleCode switch
             {
+                "SCR_RECV" => $"/accounting-vouchers/receipt/view/{recordId}",
+                "SCR_PAYV" => $"/accounting-vouchers/payment/view/{recordId}",
                 "SCR_PRODORD" => $"/production-orders/edit/{recordId}",
                 "SCR_BATCH" => $"/production-batches/edit/{recordId}",
                 "SCR_MATISS" => $"/material-issues/edit/{recordId}",
@@ -802,9 +993,19 @@ html,body{height:100%}
             _sessionTimeoutRef?.Dispose();
             _sessionTimeoutRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("sessionTimeoutManager.init", _sessionTimeoutRef, _sessionTimeoutMinutes, _sessionWarningMinutes);
-        }catch{}
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not initialize the browser idle-timeout monitor.");
+        }
     }
-    private async Task StayLoggedIn(){showSessionWarning = false;try{await JS.InvokeVoidAsync("sessionTimeoutManager.stayAlive");}catch{}StateHasChanged();}
+    private async Task StayLoggedIn()
+    {
+        showSessionWarning = false;
+        try { await JS.InvokeVoidAsync("sessionTimeoutManager.stayAlive"); }
+        catch (Exception ex) { Logger.LogDebug(ex, "Could not notify the browser session-timeout monitor."); }
+        StateHasChanged();
+    }
     [JSInvokable] public async Task ShowSessionWarning(){showSessionWarning = true;await InvokeAsync(StateHasChanged);}
     [JSInvokable] public async Task HideSessionWarning(){showSessionWarning = false;await InvokeAsync(StateHasChanged);}
     [JSInvokable] public async Task ForceLogoutFromIdle(){await DoLogout(true);}

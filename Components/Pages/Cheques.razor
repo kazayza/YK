@@ -5,11 +5,20 @@
 @inject LookupService LookupService
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
+@inject Microsoft.Extensions.Logging.ILogger<Cheques> Logger
 
 <PageTitle>إدارة الشيكات</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissionLoadFailed)
+{
+    <div class="msg-luxury msg-error" role="alert"><span>@permissionLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadChequePermissionsAsync" disabled="@isLoadingPermissions">إعادة المحاولة</button></div>
+}
+else if (permissionLoadDenied)
+{
+    <div class="msg-luxury msg-error" role="alert"><span>@permissionLoadError</span><a class="btn-luxury btn-ghost-luxury" href="/login">تسجيل الدخول مجددًا</a></div>
+}
 else if (!permissionChecked)
 {<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات الشيكات...</p></div>}
 else if (!isAuthorized)
@@ -28,19 +37,46 @@ else
                 </div>
             </div>
             <div class="lh-actions">
-                <span class="lh-badge"><span class="lh-dot"></span>@filteredList.Count شيك</span>
-                <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">محصلة: @filteredList.Where(c=>c.ChequeStatus==3).Sum(c=>c.Amount).ToString("#,##0")</span>
-                <span class="lh-badge" style="background:rgba(239,68,68,.08);color:#dc2626;border-color:rgba(239,68,68,.15)">مرتجعة: @filteredList.Count(c=>c.ChequeStatus==4)</span>
+                @if (hasLoadedChequeList)
+                {
+                    <span class="lh-badge"><span class="lh-dot"></span>@filteredList.Count شيك</span>
+                    <span class="lh-badge" style="background:rgba(16,185,129,.1);color:#059669;border-color:rgba(16,185,129,.15)">محصلة: @filteredList.Where(c=>c.ChequeStatus==3).Sum(c=>c.Amount).ToString("#,##0")</span>
+                    <span class="lh-badge" style="background:rgba(239,68,68,.08);color:#dc2626;border-color:rgba(239,68,68,.15)">مرتجعة: @filteredList.Count(c=>c.ChequeStatus==4)</span>
+                }
                 @if (HasChequePermission(p => p.CanAdd))
                 {
-                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>شيك جديد</button>
+                    <button class="btn-luxury btn-primary-luxury" @onclick="ShowAdd" disabled="@isLoadingChequeDetails"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>شيك جديد</button>
                 }
             </div>
         </div>
     </div>
 
+    @if (chequeDetailsLoadFailed)
+    {
+        <div class="msg-luxury msg-error cheque-detail-load-alert" role="alert">
+            <span>تعذر تحميل بيانات الشيك. لم يتم تغيير بيانات النموذج أو حفظها.</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadChequeDetailsAsync" disabled="@isLoadingChequeDetails">إعادة المحاولة</button>
+        </div>
+    }
+    else if (isLoadingChequeDetails)
+    {
+        <div class="cheque-detail-loading" role="status">جاري تحميل بيانات الشيك...</div>
+    }
+
+    @if (chequeListLoadFailed)
+    {
+        <div class="msg-luxury msg-error cheque-list-load-alert" role="alert">
+            <span>تعذر تحميل قائمة الشيكات.@(hasLoadedChequeList ? " المعروض هو آخر تحميل ناجح وقد لا يطابق المرشحات الحالية." : " لا توجد نتيجة سابقة يمكن عرضها.")</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">إعادة المحاولة</button>
+        </div>
+    }
+
     @if (isLoading)
     {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الشيكات...</p></div>}
+    else if (!hasLoadedChequeList)
+    {
+        <div class="cheque-list-unavailable" role="status">ستظهر قائمة الشيكات بعد نجاح القراءة.</div>
+    }
     else
     {
         <div class="stats-luxury">
@@ -85,8 +121,14 @@ else
                         </tr>
                     </thead>
                     <tbody>
-                        @{int n=0;}
-                        @foreach(var ch in filteredList.OrderByDescending(c=>c.DueDate)){n++;
+                        @if (filteredList.Count == 0)
+                        {
+                            <tr><td colspan="11" class="cheque-empty-state">لا توجد شيكات مطابقة للمرشحات الحالية.</td></tr>
+                        }
+                        else
+                        {
+                            int n=0;
+                            @foreach(var ch in filteredList.OrderByDescending(c=>c.DueDate)){n++;
                             <tr @key="ch.ChequeID">
                                 <td class="td-num">@n</td>
                                 <td><span class="doc-num-luxury">@ch.ChequeNumber</span></td>
@@ -116,11 +158,12 @@ else
                                 </td>
                                 <td class="td-muted">@(ch.ReceiptNumber ?? ch.PaymentNumber ?? "—")</td>
                                 <td class="td-center"><div class="actions-wrap-luxury">
-                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeStatus==1){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeType==1 && ch.ChequeStatus==1){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
                                     @if(HasChequePermission(p => p.CanApprove) && (ch.ChequeStatus==1 || ch.ChequeStatus==2)){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="ارتجاع" @onclick="()=>Bounce(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>}
-                                    @if(HasChequePermission(p => p.CanEdit)){<button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanEdit)){<button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(ch.ChequeID)" disabled="@isLoadingChequeDetails"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                 </div></td>
                             </tr>
+                            }
                         }
                     </tbody>
                 </table>
@@ -238,6 +281,12 @@ else
 .ml-footer{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #f1efe8;background:#fcfaf6;justify-content:flex-end}
 .msg-luxury{padding:10px 14px;border-radius:12px;font-size:.82rem;font-weight:600;margin-top:12px}
 .msg-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.cheque-list-load-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:0}
+.cheque-detail-load-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:0}
+.cheque-detail-loading{padding:10px 14px;border-radius:12px;background:#fcfaf6;border:1px solid #e8e2d0;color:#6b7280;font-size:.82rem;font-weight:600}
+.cheque-list-unavailable{padding:24px;text-align:center;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;font-size:.85rem;font-weight:700}
+.cheque-empty-state{padding:28px!important;text-align:center;color:#6b7280;font-weight:700}
+.btn-luxury:disabled{opacity:.55;cursor:not-allowed}
 .msg-success{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
 .loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
@@ -266,25 +315,114 @@ else
     private string bounceReason = "";
     private bool permissionChecked;
     private bool isAuthorized;
+    private bool isLoadingPermissions;
+    private bool permissionLoadFailed, permissionLoadDenied;
+    private long permissionRequestVersion;
+    private string permissionLoadError = string.Empty;
+    private bool hasLoadedChequeList;
+    private bool chequeListLoadFailed;
+    private bool isLoadingChequeDetails;
+    private bool chequeDetailsLoadFailed;
+    private int? pendingChequeEditId;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionChecked = true;
+            return;
+        }
+
+        if (await LoadChequePermissionsAsync() && isAuthorized)
+            await LoadData();
+    }
+
+    private async Task<bool> LoadChequePermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn) return false;
+        if (isLoadingPermissions) return false;
+
+        var requestVersion = ++permissionRequestVersion;
+        var userId = UserSession.UserID;
+        isLoadingPermissions = true;
+        permissionChecked = false;
+        isAuthorized = false;
+        permissionLoadFailed = false;
+        permissionLoadDenied = false;
+        permissionLoadError = string.Empty;
+        StateHasChanged();
 
         try
         {
             if (!PermissionService.IsLoaded)
-                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentChequePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
 
             isAuthorized = HasChequePermission(p => p.CanView);
             permissionChecked = true;
-            if (isAuthorized) await LoadData();
+            return true;
         }
-        catch
+        catch (UnauthorizedAccessException ex)
         {
-            permissionChecked = true;
-            isAuthorized = false;
+            Logger.LogWarning(ex, "Access denied while loading cheque-page permissions for user {UserID}.", userId);
+            if (!IsCurrentChequePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadDenied = true;
+            permissionLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
         }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load cheque-page permissions for user {UserID}.", userId);
+            if (!IsCurrentChequePermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadFailed = true;
+            permissionLoadError = "تعذر تحميل صلاحيات الشيكات. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == permissionRequestVersion)
+            {
+                isLoadingPermissions = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentChequePermissionRequest(long requestVersion, int userId) =>
+        requestVersion == permissionRequestVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadChequePermissionsAsync()
+    {
+        if (isLoadingPermissions || !permissionLoadFailed) return;
+        if (!UserSession.IsLoggedIn) return;
+
+        if (await LoadChequePermissionsAsync() && isAuthorized)
+            await LoadData();
     }
 
     private bool HasChequePermission(Func<ModulePermissionDto, bool> predicate) =>
@@ -294,17 +432,45 @@ else
 
     private async Task LoadData()
     {
-        isLoading=true; StateHasChanged();
+        isLoading=true;
+        StateHasChanged();
         try
         {
-            allList = await TreasuryService.GetChequesAsync(filterFrom, filterTo, filterType==0?null:filterType, filterStatus==0?null:filterStatus);
-            currencies = await LookupService.GetCurrenciesAsync();
-            var banks = await TreasuryService.GetBankAccountLookupsAsync();
-            bankAccounts = banks.Select(b=>new LookupDto{ Id=b.BankAccountID, Name=b.BankName+" - "+b.AccountNumber, Code=b.BankAccountCode }).ToList();
-            ApplyFilter();
+            List<ChequeListDto>? loadedChequeList = null;
+            try
+            {
+                loadedChequeList = await TreasuryService.GetChequesAsync(filterFrom, filterTo, filterType==0?null:filterType, filterStatus==0?null:filterStatus);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                isAuthorized = false;
+                return;
+            }
+            catch (Exception)
+            {
+                chequeListLoadFailed = true;
+            }
+
+            if (loadedChequeList is not null)
+            {
+                allList = loadedChequeList;
+                ApplyFilter();
+                hasLoadedChequeList = true;
+                chequeListLoadFailed = false;
+            }
+
+            try
+            {
+                currencies = await LookupService.GetCurrenciesAsync();
+                var banks = await TreasuryService.GetBankAccountLookupsAsync();
+                bankAccounts = banks.Select(b=>new LookupDto{ Id=b.BankAccountID, Name=b.BankName+" - "+b.AccountNumber, Code=b.BankAccountCode }).ToList();
+            }
+            catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
         }
-        catch(Exception ex){ toast="خطأ: "+ex.Message; toastOk=false; }
-        finally{ isLoading=false; }
+        finally
+        {
+            isLoading=false;
+        }
     }
 
     private async Task LoadFiltered(){ await LoadData(); }
@@ -320,8 +486,63 @@ else
     }
 
     private void ClearSearch(){ searchText=""; ApplyFilter(); }
-    private void ShowAdd(){ editDto=new ChequeDto{ ChequeType=1, ChequeStatus=1, ChequeDate=DateTime.Today, DueDate=DateTime.Today.AddDays(30) }; editMsg=""; showEdit=true; }
-    private async Task ShowEdit(int id){ var dto=await TreasuryService.GetChequeByIdAsync(id); if(dto!=null){ editDto=dto; editMsg=""; showEdit=true; } }
+
+    private void ShowAdd()
+    {
+        chequeDetailsLoadFailed = false;
+        pendingChequeEditId = null;
+        editDto=new ChequeDto{ ChequeType=1, ChequeStatus=1, ChequeDate=DateTime.Today, DueDate=DateTime.Today.AddDays(30) };
+        editMsg="";
+        showEdit=true;
+    }
+
+    private Task ShowEdit(int id) => LoadChequeDetailsAsync(id);
+
+    private async Task RetryLoadChequeDetailsAsync()
+    {
+        if (pendingChequeEditId is int chequeId)
+            await LoadChequeDetailsAsync(chequeId);
+    }
+
+    private async Task LoadChequeDetailsAsync(int id)
+    {
+        if (isLoadingChequeDetails) return;
+
+        pendingChequeEditId = id;
+        chequeDetailsLoadFailed = false;
+        isLoadingChequeDetails = true;
+        try
+        {
+            var dto = await TreasuryService.GetChequeByIdAsync(id);
+            if (dto is null)
+            {
+                pendingChequeEditId = null;
+                toast = "الشيك غير موجود أو لم يعد متاحًا.";
+                toastOk = false;
+                return;
+            }
+
+            editDto = dto;
+            editMsg = "";
+            pendingChequeEditId = null;
+            showEdit = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            pendingChequeEditId = null;
+            isAuthorized = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load cheque details for editing (ChequeID: {ChequeId})", id);
+            chequeDetailsLoadFailed = true;
+        }
+        finally
+        {
+            isLoadingChequeDetails = false;
+        }
+    }
+
     private void CloseEdit(){ showEdit=false; }
 
     private async Task Save()

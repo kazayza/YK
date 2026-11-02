@@ -5,8 +5,10 @@
 @inject PermissionService PermissionService
 @inject SettingService SettingService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Settings> Logger
 
-<PageTitle>الإعدادات -    Pro Tabs</PageTitle>
+<PageTitle>الإعدادات</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -46,9 +48,32 @@ else
         </div>
     </div>
 
-    @if (isLoading)
-    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الإعدادات...</p></div>}
-    else
+    @if (!string.IsNullOrWhiteSpace(printBrandingWarning))
+    {
+        <div class="msg-luxury msg-info" role="status" style="margin-bottom:12px">
+            @printBrandingWarning
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RefreshPrintBrandingAsync" disabled="@isRefreshingPrintBranding">
+                @(isRefreshingPrintBranding ? "جاري التحديث..." : "إعادة محاولة تحديث بيانات الطباعة")
+            </button>
+        </div>
+    }
+
+    @if (isLoading && settingsLoaded)
+    {
+        <div class="msg-luxury" role="status" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;margin:12px 0">جارٍ تحديث الإعدادات؛ البيانات الناجحة السابقة ما زالت معروضة.</div>
+    }
+    else if (settingsLoadFailed)
+    {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@settingsLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSettingsAsync" disabled="@isLoading">إعادة المحاولة</button></div>
+    }
+    else if (settingsLoadDenied)
+    {
+        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><span>@settingsLoadError</span><button class="btn-luxury btn-ghost-luxury" @onclick="GoToSettingsLogin">تسجيل الدخول مجددًا</button></div>
+    }
+
+    @if (isLoading && !settingsLoaded)
+    {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل الإعدادات...</p></div>}
+    else if (settingsLoaded)
     {
         <div class="stats-luxury">
             <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div><div class="st-info"><span class="st-value">@settings.Count</span><span class="st-label">إجمالي الإعدادات</span></div><div class="st-gold-line"></div></div>
@@ -247,9 +272,15 @@ else
     private Dictionary<int, string?> editedValues = new();
     private ModulePermissionDto? permissions;
     private bool isLoading = true;
+    private bool settingsLoaded;
+    private int settingsLoadVersion;
+    private bool settingsLoadFailed, settingsLoadDenied;
+    private string settingsLoadError = string.Empty;
     private bool isSaving = false;
     private string resultMessage = "";
     private bool resultSuccess = true;
+    private string printBrandingWarning = "";
+    private bool isRefreshingPrintBranding = false;
     private bool hasChanges => editedValues.Any();
     private int changedCount => editedValues.Count;
     private string searchText = "";
@@ -263,14 +294,83 @@ else
         if (permissions != null && permissions.CanView) await LoadData();
     }
 
-    private async Task LoadData()
+    private async Task<bool> LoadData()
     {
-        settings=await SettingService.GetAllSettingsAsync();
-        settingGroups=settings.Select(s=>s.SettingGroup ?? "General").Distinct().OrderBy(g=>g).ToList();
-        activeTab = settingGroups.FirstOrDefault() ?? "";
-        editedValues.Clear();
-        isLoading=false;
+        var requestVersion = ++settingsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isLoading = true;
+        settingsLoadFailed = false;
+        settingsLoadDenied = false;
+        settingsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedSettings = await SettingService.GetAllSettingsAsync();
+            if (!IsCurrentSettingsLoad(requestVersion, userId, pageUri)) return false;
+
+            settings = loadedSettings ?? new List<SettingDto>();
+            settingGroups = settings.Select(s => s.SettingGroup ?? "General").Distinct().OrderBy(g => g).ToList();
+            activeTab = settingGroups.FirstOrDefault() ?? string.Empty;
+            foreach (var edit in editedValues.ToArray())
+            {
+                var loadedSetting = settings.FirstOrDefault(setting => setting.SettingID == edit.Key);
+                if (loadedSetting == null || edit.Value == loadedSetting.SettingValue)
+                    editedValues.Remove(edit.Key);
+            }
+            settingsLoaded = true;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading system settings for user {UserID}.", userId);
+            if (!IsCurrentSettingsLoad(requestVersion, userId, pageUri)) return false;
+            settings = new List<SettingDto>();
+            settingGroups = new List<string>();
+            editedValues.Clear();
+            settingsLoaded = false;
+            settingsLoadDenied = true;
+            settingsLoadError = "تعذر التحقق من صلاحية عرض الإعدادات. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load system settings for user {UserID}.", userId);
+            if (!IsCurrentSettingsLoad(requestVersion, userId, pageUri)) return false;
+            settingsLoadFailed = true;
+            settingsLoadError = settingsLoaded
+                ? "تعذر تحديث الإعدادات؛ آخر البيانات الناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل الإعدادات. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == settingsLoadVersion)
+            {
+                isLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
     }
+
+    private bool IsCurrentSettingsLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == settingsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadSettingsAsync()
+    {
+        if (isLoading || !settingsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private void GoToSettingsLogin() => Navigation.NavigateTo("/login", forceLoad: true);
     private string? GetEditValue(SettingDto setting)=>editedValues.ContainsKey(setting.SettingID) ? editedValues[setting.SettingID] : setting.SettingValue;
     private bool IsChanged(SettingDto setting)=>editedValues.ContainsKey(setting.SettingID);
     private bool IsToggleChecked(SettingDto setting){var val=GetEditValue(setting); return val=="1" || val=="true" || val=="True";}
@@ -278,11 +378,61 @@ else
     private void OnValueChanged(SettingDto setting, string? newValue){if(newValue==setting.SettingValue) editedValues.Remove(setting.SettingID); else editedValues[setting.SettingID]=newValue;}
     private void OnSelectChanged(SettingDto setting, ChangeEventArgs e){OnValueChanged(setting, e.Value?.ToString());}
     private void OnToggleChanged(SettingDto setting, ChangeEventArgs e){bool isChecked=(bool)(e.Value ?? false); OnValueChanged(setting, isChecked ? "1" : "0");}
+
+    private async Task RefreshPrintBrandingAsync()
+    {
+        if (isRefreshingPrintBranding) return;
+        isRefreshingPrintBranding = true;
+        StateHasChanged();
+        try
+        {
+            var profile = await SettingService.GetCompanyPrintProfileAsync();
+            await JS.InvokeVoidAsync("ykPrintBranding.setProfile", profile);
+            printBrandingWarning = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "Company settings were saved, but refreshing browser print branding failed.");
+            printBrandingWarning = "تم حفظ الإعدادات، لكن تعذر تحديث بيانات الطباعة في هذه الصفحة. أعد المحاولة.";
+        }
+        finally
+        {
+            isRefreshingPrintBranding = false;
+        }
+    }
+
     private async Task SaveAllChanges()
     {
         if(!editedValues.Any()) return;
+        var companySettingsChanged = editedValues.Keys.Any(id =>
+            settings.Any(setting => setting.SettingID == id &&
+                string.Equals(setting.SettingGroup, "Company", StringComparison.OrdinalIgnoreCase)));
         isSaving=true; StateHasChanged();
-        try{int count=0; foreach(var kvp in editedValues){await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID); count++;} resultMessage=$"تم حفظ {count} إعداد بنجاح "; resultSuccess=true; await LoadData();}
+        try
+        {
+            var changesToSave = editedValues.ToArray();
+            int count=0;
+            foreach(var kvp in changesToSave)
+            {
+                await SettingService.UpdateSettingAsync(kvp.Key, kvp.Value, UserSession.UserID);
+                count++;
+            }
+            resultMessage=$"تم حفظ {count} إعداد بنجاح ";
+            resultSuccess=true;
+            foreach (var change in changesToSave)
+            {
+                var setting = settings.FirstOrDefault(current => current.SettingID == change.Key);
+                if (setting != null) setting.SettingValue = change.Value;
+                if (editedValues.TryGetValue(change.Key, out var currentValue) && currentValue == change.Value)
+                    editedValues.Remove(change.Key);
+            }
+            var settingsReloaded = await LoadData();
+            if (!settingsReloaded && !settingsLoadDenied)
+                resultMessage = $"تم حفظ {count} إعداد بنجاح، لكن تعذر تحديث العرض. أعد المحاولة.";
+            if (companySettingsChanged && PermissionService.Permissions.Any(permission => permission.CanPrint))
+                await RefreshPrintBrandingAsync();
+        }
         catch(Exception ex){resultMessage="خطأ: "+ex.Message; resultSuccess=false;}
         finally{isSaving=false;}
     }

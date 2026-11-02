@@ -20,7 +20,7 @@ else
             <div class="lh-content">
                 <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">@(isView ? "عرض سند صرف" : (isEdit ? $"تعديل {dto.PaymentNumber}" : "سند صرف جديد"))</h2><p class="lh-subtitle">فعلي: PaymentID / PaymentNumber / EntityType / PaymentStatus / JournalID —   </p></div></div>
                 <div class="lh-actions">
-                    <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/payment-vouchers")'>رجوع</button>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/accounting-vouchers?type=payment")'>رجوع</button>
                     @if (!isView && dto.PaymentStatus==1){<button class="btn-luxury btn-primary-luxury" @onclick="SaveVoucher" disabled="@isSaving">حفظ</button>}
                     @if (isEdit && dto.PaymentStatus==1){<button class="btn-luxury" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff" @onclick="ApproveVoucher" disabled="@isApproving">اعتماد + قيد</button>}
                 </div>
@@ -120,42 +120,11 @@ else
     private List<LookupDto> costCenters = new();
     private List<LookupDto> currencies = new();
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-
-        try { cashBoxes = (await TreasuryService.GetCashBoxLookupsAsync()).Select(cb => new SearchableItem { Id = cb.CashBoxID, Name = cb.CashBoxNameAr ?? string.Empty, Code = cb.CashBoxCode }).ToList(); } catch {}
-        try { bankAccounts = (await TreasuryService.GetBankAccountLookupsAsync()).Select(ba => new SearchableItem { Id = ba.BankAccountID, Name = ba.BankName + " - " + ba.AccountNumber, Code = ba.BankAccountCode }).ToList(); } catch {}
-        try { customers = await LookupService.GetCustomersSearchableAsync(); } catch {}
-        try { suppliers = await LookupService.GetSuppliersSearchableAsync(); } catch {}
-        try { expenseAccounts = await LookupService.GetExpenseAccountsSearchableAsync(); } catch {}
-        try { costCenters = (await TreasuryService.GetCostCentersFlatAsync()).Select(cc => new LookupDto { Id = cc.CostCenterID, Name = cc.CostCenterNameAr, Code = cc.CostCenterCode }).ToList(); } catch {}
-        try { currencies = await LookupService.GetCurrenciesAsync(); } catch {}
-        otherEntities = new List<SearchableItem>{ new(){Id=1, Name="جهة أخرى"} };
-
-        if (isView)
-        {
-            var data = await TreasuryService.GetPaymentByIdAsync(ViewId!.Value);
-            if (data != null) dto = data;
-        }
-        else if (isEdit)
-        {
-            var data = await TreasuryService.GetPaymentByIdAsync(Id!.Value);
-            if (data != null) dto = data;
-        }
-        else
-        {
-            dto.PaymentNumber = await TreasuryService.GeneratePaymentNoAsync();
-            dto.PaymentDate = DateTime.Today;
-            dto.EntityType = 1;
-            dto.PaymentMethod = 1;
-            dto.ExchangeRate = 1;
-            dto.PaymentStatus = 1;
-            if (cashBoxes.Any()) dto.CashBoxID = cashBoxes.First().Id;
-        }
-
-        isLoading = false;
+        var target = !UserSession.IsLoggedIn ? "/login" : isView ? $"/accounting-vouchers/payment/view/{ViewId}" : isEdit ? $"/accounting-vouchers/payment/edit/{Id}" : "/accounting-vouchers/new/payment";
+        Navigation.NavigateTo(target, replace: true);
+        return Task.CompletedTask;
     }
 
     private void OnEntityTypeChanged(){ dto.EntityID = null; dto.PaidTo = ""; }
@@ -178,7 +147,7 @@ else
             {
                 var newId = await TreasuryService.InsertPaymentAsync(dto, UserSession.UserID);
                 toast="تم إنشاء سند الصرف "; toastOk=true;
-                Navigation.NavigateTo($"/payment-vouchers/edit/{newId}");
+                Navigation.NavigateTo($"/accounting-vouchers/payment/edit/{newId}");
                 return;
             }
         }

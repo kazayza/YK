@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
 using SqlTransaction = Microsoft.Data.SqlClient.SqlTransaction;
@@ -10,12 +11,78 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<PurchaseReturnService> _logger;
 
-        public PurchaseReturnService(IConfiguration configuration, AuditService audit, NotificationService notif)
-            : base(configuration) { _audit = audit; _notif = notif; }
+        public PurchaseReturnService(
+            IConfiguration configuration,
+            AuditService audit,
+            NotificationService notif,
+            ModuleAuthorizationService authorization,
+            ILogger<PurchaseReturnService> logger)
+            : base(configuration)
+        {
+            _audit = audit;
+            _notif = notif;
+            _authorization = authorization;
+            _logger = logger;
+        }
+
+        private Task RequireReturnPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, "SCR_PRET", predicate, deniedMessage);
+
+        private Task RequireCurrentReturnPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync("SCR_PRET", predicate, deniedMessage);
+
+        private static async Task EnsureSourceInvoiceLocalCurrencyAsync(
+            SqlConnection connection, SqlTransaction? transaction, int? invoiceId)
+        {
+            if (invoiceId.GetValueOrDefault() <= 0) return;
+
+            var invoice = await connection.QueryFirstOrDefaultAsync<(
+                int? InvoiceID, int? CurrencyID, decimal ExchangeRate,
+                int? PurchaseOrderID, int? GRNID)>(
+                @"SELECT InvoiceID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate,
+                         PurchaseOrderID, GRNID
+                  FROM dbo.PurchaseInvoices WITH (UPDLOCK,HOLDLOCK)
+                  WHERE InvoiceID=@ID",
+                new { ID = invoiceId }, transaction);
+            if (!invoice.InvoiceID.HasValue)
+                throw new InvalidOperationException("فاتورة المشتريات الأصلية المرتبطة بالمرتجع غير موجودة.");
+            await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                connection, transaction, invoice.CurrencyID, invoice.ExchangeRate);
+
+            var purchaseOrderIds = new HashSet<int>();
+            if (invoice.PurchaseOrderID.GetValueOrDefault() > 0)
+                purchaseOrderIds.Add(invoice.PurchaseOrderID.GetValueOrDefault());
+            if (invoice.GRNID.GetValueOrDefault() > 0)
+            {
+                var grnPurchaseOrderId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    @"SELECT PurchaseOrderID FROM dbo.GoodsReceiptNotes WITH (UPDLOCK,HOLDLOCK)
+                      WHERE GRNID=@ID",
+                    new { ID = invoice.GRNID }, transaction);
+                if (grnPurchaseOrderId.GetValueOrDefault() > 0)
+                    purchaseOrderIds.Add(grnPurchaseOrderId.GetValueOrDefault());
+            }
+
+            foreach (var purchaseOrderId in purchaseOrderIds)
+            {
+                var order = await connection.QueryFirstOrDefaultAsync<(
+                    int? PurchaseOrderID, int? CurrencyID, decimal ExchangeRate)>(
+                    @"SELECT PurchaseOrderID, CurrencyID, ISNULL(ExchangeRate,1) AS ExchangeRate
+                      FROM dbo.PurchaseOrders WITH (UPDLOCK,HOLDLOCK)
+                      WHERE PurchaseOrderID=@ID",
+                    new { ID = purchaseOrderId }, transaction);
+                if (!order.PurchaseOrderID.HasValue)
+                    throw new InvalidOperationException("أمر الشراء المرتبط بفاتورة المرتجع غير موجود.");
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, transaction, order.CurrencyID, order.ExchangeRate);
+            }
+        }
 
         public async Task<List<PurchaseReturnListDto>> GetReturnsListAsync()
         {
+            await RequireCurrentReturnPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مرتجعات المشتريات.");
             using var connection = CreateConnection();
             var sql = @"SELECT ReturnID, ReturnNumber, ReturnDate, ReturnStatus, ReturnSource, ReturnSourceName,
                             ReturnType, ReturnTypeName, ReturnReason,
@@ -30,6 +97,7 @@ namespace YKCoatings.Services
 
         public async Task<PurchaseReturnHeaderDto?> GetReturnByIdAsync(int returnId)
         {
+            await RequireCurrentReturnPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مرتجعات المشتريات.");
             using var connection = CreateConnection();
             var sql = @"SELECT pr.ReturnID, pr.ReturnNumber, pr.ReturnDate, pr.ReturnStatus,
                             ISNULL(pr.ReturnSource, 1) AS ReturnSource, pr.ReturnType, pr.ReturnReason,
@@ -52,6 +120,7 @@ namespace YKCoatings.Services
 
         public async Task<List<PurchaseReturnDetailDto>> GetReturnDetailsAsync(int returnId)
         {
+            await RequireCurrentReturnPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض مرتجعات المشتريات.");
             using var connection = CreateConnection();
             var sql = @"SELECT prd.ReturnDetailID, prd.ReturnID, prd.LineNumber,
                             prd.ItemID, i.ItemCode, i.ItemNameAr,
@@ -70,6 +139,7 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateReturnNumberAsync()
         {
+            await RequireCurrentReturnPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء مرتجع مشتريات.");
             using var connection = CreateConnection();
             try
             {
@@ -89,7 +159,9 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertReturnAsync(PurchaseReturnHeaderDto header, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إنشاء مرتجع مشتريات.");
             using var connection = CreateConnection();
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, header.InvoiceID);
             var sql = @"INSERT INTO dbo.PurchaseReturns
                         (ReturnNumber, ReturnDate, SupplierID, InvoiceID, WarehouseID,
                          ReturnReason, ReturnType, ReturnStatus, ReturnSource,
@@ -114,10 +186,15 @@ namespace YKCoatings.Services
 
         public async Task UpdateReturnAsync(PurchaseReturnHeaderDto header, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل مرتجعات المشتريات.");
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT ReturnStatus FROM dbo.PurchaseReturns WHERE ReturnID = @ID", new { ID = header.ReturnID });
-            if (status != 1) throw new Exception("لا يمكن تعديل مرتجع ليس في حالة مسودة");
+            var current = await connection.QueryFirstOrDefaultAsync<(
+                int? ReturnStatus, int? InvoiceID)>(
+                @"SELECT ReturnStatus, InvoiceID FROM dbo.PurchaseReturns WITH (UPDLOCK,HOLDLOCK)
+                  WHERE ReturnID=@ID",
+                new { ID = header.ReturnID });
+            if (current.ReturnStatus != 1) throw new Exception("لا يمكن تعديل مرتجع ليس في حالة مسودة");
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, current.InvoiceID);
 
             await connection.ExecuteAsync(
                 @"UPDATE dbo.PurchaseReturns SET
@@ -134,10 +211,15 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertDetailAsync(PurchaseReturnDetailEditDto detail, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة تفاصيل مرتجع مشتريات.");
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                "SELECT ReturnStatus FROM dbo.PurchaseReturns WHERE ReturnID = @ID", new { ID = detail.ReturnID });
-            if (status != 1) throw new Exception("لا يمكن تعديل مرتجع ليس في حالة مسودة");
+            var current = await connection.QueryFirstOrDefaultAsync<(
+                int? ReturnStatus, int? InvoiceID)>(
+                @"SELECT ReturnStatus, InvoiceID FROM dbo.PurchaseReturns WITH (UPDLOCK,HOLDLOCK)
+                  WHERE ReturnID=@ID",
+                new { ID = detail.ReturnID });
+            if (current.ReturnStatus != 1) throw new Exception("لا يمكن تعديل مرتجع ليس في حالة مسودة");
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, current.InvoiceID);
             if (detail.ItemID <= 0) throw new Exception("اختر الصنف");
             if (detail.Quantity <= 0) throw new Exception("أدخل الكمية");
 
@@ -172,12 +254,18 @@ namespace YKCoatings.Services
 
         public async Task UpdateDetailAsync(PurchaseReturnDetailEditDto detail, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل تفاصيل مرتجع مشتريات.");
             using var connection = CreateConnection();
-            var status = await connection.QueryFirstOrDefaultAsync<int?>(
-                @"SELECT pr.ReturnStatus FROM dbo.PurchaseReturns pr
-                  INNER JOIN dbo.PurchaseReturnDetails prd ON pr.ReturnID = prd.ReturnID
-                  WHERE prd.ReturnDetailID = @ID", new { ID = detail.ReturnDetailID });
-            if (status != 1) throw new Exception("لا يمكن تعديل سطر في مرتجع ليس مسودة");
+            var current = await connection.QueryFirstOrDefaultAsync<(
+                int ReturnID, int? ReturnStatus, int? InvoiceID)>(
+                @"SELECT pr.ReturnID, pr.ReturnStatus, pr.InvoiceID
+                  FROM dbo.PurchaseReturns pr WITH (UPDLOCK,HOLDLOCK)
+                  INNER JOIN dbo.PurchaseReturnDetails prd WITH (UPDLOCK,HOLDLOCK)
+                    ON pr.ReturnID=prd.ReturnID
+                  WHERE prd.ReturnDetailID=@ID",
+                new { ID = detail.ReturnDetailID });
+            if (current.ReturnStatus != 1) throw new Exception("لا يمكن تعديل سطر في مرتجع ليس مسودة");
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, current.InvoiceID);
 
             await connection.ExecuteAsync(
                 @"UPDATE dbo.PurchaseReturnDetails SET
@@ -200,6 +288,7 @@ namespace YKCoatings.Services
 
         public async Task DeleteDetailAsync(int detailId, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف تفاصيل مرتجع مشتريات.");
             using var connection = CreateConnection();
             var info = await connection.QueryFirstOrDefaultAsync<(int ReturnID, int ReturnStatus)>(
                 @"SELECT prd.ReturnID, pr.ReturnStatus FROM dbo.PurchaseReturnDetails prd
@@ -216,8 +305,13 @@ namespace YKCoatings.Services
 
         public async Task<int> ImportLinesFromInvoiceAsync(int returnId, List<InvoiceLineForReturnDto> lines, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أصناف لمرتجع مشتريات.");
             if (lines == null || !lines.Any(l => l.IsSelected && l.ReturnQty > 0)) return 0;
             using var connection = CreateConnection();
+            var returnInvoiceId = await connection.QueryFirstOrDefaultAsync<int?>(
+                "SELECT InvoiceID FROM dbo.PurchaseReturns WITH (UPDLOCK,HOLDLOCK) WHERE ReturnID=@ID",
+                new { ID = returnId });
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, returnInvoiceId);
 
             var maxLine = await connection.QueryFirstOrDefaultAsync<int>(
                 "SELECT ISNULL(MAX(LineNumber), 0) FROM dbo.PurchaseReturnDetails WHERE ReturnID = @ID",
@@ -254,15 +348,20 @@ namespace YKCoatings.Services
 
         public async Task SubmitForApprovalAsync(int returnId, int userId, int? employeeId = null)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية إرسال مرتجعات المشتريات للاعتماد.");
             using var connection = CreateConnection();
-            var info = await connection.QueryFirstOrDefaultAsync<(string ReturnNumber, int ReturnStatus, int DetailCount)>(
+            var info = await connection.QueryFirstOrDefaultAsync<(
+                string ReturnNumber, int ReturnStatus, int DetailCount, int? InvoiceID)>(
                 @"SELECT pr.ReturnNumber, pr.ReturnStatus,
-                    (SELECT COUNT(*) FROM dbo.PurchaseReturnDetails WHERE ReturnID = pr.ReturnID)
-                  FROM dbo.PurchaseReturns pr WHERE pr.ReturnID = @ID", new { ID = returnId });
+                    (SELECT COUNT(*) FROM dbo.PurchaseReturnDetails WHERE ReturnID = pr.ReturnID) AS DetailCount,
+                    pr.InvoiceID
+                  FROM dbo.PurchaseReturns pr WHERE pr.ReturnID = @ID",
+                new { ID = returnId });
 
             if (string.IsNullOrWhiteSpace(info.ReturnNumber)) throw new Exception("المرتجع غير موجود");
             if (info.ReturnStatus != 1) throw new Exception("لا يمكن إرسال مرتجع غير مسودة");
             if (info.DetailCount == 0) throw new Exception("لا يمكن إرسال مرتجع بدون أصناف");
+            await EnsureSourceInvoiceLocalCurrencyAsync(connection, null, info.InvoiceID);
 
             await connection.ExecuteAsync(
                 @"UPDATE dbo.PurchaseReturns SET
@@ -284,7 +383,10 @@ namespace YKCoatings.Services
                     relatedRecordId: returnId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the pending-approval notification for a purchase return.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseReturns", returnId.ToString(),
                 moduleName: "SCR_PRET", description: $"إرسال مرتجع للاعتماد: {info.ReturnNumber}");
@@ -292,6 +394,7 @@ namespace YKCoatings.Services
 
         public async Task ApproveAsync(int returnId, int userId, int? employeeId = null)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد مرتجعات المشتريات.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -301,15 +404,19 @@ namespace YKCoatings.Services
 
             try
             {
-                var info = await connection.QueryFirstOrDefaultAsync<(string ReturnNumber, int ReturnStatus, int? CreatedBy, int SupplierID, int WarehouseID, int DetailCount)>(
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string ReturnNumber, int ReturnStatus, int? CreatedBy, int SupplierID,
+                    int WarehouseID, int DetailCount, int? InvoiceID)>(
                     @"SELECT pr.ReturnNumber, pr.ReturnStatus, pr.CreatedBy, pr.SupplierID, pr.WarehouseID,
-                        (SELECT COUNT(*) FROM dbo.PurchaseReturnDetails WHERE ReturnID = pr.ReturnID)
-                      FROM dbo.PurchaseReturns pr WHERE pr.ReturnID = @ID",
+                        (SELECT COUNT(*) FROM dbo.PurchaseReturnDetails WHERE ReturnID = pr.ReturnID) AS DetailCount,
+                        pr.InvoiceID
+                      FROM dbo.PurchaseReturns pr WITH (UPDLOCK, HOLDLOCK) WHERE pr.ReturnID = @ID",
                     new { ID = returnId }, transaction);
 
                 if (string.IsNullOrWhiteSpace(info.ReturnNumber)) throw new Exception("المرتجع غير موجود");
                 if (info.ReturnStatus != 2) throw new Exception("لا يمكن اعتماد مرتجع ليس في انتظار الاعتماد");
                 if (info.DetailCount == 0) throw new Exception("لا يمكن اعتماد مرتجع بدون أصناف");
+                await EnsureSourceInvoiceLocalCurrencyAsync(connection, transaction, info.InvoiceID);
 
                 returnNumber = info.ReturnNumber;
                 createdBy = info.CreatedBy;
@@ -344,20 +451,91 @@ namespace YKCoatings.Services
                     "EXEC dbo.sp_UpdateSupplierBalanceAfterInvoice @SupplierID",
                     new { SupplierID = info.SupplierID }, transaction);
 
-                // 5) القيد المحاسبي
-                try
-                {
-                    await connection.ExecuteAsync(
-                        "EXEC dbo.sp_CreatePurchaseReturnJournal @ReturnID, @UserID",
-                        new { ReturnID = returnId, UserID = userId }, transaction);
-                }
-                catch { }
+                // 5) القيد المحاسبي: فشل الإجراء أو غياب قيد مرتبط/متوازن يلغي الاعتماد كله.
+                var existingJournalCount = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocID=@ReturnID AND SourceDocType IN ('PRET','PurchaseReturn')",
+                    new { ReturnID = returnId }, transaction);
+                if (existingJournalCount != 0)
+                    throw new InvalidOperationException("يوجد قيد مرتبط مسبقاً بهذا المرتجع؛ أُوقف الاعتماد لمنع إنشاء قيد مكرر.");
+
+                await connection.ExecuteAsync(
+                    "EXEC dbo.sp_CreatePurchaseReturnJournal @ReturnID, @UserID",
+                    new { ReturnID = returnId, UserID = userId }, transaction);
+
+                var linkedJournals = (await connection.QueryAsync<(
+                    int JournalID, string? JournalNumber, int? JournalStatus, bool IsAutoGenerated,
+                    string? SourceDocType, int? SourceDocID, decimal? HeaderDebit, decimal? HeaderCredit)>(
+                    @"SELECT JournalID, JournalNumber, JournalStatus, ISNULL(IsAutoGenerated,0) AS IsAutoGenerated,
+                             SourceDocType, SourceDocID, TotalDebit AS HeaderDebit, TotalCredit AS HeaderCredit
+                      FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                      WHERE SourceDocID=@ReturnID AND SourceDocType IN ('PRET','PurchaseReturn')",
+                    new { ReturnID = returnId }, transaction)).ToList();
+                if (linkedJournals.Count != 1)
+                    throw new InvalidOperationException("لم ينشئ الإجراء قيداً واحداً فقط مرتبطاً بمرتجع المشتريات؛ أُلغيت العملية.");
+
+                var linkedJournal = linkedJournals[0];
+                if (string.IsNullOrWhiteSpace(linkedJournal.JournalNumber)
+                    || !linkedJournal.IsAutoGenerated || linkedJournal.SourceDocID != returnId
+                    || !string.Equals(linkedJournal.SourceDocType, "PRET", StringComparison.OrdinalIgnoreCase)
+                       && !string.Equals(linkedJournal.SourceDocType, "PurchaseReturn", StringComparison.OrdinalIgnoreCase)
+                    || !linkedJournal.JournalStatus.HasValue || linkedJournal.JournalStatus.Value != 2)
+                    throw new InvalidOperationException("القيد المرتبط بمرتجع المشتريات غير مرحّل أو لا يحمل ربطاً صالحاً؛ أُلغيت العملية.");
+
+                var journalTotals = await connection.QueryFirstOrDefaultAsync<(
+                    int DetailCount, decimal TotalDebit, decimal TotalCredit, int InvalidDetailCount)>(
+                    @"SELECT ISNULL(SUM(CASE WHEN ISNULL(jd.DebitAmount,0)>0 OR ISNULL(jd.CreditAmount,0)>0 THEN 1 ELSE 0 END),0) AS DetailCount,
+                             ISNULL(SUM(jd.DebitAmount),0) AS TotalDebit,
+                             ISNULL(SUM(jd.CreditAmount),0) AS TotalCredit,
+                             ISNULL(SUM(CASE WHEN jd.DebitAmount IS NULL OR jd.CreditAmount IS NULL
+                                      OR jd.DebitAmount<0 OR jd.CreditAmount<0
+                                      OR (jd.DebitAmount>0 AND jd.CreditAmount>0)
+                                      OR ((jd.DebitAmount>0 OR jd.CreditAmount>0)
+                                          AND (jd.AccountID IS NULL OR jd.AccountID<=0
+                                               OR coa.AccountID IS NULL
+                                               OR ISNULL(coa.IsActive,1)<>1
+                                               OR ISNULL(coa.IsDetailAccount,0)<>1
+                                               OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
+                                               OR jd.CostCenterID<0
+                                               OR (jd.CostCenterID>0 AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))
+                                          )
+                                      THEN 1 ELSE 0 END),0) AS InvalidDetailCount
+                      FROM dbo.JournalEntryDetails jd WITH (UPDLOCK, HOLDLOCK)
+                      LEFT JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
+                      LEFT JOIN dbo.CostCenters cc WITH (UPDLOCK,HOLDLOCK) ON cc.CostCenterID=jd.CostCenterID
+                      WHERE jd.JournalID=@JournalID",
+                    new { JournalID = linkedJournal.JournalID }, transaction);
+                if (journalTotals.DetailCount < 2 || journalTotals.InvalidDetailCount > 0
+                    || journalTotals.TotalDebit <= 0m || journalTotals.TotalDebit != journalTotals.TotalCredit)
+                    throw new InvalidOperationException("تفاصيل قيد مرتجع المشتريات غير مكتملة أو تحتوي سطرًا محاسبيًا غير صالح أو غير متوازنة؛ أُلغيت العملية.");
+                if (!linkedJournal.HeaderDebit.HasValue || !linkedJournal.HeaderCredit.HasValue
+                    || linkedJournal.HeaderDebit.Value != journalTotals.TotalDebit
+                    || linkedJournal.HeaderCredit.Value != journalTotals.TotalCredit)
+                    throw new InvalidOperationException("إجماليات رأس قيد مرتجع المشتريات لا تطابق مجموع السطور؛ أُلغيت العملية.");
 
                 transaction.Commit();
             }
-            catch { transaction.Rollback(); throw; }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after purchase-return approval failed for return {ReturnID}.",
+                        returnId);
+                }
+                throw;
+            }
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a purchase return.");
+            }
+
             try
             {
                 if (createdBy.HasValue)
@@ -374,7 +552,10 @@ namespace YKCoatings.Services
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a purchase return.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseReturns", returnId.ToString(),
                 moduleName: "SCR_PRET", description: $"اعتماد مرتجع: {returnNumber}");
@@ -382,6 +563,7 @@ namespace YKCoatings.Services
 
         public async Task RejectAsync(int returnId, string reason, int userId, int? employeeId = null)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية رفض مرتجعات المشتريات.");
             if (string.IsNullOrWhiteSpace(reason)) throw new Exception("أدخل سبب الرفض");
             using var connection = CreateConnection();
 
@@ -399,7 +581,15 @@ namespace YKCoatings.Services
                   WHERE ReturnID = @ID",
                 new { ID = returnId, EmpID = employeeId, Reason = reason, UserID = userId });
 
-            try { await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId); } catch { }
+            try
+            {
+                await _notif.MarkRelatedAsActionedAsync("SCR_PRET", returnId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a purchase return.");
+            }
+
             try
             {
                 if (info.CreatedBy.HasValue)
@@ -416,7 +606,10 @@ namespace YKCoatings.Services
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after rejecting a purchase return.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseReturns", returnId.ToString(),
                 moduleName: "SCR_PRET", description: $"رفض مرتجع: {info.ReturnNumber} — {reason}");
@@ -424,6 +617,7 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteReturnAsync(int returnId, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف مرتجعات المشتريات.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -445,11 +639,22 @@ namespace YKCoatings.Services
                     moduleName: "SCR_PRET", description: $"حذف مرتجع: {info.ReturnNumber}");
                 return (true, "تم حذف المرتجع بنجاح");
             }
-            catch (Exception ex) { transaction.Rollback(); return (false, ex.Message); }
+            catch (Exception ex)
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after purchase-return deletion failed for return {ReturnID}.",
+                        returnId);
+                }
+                return (false, ex.Message);
+            }
         }
 
         public async Task<byte[]> ExportToExcelAsync(List<PurchaseReturnListDto> returns, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير مرتجعات المشتريات.");
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("مرتجعات المشتريات");
             ws.RightToLeft = true; ws.Style.Font.FontName = "Cairo";
@@ -472,6 +677,7 @@ namespace YKCoatings.Services
 
         public async Task<string> GenerateReportHtmlAsync(int returnId, int userId)
         {
+            await RequireReturnPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة مرتجعات المشتريات.");
             var h = await GetReturnByIdAsync(returnId);
             if (h == null) return "<h3>المرتجع غير موجود</h3>";
             var d = await GetReturnDetailsAsync(returnId);

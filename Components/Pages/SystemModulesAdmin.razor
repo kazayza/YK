@@ -7,8 +7,9 @@
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<SystemModulesAdmin> Logger
 
-<PageTitle>إدارة الوحدات</PageTitle>
+<PageTitle>إدارة موديولات النظام</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -45,12 +46,15 @@ else
             </div>
         }
 
-        <section class="module-stats">
-            <div class="module-stat"><span class="module-stat-icon"><i class="bi bi-grid"></i></span><div><strong>@modules.Count</strong><small>إجمالي السجلات</small></div></div>
-            <div class="module-stat"><span class="module-stat-icon on"><i class="bi bi-check-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && x.IsActive)</strong><small>شاشات فعالة</small></div></div>
-            <div class="module-stat"><span class="module-stat-icon off"><i class="bi bi-pause-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && !x.IsActive)</strong><small>شاشات متوقفة</small></div></div>
-            <div class="module-stat"><span class="module-stat-icon group"><i class="bi bi-diagram-3"></i></span><div><strong>@modules.Count(x => x.IsMainGroup)</strong><small>مجموعات رئيسية</small></div></div>
-        </section>
+        @if (hasLoaded)
+        {
+            <section class="module-stats">
+                <div class="module-stat"><span class="module-stat-icon"><i class="bi bi-grid"></i></span><div><strong>@modules.Count</strong><small>إجمالي السجلات</small></div></div>
+                <div class="module-stat"><span class="module-stat-icon on"><i class="bi bi-check-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && x.IsActive)</strong><small>شاشات فعالة</small></div></div>
+                <div class="module-stat"><span class="module-stat-icon off"><i class="bi bi-pause-circle"></i></span><div><strong>@modules.Count(x => !x.IsMainGroup && !x.IsActive)</strong><small>شاشات متوقفة</small></div></div>
+                <div class="module-stat"><span class="module-stat-icon group"><i class="bi bi-diagram-3"></i></span><div><strong>@modules.Count(x => x.IsMainGroup)</strong><small>مجموعات رئيسية</small></div></div>
+            </section>
+        }
 
         <section class="module-list-card">
             <div class="module-list-heading">
@@ -81,12 +85,30 @@ else
                         <option value="inactive">المتوقفة</option>
                     </select>
                 </label>
-                <span class="module-result-count">@FilteredModules.Count() نتيجة</span>
+                <span class="module-result-count">@(hasLoaded ? FilteredModules.Count() + " نتيجة" : (isLoading ? "جارٍ التحميل" : "العدد غير متاح"))</span>
             </div>
+
+            @if (hasLoaded && !string.IsNullOrWhiteSpace(loadError))
+            {
+                <div class="module-message error module-load-error" role="alert">
+                    <i class="bi bi-exclamation-circle-fill"></i>
+                    <span>@loadError</span>
+                    <button class="module-retry" @onclick="LoadModulesAsync" disabled="@isLoading">إعادة المحاولة</button>
+                </div>
+            }
 
             @if (isLoading)
             {
                 <div class="module-empty"><span class="module-spinner"></span><span>جاري تحميل سجل الوحدات...</span></div>
+            }
+            else if (!hasLoaded && !string.IsNullOrWhiteSpace(loadError))
+            {
+                <div class="module-empty" role="alert">
+                    <i class="bi bi-exclamation-circle-fill"></i>
+                    <strong>تعذر تحميل سجل الوحدات</strong>
+                    <span>@loadError</span>
+                    <button class="module-retry" @onclick="LoadModulesAsync" disabled="@isLoading">إعادة المحاولة</button>
+                </div>
             }
             else if (!FilteredModules.Any())
             {
@@ -214,7 +236,7 @@ else
     .module-hero-line{position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,var(--mod-gold),transparent)}.module-hero-copy{position:relative}.module-eyebrow{font-size:.72rem;font-weight:800;color:#D8BF69}.module-admin-hero h1{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:1.35rem;font-weight:900;color:#F5E6C8}.module-admin-hero h1 i{color:var(--mod-gold)}.module-admin-hero p{margin:0;color:#AAB3C1;font-size:.83rem}
     .module-back{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;padding:9px 13px;border:1px solid rgba(212,175,55,.4);border-radius:10px;background:rgba(255,255,255,.06);color:#F5E6C8;font-family:inherit;font-size:.78rem;font-weight:800;white-space:nowrap;cursor:pointer}.module-back:hover{background:rgba(212,175,55,.13)}
     .module-notice{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid #eee1b4;border-radius:12px;background:#FFFAF0;color:#6D5713;font-size:.78rem;line-height:1.75}.module-notice i{margin-top:3px;color:#B08B1F;flex:0 0 auto}
-    .module-message{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-size:.82rem;font-weight:800}.module-message.error{background:#FFF0EF;color:#9D3128;border:1px solid #F3CECA}.module-message.success{background:#EAF8EF;color:#17643F;border:1px solid #C9EAD4}
+    .module-message{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:10px;font-size:.82rem;font-weight:800}.module-message.error{background:#FFF0EF;color:#9D3128;border:1px solid #F3CECA}.module-message.success{background:#EAF8EF;color:#17643F;border:1px solid #C9EAD4}.module-load-error{flex-wrap:wrap}.module-retry{margin-inline-start:auto;padding:7px 11px;border:1px solid #E5D9B6;border-radius:8px;background:#fff;color:#6D5713;font:800 .72rem 'Tajawal',sans-serif;cursor:pointer}.module-retry:disabled{opacity:.55;cursor:not-allowed}
     .module-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}.module-stat{display:flex;align-items:center;gap:11px;min-width:0;padding:13px 15px;border:1px solid #ECE6D7;border-radius:14px;background:#fff;box-shadow:0 5px 16px rgba(10,15,30,.035)}.module-stat-icon{display:grid;place-items:center;flex:0 0 39px;width:39px;height:39px;border-radius:11px;background:#F8F2DF;color:#8A6C18;font-size:1.05rem}.module-stat-icon.on{background:#EAF8EF;color:#18804C}.module-stat-icon.off{background:#F1F2F4;color:#777F8D}.module-stat-icon.group{background:#F2EFFB;color:#6851A7}.module-stat strong{display:block;font-size:1.1rem;font-weight:900;line-height:1.1}.module-stat small{display:block;margin-top:4px;color:var(--mod-muted);font-size:.7rem;font-weight:700}
     .module-list-card{min-width:0;overflow:hidden;border:1px solid #E9E3D5;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(10,15,30,.045)}.module-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;border-bottom:1px solid #EEE9DD;background:linear-gradient(120deg,#FFFDF7,#F8F5EC)}.module-section-title{display:flex;align-items:center;gap:10px;min-width:0}.module-section-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#F8F2DF;color:#907019;font-size:1.05rem}.module-section-title h2{margin:0;font-size:.95rem;font-weight:900}.module-section-title p{margin:3px 0 0;color:var(--mod-muted);font-size:.7rem;line-height:1.5}.module-edit-badge,.module-view-badge{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:6px 10px;border-radius:999px;background:#EAF8EF;border:1px solid #C9EAD4;color:#17643F;font-size:.68rem;font-weight:800}.module-view-badge{background:#F3F4F6;border-color:#E5E7EB;color:#656D7A}
     .module-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 15px;border-bottom:1px solid #F0EDE5;background:#fff}.module-search{position:relative;display:flex;align-items:center;flex:1 1 300px;min-width:220px}.module-search i{position:absolute;right:12px;color:#9AA2AE;font-size:.85rem;pointer-events:none}.module-search input{width:100%;height:40px;padding:0 37px 0 12px;border:1px solid #E4DFD3;border-radius:10px;background:#FCFAF6;font:inherit;font-size:.78rem;outline:none}.module-search input:focus{border-color:var(--mod-gold-dark);box-shadow:0 0 0 3px rgba(212,175,55,.11)}.module-status-filter{display:flex;align-items:center;gap:8px;color:#657083;font-size:.72rem;font-weight:800}.module-status-filter select{height:39px;min-width:105px;padding:0 10px;border:1px solid #E4DFD3;border-radius:9px;background:#fff;color:#313B4D;font:inherit;font-size:.75rem;outline:none}.module-result-count{margin-inline-start:auto;color:#7C8491;font-size:.7rem;font-weight:800;white-space:nowrap}
@@ -233,6 +255,8 @@ else
     private string searchText = "";
     private string statusFilter = "all";
     private bool isLoading = true;
+    private bool hasLoaded;
+    private string loadError = string.Empty;
     private bool statusIsError;
     private int? isSavingModuleId;
     private string statusMessage = "";
@@ -268,16 +292,21 @@ else
     private async Task LoadModulesAsync()
     {
         isLoading = true;
+        loadError = string.Empty;
         try
         {
-            modules = await ModuleAdminService.GetAllAsync();
+            var loadedModules = await ModuleAdminService.GetAllAsync();
+            modules = loadedModules;
+            hasLoaded = true;
             statusMessage = "";
             statusIsError = false;
         }
         catch (Exception ex)
         {
-            statusMessage = ex.Message;
-            statusIsError = true;
+            Logger.LogWarning(ex, "Failed to load system modules list.");
+            loadError = hasLoaded
+                ? "تعذر تحديث سجل الوحدات؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة."
+                : "تعذر تحميل سجل الوحدات. يرجى إعادة المحاولة.";
         }
         finally
         {
@@ -319,8 +348,23 @@ else
         {
             await ModuleAdminService.SetActiveAsync(module.ModuleID, activating, UserSession.UserID);
             await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-            modules = await ModuleAdminService.GetAllAsync();
-            statusMessage = $"تم {(activating ? "تفعيل" : "تعطيل")} الوحدة «{module.ModuleNameAr}». حُدّثت قائمة التنقل وصلاحيات الجلسة الحالية.";
+
+            try
+            {
+                var refreshedModules = await ModuleAdminService.GetAllAsync();
+                modules = refreshedModules;
+                hasLoaded = true;
+                loadError = string.Empty;
+                statusMessage = $"تم {(activating ? "تفعيل" : "تعطيل")} الوحدة «{module.ModuleNameAr}». حُدّثت قائمة التنقل وصلاحيات الجلسة الحالية.";
+                statusIsError = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to reload system modules after changing module state.");
+                loadError = "تعذر تحديث سجل الوحدات بعد حفظ التغيير؛ المعروض آخر نتائج ناجحة. يرجى إعادة المحاولة.";
+                statusMessage = $"تم {(activating ? "تفعيل" : "تعطيل")} الوحدة «{module.ModuleNameAr}».";
+                statusIsError = false;
+            }
         }
         catch (Exception ex)
         {

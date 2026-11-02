@@ -5,7 +5,12 @@ namespace YKCoatings.Services
 {
     public class AuthService : BaseDbService
     {
-        public AuthService(IConfiguration configuration) : base(configuration) { }
+        private readonly UserSessionService _userSession;
+
+        public AuthService(IConfiguration configuration, UserSessionService userSession) : base(configuration)
+        {
+            _userSession = userSession;
+        }
 
         public async Task<LoginResultDto> LoginAsync(
             string username, string password,
@@ -136,6 +141,9 @@ namespace YKCoatings.Services
 
         public async Task<List<ModulePermissionDto>> GetUserModulesAsync(int userId)
         {
+            if (userId <= 0 || !_userSession.IsLoggedIn || _userSession.UserID != userId)
+                throw new UnauthorizedAccessException("لا يمكن قراءة صلاحيات مستخدم آخر أو خارج الجلسة الحالية.");
+
             using var connection = CreateConnection();
             var sql = @"
                 SELECT
@@ -162,7 +170,8 @@ namespace YKCoatings.Services
 
         public async Task<bool> IsActiveAdministratorAsync(int userId)
         {
-            if (userId <= 0) return false;
+            if (userId <= 0 || !_userSession.IsLoggedIn || _userSession.UserID != userId)
+                return false;
 
             using var connection = CreateConnection();
             const string sql = @"SELECT CAST(CASE WHEN EXISTS (

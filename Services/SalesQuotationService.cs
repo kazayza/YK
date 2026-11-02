@@ -3,6 +3,7 @@ using System.Text;
 using ClosedXML.Excel;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
@@ -20,20 +21,32 @@ namespace YKCoatings.Services
         private readonly AuditService _audit;
         private readonly NotificationService _notifications;
         private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<SalesQuotationService> _logger;
 
         public SalesQuotationService(
             IConfiguration configuration,
             AuditService audit,
             NotificationService notifications,
-            ModuleAuthorizationService authorization) : base(configuration)
+            ModuleAuthorizationService authorization,
+            ILogger<SalesQuotationService> logger) : base(configuration)
         {
             _audit = audit;
             _notifications = notifications;
             _authorization = authorization;
+            _logger = logger;
         }
+
+        private Task RequireQuotationPermissionAsync(
+            int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+
+        private Task RequireCurrentQuotationPermissionAsync(
+            Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<SalesQuotationListDto>> GetQuotationsListAsync()
         {
+            await RequireCurrentQuotationPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض عروض الأسعار.");
             using var connection = CreateConnection();
             var headerSchema = await LoadTableSchemaAsync(connection, null, HeaderTable);
             var detailSchema = await LoadTableSchemaAsync(connection, null, DetailTable);
@@ -84,6 +97,7 @@ ORDER BY sq.[QuotationDate] DESC, sq.[QuotationID] DESC";
 
         public async Task<SalesQuotationHeaderDto?> GetQuotationByIdAsync(int quotationId)
         {
+            await RequireCurrentQuotationPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض عروض الأسعار.");
             using var connection = CreateConnection();
             var schema = await LoadTableSchemaAsync(connection, null, HeaderTable);
             EnsureColumns(schema, HeaderTable, "QuotationID", "QuotationNumber", "QuotationDate", "CustomerID", "QuotationStatus", "TotalAmount");
@@ -144,6 +158,7 @@ WHERE sq.[QuotationID] = @ID";
 
         public async Task<List<SalesQuotationDetailDto>> GetQuotationDetailsAsync(int quotationId)
         {
+            await RequireCurrentQuotationPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض تفاصيل عروض الأسعار.");
             using var connection = CreateConnection();
             var schema = await LoadTableSchemaAsync(connection, null, DetailTable);
             EnsureColumns(schema, DetailTable, "QuotationDetailID", "QuotationID", "LineNumber", "ItemID", "UnitID", "Quantity", "UnitPrice");
@@ -173,6 +188,7 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
         public async Task<string> GenerateQuotationNumberAsync()
         {
+            await RequireCurrentQuotationPermissionAsync(p => p.CanAdd, "ليس لديك صلاحية إنشاء عروض الأسعار.");
             using var connection = CreateConnection();
             try
             {
@@ -200,13 +216,18 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
             ArgumentNullException.ThrowIfNull(header);
             ArgumentNullException.ThrowIfNull(details);
 
+            var isNew = header.QuotationID <= 0;
+            await RequireQuotationPermissionAsync(
+                userId,
+                permission => isNew ? permission.CanAdd : permission.CanEdit,
+                isNew ? "ليس لديك صلاحية إنشاء عروض الأسعار." : "ليس لديك صلاحية تعديل عروض الأسعار.");
+
             if (header.CustomerID <= 0) throw new InvalidOperationException("اختر العميل أولاً");
             if (header.QuotationDate == default) header.QuotationDate = DateTime.Today;
             if (header.ValidUntilDate.HasValue && header.ValidUntilDate.Value.Date < header.QuotationDate.Date)
                 throw new InvalidOperationException("تاريخ الصلاحية لا يمكن أن يسبق تاريخ العرض");
             ValidateDetails(details);
 
-            var isNew = header.QuotationID <= 0;
             if (isNew && string.IsNullOrWhiteSpace(header.QuotationNumber))
                 header.QuotationNumber = await GenerateQuotationNumberAsync();
 
@@ -274,7 +295,15 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after saving sales quotation {QuotationNumber} (ID {QuotationID}, new={IsNew}).",
+                        header.QuotationNumber,
+                        header.QuotationID,
+                        isNew);
+                }
                 throw;
             }
 
@@ -291,6 +320,7 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
         public async Task DeleteQuotationAsync(int quotationId, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية حذف عروض الأسعار.");
             using var connection = CreateConnection();
             await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
@@ -317,7 +347,13 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after deleting sales quotation {QuotationID} failed.",
+                        quotationId);
+                }
                 throw;
             }
 
@@ -326,6 +362,7 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
         public async Task SubmitForApprovalAsync(int quotationId, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إرسال عروض الأسعار للاعتماد.");
             QuotationWorkflowInfo info;
             using (var connection = CreateConnection())
             {
@@ -349,7 +386,13 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
                 }
                 catch
                 {
-                    try { transaction.Rollback(); } catch { }
+                    try { transaction.Rollback(); }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogError(rollbackException,
+                            "Rollback failed after submitting sales quotation {QuotationID} for approval.",
+                            quotationId);
+                    }
                     throw;
                 }
             }
@@ -367,15 +410,27 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
                     relatedRecordId: quotationId,
                     createdBy: userId);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not create the pending-approval notification for a sales quotation.");
+            }
 
             await _audit.WriteAuditLogAsync(userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode, description: $"إرسال عرض سعر للاعتماد: {info.QuotationNumber}");
         }
 
         public async Task ApproveAsync(int quotationId, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية اعتماد عروض الأسعار.");
             var info = await ChangeWorkflowStatusAsync(quotationId, userId, expectedStatus: 2, newStatus: 3, WorkflowAction.Approve, null);
-            try { await _notifications.MarkRelatedAsActionedAsync(ModuleCode, quotationId); } catch { }
+            try
+            {
+                await _notifications.MarkRelatedAsActionedAsync(ModuleCode, quotationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after approving a sales quotation.");
+            }
+
             try
             {
                 if (info.CreatedBy.HasValue && info.CreatedBy.Value > 0)
@@ -392,17 +447,29 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after approving a sales quotation.");
+            }
             await _audit.WriteAuditLogAsync(userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode, description: $"اعتماد عرض سعر: {info.QuotationNumber}");
         }
 
         public async Task RejectAsync(int quotationId, string reason, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanApprove, "ليس لديك صلاحية رفض عروض الأسعار.");
             if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("أدخل سبب الرفض");
             if (reason.Trim().Length > 500) throw new InvalidOperationException("سبب الرفض يتجاوز الحد المسموح (500 حرف)");
 
             var info = await ChangeWorkflowStatusAsync(quotationId, userId, expectedStatus: 2, newStatus: 4, WorkflowAction.Reject, reason.Trim());
-            try { await _notifications.MarkRelatedAsActionedAsync(ModuleCode, quotationId); } catch { }
+            try
+            {
+                await _notifications.MarkRelatedAsActionedAsync(ModuleCode, quotationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not complete pending notifications after rejecting a sales quotation.");
+            }
+
             try
             {
                 if (info.CreatedBy.HasValue && info.CreatedBy.Value > 0)
@@ -419,7 +486,10 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
                         createdBy: userId);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not notify the creator after rejecting a sales quotation.");
+            }
             await _audit.WriteAuditLogAsync(userId, 2, HeaderTable, quotationId.ToString(), moduleName: ModuleCode, description: $"رفض عرض سعر: {info.QuotationNumber} - {reason.Trim()}");
         }
 
@@ -490,6 +560,7 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
         public async Task<byte[]> ExportToExcelAsync(IReadOnlyList<SalesQuotationListDto> quotations, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanExport, "ليس لديك صلاحية تصدير عروض الأسعار.");
             using var workbook = new XLWorkbook();
             var sheet = workbook.Worksheets.Add("عروض الأسعار");
             sheet.RightToLeft = true;
@@ -535,6 +606,7 @@ ORDER BY qd.[LineNumber], qd.[QuotationDetailID]";
 
         public async Task<string> GenerateReportHtmlAsync(int quotationId, int userId)
         {
+            await RequireQuotationPermissionAsync(userId, p => p.CanPrint, "ليس لديك صلاحية طباعة عروض الأسعار.");
             var header = await GetQuotationByIdAsync(quotationId)
                 ?? throw new InvalidOperationException("عرض السعر غير موجود");
             var details = await GetQuotationDetailsAsync(quotationId);
@@ -627,7 +699,15 @@ section{padding:20px 30px}table{width:100%;border-collapse:collapse;font-size:12
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after changing sales quotation {QuotationID} workflow to status {NewStatus} ({WorkflowAction}).",
+                        quotationId,
+                        newStatus,
+                        action);
+                }
                 throw;
             }
 

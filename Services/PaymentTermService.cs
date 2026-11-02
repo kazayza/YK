@@ -1,17 +1,35 @@
 ﻿using Dapper;
+using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 
 namespace YKCoatings.Services
 {
     public class PaymentTermService : BaseDbService
     {
+        private const string ModuleCode = "SCR_PAYTERMS";
         private readonly AuditService _audit;
+        private readonly ModuleAuthorizationService _authorization;
+        private readonly ILogger<PaymentTermService> _logger;
 
-        public PaymentTermService(IConfiguration configuration, AuditService audit)
-            : base(configuration) { _audit = audit; }
+        public PaymentTermService(
+            IConfiguration configuration,
+            AuditService audit,
+            ModuleAuthorizationService authorization,
+            ILogger<PaymentTermService> logger) : base(configuration)
+        {
+            _audit = audit;
+            _authorization = authorization;
+            _logger = logger;
+        }
+
+        private Task RequirePaymentTermPermissionAsync(int userId, Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireUserPermissionAsync(userId, ModuleCode, predicate, deniedMessage);
+        private Task RequireCurrentPaymentTermPermissionAsync(Func<ModulePermissionDto, bool> predicate, string deniedMessage) =>
+            _authorization.RequireCurrentUserPermissionAsync(ModuleCode, predicate, deniedMessage);
 
         public async Task<List<PaymentTermListDto>> GetAllAsync(bool includeInactive = false)
         {
+            await RequireCurrentPaymentTermPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض شروط الدفع.");
             using var connection = CreateConnection();
             var sql = @"SELECT pt.PaymentTermID, pt.TermCode, pt.TermNameAr, pt.TermNameEn,
                                pt.DueDays, pt.DiscountPercent, pt.DiscountDays, pt.IsActive,
@@ -25,6 +43,7 @@ namespace YKCoatings.Services
 
         public async Task<PaymentTermEditDto?> GetByIdAsync(int id)
         {
+            await RequireCurrentPaymentTermPermissionAsync(p => p.CanView, "ليس لديك صلاحية عرض شروط الدفع.");
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<PaymentTermEditDto>(
                 @"SELECT PaymentTermID, TermCode, TermNameAr, TermNameEn,
@@ -34,6 +53,7 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertAsync(PaymentTermEditDto dto, int userId)
         {
+            await RequirePaymentTermPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة شروط الدفع.");
             using var connection = CreateConnection();
             var sql = @"INSERT INTO dbo.PaymentTerms
                         (TermCode, TermNameAr, TermNameEn, DueDays, DiscountPercent, DiscountDays, IsActive,CreatedBy,  CreatedDate)
@@ -55,6 +75,7 @@ namespace YKCoatings.Services
 
         public async Task UpdateAsync(PaymentTermEditDto dto, int userId)
         {
+            await RequirePaymentTermPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل شروط الدفع.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(@"
                 UPDATE dbo.PaymentTerms SET
@@ -75,9 +96,11 @@ namespace YKCoatings.Services
 
         public async Task<(bool Success, string Message)> DeleteAsync(int id, int userId)
 {
+            await RequirePaymentTermPermissionAsync(userId, p => p.CanDelete, "ليس لديك صلاحية تعطيل شروط الدفع.");
     using var connection = CreateConnection();
 
-    int usedCount = 0;
+    // لا نسمح بالتعطيل إذا تعذر التحقق من الاستخدام؛ فالخطأ لا يعني أنه غير مستخدم.
+    int usedCount;
     try
     {
         usedCount = await connection.QueryFirstOrDefaultAsync<int>(@"
@@ -86,7 +109,13 @@ namespace YKCoatings.Services
                  + ISNULL((SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE PaymentTermID = @ID AND POStatus NOT IN (9)), 0)",
             new { ID = id });
     }
-    catch { usedCount = 0; }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex,
+            "Failed to verify payment-term usage before deactivation for payment term {PaymentTermID}.",
+            id);
+        return (false, "تعذر التحقق من استخدام شرط الدفع؛ لم يتم تعطيله.");
+    }
 
     if (usedCount > 0) return (false, $"لا يمكن الحذف — مستخدم في {usedCount} مكان");
 

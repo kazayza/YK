@@ -9,8 +9,9 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<Warehouses> Logger
 
-<PageTitle>المخازن - واي كي كوتينج   </PageTitle>
+<PageTitle>المخازن - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -29,7 +30,7 @@ else
                     <div class="lh-text"><h2 class="lh-title">المخازن والمستودعات</h2><p class="lh-subtitle">إدارة مخازن المصنع والمستودعات - تتبع ذكي للأرصدة</p></div>
                 </div>
                 <div class="lh-actions">
-                    <span class="lh-badge"><span class="lh-dot"></span>@filteredWarehouses.Count مخزن</span>
+                    <span class="lh-badge"><span class="lh-dot"></span>@(WarehousesListLoadedForCurrentUser ? filteredWarehouses.Count.ToString() : "—") مخزن</span>
                     @if (permissions.CanExport)
                     {
                         <button class="btn-luxury btn-export-luxury" @onclick="ExportToExcel" disabled="@isExporting">
@@ -42,14 +43,14 @@ else
             </div>
         </div>
 
-        @if (warehouses != null)
+        @if (WarehousesListLoadedForCurrentUser && warehouses is { } loadedWarehouses)
         {
             <div class="stats-luxury">
-                <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01 20.73 6.96"/><path d="M12 22.08V12"/></svg></div><div class="st-info"><span class="st-value">@warehouses.Count</span><span class="st-label">إجمالي المخازن</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg></div><div class="st-info"><span class="st-value">@warehouses.Count(w => w.WarehouseType == 1)</span><span class="st-label">مواد خام</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="M9 9h6"/><path d="M9 15h6"/></svg></div><div class="st-info"><span class="st-value">@warehouses.Count(w => w.WarehouseType == 2)</span><span class="st-label">تعبئة</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><div class="st-info"><span class="st-value">@warehouses.Count(w => w.WarehouseType == 3 || w.WarehouseType == 4)</span><span class="st-label">تصنيع ومنتجات</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></div><div class="st-info"><span class="st-value">@warehouses.Count(w => w.IsDefault)</span><span class="st-label">افتراضي</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01 20.73 6.96"/><path d="M12 22.08V12"/></svg></div><div class="st-info"><span class="st-value">@loadedWarehouses.Count</span><span class="st-label">إجمالي المخازن</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg></div><div class="st-info"><span class="st-value">@loadedWarehouses.Count(w => w.WarehouseType == 1)</span><span class="st-label">مواد خام</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="M9 9h6"/><path d="M9 15h6"/></svg></div><div class="st-info"><span class="st-value">@loadedWarehouses.Count(w => w.WarehouseType == 2)</span><span class="st-label">تعبئة</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><div class="st-info"><span class="st-value">@loadedWarehouses.Count(w => w.WarehouseType == 3 || w.WarehouseType == 4)</span><span class="st-label">تصنيع ومنتجات</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></div><div class="st-info"><span class="st-value">@loadedWarehouses.Count(w => w.IsDefault)</span><span class="st-label">افتراضي</span></div><div class="st-gold-line"></div></div>
             </div>
         }
 
@@ -76,11 +77,26 @@ else
                 <button class="vt-btn @(viewMode=="cards"?"active":"")" @onclick='() => viewMode="cards"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
                 <button class="vt-btn @(viewMode=="table"?"active":"")" @onclick='() => viewMode="table"'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h18v18H3z"/><path d="M9 3v18"/><path d="M3 9h18"/></svg></button>
             </div>
-            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoadingWarehouseList"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
         </div>
 
-        @if (warehouses == null)
-        {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل المخازن...</p></div>}
+        @if (isLoadingWarehouseList && WarehousesListLoadedForCurrentUser)
+        {
+            <div class="loading-luxury" role="status" style="padding:14px">جارٍ تحديث قائمة المخازن؛ آخر قائمة ناجحة ما زالت معروضة.</div>
+        }
+        else if (warehouseListLoadFailed && WarehousesListLoadedForCurrentUser)
+        {
+            <div class="msg-luxury msg-error" role="alert">@warehouseListLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehousesListAsync" disabled="@isLoadingWarehouseList">إعادة المحاولة</button></div>
+        }
+
+        @if (isLoadingWarehouseList && !WarehousesListLoadedForCurrentUser)
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل المخازن...</p></div>}
+        else if (warehouseListLoadFailed && !WarehousesListLoadedForCurrentUser)
+        {<div class="msg-luxury msg-error" role="alert">@warehouseListLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehousesListAsync" disabled="@isLoadingWarehouseList">إعادة المحاولة</button></div>}
+        else if (warehouseListLoadDenied)
+        {<div class="no-access-luxury" dir="rtl" role="alert"><h4>@warehouseListLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/dashboard")'>العودة للرئيسية</button></div>}
+        else if (!WarehousesListLoadedForCurrentUser)
+        {<div class="loading-luxury" role="status"><div class="loader-luxury"></div><p>جاري تحميل المخازن...</p></div>}
         else if (!filteredWarehouses.Any())
         {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h4>لا توجد مخازن</h4><p>جرب تغيير معايير البحث</p></div>}
         else
@@ -182,7 +198,46 @@ else
                     @if (modalTab == 1)
                     {
                         <div class="form-grid-luxury cols-2">
-                            <div class="field-luxury"><label class="fl-label">مسؤول المخزن</label><div class="select-wrap-luxury-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><select @bind="editItem.ManagerID"><option value="0">-- بدون --</option>@if (employees != null){@foreach(var emp in employees){<option value="@emp.Id">@emp.Name</option>}}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                            <div class="field-luxury">
+                                <label class="fl-label">مسؤول المخزن</label>
+                                <div class="select-wrap-luxury-input">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    <select @bind="editItem.ManagerID">
+                                        <option value="0">-- بدون --</option>
+                                        @if (WarehouseEmployeesLoadedForCurrentUser && employees is { } loadedEmployees)
+                                        {
+                                            @foreach (var emp in loadedEmployees)
+                                            {
+                                                <option value="@emp.Id">@emp.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                @if (isLoadingWarehouseEmployees && WarehouseEmployeesLoadedForCurrentUser)
+                                {
+                                    <div class="fl-hint" role="status">جارٍ تحديث قائمة الموظفين؛ الخيارات السابقة متاحة.</div>
+                                }
+                                else if (isLoadingWarehouseEmployees || (warehouseEmployeesLoadVersion == 0 && !warehouseEmployeesLoadDenied))
+                                {
+                                    <div class="fl-hint" role="status">جارٍ تحميل قائمة الموظفين...</div>
+                                }
+                                else if (warehouseEmployeesLoadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px">
+                                        <span>@warehouseEmployeesLoadError</span>
+                                        <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadWarehouseEmployeesAsync" disabled="@isLoadingWarehouseEmployees">إعادة المحاولة</button>
+                                    </div>
+                                }
+                                else if (warehouseEmployeesLoadDenied)
+                                {
+                                    <div class="msg-luxury msg-info" role="status" style="margin-top:6px">@warehouseEmployeesLoadError</div>
+                                }
+                                else if (WarehouseEmployeesLoadedForCurrentUser && employees is { Count: 0 })
+                                {
+                                    <div class="fl-hint" role="status">لا يوجد موظفون نشطون متاحون للاختيار.</div>
+                                }
+                            </div>
                             <div class="field-luxury"><label class="fl-label">الهاتف</label><div class="input-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><input type="text" @bind="editItem.Phone" placeholder="رقم الهاتف" dir="ltr" /></div></div>
                         </div>
                         <div class="field-luxury"><label class="fl-label">العنوان التفصيلي</label><div class="input-wrap-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><input type="text" @bind="editItem.Address" placeholder="عنوان المخزن - المنطقة - المدينة" /></div><span class="fl-hint">سيتم استخدامه في الخرائط والتقارير - قريباً: عرض على الخريطة</span></div>
@@ -379,7 +434,21 @@ else
 @code {
     private List<WarehouseListDto>? warehouses;
     private List<WarehouseListDto> filteredWarehouses = new();
+    private bool isLoadingWarehouseList = true;
+    private bool warehouseListLoadFailed, warehouseListLoadDenied;
+    private int warehouseListLoadVersion;
+    private int? warehouseListLoadedUserId;
+    private string warehouseListLoadError = string.Empty;
+    private bool WarehousesListLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && warehouses is not null && warehouseListLoadedUserId == UserSession.UserID;
     private List<LookupDto>? employees;
+    private bool isLoadingWarehouseEmployees;
+    private bool warehouseEmployeesLoadFailed, warehouseEmployeesLoadDenied;
+    private int warehouseEmployeesLoadVersion;
+    private int? warehouseEmployeesLoadedUserId;
+    private string warehouseEmployeesLoadError = string.Empty;
+    private bool WarehouseEmployeesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && employees is not null && warehouseEmployeesLoadedUserId == UserSession.UserID;
     private ModulePermissionDto? permissions;
     private string searchText = "";
     private int filterType = 0;
@@ -411,8 +480,79 @@ else
 
     private async Task LoadData()
     {
-        warehouses = await WarehouseService.GetWarehousesListAsync();
-        employees = await LookupService.GetEmployeesAsync();
+        await LoadWarehousesListAsync();
+        await LoadWarehouseEmployeesAsync();
+        Search();
+    }
+
+    private async Task LoadWarehousesListAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++warehouseListLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (warehouseListLoadedUserId.HasValue && warehouseListLoadedUserId != userId)
+        {
+            warehouses = null;
+            filteredWarehouses.Clear();
+            warehouseListLoadedUserId = null;
+        }
+
+        isLoadingWarehouseList = true;
+        warehouseListLoadFailed = false;
+        warehouseListLoadDenied = false;
+        warehouseListLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await WarehouseService.GetWarehousesListAsync();
+            if (!IsCurrentWarehouseListLoad(requestVersion, userId, pageUri)) return;
+            warehouses = result ?? new List<WarehouseListDto>();
+            warehouseListLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading warehouse list for user {UserID}.", userId);
+            if (!IsCurrentWarehouseListLoad(requestVersion, userId, pageUri)) return;
+            warehouses = null;
+            filteredWarehouses.Clear();
+            warehouseListLoadedUserId = null;
+            warehouseListLoadDenied = true;
+            warehouseListLoadError = "ليس لديك صلاحية عرض المخازن.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load warehouse list for user {UserID}.", userId);
+            if (!IsCurrentWarehouseListLoad(requestVersion, userId, pageUri)) return;
+            warehouseListLoadFailed = true;
+            warehouseListLoadError = WarehousesListLoadedForCurrentUser
+                ? "تعذر تحديث قائمة المخازن؛ آخر قائمة ناجحة ما زالت معروضة. أعد المحاولة."
+                : "تعذر تحميل قائمة المخازن. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == warehouseListLoadVersion)
+            {
+                isLoadingWarehouseList = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentWarehouseListLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == warehouseListLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadWarehousesListAsync()
+    {
+        if (isLoadingWarehouseList || !warehouseListLoadFailed) return;
+        await LoadWarehousesListAsync();
         Search();
     }
 
@@ -427,6 +567,75 @@ else
              ArabicSearchHelper.Contains(w.WarehouseCode, searchText) ||
              ArabicSearchHelper.Contains(w.ManagerName, searchText))
         ).ToList();
+    }
+
+    private async Task LoadWarehouseEmployeesAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+        if (isLoadingWarehouseEmployees) return;
+
+        var requestVersion = ++warehouseEmployeesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (warehouseEmployeesLoadedUserId.HasValue && warehouseEmployeesLoadedUserId != userId)
+        {
+            employees = null;
+            warehouseEmployeesLoadedUserId = null;
+        }
+
+        isLoadingWarehouseEmployees = true;
+        warehouseEmployeesLoadFailed = false;
+        warehouseEmployeesLoadDenied = false;
+        warehouseEmployeesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetEmployeesAsync();
+            if (!IsCurrentWarehouseEmployeesLoad(requestVersion, userId, pageUri)) return;
+            employees = result ?? new List<LookupDto>();
+            warehouseEmployeesLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading warehouse manager employee options for user {UserID}.", userId);
+            if (!IsCurrentWarehouseEmployeesLoad(requestVersion, userId, pageUri)) return;
+            employees = null;
+            warehouseEmployeesLoadedUserId = null;
+            warehouseEmployeesLoadDenied = true;
+            warehouseEmployeesLoadError = "ليس لديك صلاحية قراءة قائمة الموظفين.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load warehouse manager employee options for user {UserID}.", userId);
+            if (!IsCurrentWarehouseEmployeesLoad(requestVersion, userId, pageUri)) return;
+            warehouseEmployeesLoadFailed = true;
+            warehouseEmployeesLoadError = WarehouseEmployeesLoadedForCurrentUser
+                ? "تعذر تحديث قائمة الموظفين؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل قائمة الموظفين. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == warehouseEmployeesLoadVersion)
+            {
+                isLoadingWarehouseEmployees = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentWarehouseEmployeesLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == warehouseEmployeesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadWarehouseEmployeesAsync()
+    {
+        if (isLoadingWarehouseEmployees || !warehouseEmployeesLoadFailed) return;
+        await LoadWarehouseEmployeesAsync();
     }
 
     private void ClearSearch() { searchText = ""; Search(); }

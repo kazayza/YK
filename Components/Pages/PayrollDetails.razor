@@ -8,7 +8,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>تفاصيل المسير - واي كي كوتينج</PageTitle>
+<PageTitle>تفاصيل المرتب - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -65,7 +65,9 @@ else
                     <button class="btn-modern btn-pay" @onclick='() => OpenActionDialog("pay")'>دفع</button>
                 }
 
-                <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting">
+                @if (permissions.CanExport)
+                {
+                    <button class="btn-modern btn-export" @onclick="ExportData" disabled="@isExporting">
                     @if (isExporting)
                     {
                         <div class="btn-spinner-sm"></div><span>جاري...</span>
@@ -74,7 +76,8 @@ else
                     {
                         <span>تصدير Excel</span>
                     }
-                </button>
+                    </button>
+                }
 
                 <button class="btn-modern btn-ghost" @onclick='() => Navigation.NavigateTo("/payroll")'>رجوع</button>
             </div>

@@ -7,7 +7,7 @@
 @inject TreasuryService TreasuryService
 @inject NavigationManager Navigation
 
-<PageTitle>سندات الصرف -   </PageTitle>
+<PageTitle>سندات الصرف</PageTitle>
 
 @if (!UserSession.IsLoggedIn){<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
 else if (permissions == null || !permissions.CanView){<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية</h4></div>}
@@ -21,7 +21,7 @@ else
                 <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">سندات الصرف</h2><p class="lh-subtitle">صرف لموردين وعملاء ومصروفات </p></div></div>
                 <div class="lh-actions">
                     <span class="lh-badge"><span class="lh-dot"></span>@filtered.Count سند</span>
-                    @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/payment-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>}
+                    @if (permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/accounting-vouchers/new/payment")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>}
                 </div>
             </div>
         </div>
@@ -144,10 +144,21 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_PAYV");
-        if (permissions?.CanView == true) await LoadData();
+        if (UserSession.IsLoggedIn)
+        {
+            try
+            {
+                if (!PermissionService.IsLoaded)
+                    await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+                permissions = PermissionService.GetModule("SCR_PAYV");
+            }
+            catch
+            {
+                permissions = null;
+            }
+        }
+
+        Navigation.NavigateTo(UserSession.IsLoggedIn ? "/accounting-vouchers?type=payment" : "/login", replace: true);
     }
 
     private async Task LoadData()
@@ -168,8 +179,8 @@ else
     private void ClearSearch(){ searchText=""; Filter(); }
     private string GetStatusColor(int s) => s switch {1=>"#6b7280",2=>"#10b981",3=>"#ef4444",_=>"#6b7280"};
 
-    private void ViewVoucher(int id) => Navigation.NavigateTo($"/payment-vouchers/view/{id}");
-    private void EditVoucher(int id) => Navigation.NavigateTo($"/payment-vouchers/edit/{id}");
+    private void ViewVoucher(int id) => Navigation.NavigateTo($"/accounting-vouchers/payment/view/{id}");
+    private void EditVoucher(int id) => Navigation.NavigateTo($"/accounting-vouchers/payment/edit/{id}");
 
     private async Task ApproveVoucher(int id)
     {

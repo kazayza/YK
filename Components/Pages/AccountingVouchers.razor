@@ -1,0 +1,1179 @@
+@page "/accounting-vouchers"
+@page "/accounting-vouchers/new/{Type}"
+@page "/accounting-vouchers/{Type}/edit/{Id:int}"
+@page "/accounting-vouchers/{Type}/view/{ViewId:int}"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@using YKCoatings.Helpers
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject TreasuryService TreasuryService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<AccountingVouchers> Logger
+
+<PageTitle>@(IsFormRoute ? FormTitle : "سندات القبض والصرف")</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>
+}
+else if (isLoading)
+{
+    <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>
+}
+else if (IsFormRoute && !formAccessGranted)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>@(string.IsNullOrWhiteSpace(formError) ? "ليس لديك صلاحية لهذا النوع من السندات" : formError)</h4></div>
+}
+else if (!IsFormRoute && !CanViewAny)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض سندات القبض أو الصرف</h4></div>
+}
+else
+{
+    <div class="yk-gold-page voucher-page" dir="rtl">
+        <header class="voucher-hero">
+            <div class="voucher-hero-line"></div>
+            <div class="voucher-hero-content">
+                <div class="voucher-brand">
+                    <span class="voucher-logo"><img src="/images/yk-icon-gold.png" alt="YK" /></span>
+                    <div>
+                        <h1>@(IsFormRoute ? FormTitle : "سندات القبض والصرف")</h1>
+                        <p>@(IsFormRoute ? FormSubtitle : "إدارة القبض والصرف والقيود المرتبطة بهما")</p>
+                    </div>
+                </div>
+                <div class="voucher-hero-actions">
+                    @if (IsFormRoute)
+                    {
+                        <button class="v-btn v-btn-ghost" @onclick="BackToList">رجوع للقائمة</button>
+                        @if (CanSaveCurrent)
+                        {
+                            <button class="v-btn v-btn-gold" @onclick="SaveCurrentAsync" disabled="@isSaving">@(isSaving ? "جارٍ الحفظ..." : "حفظ مسودة")</button>
+                        }
+                        @if (CanApproveCurrent)
+                        {
+                            <button class="v-btn v-btn-approve" @onclick="ApproveCurrentAsync" disabled="@isApproving">@(isApproving ? "جارٍ الاعتماد..." : "اعتماد وترحيل")</button>
+                        }
+                    }
+                    else
+                    {
+                        <span class="v-count">@VoucherListCountText</span>
+                        @if (CanAddExpense)
+                        {
+                            <button class="v-btn v-btn-ghost" @onclick="OpenNewExpense">مصروف جديد</button>
+                        }
+                        @if (CanAddAny)
+                        {
+                            <button class="v-btn v-btn-gold" @onclick="BeginNewVoucher">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                                سند جديد
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(pageError))
+        {
+            <div class="v-alert v-alert-error" role="alert">@pageError</div>
+        }
+        @if (!IsFormRoute && voucherListsLoadFailed)
+        {
+            <div class="v-alert v-alert-error" role="alert">
+                <span>@(isRefreshing ? "جارٍ إعادة تحميل قائمة السندات..." : voucherListsLoadError)</span>
+                <button type="button" class="v-btn v-btn-ghost" @onclick="ReloadListsAsync" disabled="@isRefreshing">@(isRefreshing ? "جارٍ..." : "إعادة محاولة تحميل السندات")</button>
+            </div>
+        }
+
+        @if (!IsFormRoute)
+        {
+            <section class="v-tabs" aria-label="نوع السند">
+                <button class="v-tab @(CurrentTab == "all" ? "active" : "")" @onclick='() => SelectTab("all")'>الكل</button>
+                @if (CanViewReceipt)
+                {
+                    <button class="v-tab @(CurrentTab == "receipt" ? "active" : "")" @onclick='() => SelectTab("receipt")'>القبض</button>
+                }
+                @if (CanViewPayment)
+                {
+                    <button class="v-tab @(CurrentTab == "payment" ? "active" : "")" @onclick='() => SelectTab("payment")'>الصرف</button>
+                }
+            </section>
+
+            @if (voucherListsLoaded)
+            {
+                <section class="v-stats">
+                    <article class="v-stat"><span class="v-stat-label">مسودات</span><strong>@filteredRows.Count(x => x.Status == 1)</strong></article>
+                    <article class="v-stat"><span class="v-stat-label">معتمدة</span><strong>@filteredRows.Count(x => x.Status == 2)</strong></article>
+                    <article class="v-stat"><span class="v-stat-label">إجمالي المعروض</span><strong>@filteredRows.Sum(x => x.AmountLocal).ToString("#,##0.00")</strong></article>
+                </section>
+            }
+
+            <section class="v-filters" aria-label="تصفية السندات">
+                <label class="v-search">
+                    <span class="sr-only">بحث في السندات</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                    <input type="search" placeholder="بحث برقم السند أو الجهة أو الخزينة" @bind="searchText" @bind:event="oninput" />
+                </label>
+                <select class="v-filter" @bind="filterStatus">
+                    <option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">معتمد</option><option value="3">ملغي</option>
+                </select>
+                <select class="v-filter" @bind="filterCashBox">
+                    <option value="0">كل الخزائن</option>
+                    @foreach (var box in cashBoxes)
+                    {
+                        <option value="@box.Id">@box.Name</option>
+                    }
+                </select>
+                <button class="v-btn v-btn-ghost" @onclick="ReloadListsAsync" disabled="@isRefreshing">@(isRefreshing ? "جارٍ التحديث..." : "تحديث")</button>
+                @if (CurrentTab == "receipt" && receiptPermissions?.CanExport == true)
+                {
+                    <button class="v-btn v-btn-ghost" @onclick="ExportReceiptsAsync" disabled="@isExporting">@(isExporting ? "جارٍ التصدير..." : "تصدير قبض Excel")</button>
+                }
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(cashBoxLookupError))
+            {
+                <div class="v-alert v-alert-error" role="alert">
+                    @cashBoxLookupError
+                    <button class="v-btn v-btn-ghost" @onclick="ReloadListsAsync" disabled="@isRefreshing">
+                        @(isRefreshing ? "جارٍ التحديث..." : "إعادة محاولة تحميل الخزائن")
+                    </button>
+                </div>
+            }
+
+            @if (voucherListsLoaded && filteredRows.Count == 0)
+            {
+                <section class="v-empty">
+                    <span class="v-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg></span>
+                    <h2>لا توجد سندات مطابقة</h2>
+                    <p>غيّر عوامل البحث أو أنشئ سنداً جديداً.</p>
+                </section>
+            }
+            else if (voucherListsLoaded && filteredRows.Count > 0)
+            {
+                <section class="v-table-card">
+                    <div class="table-responsive">
+                        <table class="v-table">
+                            <thead>
+                                <tr><th>#</th><th>النوع</th><th>رقم السند</th><th>التاريخ</th><th>الجهة</th><th>الخزينة</th><th>المبلغ المحلي</th><th>طريقة الدفع</th><th>القيد</th><th>الحالة</th><th>إجراءات</th></tr>
+                            </thead>
+                            <tbody>
+                                @{ var rowNo = 0; }
+                                @foreach (var row in filteredRows)
+                                {
+                                    rowNo++;
+                                    var canEdit = row.IsReceipt ? receiptPermissions?.CanEdit == true : paymentPermissions?.CanEdit == true;
+                                    var canApprove = row.IsReceipt ? receiptPermissions?.CanApprove == true : paymentPermissions?.CanApprove == true;
+                                    var canDelete = row.IsReceipt ? receiptPermissions?.CanDelete == true : paymentPermissions?.CanDelete == true;
+                                    <tr>
+                                        <td class="v-muted">@rowNo</td>
+                                        <td><span class="v-kind @(row.IsReceipt ? "receipt" : "payment")">@(row.IsReceipt ? "قبض" : "صرف")</span></td>
+                                        <td><button class="v-number" @onclick="() => OpenView(row)">@row.Number</button></td>
+                                        <td class="v-muted">@row.Date.ToString("dd/MM/yyyy")</td>
+                                        <td>@row.Party</td>
+                                        <td>@row.CashBox</td>
+                                        <td class="v-amount">@row.AmountLocal.ToString("#,##0.00")</td>
+                                        <td class="v-muted">@row.Method</td>
+                                        <td>@if (row.JournalId.HasValue || !string.IsNullOrWhiteSpace(row.JournalNumber)){<span class="v-journal">@JournalLabel(row)</span>}else{<span class="v-muted">غير مرحل</span>}</td>
+                                        <td><span class="v-status" style="--status-color:@StatusColor(row.Status)">@row.StatusName</span></td>
+                                        <td><div class="v-row-actions">
+                                            @if (row.Status == 1 && canEdit)
+                                            {
+                                                <button class="v-icon-btn" title="تعديل المسودة" aria-label="تعديل المسودة" @onclick="() => OpenEdit(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 4 4M4 20l4-.8L20 7.2 16.8 4 4.8 16z" /></svg></button>
+                                            }
+                                            else
+                                            {
+                                                <button class="v-icon-btn" title="عرض" aria-label="عرض" @onclick="() => OpenView(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg></button>
+                                            }
+                                            @if (row.Status == 1 && canApprove)
+                                            {
+                                                <button class="v-icon-btn approve" title="اعتماد وترحيل" aria-label="اعتماد وترحيل" @onclick="() => ApproveRowAsync(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button>
+                                            }
+                                            @if (row.Status == 1 && canDelete)
+                                            {
+                                                <button class="v-icon-btn delete" title="حذف المسودة" aria-label="حذف المسودة" @onclick="() => RequestDelete(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg></button>
+                                            }
+                                        </div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+        }
+        else
+        {
+            <section class="v-form-card">
+                <div class="v-card-head">
+                    <div><h2>@FormSectionTitle</h2><p>احفظ المسودة أولاً، ثم اعتمدها عبر إجراء الترحيل الحالي.</p></div>
+                    <span class="v-status" style="--status-color:@StatusColor(CurrentStatus)">@CurrentStatusName</span>
+                </div>
+                <p class="v-form-note">اختر فاتورة أو أكثر بعد تحديد العميل أو المورد لتخصيص المبلغ عليها؛ لا تُرحّل التسوية إلا على حساب الذمم وتُحدّث مدفوعات الفواتير عند الاعتماد. إذا لم تختر فاتورة يبقى السند عملية عامة. @if (currentIsPayment){<span> للمصروف الجديد المدفوع مباشرة، استخدم «مصروف جديد» من شاشة المصروفات؛ لا تنشئ سند صرف إضافياً للمصروف نفسه.</span>}</p>
+
+                @if (currentIsReceipt)
+                {
+                    <div class="v-form-grid">
+                        <label class="v-field"><span>رقم السند</span><input value="@receiptDto.ReceiptNumber" placeholder="يُحدّد عند حفظ المسودة" disabled /></label>
+                        <label class="v-field"><span>تاريخ السند <b>*</b></span><input type="date" @bind="receiptDto.ReceiptDate" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>الخزينة <b>*</b></span><select @bind="receiptDto.CashBoxID" disabled="@isViewRoute"><option value="0">اختر الخزينة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
+                        <label class="v-field"><span>حساب البنك</span><select @bind="receiptDto.BankAccountID" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
+                        <label class="v-field"><span>نوع الجهة</span><select @bind="receiptDto.EntityType" @bind:after="ReceiptEntityTypeChanged" disabled="@isViewRoute"><option value="1">عميل</option><option value="2">مورد</option><option value="3">جهة أخرى</option></select></label>
+                        <label class="v-field"><span>الجهة</span><select @bind="receiptDto.EntityID" @bind:after="ReceiptEntityChanged" disabled="@isViewRoute"><option value="0">@(receiptDto.EntityType == 3 ? "بدون معرف — اكتب الاسم أدناه" : "اختر الجهة")</option>@if(receiptDto.EntityType==1){@foreach(var x in customers){<option value="@x.Id">@x.Name (@x.Code)</option>}}else if(receiptDto.EntityType==2){@foreach(var x in suppliers){<option value="@x.Id">@x.Name (@x.Code)</option>}}</select></label>
+                        <label class="v-field v-field-wide"><span>المستلم من</span><input @bind="receiptDto.ReceivedFrom" disabled="@isViewRoute" placeholder="يُستكمل من الجهة أو يُكتب يدوياً" /></label>
+                        <label class="v-field"><span>المبلغ <b>*</b></span><input type="number" min="0" step="0.01" @bind="receiptDto.Amount" @bind:after="CalcReceiptLocal" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>العملة</span><select @bind="receiptDto.CurrencyID" @bind:after="CalcReceiptLocal" disabled="@isViewRoute"><option value="0">العملة الافتراضية</option>@foreach(var cur in currencies){<option value="@cur.Id">@cur.Name</option>}</select></label>
+                        <label class="v-field"><span>سعر الصرف</span><input type="number" min="0.000001" step="0.000001" @bind="receiptDto.ExchangeRate" @bind:after="CalcReceiptLocal" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>المبلغ بالعملة المحلية</span><input value="@receiptDto.AmountLocal.ToString("#,##0.00")" disabled /></label>
+                        <label class="v-field"><span>طريقة القبض</span><select @bind="receiptDto.PaymentMethod" disabled="@isViewRoute"><option value="1">نقدي</option><option value="2">تحويل بنكي</option><option value="3">شيك</option><option value="4">بطاقة</option></select></label>
+                        @if (receiptDto.PaymentMethod == 3)
+                        {
+                            <label class="v-field"><span>رقم الشيك</span><input @bind="receiptDto.ChequeNumber" disabled="@isViewRoute" /></label>
+                            <label class="v-field"><span>تاريخ الشيك</span><input type="date" @bind="receiptDto.ChequeDate" disabled="@isViewRoute" /></label>
+                            <label class="v-field"><span>بنك الشيك</span><input @bind="receiptDto.ChequeBankName" disabled="@isViewRoute" /></label>
+                        }
+                        @if (receiptDto.PaymentMethod == 2)
+                        {
+                            <label class="v-field"><span>مرجع التحويل</span><input @bind="receiptDto.TransferRef" disabled="@isViewRoute" /></label>
+                        }
+                        @if (receiptDto.IsInvoiceSettlement)
+                        {
+                            <div class="v-field v-field-wide v-settlement-account">
+                                <strong>حساب ذمم العميل</strong>
+                                <span>@(receiptDto.RevenueAccountNameAr ?? "سيُحدّد من قيد الفاتورة المعتمد عند حفظ المسودة")</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <label class="v-field"><span>حساب الإيراد</span><select @bind="receiptDto.RevenueAccountID" disabled="@isViewRoute"><option value="0">اختر الحساب المعتمد</option>@foreach(var acc in revenueAccounts){<option value="@acc.Id">@acc.Name (@acc.Code)</option>}</select></label>
+                        }
+                        <label class="v-field"><span>مركز التكلفة</span><select @bind="receiptDto.CostCenterID" disabled="@isViewRoute"><option value="0">بدون مركز تكلفة</option>@foreach(var cc in costCenters){<option value="@cc.Id">@cc.Name</option>}</select></label>
+                        <label class="v-field v-field-wide"><span>البيان</span><textarea rows="2" @bind="receiptDto.Description" disabled="@isViewRoute"></textarea></label>
+                        <label class="v-field v-field-wide"><span>ملاحظات</span><textarea rows="2" @bind="receiptDto.Notes" disabled="@isViewRoute"></textarea></label>
+                    </div>
+                    @if (receiptDto.EntityType == 1 && receiptDto.EntityID.GetValueOrDefault() > 0)
+                    {
+                        <section class="v-settlement" aria-label="تسوية فواتير العميل">
+                            <div class="v-settlement-head">
+                                <div><strong>فواتير العميل المعتمدة ذات المتبقي</strong><span>اختر فاتورة أو أكثر؛ ويمكن تعديل المبلغ المخصص لكل فاتورة.</span></div>
+                                @if (receiptDto.IsInvoiceSettlement){<span class="v-settlement-badge">تسوية ذمم</span>}
+                            </div>
+                            @if (!CanViewSalesInvoices)
+                            {
+                                <div class="v-settlement-message">لا تتوفر صلاحية عرض فواتير المبيعات لهذا المستخدم.</div>
+                            }
+                            else if (isLoadingSettlementInvoices)
+                            {
+                                <div class="v-settlement-message">جارٍ تحميل الفواتير...</div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(settlementLookupError))
+                            {
+                                <div class="v-settlement-message v-settlement-error">@settlementLookupError</div>
+                            }
+                            else if (salesSettlementInvoices.Count == 0)
+                            {
+                                <div class="v-settlement-message">لا توجد فواتير معتمدة بمتبقٍ متاح لهذا العميل.</div>
+                            }
+                            else
+                            {
+                                <div class="v-settlement-table-wrap">
+                                    <table class="v-settlement-table">
+                                        <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>التاريخ</th><th>الإجمالي</th><th>المدفوع</th><th>المتاح</th><th>العملة</th><th>المخصص</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var invoice in salesSettlementInvoices)
+                                            {
+                                                var receiptAllocation = receiptDto.InvoiceAllocations.FirstOrDefault(x => x.InvoiceID == invoice.InvoiceID);
+                                                var compatible = IsReceiptInvoiceCompatible(invoice);
+                                                <tr>
+                                                    <td><input type="checkbox" checked="@(receiptAllocation is not null)" disabled="@(isViewRoute || (!compatible && receiptAllocation is null))" @onchange="@(args => ToggleReceiptInvoiceAsync(invoice, args))" aria-label="اختيار فاتورة @invoice.InvoiceNumber" /></td>
+                                                    <td><strong>@invoice.InvoiceNumber</strong></td>
+                                                    <td>@invoice.InvoiceDate.ToString("dd/MM/yyyy")</td>
+                                                    <td>@invoice.TotalAmount.ToString("#,##0.00")</td>
+                                                    <td>@invoice.PaidAmount.ToString("#,##0.00")</td>
+                                                    <td>@invoice.RemainingAmount.ToString("#,##0.00")</td>
+                                                    <td><span>@(invoice.CurrencyCode ?? "—")</span><small class="v-muted">سعر @invoice.ExchangeRate.ToString("0.######")</small></td>
+                                                    <td>
+                                                        @if (receiptAllocation is not null && isViewRoute)
+                                                        {
+                                                            <span class="v-amount">@receiptAllocation.AppliedAmount.ToString("#,##0.00")</span>
+                                                        }
+                                                        else if (!compatible)
+                                                        {
+                                                            <small class="v-incompatible">@(receiptAllocation is null ? "عملة/سعر صرف مختلف" : $"عملة غير متوافقة · {receiptAllocation.AppliedAmount:#,##0.00}")</small>
+                                                        }
+                                                        else if (receiptAllocation is not null)
+                                                        {
+                                                            <input class="v-allocation-input" type="number" min="0.01" max="@invoice.RemainingAmount" step="0.01" @bind="receiptAllocation.AppliedAmount" @bind:event="oninput" @bind:after="RecalculateReceiptSettlement" disabled="@isViewRoute" aria-label="المبلغ المخصص للفاتورة @invoice.InvoiceNumber" />
+                                                        }
+                                                        else { <span class="v-muted">—</span> }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="v-settlement-summary">
+                                    <span>إجمالي التخصيص: <strong>@ReceiptAllocationTotal.ToString("#,##0.00")</strong></span>
+                                    <span>مبلغ السند: <strong>@receiptDto.Amount.ToString("#,##0.00")</strong></span>
+                                    @if (receiptDto.IsInvoiceSettlement && ReceiptAllocationTotal != receiptDto.Amount)
+                                    {
+                                        <small class="v-settlement-error">يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير.</small>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    }
+                }
+                else
+                {
+                    <div class="v-form-grid">
+                        <label class="v-field"><span>رقم السند</span><input value="@paymentDto.PaymentNumber" placeholder="يُحدّد عند حفظ المسودة" disabled /></label>
+                        <label class="v-field"><span>تاريخ السند <b>*</b></span><input type="date" @bind="paymentDto.PaymentDate" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>الخزينة <b>*</b></span><select @bind="paymentDto.CashBoxID" disabled="@isViewRoute"><option value="0">اختر الخزينة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
+                        <label class="v-field"><span>حساب البنك</span><select @bind="paymentDto.BankAccountID" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
+                        <label class="v-field"><span>نوع الجهة</span><select @bind="paymentDto.EntityType" @bind:after="PaymentEntityTypeChanged" disabled="@isViewRoute"><option value="1">مورد</option><option value="2">عميل</option><option value="3">جهة أخرى</option></select></label>
+                        <label class="v-field"><span>الجهة</span><select @bind="paymentDto.EntityID" @bind:after="PaymentEntityChanged" disabled="@isViewRoute"><option value="0">@(paymentDto.EntityType == 3 ? "بدون معرف — اكتب الاسم أدناه" : "اختر الجهة")</option>@if(paymentDto.EntityType==1){@foreach(var x in suppliers){<option value="@x.Id">@x.Name (@x.Code)</option>}}else if(paymentDto.EntityType==2){@foreach(var x in customers){<option value="@x.Id">@x.Name (@x.Code)</option>}}</select></label>
+                        <label class="v-field v-field-wide"><span>المدفوع له</span><input @bind="paymentDto.PaidTo" disabled="@isViewRoute" placeholder="يُستكمل من الجهة أو يُكتب يدوياً" /></label>
+                        <label class="v-field"><span>المبلغ <b>*</b></span><input type="number" min="0" step="0.01" @bind="paymentDto.Amount" @bind:after="CalcPaymentLocal" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>العملة</span><select @bind="paymentDto.CurrencyID" @bind:after="CalcPaymentLocal" disabled="@isViewRoute"><option value="0">العملة الافتراضية</option>@foreach(var cur in currencies){<option value="@cur.Id">@cur.Name</option>}</select></label>
+                        <label class="v-field"><span>سعر الصرف</span><input type="number" min="0.000001" step="0.000001" @bind="paymentDto.ExchangeRate" @bind:after="CalcPaymentLocal" disabled="@isViewRoute" /></label>
+                        <label class="v-field"><span>المبلغ بالعملة المحلية</span><input value="@paymentDto.AmountLocal.ToString("#,##0.00")" disabled /></label>
+                        <label class="v-field"><span>طريقة الصرف</span><select @bind="paymentDto.PaymentMethod" disabled="@isViewRoute"><option value="1">نقدي</option><option value="2">تحويل بنكي</option><option value="3">شيك</option><option value="4">بطاقة</option></select></label>
+                        @if (paymentDto.PaymentMethod == 3)
+                        {
+                            <label class="v-field"><span>رقم الشيك</span><input @bind="paymentDto.ChequeNumber" disabled="@isViewRoute" /></label>
+                            <label class="v-field"><span>تاريخ الشيك</span><input type="date" @bind="paymentDto.ChequeDate" disabled="@isViewRoute" /></label>
+                            <label class="v-field"><span>بنك الشيك</span><input @bind="paymentDto.ChequeBankName" disabled="@isViewRoute" /></label>
+                        }
+                        @if (paymentDto.PaymentMethod == 2)
+                        {
+                            <label class="v-field"><span>مرجع التحويل</span><input @bind="paymentDto.TransferRef" disabled="@isViewRoute" /></label>
+                        }
+                        @if (paymentDto.IsInvoiceSettlement)
+                        {
+                            <div class="v-field v-field-wide v-settlement-account">
+                                <strong>حساب ذمم المورد</strong>
+                                <span>@(paymentDto.ExpenseAccountNameAr ?? "سيُحدّد من قيد الفاتورة المعتمد عند حفظ المسودة")</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <label class="v-field"><span>حساب المصروف</span><select @bind="paymentDto.ExpenseAccountID" disabled="@isViewRoute"><option value="0">اختر الحساب المعتمد</option>@foreach(var acc in expenseAccounts){<option value="@acc.Id">@acc.Name (@acc.Code)</option>}</select></label>
+                        }
+                        <label class="v-field"><span>مركز التكلفة</span><select @bind="paymentDto.CostCenterID" disabled="@isViewRoute"><option value="0">بدون مركز تكلفة</option>@foreach(var cc in costCenters){<option value="@cc.Id">@cc.Name</option>}</select></label>
+                        <label class="v-field v-field-wide"><span>البيان</span><textarea rows="2" @bind="paymentDto.Description" disabled="@isViewRoute"></textarea></label>
+                        <label class="v-field v-field-wide"><span>ملاحظات</span><textarea rows="2" @bind="paymentDto.Notes" disabled="@isViewRoute"></textarea></label>
+                    </div>
+                    @if (paymentDto.EntityType == 1 && paymentDto.EntityID.GetValueOrDefault() > 0)
+                    {
+                        <section class="v-settlement" aria-label="تسوية فواتير المورد">
+                            <div class="v-settlement-head">
+                                <div><strong>فواتير المورد المستحقة ذات المتبقي</strong><span>اختر فاتورة أو أكثر؛ ويمكن تعديل المبلغ المخصص لكل فاتورة.</span></div>
+                                @if (paymentDto.IsInvoiceSettlement){<span class="v-settlement-badge">تسوية ذمم</span>}
+                            </div>
+                            @if (!CanViewPurchaseInvoices)
+                            {
+                                <div class="v-settlement-message">لا تتوفر صلاحية عرض فواتير المشتريات لهذا المستخدم.</div>
+                            }
+                            else if (isLoadingSettlementInvoices)
+                            {
+                                <div class="v-settlement-message">جارٍ تحميل الفواتير...</div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(settlementLookupError))
+                            {
+                                <div class="v-settlement-message v-settlement-error">@settlementLookupError</div>
+                            }
+                            else if (purchaseSettlementInvoices.Count == 0)
+                            {
+                                <div class="v-settlement-message">لا توجد فواتير معتمدة بمتبقٍ متاح لهذا المورد.</div>
+                            }
+                            else
+                            {
+                                <div class="v-settlement-table-wrap">
+                                    <table class="v-settlement-table">
+                                        <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>التاريخ</th><th>الإجمالي</th><th>المدفوع</th><th>المتاح</th><th>العملة</th><th>المخصص</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var invoice in purchaseSettlementInvoices)
+                                            {
+                                                var paymentAllocation = paymentDto.InvoiceAllocations.FirstOrDefault(x => x.InvoiceID == invoice.InvoiceID);
+                                                var compatible = IsPaymentInvoiceCompatible(invoice);
+                                                <tr>
+                                                    <td><input type="checkbox" checked="@(paymentAllocation is not null)" disabled="@(isViewRoute || (!compatible && paymentAllocation is null))" @onchange="@(args => TogglePaymentInvoiceAsync(invoice, args))" aria-label="اختيار فاتورة @invoice.InvoiceNumber" /></td>
+                                                    <td><strong>@invoice.InvoiceNumber</strong></td>
+                                                    <td>@invoice.InvoiceDate.ToString("dd/MM/yyyy")</td>
+                                                    <td>@invoice.TotalAmount.ToString("#,##0.00")</td>
+                                                    <td>@invoice.PaidAmount.ToString("#,##0.00")</td>
+                                                    <td>@invoice.RemainingAmount.ToString("#,##0.00")</td>
+                                                    <td><span>@(invoice.CurrencyCode ?? "—")</span><small class="v-muted">سعر @invoice.ExchangeRate.ToString("0.######")</small></td>
+                                                    <td>
+                                                        @if (paymentAllocation is not null && isViewRoute)
+                                                        {
+                                                            <span class="v-amount">@paymentAllocation.AppliedAmount.ToString("#,##0.00")</span>
+                                                        }
+                                                        else if (!compatible)
+                                                        {
+                                                            <small class="v-incompatible">@(paymentAllocation is null ? "عملة/سعر صرف مختلف" : $"عملة غير متوافقة · {paymentAllocation.AppliedAmount:#,##0.00}")</small>
+                                                        }
+                                                        else if (paymentAllocation is not null)
+                                                        {
+                                                            <input class="v-allocation-input" type="number" min="0.01" max="@invoice.RemainingAmount" step="0.01" @bind="paymentAllocation.AppliedAmount" @bind:event="oninput" @bind:after="RecalculatePaymentSettlement" disabled="@isViewRoute" aria-label="المبلغ المخصص للفاتورة @invoice.InvoiceNumber" />
+                                                        }
+                                                        else { <span class="v-muted">—</span> }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="v-settlement-summary">
+                                    <span>إجمالي التخصيص: <strong>@PaymentAllocationTotal.ToString("#,##0.00")</strong></span>
+                                    <span>مبلغ السند: <strong>@paymentDto.Amount.ToString("#,##0.00")</strong></span>
+                                    @if (paymentDto.IsInvoiceSettlement && PaymentAllocationTotal != paymentDto.Amount)
+                                    {
+                                        <small class="v-settlement-error">يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير.</small>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    }
+                }
+
+                @if (!string.IsNullOrWhiteSpace(formError))
+                {
+                    <div class="v-alert v-alert-error" role="alert">@formError</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(formSuccess))
+                {
+                    <div class="v-alert v-alert-success" role="status">@formSuccess</div>
+                }
+                @if (CurrentJournalId.HasValue)
+                {
+                    <div class="v-journal-summary"><strong>معرّف القيد المرتبط:</strong> @CurrentJournalId — أُبقي إجراء الترحيل الحالي دون تغيير.</div>
+                }
+            </section>
+        }
+    </div>
+
+    @if (showNewTypeDialog)
+    {
+        <div class="v-modal-backdrop" @onclick="CloseNewTypeDialog">
+            <section class="v-modal" role="dialog" aria-modal="true" aria-labelledby="new-voucher-title" @onclick:stopPropagation="true">
+                <h2 id="new-voucher-title">اختر نوع السند</h2>
+                <p>ستُستخدم الصلاحية والتسلسل الخاصان بالنوع المختار.</p>
+                <div class="v-modal-actions">
+                    @if (CanAddReceipt){<button class="v-btn v-btn-receipt" @onclick='() => NavigateNew("receipt")'>سند قبض</button>}
+                    @if (CanAddPayment){<button class="v-btn v-btn-payment" @onclick='() => NavigateNew("payment")'>سند صرف</button>}
+                    <button class="v-btn v-btn-ghost" @onclick="CloseNewTypeDialog">إلغاء</button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (showDeleteDialog && deleteTarget is not null)
+    {
+        <div class="v-modal-backdrop" @onclick="CloseDeleteDialog">
+            <section class="v-modal" role="dialog" aria-modal="true" aria-labelledby="delete-voucher-title" @onclick:stopPropagation="true">
+                <h2 id="delete-voucher-title">حذف مسودة السند؟</h2>
+                <p>سيُحذف السند <strong>@deleteTarget.Number</strong> فقط إذا ظلّ مسودة.</p>
+                @if (!string.IsNullOrWhiteSpace(deleteError)){<div class="v-alert v-alert-error">@deleteError</div>}
+                <div class="v-modal-actions">
+                    <button class="v-btn v-btn-danger" @onclick="ConfirmDeleteAsync" disabled="@isDeleting">@(isDeleting ? "جارٍ الحذف..." : "حذف المسودة")</button>
+                    <button class="v-btn v-btn-ghost" @onclick="CloseDeleteDialog">إلغاء</button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(toast))
+    {
+        <div class="v-toast" role="status"><span>@toast</span><button aria-label="إغلاق" @onclick='() => toast = ""'>×</button></div>
+    }
+}
+
+<style>
+.voucher-page{--v-gold:#D4AF37;--v-gold-dark:#9C7C2E;--v-ink:#070B14;--v-soft:#fcfaf6;display:flex;flex-direction:column;gap:14px;max-width:1480px;margin:0 auto;font-family:'Tajawal',sans-serif}
+.voucher-hero{position:relative;overflow:hidden;border:1px solid rgba(212,175,55,.22);border-radius:18px;background:linear-gradient(135deg,#070B14,#0A0F1E 58%,#161d2d);box-shadow:0 10px 32px rgba(0,0,0,.2);padding:18px 22px;color:#F5E6C8}
+.voucher-hero-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#D4AF37,transparent)}
+.voucher-hero-content{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.voucher-brand{display:flex;align-items:center;gap:12px;min-width:0}.voucher-logo{width:42px;height:42px;border-radius:12px;border:1px solid rgba(212,175,55,.25);display:grid;place-items:center;background:rgba(255,255,255,.04);flex:0 0 auto}.voucher-logo img{width:27px;height:27px;object-fit:contain}.voucher-brand h1{margin:0;font-size:1.12rem;font-weight:900}.voucher-brand p{margin:4px 0 0;color:#aab3c2;font-size:.78rem}.voucher-hero-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.v-count{color:#E9D28A;font-weight:800;font-size:.8rem;padding:7px 10px;border:1px solid rgba(212,175,55,.22);border-radius:10px}
+.v-btn{min-height:38px;border:1px solid transparent;border-radius:10px;padding:8px 14px;font:700 .82rem 'Tajawal',sans-serif;cursor:pointer;transition:transform .15s,box-shadow .15s,background .15s}.v-btn:hover{transform:translateY(-1px)}.v-btn:disabled{opacity:.6;cursor:wait;transform:none}.v-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:middle;margin-left:6px}.v-btn-gold{background:linear-gradient(135deg,#E2C45E,#B08C2F);color:#121212;box-shadow:0 4px 12px rgba(212,175,55,.18)}.v-btn-ghost{background:#fff;color:#243044;border-color:#e5e7eb}.v-btn-approve,.v-btn-receipt{background:linear-gradient(135deg,#16856a,#0c6954);color:#fff}.v-btn-payment{background:linear-gradient(135deg,#9f3434,#7b2020);color:#fff}.v-btn-danger{background:#b42318;color:#fff}
+.v-tabs{display:flex;gap:7px;flex-wrap:wrap;border-bottom:1px solid #e8e2d0;padding-bottom:7px}.v-tab{border:1px solid #e8e2d0;background:#fff;color:#4b5563;border-radius:999px;padding:8px 18px;font:700 .82rem 'Tajawal',sans-serif;cursor:pointer}.v-tab.active{background:#101828;color:#f5e6c8;border-color:#d4af37;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.v-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.v-stat{background:linear-gradient(145deg,#fff,#fcfaf6);border:1px solid #e8e2d0;border-radius:13px;padding:13px 15px;display:flex;align-items:center;justify-content:space-between;gap:10px}.v-stat-label{color:#737b89;font-size:.75rem;font-weight:700}.v-stat strong{color:#101828;font-size:1.08rem;font-variant-numeric:tabular-nums}
+.v-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.v-search{display:flex;align-items:center;gap:8px;flex:1 1 270px;min-width:220px;height:40px;padding:0 11px;border:1px solid #e8e2d0;background:#fff;border-radius:11px}.v-search svg{width:17px;height:17px;fill:none;stroke:#8b95a5;stroke-width:1.7;flex:0 0 auto}.v-search input{width:100%;border:0;outline:0;background:transparent;font:400 .82rem 'Tajawal',sans-serif;color:#101828}.v-filter{height:40px;border:1px solid #e8e2d0;border-radius:11px;padding:0 10px;background:#fff;font:600 .8rem 'Tajawal',sans-serif;color:#344054;min-width:132px}
+.v-table-card,.v-form-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 4px 17px rgba(15,23,42,.045)}.v-table-card{position:relative}.v-table-card:before,.v-form-card:before{content:'';display:block;height:2px;background:linear-gradient(90deg,transparent,#D4AF37,transparent);opacity:.65}.v-table{width:100%;border-collapse:collapse;min-width:1050px}.v-table th{background:#fcfaf6;color:#667085;font-size:.73rem;font-weight:800;text-align:right;padding:12px 11px;border-bottom:1px solid #eee9dc;white-space:nowrap}.v-table td{padding:11px;border-bottom:1px solid #f1efe8;font-size:.8rem;color:#263244;vertical-align:middle}.v-table tbody tr:hover{background:#fffdf8}.v-muted{color:#7b8493!important}.v-kind,.v-status,.v-journal{display:inline-flex;align-items:center;border-radius:7px;padding:4px 8px;font-size:.7rem;font-weight:800;white-space:nowrap}.v-kind.receipt{background:#e9f7f1;color:#08734f;border:1px solid #c8eadb}.v-kind.payment{background:#fff0ef;color:#a3332e;border:1px solid #f3d1ce}.v-status{background:color-mix(in srgb,var(--status-color) 10%,white);color:var(--status-color);border:1px solid color-mix(in srgb,var(--status-color) 22%,white)}.v-journal{background:#edf7f2;color:#08734f;border:1px solid #c8eadb}.v-number{border:0;background:transparent;color:#8a6c23;font:800 .82rem 'Tajawal',sans-serif;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.v-amount{font-variant-numeric:tabular-nums;font-weight:800;white-space:nowrap}.v-row-actions{display:flex;align-items:center;justify-content:center;gap:4px}.v-icon-btn{display:grid;place-items:center;width:30px;height:30px;border:1px solid #d9e2ec;background:#fff;border-radius:8px;color:#2563eb;cursor:pointer}.v-icon-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.v-icon-btn.approve{color:#08734f;border-color:#b7e5d1}.v-icon-btn.delete{color:#b42318;border-color:#f2c6c3}
+.v-form-card{max-width:1050px;width:100%;margin:0 auto}.v-card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #eee9dc}.v-card-head h2{font-size:.96rem;color:#101828;margin:0;font-weight:900}.v-card-head p{font-size:.74rem;color:#667085;margin:4px 0 0}.v-form-note{margin:12px 18px 0;padding:9px 12px;border-radius:9px;background:#fffaf0;border:1px solid #eee2b9;color:#755d1f;font-size:.75rem}.v-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding:18px}.v-field{display:flex;flex-direction:column;gap:5px;min-width:0;color:#344054;font-size:.77rem;font-weight:700}.v-field b{color:#b42318}.v-field input,.v-field select,.v-field textarea{width:100%;min-height:39px;box-sizing:border-box;border:1px solid #e4dfd2;border-radius:9px;padding:8px 10px;background:#fcfaf6;color:#101828;font:500 .82rem 'Tajawal',sans-serif;outline:none}.v-field textarea{resize:vertical}.v-field input:focus,.v-field select:focus,.v-field textarea:focus{border-color:#c4a33e;box-shadow:0 0 0 3px rgba(212,175,55,.12);background:#fff}.v-field input:disabled,.v-field select:disabled,.v-field textarea:disabled{background:#f3f4f6;color:#667085}.v-field-wide{grid-column:1/-1}.v-journal-summary{margin:0 18px 16px;padding:12px 14px;border-radius:10px;background:#eff8f3;color:#176348;border:1px solid #cdebdc;font-size:.82rem}.v-alert{margin:12px 18px;padding:10px 13px;border-radius:9px;font-size:.82rem}.v-alert-error{color:#912018;background:#fff2f0;border:1px solid #f2c6c3}.v-alert-success{color:#176348;background:#eff8f3;border:1px solid #cdebdc}.v-empty{text-align:center;padding:38px 16px;background:#fff;border:1px dashed #ded7c5;border-radius:15px;color:#667085}.v-empty h2{font-size:.95rem;color:#344054;margin:9px 0 4px}.v-empty p{font-size:.78rem;margin:0}.v-empty-icon{display:grid;place-items:center;width:45px;height:45px;border-radius:13px;margin:auto;background:#fbf7e9;color:#9c7c2e;border:1px solid #eee2b9}.v-empty-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5}.v-modal-backdrop{position:fixed;inset:0;background:rgba(7,11,20,.54);display:grid;place-items:center;padding:18px;z-index:1200}.v-modal{width:min(100%,470px);background:#fff;border:1px solid rgba(212,175,55,.38);border-radius:16px;padding:22px;box-shadow:0 22px 65px rgba(0,0,0,.28);font-family:'Tajawal',sans-serif}.v-modal h2{font-size:1rem;color:#101828;margin:0 0 7px}.v-modal p{font-size:.82rem;color:#667085;margin:0 0 18px}.v-modal-actions{display:flex;gap:8px;justify-content:flex-start;flex-wrap:wrap}.v-toast{position:fixed;left:24px;bottom:24px;z-index:1300;display:flex;align-items:center;gap:12px;max-width:min(500px,calc(100vw - 32px));padding:12px 15px;background:#101828;color:#f5e6c8;border:1px solid rgba(212,175,55,.35);border-radius:11px;box-shadow:0 12px 30px rgba(0,0,0,.22);font:700 .82rem 'Tajawal',sans-serif}.v-toast button{border:0;background:transparent;color:inherit;font-size:1.2rem;cursor:pointer}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.v-settlement{margin:0 18px 16px;border:1px solid #e8e2d0;border-radius:12px;background:#fffdf8;overflow:hidden}.v-settlement-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #eee9dc}.v-settlement-head div{display:flex;flex-direction:column;gap:3px}.v-settlement-head strong{font-size:.82rem;color:#344054}.v-settlement-head span{font-size:.72rem;color:#667085}.v-settlement-badge{padding:4px 8px;border:1px solid #e8dba6;border-radius:999px;background:#fff8dc;color:#755d1f!important;font-weight:800;white-space:nowrap}.v-settlement-message{padding:13px 14px;color:#667085;font-size:.78rem}.v-settlement-error{color:#b42318!important}.v-settlement-table-wrap{overflow-x:auto}.v-settlement-table{width:100%;min-width:760px;border-collapse:collapse}.v-settlement-table th{padding:9px 10px;text-align:right;background:#fcfaf6;color:#667085;font-size:.7rem;white-space:nowrap;border-bottom:1px solid #eee9dc}.v-settlement-table td{padding:8px 10px;border-bottom:1px solid #f1efe8;color:#344054;font-size:.76rem;white-space:nowrap}.v-settlement-table tbody tr:hover{background:#fffaf0}.v-settlement-table input[type=checkbox]{width:16px;height:16px;accent-color:#9c7c2e}.v-allocation-input{width:112px;min-height:32px;box-sizing:border-box;border:1px solid #e4dfd2;border-radius:7px;padding:5px 7px;background:#fff;color:#101828;font:600 .78rem 'Tajawal',sans-serif}.v-incompatible{color:#b42318;font-size:.68rem;white-space:normal}.v-settlement-summary{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;color:#667085;font-size:.75rem}.v-settlement-summary strong{color:#101828;font-variant-numeric:tabular-nums}.v-settlement-account{justify-content:center;padding:9px 11px;border:1px solid #e8dba6;border-radius:9px;background:#fffaf0;color:#755d1f}.v-settlement-account strong{font-size:.75rem}.v-settlement-account span{font-size:.78rem}.v-settlement-account::before{content:none}
+@@media(max-width:780px){.voucher-hero{padding:15px}.voucher-hero-content{align-items:flex-start}.voucher-hero-actions{width:100%}.v-stats{grid-template-columns:1fr}.v-form-grid{grid-template-columns:1fr;padding:14px}.v-field-wide{grid-column:auto}.v-filter{flex:1 1 140px}.v-card-head{align-items:flex-start}.v-table{min-width:1000px}}
+</style>
+
+@code {
+    [Parameter] public string? Type { get; set; }
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public int? ViewId { get; set; }
+    [SupplyParameterFromQuery(Name = "type")] public string? QueryType { get; set; }
+
+    private List<ReceiptVoucherListDto> receiptVouchers = new();
+    private List<PaymentVoucherListDto> paymentVouchers = new();
+    private List<VoucherRow> allRows = new();
+    private List<SearchableItem> cashBoxes = new();
+    private List<SearchableItem> bankAccounts = new();
+    private List<SearchableItem> customers = new();
+    private List<SearchableItem> suppliers = new();
+    private List<VoucherInvoiceAllocationDto> salesSettlementInvoices = new();
+    private List<VoucherInvoiceAllocationDto> purchaseSettlementInvoices = new();
+    private bool isLoadingSettlementInvoices;
+    private string settlementLookupError = "";
+    private List<SearchableItem> revenueAccounts = new();
+    private List<SearchableItem> expenseAccounts = new();
+    private List<LookupDto> costCenters = new();
+    private List<LookupDto> currencies = new();
+    private ModulePermissionDto? receiptPermissions;
+    private ModulePermissionDto? paymentPermissions;
+    private ReceiptVoucherDto receiptDto = new();
+    private PaymentVoucherDto paymentDto = new();
+    private bool isLoading = true;
+    private bool formAccessGranted;
+    private bool currentVoucherLoaded;
+    private bool isNewVoucherSaved;
+    private bool isSaving;
+    private bool isApproving;
+    private bool isDeleting;
+    private bool isRefreshing;
+    private bool voucherListsLoaded;
+    private bool voucherListsLoadFailed;
+    private string voucherListsLoadError = string.Empty;
+    private bool isExporting;
+    private bool showNewTypeDialog;
+    private bool showDeleteDialog;
+    private string? selectedTabValue;
+    private string searchText = "";
+    private int filterStatus;
+    private int filterCashBox;
+    private string cashBoxLookupError = "";
+    private string pageError = "";
+    private string formError = "";
+    private string formSuccess = "";
+    private string toast = "";
+    private VoucherRow? deleteTarget;
+    private string deleteError = "";
+    private string? loadedRouteKey;
+
+    private string CurrentPath => "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].Trim('/');
+    private bool IsNewRoute => CurrentPath.StartsWith("/accounting-vouchers/new/", StringComparison.OrdinalIgnoreCase);
+    private bool IsEditRoute => Id.HasValue && Id.Value > 0;
+    private bool IsViewRoute => ViewId.HasValue && ViewId.Value > 0;
+    private bool IsFormRoute => IsNewRoute || IsEditRoute || IsViewRoute;
+    private bool currentIsReceipt => string.Equals(Type, "receipt", StringComparison.OrdinalIgnoreCase);
+    private bool currentIsPayment => string.Equals(Type, "payment", StringComparison.OrdinalIgnoreCase);
+    private bool isViewRoute => IsViewRoute || isNewVoucherSaved || !currentVoucherLoaded || CurrentStatus != 1 || (IsEditRoute && (currentIsReceipt ? receiptPermissions?.CanEdit != true : currentIsPayment && paymentPermissions?.CanEdit != true));
+    private bool CanViewReceipt => receiptPermissions?.CanView == true;
+    private bool CanViewPayment => paymentPermissions?.CanView == true;
+    private bool CanViewAny => CanViewReceipt || CanViewPayment;
+    private bool CanAddReceipt => receiptPermissions?.CanAdd == true;
+    private bool CanAddPayment => paymentPermissions?.CanAdd == true;
+    private bool CanAddAny => CanAddReceipt || CanAddPayment;
+    private bool CanAddExpense => PermissionService.CanAdd("SCR_EXPENSES") || PermissionService.CanAdd("SCR_EXPENSE") || PermissionService.CanAdd("SCR_OVERHEAD") || PermissionService.CanAdd("SCR_OVERHEAD_EXPENSES");
+    private bool CanViewSalesInvoices => PermissionService.GetModule("SCR_SINV")?.CanView == true;
+    private bool CanViewPurchaseInvoices => PermissionService.GetModule("SCR_PINV")?.CanView == true;
+    private bool CanSaveCurrent => formAccessGranted && currentVoucherLoaded && !isNewVoucherSaved && IsFormRoute && !IsViewRoute && (currentIsReceipt ? (IsNewRoute ? CanAddReceipt : receiptPermissions?.CanEdit == true) : currentIsPayment && (IsNewRoute ? CanAddPayment : paymentPermissions?.CanEdit == true)) && CurrentStatus == 1 && (currentIsReceipt ? (!receiptDto.IsInvoiceSettlement || CanViewSalesInvoices) : (!paymentDto.IsInvoiceSettlement || CanViewPurchaseInvoices));
+    private bool CanApproveCurrent => formAccessGranted && currentVoucherLoaded && IsEditRoute && CurrentStatus == 1 && (currentIsReceipt ? receiptPermissions?.CanApprove == true : currentIsPayment && paymentPermissions?.CanApprove == true) && (currentIsReceipt ? (!receiptDto.IsInvoiceSettlement || CanViewSalesInvoices) : (!paymentDto.IsInvoiceSettlement || CanViewPurchaseInvoices));
+    private string CurrentTab => selectedTabValue ?? NormalizeTab(QueryType);
+    private string VoucherListCountText => voucherListsLoaded
+        ? $"{filteredRows.Count} سند"
+        : voucherListsLoadFailed ? "غير متاح" : "جارٍ التحميل";
+    private int CurrentStatus => currentIsReceipt ? receiptDto.ReceiptStatus : paymentDto.PaymentStatus;
+    private decimal ReceiptAllocationTotal => receiptDto.InvoiceAllocations?.Sum(x => x.AppliedAmount) ?? 0m;
+    private decimal PaymentAllocationTotal => paymentDto.InvoiceAllocations?.Sum(x => x.AppliedAmount) ?? 0m;
+    private string CurrentStatusName => currentIsReceipt ? receiptDto.StatusName : paymentDto.StatusName;
+    private int? CurrentJournalId => currentIsReceipt ? receiptDto.JournalID : paymentDto.JournalID;
+    private string FormTitle => IsNewRoute
+        ? (currentIsReceipt ? "سند قبض جديد" : "سند صرف جديد")
+        : IsEditRoute
+            ? isViewRoute
+                ? (currentIsReceipt ? "عرض سند قبض" : "عرض سند صرف")
+                : (currentIsReceipt ? $"تعديل سند القبض {receiptDto.ReceiptNumber}" : $"تعديل سند الصرف {paymentDto.PaymentNumber}")
+            : (currentIsReceipt ? "عرض سند قبض" : "عرض سند صرف");
+    private string FormSubtitle => currentIsReceipt ? "تحصيل مبلغ وإثبات قيده على الحساب المناسب" : "صرف مبلغ وإثبات قيده على الحساب المناسب";
+    private string FormSectionTitle => currentIsReceipt ? "بيانات سند القبض" : "بيانات سند الصرف";
+
+    private List<VoucherRow> filteredRows => allRows
+        .Where(x => CurrentTab == "all" || (CurrentTab == "receipt" && x.IsReceipt) || (CurrentTab == "payment" && !x.IsReceipt))
+        .Where(x => filterStatus == 0 || x.Status == filterStatus)
+        .Where(x => filterCashBox == 0 || x.CashBoxId == filterCashBox)
+        .Where(x => string.IsNullOrWhiteSpace(searchText)
+            || ArabicSearchHelper.Contains(x.Number, searchText)
+            || ArabicSearchHelper.Contains(x.Party, searchText)
+            || ArabicSearchHelper.Contains(x.CashBox, searchText)
+            || ArabicSearchHelper.Contains(x.JournalNumber, searchText))
+        .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var routeKey = $"{CurrentPath}|{Type}|{Id}|{ViewId}|{QueryType}";
+        if (string.Equals(routeKey, loadedRouteKey, StringComparison.Ordinal)) return;
+        loadedRouteKey = routeKey;
+        isLoading = true;
+        formAccessGranted = false;
+        currentVoucherLoaded = false;
+        isNewVoucherSaved = false;
+        pageError = formError = formSuccess = "";
+
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            receiptPermissions = PermissionService.GetModule("SCR_RECV");
+            paymentPermissions = PermissionService.GetModule("SCR_PAYV");
+
+            if (IsFormRoute)
+            {
+                if (!currentIsReceipt && !currentIsPayment)
+                {
+                    formError = "نوع السند في الرابط غير صحيح.";
+                    isLoading = false;
+                    return;
+                }
+                var allowed = currentIsReceipt
+                    ? (IsNewRoute ? CanAddReceipt : CanViewReceipt)
+                    : (IsNewRoute ? CanAddPayment : CanViewPayment);
+                if (!allowed) throw new UnauthorizedAccessException("ليس لديك صلاحية لهذا النوع من السندات.");
+                formAccessGranted = true;
+
+                await LoadFormLookupsAsync();
+                if (IsNewRoute) await InitializeNewVoucherAsync();
+                else await LoadCurrentVoucherAsync();
+                currentVoucherLoaded = true;
+            }
+            else
+            {
+                var requestedTab = NormalizeTab(QueryType);
+                selectedTabValue = requestedTab == "receipt" && !CanViewReceipt || requestedTab == "payment" && !CanViewPayment
+                    ? "all" : requestedTab;
+                if (!CanViewAny) throw new UnauthorizedAccessException("ليس لديك صلاحية عرض سندات القبض أو الصرف.");
+                await LoadListsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (IsFormRoute) formError = ex.Message;
+            else pageError = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadFormLookupsAsync()
+    {
+        cashBoxes = (await TreasuryService.GetCashBoxLookupsAsync())
+            .Select(x => new SearchableItem { Id = x.CashBoxID, Name = x.CashBoxNameAr ?? "", Code = x.CashBoxCode }).ToList();
+        bankAccounts = (await TreasuryService.GetBankAccountLookupsAsync())
+            .Select(x => new SearchableItem { Id = x.BankAccountID, Name = $"{x.BankName} - {x.AccountNumber}", Code = x.BankAccountCode }).ToList();
+        customers = await LookupService.GetCustomersSearchableAsync();
+        suppliers = await LookupService.GetSuppliersSearchableAsync();
+        currencies = await LookupService.GetCurrenciesAsync();
+        costCenters = (await TreasuryService.GetCostCentersFlatAsync())
+            .Select(x => new LookupDto { Id = x.CostCenterID, Name = x.CostCenterNameAr, Code = x.CostCenterCode }).ToList();
+        if (currentIsReceipt) revenueAccounts = await LookupService.GetRevenueAccountsSearchableAsync();
+        else expenseAccounts = await LookupService.GetExpenseAccountsSearchableAsync();
+    }
+
+    private Task InitializeNewVoucherAsync()
+    {
+        if (currentIsReceipt)
+        {
+            receiptDto = new ReceiptVoucherDto
+            {
+                // لا نستهلك تسلسل RV بمجرد فتح النموذج؛ خدمة الحفظ تولّد الرقم عند الإنشاء.
+                ReceiptDate = DateTime.Today,
+                EntityType = 1,
+                PaymentMethod = 1,
+                ExchangeRate = 1,
+                ReceiptStatus = 1,
+                CashBoxID = cashBoxes.FirstOrDefault()?.Id ?? 0
+            };
+            CalcReceiptLocal();
+        }
+        else
+        {
+            paymentDto = new PaymentVoucherDto
+            {
+                // لا نستهلك تسلسل PV بمجرد فتح النموذج؛ خدمة الحفظ تولّد الرقم عند الإنشاء.
+                PaymentDate = DateTime.Today,
+                EntityType = 1,
+                PaymentMethod = 1,
+                ExchangeRate = 1,
+                PaymentStatus = 1,
+                CashBoxID = cashBoxes.FirstOrDefault()?.Id ?? 0
+            };
+            CalcPaymentLocal();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadCurrentVoucherAsync()
+    {
+        if (currentIsReceipt)
+        {
+            var data = await TreasuryService.GetReceiptByIdAsync(IsViewRoute ? ViewId!.Value : Id!.Value);
+            if (data is null) throw new InvalidOperationException("سند القبض غير موجود.");
+            receiptDto = data;
+            await RefreshReceiptInvoicesAsync();
+        }
+        else
+        {
+            var data = await TreasuryService.GetPaymentByIdAsync(IsViewRoute ? ViewId!.Value : Id!.Value);
+            if (data is null) throw new InvalidOperationException("سند الصرف غير موجود.");
+            paymentDto = data;
+            await RefreshPaymentInvoicesAsync();
+        }
+    }
+
+    private async Task LoadListsAsync()
+    {
+        try
+        {
+            var receiptTask = CanViewReceipt ? TreasuryService.GetReceiptVouchersAsync() : Task.FromResult(new List<ReceiptVoucherListDto>());
+            var paymentTask = CanViewPayment ? TreasuryService.GetPaymentVouchersAsync() : Task.FromResult(new List<PaymentVoucherListDto>());
+            await Task.WhenAll(receiptTask, paymentTask);
+            var loadedReceipts = await receiptTask;
+            var loadedPayments = await paymentTask;
+            var loadedRows = new List<VoucherRow>();
+            loadedRows.AddRange(loadedReceipts.Select(x => new VoucherRow
+            {
+                IsReceipt = true, Id = x.ReceiptID, Number = x.ReceiptNumber ?? "", Date = x.ReceiptDate,
+                Party = x.EntityName ?? x.ReceivedFrom ?? "—", CashBox = x.CashBoxNameAr ?? "—", CashBoxId = x.CashBoxID,
+                Amount = x.Amount, AmountLocal = x.AmountLocal, CurrencyCode = x.CurrencyCode ?? "", Method = x.PaymentMethodName ?? "—",
+                Status = x.ReceiptStatus, StatusName = x.StatusName ?? "غير محدد", IsPosted = x.IsPosted, JournalId = x.JournalID, JournalNumber = x.JournalNumber
+            }));
+            loadedRows.AddRange(loadedPayments.Select(x => new VoucherRow
+            {
+                IsReceipt = false, Id = x.PaymentID, Number = x.PaymentNumber ?? "", Date = x.PaymentDate,
+                Party = x.EntityName ?? x.PaidTo ?? "—", CashBox = x.CashBoxNameAr ?? "—", CashBoxId = x.CashBoxID,
+                Amount = x.Amount, AmountLocal = x.AmountLocal, CurrencyCode = x.CurrencyCode ?? "", Method = x.PaymentMethodName ?? "—",
+                Status = x.PaymentStatus, StatusName = x.StatusName ?? "غير محدد", IsPosted = x.IsPosted, JournalId = x.JournalID
+            }));
+
+            receiptVouchers = loadedReceipts;
+            paymentVouchers = loadedPayments;
+            allRows = loadedRows;
+            voucherListsLoaded = true;
+            voucherListsLoadFailed = false;
+            voucherListsLoadError = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load receipt and payment voucher lists.");
+            voucherListsLoadFailed = true;
+            voucherListsLoadError = voucherListsLoaded
+                ? "تعذر تحديث قائمة السندات؛ ما زالت آخر قائمة محمّلة ظاهرة. أعد المحاولة."
+                : "تعذر تحميل قائمة سندات القبض والصرف. أعد المحاولة.";
+            return;
+        }
+
+        if (cashBoxes.Count == 0)
+        {
+            try
+            {
+                cashBoxes = (await TreasuryService.GetCashBoxLookupsAsync())
+                    .Select(x => new SearchableItem { Id = x.CashBoxID, Name = x.CashBoxNameAr ?? "", Code = x.CashBoxCode })
+                    .ToList();
+                cashBoxLookupError = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex,
+                    "Failed to load cash-box lookup for receipt/payment voucher list filters.");
+                cashBoxes = new List<SearchableItem>();
+                cashBoxLookupError = "تعذر تحميل خيارات الخزائن؛ ما زالت قائمة السندات متاحة. أعد المحاولة من هنا أو زر التحديث.";
+            }
+        }
+        else
+        {
+            cashBoxLookupError = string.Empty;
+        }
+    }
+
+    private async Task ReloadListsAsync()
+    {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        pageError = "";
+        try { await LoadListsAsync(); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh receipt and payment voucher lists.");
+            voucherListsLoadFailed = true;
+            voucherListsLoadError = voucherListsLoaded
+                ? "تعذر تحديث قائمة السندات؛ ما زالت آخر قائمة محمّلة ظاهرة. أعد المحاولة."
+                : "تعذر تحميل قائمة سندات القبض والصرف. أعد المحاولة.";
+        }
+        finally { isRefreshing = false; }
+    }
+
+    private void SelectTab(string tab)
+    {
+        if (tab == "receipt" && !CanViewReceipt || tab == "payment" && !CanViewPayment) return;
+        selectedTabValue = tab;
+        filterStatus = 0;
+        filterCashBox = 0;
+    }
+
+    private void OpenNewExpense() => Navigation.NavigateTo("/expenses/new");
+
+    private void BeginNewVoucher()
+    {
+        if (CurrentTab == "receipt" && CanAddReceipt) { NavigateNew("receipt"); return; }
+        if (CurrentTab == "payment" && CanAddPayment) { NavigateNew("payment"); return; }
+        if (CanAddReceipt && !CanAddPayment) { NavigateNew("receipt"); return; }
+        if (CanAddPayment && !CanAddReceipt) { NavigateNew("payment"); return; }
+        showNewTypeDialog = true;
+    }
+
+    private void NavigateNew(string type)
+    {
+        showNewTypeDialog = false;
+        Navigation.NavigateTo($"/accounting-vouchers/new/{type}");
+    }
+
+    private void BackToList() => Navigation.NavigateTo($"/accounting-vouchers?type={(currentIsReceipt ? "receipt" : "payment")}");
+    private void CloseNewTypeDialog() => showNewTypeDialog = false;
+    private void CloseDeleteDialog() { showDeleteDialog = false; deleteTarget = null; deleteError = ""; }
+
+    private void OpenEdit(VoucherRow row) => Navigation.NavigateTo($"/accounting-vouchers/{(row.IsReceipt ? "receipt" : "payment")}/edit/{row.Id}");
+    private void OpenView(VoucherRow row) => Navigation.NavigateTo($"/accounting-vouchers/{(row.IsReceipt ? "receipt" : "payment")}/view/{row.Id}");
+    private void RequestDelete(VoucherRow row) { deleteTarget = row; deleteError = ""; showDeleteDialog = true; }
+
+    private async Task SaveCurrentAsync()
+    {
+        formError = formSuccess = "";
+        if (currentIsReceipt)
+        {
+            if (receiptDto.CashBoxID <= 0) { formError = "اختر الخزينة."; return; }
+            if (receiptDto.Amount <= 0) { formError = "أدخل مبلغاً أكبر من صفر."; return; }
+            if (receiptDto.CurrencyID.HasValue && receiptDto.ExchangeRate <= 0) { formError = "أدخل سعر صرف موجباً للعملة المختارة."; return; }
+            if (receiptDto.IsInvoiceSettlement)
+            {
+                if (receiptDto.InvoiceAllocations.Count == 0) { formError = "اختر فاتورة واحدة على الأقل للتسوية."; return; }
+                if (ReceiptAllocationTotal != receiptDto.Amount) { formError = "يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير."; return; }
+                if (receiptDto.InvoiceAllocations.Any(x => !IsReceiptInvoiceCompatible(x))) { formError = "عملة أو سعر صرف إحدى الفواتير لا يطابق السند؛ أزلها أو اضبط العملة أولاً."; return; }
+            }
+        }
+        else
+        {
+            if (paymentDto.CashBoxID <= 0) { formError = "اختر الخزينة."; return; }
+            if (paymentDto.Amount <= 0) { formError = "أدخل مبلغاً أكبر من صفر."; return; }
+            if (paymentDto.CurrencyID.HasValue && paymentDto.ExchangeRate <= 0) { formError = "أدخل سعر صرف موجباً للعملة المختارة."; return; }
+            if (paymentDto.IsInvoiceSettlement)
+            {
+                if (paymentDto.InvoiceAllocations.Count == 0) { formError = "اختر فاتورة واحدة على الأقل للتسوية."; return; }
+                if (PaymentAllocationTotal != paymentDto.Amount) { formError = "يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير."; return; }
+                if (paymentDto.InvoiceAllocations.Any(x => !IsPaymentInvoiceCompatible(x))) { formError = "عملة أو سعر صرف إحدى الفواتير لا يطابق السند؛ أزلها أو اضبط العملة أولاً."; return; }
+            }
+        }
+
+        isSaving = true;
+        try
+        {
+            if (currentIsReceipt)
+            {
+                if (IsEditRoute) await TreasuryService.UpdateReceiptAsync(receiptDto, UserSession.UserID);
+                else
+                {
+                    var newId = await TreasuryService.InsertReceiptAsync(receiptDto, UserSession.UserID);
+                    receiptDto.ReceiptID = newId;
+                    toast = "تم حفظ مسودة سند القبض وإشعار أصحاب صلاحية الاعتماد.";
+                    if (CanViewReceipt) Navigation.NavigateTo($"/accounting-vouchers/receipt/edit/{newId}");
+                    else
+                    {
+                        isNewVoucherSaved = true;
+                        formSuccess = "تم حفظ مسودة سند القبض؛ لا تتوفر لك صلاحية العرض بعد الحفظ.";
+                    }
+                    return;
+                }
+                formSuccess = "تم حفظ مسودة سند القبض.";
+            }
+            else
+            {
+                if (IsEditRoute) await TreasuryService.UpdatePaymentAsync(paymentDto, UserSession.UserID);
+                else
+                {
+                    var newId = await TreasuryService.InsertPaymentAsync(paymentDto, UserSession.UserID);
+                    paymentDto.PaymentID = newId;
+                    toast = "تم حفظ مسودة سند الصرف وإشعار أصحاب صلاحية الاعتماد.";
+                    if (CanViewPayment) Navigation.NavigateTo($"/accounting-vouchers/payment/edit/{newId}");
+                    else
+                    {
+                        isNewVoucherSaved = true;
+                        formSuccess = "تم حفظ مسودة سند الصرف؛ لا تتوفر لك صلاحية العرض بعد الحفظ.";
+                    }
+                    return;
+                }
+                formSuccess = "تم حفظ مسودة سند الصرف.";
+            }
+        }
+        catch (Exception ex) { formError = ex.Message; }
+        finally { isSaving = false; }
+    }
+
+    private async Task ApproveCurrentAsync()
+    {
+        if (!CanApproveCurrent) return;
+        isApproving = true;
+        formError = formSuccess = "";
+        try
+        {
+            if (currentIsReceipt) await TreasuryService.ApproveReceiptAsync(receiptDto.ReceiptID, UserSession.UserID);
+            else await TreasuryService.ApprovePaymentAsync(paymentDto.PaymentID, UserSession.UserID);
+            await LoadCurrentVoucherAsync();
+            formSuccess = "تم الاعتماد عبر إجراء الترحيل الحالي.";
+        }
+        catch (Exception ex) { formError = ex.Message; }
+        finally { isApproving = false; }
+    }
+
+    private async Task ApproveRowAsync(VoucherRow row)
+    {
+        try
+        {
+            if (row.IsReceipt) await TreasuryService.ApproveReceiptAsync(row.Id, UserSession.UserID);
+            else await TreasuryService.ApprovePaymentAsync(row.Id, UserSession.UserID);
+            toast = $"تم اعتماد سند {(row.IsReceipt ? "القبض" : "الصرف")} {row.Number} عبر إجراء الترحيل الحالي.";
+            await ReloadListsAsync();
+        }
+        catch (Exception ex) { pageError = ex.Message; }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (deleteTarget is null) return;
+        isDeleting = true;
+        deleteError = "";
+        try
+        {
+            if (deleteTarget.IsReceipt) await TreasuryService.DeleteReceiptAsync(deleteTarget.Id, UserSession.UserID);
+            else await TreasuryService.DeletePaymentAsync(deleteTarget.Id, UserSession.UserID);
+            toast = "تم حذف المسودة.";
+            CloseDeleteDialog();
+            await ReloadListsAsync();
+        }
+        catch (Exception ex) { deleteError = ex.Message; }
+        finally { isDeleting = false; }
+    }
+
+    private async Task ExportReceiptsAsync()
+    {
+        if (receiptPermissions?.CanExport != true || CurrentTab != "receipt") return;
+        isExporting = true;
+        pageError = "";
+        try
+        {
+            var visible = filteredRows.Where(x => x.IsReceipt).Select(x => receiptVouchers.First(v => v.ReceiptID == x.Id)).ToList();
+            if (visible.Count == 0) return;
+            var bytes = await TreasuryService.ExportReceiptsToExcelAsync(visible, UserSession.UserID);
+            await JS.InvokeVoidAsync("downloadFile", $"ReceiptVouchers_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { pageError = ex.Message; }
+        finally { isExporting = false; }
+    }
+
+    private async Task ReceiptEntityTypeChanged()
+    {
+        receiptDto.EntityID = null;
+        receiptDto.ReceivedFrom = "";
+        receiptDto.IsInvoiceSettlement = false;
+        receiptDto.InvoiceAllocations.Clear();
+        receiptDto.RevenueAccountID = null;
+        receiptDto.RevenueAccountNameAr = null;
+        await RefreshReceiptInvoicesAsync();
+    }
+
+    private async Task ReceiptEntityChanged()
+    {
+        receiptDto.IsInvoiceSettlement = false;
+        receiptDto.InvoiceAllocations.Clear();
+        receiptDto.RevenueAccountID = null;
+        receiptDto.RevenueAccountNameAr = null;
+        await RefreshReceiptInvoicesAsync();
+    }
+
+    private async Task PaymentEntityTypeChanged()
+    {
+        paymentDto.EntityID = null;
+        paymentDto.PaidTo = "";
+        paymentDto.IsInvoiceSettlement = false;
+        paymentDto.InvoiceAllocations.Clear();
+        paymentDto.ExpenseAccountID = null;
+        paymentDto.ExpenseAccountNameAr = null;
+        await RefreshPaymentInvoicesAsync();
+    }
+
+    private async Task PaymentEntityChanged()
+    {
+        paymentDto.IsInvoiceSettlement = false;
+        paymentDto.InvoiceAllocations.Clear();
+        paymentDto.ExpenseAccountID = null;
+        paymentDto.ExpenseAccountNameAr = null;
+        await RefreshPaymentInvoicesAsync();
+    }
+
+    private async Task RefreshReceiptInvoicesAsync()
+    {
+        salesSettlementInvoices = new List<VoucherInvoiceAllocationDto>();
+        settlementLookupError = "";
+        if (!CanViewSalesInvoices || receiptDto.EntityType != 1 || receiptDto.EntityID.GetValueOrDefault() <= 0) return;
+
+        isLoadingSettlementInvoices = true;
+        try
+        {
+            salesSettlementInvoices = await TreasuryService.GetSalesInvoicesForSettlementAsync(
+                receiptDto.EntityID!.Value, receiptDto.ReceiptID > 0 ? receiptDto.ReceiptID : null);
+            foreach (var allocation in receiptDto.InvoiceAllocations)
+                if (!salesSettlementInvoices.Any(x => x.InvoiceID == allocation.InvoiceID))
+                    salesSettlementInvoices.Add(allocation);
+            salesSettlementInvoices = salesSettlementInvoices.OrderBy(x => x.InvoiceDate).ThenBy(x => x.InvoiceID).ToList();
+        }
+        catch (Exception ex) { settlementLookupError = ex.Message; }
+        finally { isLoadingSettlementInvoices = false; }
+    }
+
+    private async Task RefreshPaymentInvoicesAsync()
+    {
+        purchaseSettlementInvoices = new List<VoucherInvoiceAllocationDto>();
+        settlementLookupError = "";
+        if (!CanViewPurchaseInvoices || paymentDto.EntityType != 1 || paymentDto.EntityID.GetValueOrDefault() <= 0) return;
+
+        isLoadingSettlementInvoices = true;
+        try
+        {
+            purchaseSettlementInvoices = await TreasuryService.GetPurchaseInvoicesForSettlementAsync(
+                paymentDto.EntityID!.Value, paymentDto.PaymentID > 0 ? paymentDto.PaymentID : null);
+            foreach (var allocation in paymentDto.InvoiceAllocations)
+                if (!purchaseSettlementInvoices.Any(x => x.InvoiceID == allocation.InvoiceID))
+                    purchaseSettlementInvoices.Add(allocation);
+            purchaseSettlementInvoices = purchaseSettlementInvoices.OrderBy(x => x.InvoiceDate).ThenBy(x => x.InvoiceID).ToList();
+        }
+        catch (Exception ex) { settlementLookupError = ex.Message; }
+        finally { isLoadingSettlementInvoices = false; }
+    }
+
+    private bool IsReceiptInvoiceCompatible(VoucherInvoiceAllocationDto invoice) =>
+        (invoice.CurrencyID ?? 0) == (receiptDto.CurrencyID ?? 0) &&
+        Math.Abs(invoice.ExchangeRate - (receiptDto.ExchangeRate <= 0 ? 1 : receiptDto.ExchangeRate)) <= 0.000001m;
+
+    private bool IsPaymentInvoiceCompatible(VoucherInvoiceAllocationDto invoice) =>
+        (invoice.CurrencyID ?? 0) == (paymentDto.CurrencyID ?? 0) &&
+        Math.Abs(invoice.ExchangeRate - (paymentDto.ExchangeRate <= 0 ? 1 : paymentDto.ExchangeRate)) <= 0.000001m;
+
+    private async Task ToggleReceiptInvoiceAsync(VoucherInvoiceAllocationDto invoice, ChangeEventArgs args)
+    {
+        var selected = args.Value is bool value ? value : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+        var existing = receiptDto.InvoiceAllocations.FirstOrDefault(x => x.InvoiceID == invoice.InvoiceID);
+        if (selected && existing is null && IsReceiptInvoiceCompatible(invoice))
+        {
+            receiptDto.InvoiceAllocations.Add(new VoucherInvoiceAllocationDto
+            {
+                InvoiceID = invoice.InvoiceID, InvoiceNumber = invoice.InvoiceNumber, InvoiceDate = invoice.InvoiceDate,
+                PartyID = invoice.PartyID, PartyName = invoice.PartyName, TotalAmount = invoice.TotalAmount,
+                PaidAmount = invoice.PaidAmount, RemainingAmount = invoice.RemainingAmount,
+                CurrencyID = invoice.CurrencyID, ExchangeRate = invoice.ExchangeRate,
+                CurrencyCode = invoice.CurrencyCode, AppliedAmount = invoice.RemainingAmount
+            });
+            receiptDto.RevenueAccountID = null;
+            receiptDto.RevenueAccountNameAr = null;
+        }
+        else if (!selected && existing is not null)
+        {
+            receiptDto.InvoiceAllocations.Remove(existing);
+        }
+        RecalculateReceiptSettlement();
+        await Task.CompletedTask;
+    }
+
+    private async Task TogglePaymentInvoiceAsync(VoucherInvoiceAllocationDto invoice, ChangeEventArgs args)
+    {
+        var selected = args.Value is bool value ? value : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
+        var existing = paymentDto.InvoiceAllocations.FirstOrDefault(x => x.InvoiceID == invoice.InvoiceID);
+        if (selected && existing is null && IsPaymentInvoiceCompatible(invoice))
+        {
+            paymentDto.InvoiceAllocations.Add(new VoucherInvoiceAllocationDto
+            {
+                InvoiceID = invoice.InvoiceID, InvoiceNumber = invoice.InvoiceNumber, InvoiceDate = invoice.InvoiceDate,
+                PartyID = invoice.PartyID, PartyName = invoice.PartyName, TotalAmount = invoice.TotalAmount,
+                PaidAmount = invoice.PaidAmount, RemainingAmount = invoice.RemainingAmount,
+                CurrencyID = invoice.CurrencyID, ExchangeRate = invoice.ExchangeRate,
+                CurrencyCode = invoice.CurrencyCode, AppliedAmount = invoice.RemainingAmount
+            });
+            paymentDto.ExpenseAccountID = null;
+            paymentDto.ExpenseAccountNameAr = null;
+        }
+        else if (!selected && existing is not null)
+        {
+            paymentDto.InvoiceAllocations.Remove(existing);
+        }
+        RecalculatePaymentSettlement();
+        await Task.CompletedTask;
+    }
+
+    private void RecalculateReceiptSettlement()
+    {
+        receiptDto.IsInvoiceSettlement = receiptDto.InvoiceAllocations.Count > 0;
+        if (receiptDto.IsInvoiceSettlement)
+            receiptDto.Amount = ReceiptAllocationTotal;
+        else
+        {
+            receiptDto.RevenueAccountID = null;
+            receiptDto.RevenueAccountNameAr = null;
+        }
+        CalcReceiptLocal();
+    }
+
+    private void RecalculatePaymentSettlement()
+    {
+        paymentDto.IsInvoiceSettlement = paymentDto.InvoiceAllocations.Count > 0;
+        if (paymentDto.IsInvoiceSettlement)
+            paymentDto.Amount = PaymentAllocationTotal;
+        else
+        {
+            paymentDto.ExpenseAccountID = null;
+            paymentDto.ExpenseAccountNameAr = null;
+        }
+        CalcPaymentLocal();
+    }
+
+    private void CalcReceiptLocal() => receiptDto.AmountLocal = receiptDto.Amount * (receiptDto.ExchangeRate <= 0 ? 1 : receiptDto.ExchangeRate);
+    private void CalcPaymentLocal() => paymentDto.AmountLocal = paymentDto.Amount * (paymentDto.ExchangeRate <= 0 ? 1 : paymentDto.ExchangeRate);
+    private static string NormalizeTab(string? value) => value?.Trim().ToLowerInvariant() switch { "receipt" or "قبض" => "receipt", "payment" or "صرف" => "payment", _ => "all" };
+    private static string StatusColor(int status) => status switch { 1 => "#667085", 2 => "#08734f", 3 => "#b42318", _ => "#667085" };
+    private static string JournalLabel(VoucherRow row) => !string.IsNullOrWhiteSpace(row.JournalNumber) ? row.JournalNumber! : $"#{row.JournalId}";
+
+    private sealed class VoucherRow
+    {
+        public bool IsReceipt { get; set; }
+        public int Id { get; set; }
+        public string Number { get; set; } = "";
+        public DateTime Date { get; set; }
+        public string Party { get; set; } = "—";
+        public string CashBox { get; set; } = "—";
+        public int CashBoxId { get; set; }
+        public decimal Amount { get; set; }
+        public decimal AmountLocal { get; set; }
+        public string CurrencyCode { get; set; } = "";
+        public string Method { get; set; } = "—";
+        public int Status { get; set; }
+        public string StatusName { get; set; } = "";
+        public bool IsPosted { get; set; }
+        public int? JournalId { get; set; }
+        public string? JournalNumber { get; set; }
+    }
+}

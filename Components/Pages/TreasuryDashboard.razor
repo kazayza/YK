@@ -6,13 +6,22 @@
 @inject PermissionService PermissionService
 @inject TreasuryService TreasuryService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<TreasuryDashboard> Logger
 
-<PageTitle>لوحة تحكم الخزينة -   </PageTitle>
+<PageTitle>لوحة تحكم الخزينة</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else if (permissionLoadFailed)
+{<div class="no-access-luxury" dir="rtl" role="alert"><h4>@permissionLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadDashboardPermissionsAsync" disabled="@isLoadingPermissions">إعادة المحاولة</button></div>}
+else if (permissionLoadDenied)
+{<div class="no-access-luxury" dir="rtl" role="alert"><h4>@permissionLoadError</h4><a class="btn-luxury btn-ghost-luxury" href="/login">تسجيل الدخول مجددًا</a></div>}
+else if (!permissionsChecked)
+{<div class="loading-luxury" dir="rtl"><p>جاري التحقق من صلاحيات لوحة الخزينة...</p></div>}
+else if (dashboardLoadDenied)
+{<div class="no-access-luxury" dir="rtl" role="alert"><h4>@dashboardLoadError</h4></div>}
 else if (permissions == null || !permissions.CanView)
-{<div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية</h4></div>}
+{<div class="no-access-luxury" dir="rtl"><h4>يلزمك إذن SCR_TREASURY لعرض لوحة الخزينة.</h4></div>}
 else
 {
     <div class="luxury-page" dir="rtl">
@@ -22,8 +31,8 @@ else
             <div class="lh-content">
                 <div class="lh-right"><div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div><div class="lh-text"><h2 class="lh-title">خزينة واي كي —   </h2><p class="lh-subtitle">أرصدة لحظية • سندات قبض/صرف • تحويلات • قيد أوتوماتيك — على الجداول الفعلية</p></div></div>
                 <div class="lh-actions">
-                    <span class="lh-badge"><span class="lh-dot"></span>@(dashboard?.CashBoxesCount ?? 0) خزينة</span>
-                    @if (PermissionService.CanView("SCR_BANKS") || PermissionService.CanView("SCR_CASHBOX") || PermissionService.CanView("SCR_CASHBOXES"))
+                    <span class="lh-badge"><span class="lh-dot"></span>@(dashboard is null ? (dashboardLoadFailed ? "غير متاح" : "جارٍ") : dashboard.CashBoxesCount) خزينة</span>
+                    @if (CanViewCashBoxes)
                     {
                         <button class="btn-luxury btn-primary-luxury" @onclick='() => Navigation.NavigateTo("/cash-boxes")'>إدارة الخزائن</button>
                     }
@@ -31,9 +40,30 @@ else
             </div>
         </div>
 
-        @if (dashboard == null){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل أرصدة الخزينة...</p></div>}
+        @if (dashboardLoadFailed && dashboard == null)
+        {
+            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>@dashboardLoadError</span>
+                <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadDashboardAsync" disabled="@isLoadingDashboard">@(isLoadingDashboard ? "جارٍ..." : "إعادة محاولة تحميل لوحة الخزينة")</button>
+            </div>
+        }
+        else if (dashboard == null)
+        {
+            <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل أرصدة الخزينة...</p></div>
+        }
         else
         {
+            @if (dashboardLoadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                    <span>@dashboardLoadError</span>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadDashboardAsync" disabled="@isLoadingDashboard">@(isLoadingDashboard ? "جارٍ..." : "إعادة محاولة تحديث اللوحة")</button>
+                </div>
+            }
+            else if (isLoadingDashboard)
+            {
+                <div class="msg-luxury" role="status">جارٍ تحديث لوحة الخزينة؛ البيانات السابقة ما زالت معروضة.</div>
+            }
             <div class="stats-luxury">
                 <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div><div class="st-info"><span class="st-value">@dashboard.TotalCashBalance.ToString("#,##0.00")</span><span class="st-label">إجمالي الأرصدة</span></div><div class="st-gold-line"></div></div>
                 <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="st-info"><span class="st-value">@dashboard.TodayReceipts.ToString("#,##0.00")</span><span class="st-label">مقبوضات اليوم</span></div><div class="st-gold-line"></div></div>
@@ -44,7 +74,7 @@ else
 
             <div class="treasury-grid">
                 <div class="table-card-luxury">
-                    <div class="card-head-luxury"><h3>أرصدة الخزائن (فعلي: CashBoxes.CurrentBalance)</h3><button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/cash-boxes")'>عرض الكل</button></div>
+                    <div class="card-head-luxury"><h3>أرصدة الخزائن (فعلي: CashBoxes.CurrentBalance)</h3>@if(CanViewCashBoxes){<button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/cash-boxes")'>عرض الكل</button>}</div>
                     <div class="table-responsive"><table class="table-luxury">
                         <thead><tr><th>#</th><th>كود</th><th>الخزينة</th><th>النوع</th><th>الرصيد المحسوب</th><th>مقبوضات</th><th>مدفوعات</th><th>حالة</th></tr></thead>
                         <tbody>
@@ -58,10 +88,10 @@ else
 
                 <div class="side-cards">
                     <div class="table-card-luxury">
-                        <div class="card-head-luxury"><h3>آخر سندات قبض (ReceiptID/ReceiptNumber)</h3><button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/receipt-vouchers")'>الكل</button></div>
+                        <div class="card-head-luxury"><h3>آخر سندات قبض (ReceiptID/ReceiptNumber)</h3>@if(CanViewReceipts){<button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/accounting-vouchers?type=receipt")'>الكل</button>}</div>
                         <div class="mini-list">
                             @foreach(var rv in dashboard.RecentReceipts){
-                                <div class="mini-item" @onclick='() => Navigation.NavigateTo($"/receipt-vouchers/view/{rv.ReceiptID}")'>
+                                <div class="mini-item" style='@(CanViewReceipts ? "cursor:pointer" : "cursor:default")' @onclick='() => OpenReceipt(rv.ReceiptID)'>
                                     <div class="mini-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
                                     <div class="mini-info"><span class="mini-title">@rv.ReceiptNumber</span><span class="mini-sub">@(rv.EntityName ?? rv.ReceivedFrom ?? "—") • @rv.ReceiptDate.ToString("dd/MM")</span></div>
                                     <span class="mini-amount green">@rv.Amount.ToString("#,##0.00")</span>
@@ -72,10 +102,10 @@ else
                     </div>
 
                     <div class="table-card-luxury">
-                        <div class="card-head-luxury"><h3>آخر سندات صرف (PaymentID/PaymentNumber)</h3><button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/payment-vouchers")'>الكل</button></div>
+                        <div class="card-head-luxury"><h3>آخر سندات صرف (PaymentID/PaymentNumber)</h3>@if(CanViewPayments){<button class="btn-luxury btn-ghost-luxury small" @onclick='() => Navigation.NavigateTo("/accounting-vouchers?type=payment")'>الكل</button>}</div>
                         <div class="mini-list">
                             @foreach(var pv in dashboard.RecentPayments){
-                                <div class="mini-item" @onclick='() => Navigation.NavigateTo($"/payment-vouchers/view/{pv.PaymentID}")'>
+                                <div class="mini-item" style='@(CanViewPayments ? "cursor:pointer" : "cursor:default")' @onclick='() => OpenPayment(pv.PaymentID)'>
                                     <div class="mini-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
                                     <div class="mini-info"><span class="mini-title">@pv.PaymentNumber</span><span class="mini-sub">@(pv.EntityName ?? pv.PaidTo ?? "—") • @pv.PaymentDate.ToString("dd/MM")</span></div>
                                     <span class="mini-amount red">@pv.Amount.ToString("#,##0.00")</span>
@@ -88,11 +118,11 @@ else
                     <div class="quick-actions-luxury">
                         @if (PermissionService.CanAdd("SCR_RECV"))
                         {
-                            <button class="qact green" @onclick='() => Navigation.NavigateTo("/receipt-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>
+                            <button class="qact green" @onclick='() => Navigation.NavigateTo("/accounting-vouchers/new/receipt")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند قبض جديد</button>
                         }
                         @if (PermissionService.CanAdd("SCR_PAYV"))
                         {
-                            <button class="qact red" @onclick='() => Navigation.NavigateTo("/payment-vouchers/new")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>
+                            <button class="qact red" @onclick='() => Navigation.NavigateTo("/accounting-vouchers/new/payment")'><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>سند صرف جديد</button>
                         }
                         @if (PermissionService.CanAdd("SCR_CASHTRANS"))
                         {
@@ -168,14 +198,178 @@ else
 @code {
     private TreasuryDashboardDto? dashboard;
     private ModulePermissionDto? permissions;
+    private bool permissionsChecked;
+    private bool isLoadingPermissions;
+    private bool permissionLoadFailed, permissionLoadDenied;
+    private long permissionRequestVersion;
+    private string permissionLoadError = string.Empty;
+    private bool isLoadingDashboard;
+    private bool dashboardLoadFailed;
+    private bool dashboardLoadDenied;
+    private string dashboardLoadError = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-        if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
-        permissions = PermissionService.GetModule("SCR_TREASURY");
-        if (permissions?.CanView == true)
-            dashboard = await TreasuryService.GetDashboardAsync();
+        if (!UserSession.IsLoggedIn)
+        {
+            permissionsChecked = true;
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadDashboardPermissionsAsync() && permissions?.CanView == true)
+            await LoadDashboardAsync();
+    }
+
+    private async Task<bool> LoadDashboardPermissionsAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+        if (isLoadingPermissions) return false;
+
+        var requestVersion = ++permissionRequestVersion;
+        var userId = UserSession.UserID;
+        isLoadingPermissions = true;
+        permissionsChecked = false;
+        permissions = null;
+        permissionLoadFailed = false;
+        permissionLoadDenied = false;
+        permissionLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentDashboardPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+
+            permissions = PermissionService.GetModule("SCR_TREASURY");
+            permissionsChecked = true;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied while loading treasury-dashboard permissions for user {UserID}.", userId);
+            if (!IsCurrentDashboardPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadDenied = true;
+            permissionLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load treasury-dashboard permissions for user {UserID}.", userId);
+            if (!IsCurrentDashboardPermissionRequest(requestVersion, userId))
+            {
+                if (requestVersion == permissionRequestVersion && UserSession.IsLoggedIn)
+                {
+                    permissionLoadFailed = true;
+                    permissionLoadError = "تغيرت الجلسة أثناء التحقق من الصلاحيات. أعد المحاولة.";
+                }
+                return false;
+            }
+            permissionLoadFailed = true;
+            permissionLoadError = "تعذر تحميل صلاحيات لوحة الخزينة. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == permissionRequestVersion)
+            {
+                isLoadingPermissions = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentDashboardPermissionRequest(long requestVersion, int userId) =>
+        requestVersion == permissionRequestVersion && UserSession.IsLoggedIn && UserSession.UserID == userId;
+
+    private async Task RetryLoadDashboardPermissionsAsync()
+    {
+        if (isLoadingPermissions || !permissionLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadDashboardPermissionsAsync() && permissions?.CanView == true)
+            await LoadDashboardAsync();
+    }
+
+    private Task RetryLoadDashboardAsync() => LoadDashboardAsync();
+
+    private async Task LoadDashboardAsync()
+    {
+        if (permissions?.CanView != true || isLoadingDashboard) return;
+
+        isLoadingDashboard = true;
+        dashboardLoadFailed = false;
+        dashboardLoadDenied = false;
+        dashboardLoadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedDashboard = await TreasuryService.GetDashboardAsync();
+            dashboard = loadedDashboard;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied while loading the treasury dashboard for user {UserID}.", UserSession.UserID);
+            dashboard = null;
+            dashboardLoadDenied = true;
+            dashboardLoadError = "ليس لديك صلاحية عرض لوحة الخزينة.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load the treasury dashboard for user {UserID}.", UserSession.UserID);
+            dashboardLoadFailed = true;
+            dashboardLoadError = dashboard == null
+                ? "تعذر تحميل لوحة الخزينة. أعد المحاولة."
+                : "تعذر تحديث لوحة الخزينة؛ ما زالت آخر بيانات ناجحة معروضة. أعد المحاولة.";
+        }
+        finally
+        {
+            isLoadingDashboard = false;
+        }
+    }
+
+    private bool CanViewCashBoxes => PermissionService.CanView("SCR_BANKS")
+        || PermissionService.CanView("SCR_CASHBOX")
+        || PermissionService.CanView("SCR_CASHBOXES");
+    private bool CanViewReceipts => PermissionService.CanView("SCR_RECV");
+    private bool CanViewPayments => PermissionService.CanView("SCR_PAYV");
+
+    private void OpenReceipt(int receiptId)
+    {
+        if (CanViewReceipts)
+            Navigation.NavigateTo($"/accounting-vouchers/receipt/view/{receiptId}");
+    }
+
+    private void OpenPayment(int paymentId)
+    {
+        if (CanViewPayments)
+            Navigation.NavigateTo($"/accounting-vouchers/payment/view/{paymentId}");
     }
 
     private string GetBoxTypeColor(int type) => type switch { 1 => "#D4AF37", 2 => "#2563eb", 3 => "#059669", 4 => "#7c3aed", _ => "#6b7280" };

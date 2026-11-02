@@ -2,6 +2,7 @@
 @using YKCoatings.Services
 @using YKCoatings.Models
 @inject ProductionOrderService OrderService
+@inject MaterialIssueService IssueService
 @inject BOMService BomService
 @inject NavigationManager NavigationManager
 @inject UserSessionService UserSession
@@ -161,6 +162,109 @@ else
                                 <span class="bom-info-label">الإنتاج المتوقع:</span>
                                 <span class="bom-info-value">@bomOutputQty.ToString("G") @bomOutputUnitName</span>
                             </div>
+                            <div class="bom-info-item">
+                                <span class="bom-info-label">فترة سريان الوصفة:</span>
+                                <span class="bom-info-value">@GetBOMEffectiveRange()</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (optionalBOMComponents.Any())
+                    {
+                        <div class="optional-material-card">
+                            <div class="optional-material-heading">
+                                <i class="bi bi-check2-square"></i>
+                                المكونات الاختيارية لهذا الأمر
+                            </div>
+                            <div class="optional-material-hint">
+                                اختر ما سيُضاف إلى مواد هذا الأمر؛ المكوّن غير المحدد لا يدخل في الكمية المطلوبة.
+                            </div>
+                            @foreach (var optional in optionalBOMComponents)
+                            {
+                                <label class="optional-material-option">
+                                    <input type="checkbox"
+                                           checked="@selectedOptionalBOMDetailIDs.Contains(optional.BOMDetailID)"
+                                           @onchange="e => SetOptionalMaterialSelection(optional.BOMDetailID, e)"
+                                           disabled="@(!CanChangeOptionalMaterialSelection || isSaving || optionalBOMComponentsLoading)" />
+                                    <span class="optional-material-name">@optional.ItemCode — @optional.ItemName</span>
+                                    <span class="optional-material-qty">
+                                        كمية الأمر: @GetOptionalMaterialRequiredQty(optional).ToString("N4") @optional.UnitName
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    }
+                    else if (optionalBOMComponentsLoading)
+                    {
+                        <div class="optional-material-hint">جاري تحميل المكونات الاختيارية...</div>
+                    }
+                    else if (optionalBOMLoadFailed)
+                    {
+                        <div class="optional-material-load-error">
+                            تعذر تحميل قائمة المكونات الاختيارية؛ لن يُحفظ الأمر حتى تنجح إعادة المحاولة.
+                            <button type="button" class="btn-retry-optional"
+                                    @onclick="() => LoadOptionalBOMComponents(order.BOMID, resetSelection: false)"
+                                    disabled="@optionalBOMComponentsLoading">إعادة المحاولة</button>
+                        </div>
+                    }
+
+                    @if (substituteBOMComponentsLoading)
+                    {
+                        <div class="substitute-material-hint">جاري تحميل بدائل المكونات...</div>
+                    }
+                    else if (substituteBOMLoadFailed)
+                    {
+                        <div class="optional-material-load-error">
+                            تعذر تحميل بدائل المكونات؛ لن يُحفظ الأمر حتى تنجح إعادة المحاولة.
+                            <button type="button" class="btn-retry-optional"
+                                    @onclick="() => LoadSubstituteBOMComponents(order.BOMID, resetSelection: false)"
+                                    disabled="@substituteBOMComponentsLoading">إعادة المحاولة</button>
+                        </div>
+                    }
+                    else if (substituteBOMComponents.Any())
+                    {
+                        <div class="substitute-material-card">
+                            <div class="substitute-material-heading">
+                                <i class="bi bi-arrow-left-right"></i>
+                                اختيار البديل لهذا الأمر
+                            </div>
+                            <div class="substitute-material-hint">
+                                الاختيار يدوي لكل أمر؛ عند الاختيار تُستخدم نفس كمية BOM (1:1) وبنفس الوحدة الأساسية، ولا يحدث تبديل تلقائي.
+                            </div>
+                            @foreach (var substitute in substituteBOMComponents)
+                            {
+                                var isSubstituteSelected = selectedSubstituteBOMDetailIDs.Contains(substitute.BOMDetailID);
+                                var optionalIsSelected = !substitute.IsOptional || selectedOptionalBOMDetailIDs.Contains(substitute.BOMDetailID);
+                                var canSelectSubstitute = substitute.IsCompatible && optionalIsSelected && !substitute.IsStaleSelection;
+                                <label class="substitute-material-option">
+                                    <input type="checkbox"
+                                           checked="@isSubstituteSelected"
+                                           @onchange="e => SetSubstituteMaterialSelection(substitute.BOMDetailID, e)"
+                                           disabled="@(!CanChangeOptionalMaterialSelection || isSaving || substituteBOMComponentsLoading || (!canSelectSubstitute && !isSubstituteSelected))" />
+                                    <span class="substitute-material-name">
+                                        @substitute.ItemCode — @substitute.ItemName
+                                        <i class="bi bi-arrow-left-right"></i>
+                                        @(substitute.SubstituteItemCode ?? "؟") — @(substitute.SubstituteItemName ?? "بديل غير موجود")
+                                    </span>
+                                    <span class="substitute-material-qty">
+                                        كمية الأمر: @GetSubstituteMaterialRequiredQty(substitute).ToString("N4") @substitute.UnitName
+                                    </span>
+                                    @if (substitute.IsStaleSelection)
+                                    {
+                                        <span class="substitute-material-warning">
+                                            البديل المحفوظ لهذا الأمر (@(substitute.SelectedItemCode ?? "؟") — @(substitute.SelectedItemName ?? "صنف غير معروف")) لم يعد البديل الحالي في BOM. ألغِ التحديد للرجوع إلى الصنف الأصلي ثم احفظ؛ لا يتغير الصنف تلقائيًا.
+                                        </span>
+                                    }
+                                    else if (!substitute.IsCompatible)
+                                    {
+                                        <span class="substitute-material-warning">غير متاح: يجب أن يكون البديل نشطًا ومن نفس النوع والوحدة الأساسية. ألغِ التحديد إن كان محفوظًا مسبقًا.</span>
+                                    }
+                                    else if (!optionalIsSelected)
+                                    {
+                                        <span class="substitute-material-warning">اختر المكوّن الاختياري أولًا لإتاحة بديله.</span>
+                                    }
+                                </label>
+                            }
                         </div>
                     }
 
@@ -217,7 +321,9 @@ else
                             <label class="form-lbl">تاريخ البدء المخطط</label>
                             <input type="date" class="form-ctrl"
                                    @bind="order.PlannedStartDate"
+                                   @bind:after="OnPlannedStartDateChanged"
                                    disabled="@isViewMode" />
+                            <small style="font-size:.75rem;color:var(--c-text-2)">مطلوب قبل الاعتماد، ويحدد نسخة الوصفة السارية.</small>
                         </div>
                         <div class="form-group col-3">
                             <label class="form-lbl">تاريخ الانتهاء المخطط</label>
@@ -373,7 +479,7 @@ else
                         </div>
                     </div>
 
-                    
+
 
                     @if (RawMaterials.Any())
                     {
@@ -404,7 +510,23 @@ else
                                         <tr>
                                             <td class="tc row-num">@(ri++)</td>
                                             <td><span class="code-chip">@m.ItemCode</span></td>
-                                            <td class="item-name-cell">@m.ItemName</td>
+                                            <td class="item-name-cell">
+                                                @m.ItemName
+                                                @if (m.IsOptional)
+                                                {
+                                                    <span class="optional-material-badge">اختياري</span>
+                                                }
+                                                @if (m.IsSubstitute)
+                                                {
+                                                    <span class="substitute-material-badge">بديل</span>
+                                                    @if (!string.IsNullOrWhiteSpace(m.BOMItemCode) || !string.IsNullOrWhiteSpace(m.BOMItemName))
+                                                    {
+                                                        <span class="substitute-material-source">
+                                                            بديل عن @(m.BOMItemCode ?? "—") — @(m.BOMItemName ?? "مكوّن الوصفة")
+                                                        </span>
+                                                    }
+                                                }
+                                            </td>
                                             <td class="tc fw600">@m.RequiredQty.ToString("N3")</td>
                                             <td class="tc text-muted">@m.UnitName</td>
                                             <td class="tc">
@@ -473,7 +595,23 @@ else
                                         <tr>
                                             <td class="tc row-num">@(pi++)</td>
                                             <td><span class="code-chip">@m.ItemCode</span></td>
-                                            <td class="item-name-cell">@m.ItemName</td>
+                                            <td class="item-name-cell">
+                                                @m.ItemName
+                                                @if (m.IsOptional)
+                                                {
+                                                    <span class="optional-material-badge">اختياري</span>
+                                                }
+                                                @if (m.IsSubstitute)
+                                                {
+                                                    <span class="substitute-material-badge">بديل</span>
+                                                    @if (!string.IsNullOrWhiteSpace(m.BOMItemCode) || !string.IsNullOrWhiteSpace(m.BOMItemName))
+                                                    {
+                                                        <span class="substitute-material-source">
+                                                            بديل عن @(m.BOMItemCode ?? "—") — @(m.BOMItemName ?? "مكوّن الوصفة")
+                                                        </span>
+                                                    }
+                                                }
+                                            </td>
                                             <td class="tc fw600">@m.RequiredQty.ToString("N3")</td>
                                             <td class="tc text-muted">@m.UnitName</td>
                                             <td class="tc">
@@ -543,7 +681,23 @@ else
                                         <tr>
                                             <td class="tc row-num">@(fi++)</td>
                                             <td><span class="code-chip">@m.ItemCode</span></td>
-                                            <td class="item-name-cell">@m.ItemName</td>
+                                            <td class="item-name-cell">
+                                                @m.ItemName
+                                                @if (m.IsOptional)
+                                                {
+                                                    <span class="optional-material-badge">اختياري</span>
+                                                }
+                                                @if (m.IsSubstitute)
+                                                {
+                                                    <span class="substitute-material-badge">بديل</span>
+                                                    @if (!string.IsNullOrWhiteSpace(m.BOMItemCode) || !string.IsNullOrWhiteSpace(m.BOMItemName))
+                                                    {
+                                                        <span class="substitute-material-source">
+                                                            بديل عن @(m.BOMItemCode ?? "—") — @(m.BOMItemName ?? "مكوّن الوصفة")
+                                                        </span>
+                                                    }
+                                                }
+                                            </td>
                                             <td class="tc fw600">@m.RequiredQty.ToString("N3")</td>
                                             <td class="tc text-muted">@m.UnitName</td>
                                             <td class="tc"><span class="@(m.IssuedQty > 0 ? "issued-val" : "zero-val")">@m.IssuedQty.ToString("N3")</span></td>
@@ -761,11 +915,13 @@ else
             </button>
         }
     }
-    @if (Id > 0 && order.OrderStatus == 2 && permissions is not null && Perms.CanEdit)
+    @if (Id > 0 && order.OrderStatus == 2 &&
+         PermissionService.CanView("SCR_MATISS") &&
+         (PermissionService.CanAdd("SCR_MATISS") || PermissionService.CanEdit("SCR_MATISS")))
     {
-        <button class="btn-action prepare" @onclick="() => ChangeStatus(3)" disabled="@isSaving">
-            <i class="bi bi-gear-fill"></i>
-            بدء التجهيز
+        <button class="btn-action prepare" @onclick="OpenMaterialIssueDraft" disabled="@isSaving">
+            <i class="bi bi-box-arrow-up-left"></i>
+            إذن صرف
         </button>
     }
     @if (Id > 0 && order.OrderStatus == 3 && permissions is not null && Perms.CanEdit)
@@ -782,18 +938,11 @@ else
             إرسال لفحص الجودة
         </button>
     }
-    @if (Id > 0 && order.OrderStatus == 5 && permissions is not null && Perms.CanApprove)
-    {
-        <button class="btn-action complete" @onclick="() => ChangeStatus(6)" disabled="@isSaving">
-            <i class="bi bi-check-all"></i>
-            إتمام الأمر
-        </button>
-    }
 </div>
             <div class="action-bar-end">
                 @if (!isViewMode)
                 {
-                    <button class="btn-save" @onclick="SaveOrder" disabled="@isSaving">
+                    <button class="btn-save" @onclick="SaveOrder" disabled="@(isSaving || optionalBOMComponentsLoading || optionalBOMLoadFailed || substituteBOMComponentsLoading || substituteBOMLoadFailed || HasUnresolvedSubstituteSelection)">
                         @if (isSaving)
                         {
                             <span class="spinner-tiny"></span>
@@ -1189,6 +1338,48 @@ else
         .cost-grid { grid-template-columns: 1fr; }
         .bom-info-strip { flex-direction: column; gap: .5rem; }
     }
+.optional-material-card{
+    margin: .75rem 0 1rem;
+    padding: 1rem 1.2rem;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #f8fbff;
+}
+.optional-material-heading{font-weight:800;color:#1e3a8a;display:flex;align-items:center;gap:.45rem;}
+.optional-material-hint{margin:.35rem 0 .65rem;color:#475569;font-size:.82rem;}
+.optional-material-option{
+    display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;
+    border-top:1px solid #e2e8f0;cursor:pointer;flex-wrap:wrap;
+}
+.optional-material-option input{width:1rem;height:1rem;}
+.optional-material-name{font-weight:700;}
+.optional-material-qty{margin-inline-start:auto;color:#475569;font-size:.82rem;}
+.optional-material-badge{
+    display:inline-block;margin-inline-start:.4rem;padding:.08rem .4rem;border-radius:999px;
+    background:#eff6ff;color:#1d4ed8;font-size:.68rem;font-weight:800;vertical-align:middle;
+}
+.substitute-material-card{
+    margin:1rem 0;padding:1rem;border:1px solid #c7d2fe;border-radius:12px;background:#f8faff;
+}
+.substitute-material-heading{font-weight:800;color:#3730a3;display:flex;align-items:center;gap:.45rem;}
+.substitute-material-hint{margin:.35rem 0 .65rem;color:#475569;font-size:.82rem;}
+.substitute-material-option{
+    display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;
+    border-top:1px solid #e0e7ff;cursor:pointer;flex-wrap:wrap;
+}
+.substitute-material-option input{width:1rem;height:1rem;}
+.substitute-material-name{font-weight:700;}
+.substitute-material-qty{margin-inline-start:auto;color:#475569;font-size:.82rem;}
+.substitute-material-warning{flex-basis:100%;color:#92400e;font-size:.78rem;}
+.substitute-material-badge{
+    display:inline-block;margin-inline-start:.4rem;padding:.08rem .4rem;border-radius:999px;
+    background:#eef2ff;color:#4338ca;font-size:.68rem;font-weight:800;vertical-align:middle;
+}
+.substitute-material-source{
+    display:block;margin-top:.16rem;color:#4338ca;font-size:.7rem;font-weight:650;
+}
+.optional-material-load-error{margin:.75rem 0;padding:.7rem 1rem;border:1px solid #fecaca;border-radius:10px;background:#fef2f2;color:#991b1b;font-size:.85rem;}
+.btn-retry-optional{margin-inline-start:.6rem;border:0;border-radius:7px;padding:.3rem .6rem;background:#991b1b;color:white;font-weight:700;cursor:pointer;}
 </style>
 
 @code {
@@ -1196,6 +1387,14 @@ else
 
     private ProductionOrderEditDto order = new();
     private List<ProductionOrderMaterialDto> materials = new();
+    private List<ProductionOrderOptionalComponentDto> optionalBOMComponents = new();
+    private HashSet<int> selectedOptionalBOMDetailIDs = new();
+    private bool optionalBOMComponentsLoading = false;
+    private bool optionalBOMLoadFailed = false;
+    private List<ProductionOrderSubstituteComponentDto> substituteBOMComponents = new();
+    private HashSet<int> selectedSubstituteBOMDetailIDs = new();
+    private bool substituteBOMComponentsLoading = false;
+    private bool substituteBOMLoadFailed = false;
     private List<ProductionOrderMaterialDto> RawMaterials =>
         materials.Where(m => m.MaterialType == 1).ToList();
 
@@ -1237,6 +1436,11 @@ else
     // Message
     private string? resultMessage;
     private bool isSuccess;
+    private bool CanChangeOptionalMaterialSelection =>
+        Id == 0 ? Perms.CanAdd : order.OrderStatus == 1 && Perms.CanEdit;
+    private bool HasUnresolvedSubstituteSelection => substituteBOMComponents.Any(component =>
+        selectedSubstituteBOMDetailIDs.Contains(component.BOMDetailID) &&
+        (component.IsStaleSelection || !component.IsCompatible));
 
     protected override async Task OnInitializedAsync()
     {
@@ -1259,12 +1463,8 @@ else
 
         try
         {
-            // تحميل اللوكابس
-            await LoadLookups();
-
             if (Id > 0)
             {
-                // تعديل / عرض
                 var existing = await OrderService.GetOrderByIdAsync(Id);
                 if (existing == null)
                 {
@@ -1273,20 +1473,18 @@ else
                 }
 
                 order = existing;
-
-                // هل هو View Mode ؟
                 isViewMode = order.OrderStatus != 1 || !Perms.CanEdit;
-
-                // تحميل معلومات الوصفة
+                await LoadLookups(order.PlannedStartDate, order.BOMID > 0 ? order.BOMID : null);
                 if (order.BOMID > 0)
+                {
                     await LoadBOMInfo(order.BOMID);
-
-                // تحميل المواد
+                    await LoadOptionalBOMComponents(order.BOMID, resetSelection: true);
+                    await LoadSubstituteBOMComponents(order.BOMID, resetSelection: true);
+                }
                 await LoadMaterials();
             }
             else
             {
-                // إضافة جديد
                 if (!Perms.CanAdd)
                 {
                     NavigationManager.NavigateTo("/production-orders");
@@ -1299,6 +1497,7 @@ else
                     OrderPriority = 2,
                     NumberOfBatches = 1
                 };
+                await LoadLookups(order.PlannedStartDate, null);
             }
         }
         finally
@@ -1307,9 +1506,9 @@ else
         }
     }
 
-    private async Task LoadLookups()
+    private async Task LoadLookups(DateTime? asOfDate, int? includeBOMID)
     {
-        bomLookup = await OrderService.GetActiveBOMsLookupAsync();
+        bomLookup = await OrderService.GetActiveBOMsLookupAsync(asOfDate, includeBOMID);
         unitLookup = await OrderService.GetUnitsLookupAsync();
         warehouseLookup = await OrderService.GetWarehousesLookupAsync(1); // مخازن الخام
         targetWarehouseLookup = await OrderService.GetWarehousesLookupAsync(4); // مخازن التام
@@ -1323,6 +1522,14 @@ else
         try
         {
             materials = await OrderService.GetOrderMaterialsAsync(Id);
+            selectedOptionalBOMDetailIDs = materials
+                .Where(m => m.IsOptional && m.BOMDetailID.HasValue)
+                .Select(m => m.BOMDetailID!.Value)
+                .ToHashSet();
+            selectedSubstituteBOMDetailIDs = materials
+                .Where(m => m.IsSubstitute && m.BOMDetailID.HasValue)
+                .Select(m => m.BOMDetailID!.Value)
+                .ToHashSet();
         }
         finally
         {
@@ -1332,6 +1539,7 @@ else
 
     private async Task OnBOMChanged()
     {
+        validationErrors.Remove("BOMID");
         if (order.BOMID > 0)
         {
             await LoadBOMInfo(order.BOMID);
@@ -1344,6 +1552,8 @@ else
             }
 
             CalcBatches();
+            await LoadOptionalBOMComponents(order.BOMID, resetSelection: true);
+            await LoadSubstituteBOMComponents(order.BOMID, resetSelection: true);
         }
         else
         {
@@ -1353,7 +1563,60 @@ else
             bomBatchUnitName = "";
             bomOutputQty = 0;
             bomOutputUnitName = "";
+            optionalBOMComponents.Clear();
+            selectedOptionalBOMDetailIDs.Clear();
+            optionalBOMLoadFailed = false;
+            substituteBOMComponents.Clear();
+            selectedSubstituteBOMDetailIDs.Clear();
+            substituteBOMLoadFailed = false;
         }
+    }
+
+    private async Task OnPlannedStartDateChanged()
+    {
+        try
+        {
+            bomLookup = await OrderService.GetActiveBOMsLookupAsync(
+                order.PlannedStartDate, order.BOMID > 0 ? order.BOMID : null);
+            RefreshBomEffectiveDateValidation();
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            resultMessage = $"تعذر تحديث الوصفات السارية للتاريخ المحدد: {ex.Message}";
+        }
+    }
+
+    private string? GetSelectedBomEffectiveDateError()
+    {
+        if (!order.PlannedStartDate.HasValue || bomInfo is null)
+            return null;
+
+        DateTime? effectiveFrom = (DateTime?)bomInfo.EffectiveFrom;
+        DateTime? effectiveTo = (DateTime?)bomInfo.EffectiveTo;
+        var asOfDate = order.PlannedStartDate.Value.Date;
+        if (effectiveFrom.HasValue && asOfDate < effectiveFrom.Value.Date)
+            return "تاريخ بدء الإنتاج المخطط يسبق بداية سريان الوصفة المحددة.";
+        if (effectiveTo.HasValue && asOfDate > effectiveTo.Value.Date)
+            return "تاريخ بدء الإنتاج المخطط يتجاوز نهاية سريان الوصفة المحددة.";
+        return null;
+    }
+
+    private void RefreshBomEffectiveDateValidation()
+    {
+        if (order.BOMID <= 0) return;
+        validationErrors.Remove("BOMID");
+        var error = GetSelectedBomEffectiveDateError();
+        if (error is not null)
+            validationErrors["BOMID"] = error;
+    }
+
+    private string GetBOMEffectiveRange()
+    {
+        if (bomInfo is null) return "—";
+        DateTime? effectiveFrom = (DateTime?)bomInfo.EffectiveFrom;
+        DateTime? effectiveTo = (DateTime?)bomInfo.EffectiveTo;
+        return $"{effectiveFrom?.ToString("dd/MM/yyyy") ?? "بلا بداية"} — {effectiveTo?.ToString("dd/MM/yyyy") ?? "بلا نهاية"}";
     }
 
     private async Task LoadBOMInfo(int bomId)
@@ -1367,6 +1630,7 @@ else
             bomOutputQty = (decimal)bomInfo.OutputQty;
             bomOutputUnitName = (string)bomInfo.OutputUnitName;
         }
+        RefreshBomEffectiveDateValidation();
     }
 
     private void CalcBatches()
@@ -1377,10 +1641,143 @@ else
         }
     }
 
+    private async Task LoadOptionalBOMComponents(int bomId, bool resetSelection)
+    {
+        optionalBOMLoadFailed = false;
+        if (bomId <= 0)
+        {
+            optionalBOMComponents.Clear();
+            selectedOptionalBOMDetailIDs.Clear();
+            return;
+        }
+
+        if (resetSelection)
+        {
+            optionalBOMComponents.Clear();
+            selectedOptionalBOMDetailIDs.Clear();
+        }
+        optionalBOMComponentsLoading = true;
+        try
+        {
+            optionalBOMComponents = await OrderService.GetOptionalBOMComponentsAsync(bomId);
+            if (!resetSelection)
+            {
+                var validIds = optionalBOMComponents.Select(x => x.BOMDetailID).ToHashSet();
+                selectedOptionalBOMDetailIDs.RemoveWhere(id => !validIds.Contains(id));
+            }
+        }
+        catch (Exception ex)
+        {
+            optionalBOMComponents.Clear();
+            optionalBOMLoadFailed = true;
+            isSuccess = false;
+            resultMessage = $"تعذر تحميل المكونات الاختيارية: {ex.Message}";
+        }
+        finally
+        {
+            optionalBOMComponentsLoading = false;
+        }
+    }
+
+    private async Task LoadSubstituteBOMComponents(int bomId, bool resetSelection)
+    {
+        substituteBOMLoadFailed = false;
+        if (bomId <= 0)
+        {
+            substituteBOMComponents.Clear();
+            selectedSubstituteBOMDetailIDs.Clear();
+            return;
+        }
+
+        if (resetSelection)
+        {
+            substituteBOMComponents.Clear();
+            selectedSubstituteBOMDetailIDs.Clear();
+        }
+        substituteBOMComponentsLoading = true;
+        try
+        {
+            substituteBOMComponents = await OrderService.GetSubstituteBOMComponentsAsync(bomId, Id);
+            if (!resetSelection)
+            {
+                var configuredIds = substituteBOMComponents.Select(x => x.BOMDetailID).ToHashSet();
+                selectedSubstituteBOMDetailIDs.RemoveWhere(id => !configuredIds.Contains(id));
+            }
+        }
+        catch (Exception ex)
+        {
+            substituteBOMComponents.Clear();
+            substituteBOMLoadFailed = true;
+            isSuccess = false;
+            resultMessage = $"تعذر تحميل بدائل المكونات: {ex.Message}";
+        }
+        finally
+        {
+            substituteBOMComponentsLoading = false;
+        }
+    }
+
+    private void SetOptionalMaterialSelection(int bomDetailId, ChangeEventArgs args)
+    {
+        var selected = args.Value switch
+        {
+            bool value => value,
+            string value => bool.TryParse(value, out var parsed) && parsed,
+            _ => false
+        };
+        if (selected) selectedOptionalBOMDetailIDs.Add(bomDetailId);
+        else
+        {
+            selectedOptionalBOMDetailIDs.Remove(bomDetailId);
+            selectedSubstituteBOMDetailIDs.Remove(bomDetailId);
+        }
+    }
+
+    private void SetSubstituteMaterialSelection(int bomDetailId, ChangeEventArgs args)
+    {
+        var selected = args.Value switch
+        {
+            bool value => value,
+            string value => bool.TryParse(value, out var parsed) && parsed,
+            _ => false
+        };
+        if (selected) selectedSubstituteBOMDetailIDs.Add(bomDetailId);
+        else selectedSubstituteBOMDetailIDs.Remove(bomDetailId);
+    }
+
+    private decimal GetOptionalMaterialRequiredQty(ProductionOrderOptionalComponentDto component)
+    {
+        if (bomOutputQty <= 0 || order.PlannedQty <= 0) return 0m;
+        var multiplier = order.PlannedQty / bomOutputQty;
+        return decimal.Round(
+            component.Quantity * (1m + component.WastePercent / 100m) * multiplier,
+            4,
+            MidpointRounding.AwayFromZero);
+    }
+
+    private decimal GetSubstituteMaterialRequiredQty(ProductionOrderSubstituteComponentDto component)
+    {
+        if (bomOutputQty <= 0 || order.PlannedQty <= 0) return 0m;
+        var multiplier = order.PlannedQty / bomOutputQty;
+        return decimal.Round(
+            component.Quantity * (1m + component.WastePercent / 100m) * multiplier,
+            4,
+            MidpointRounding.AwayFromZero);
+    }
+
     // ===== حفظ =====
     private async Task SaveOrder()
     {
-        if (!Validate()) return;
+        if (optionalBOMComponentsLoading || optionalBOMLoadFailed ||
+            substituteBOMComponentsLoading || substituteBOMLoadFailed || !Validate()) return;
+        if (HasUnresolvedSubstituteSelection)
+        {
+            isSuccess = false;
+            resultMessage = "راجع البديل المحفوظ غير المتوافق وألغِ اختياره صراحةً قبل الحفظ؛ لن يتغير الصنف تلقائيًا.";
+            return;
+        }
+        order.SelectedOptionalBOMDetailIDs = selectedOptionalBOMDetailIDs.ToList();
+        order.SelectedSubstituteBOMDetailIDs = selectedSubstituteBOMDetailIDs.ToList();
 
         isSaving = true;
         try
@@ -1395,6 +1792,9 @@ else
             else
             {
                 await OrderService.UpdateOrderAsync(order, UserSession.UserID);
+                var refreshedOrder = await OrderService.GetOrderByIdAsync(Id);
+                if (refreshedOrder is not null)
+                    order = refreshedOrder;
                 isSuccess = true;
                 resultMessage = "تم حفظ التعديلات بنجاح";
                 await LoadMaterials();
@@ -1422,8 +1822,68 @@ else
             validationErrors["PlannedQty"] = "الكمية المخططة يجب أن تكون أكبر من صفر";
         if (order.PlannedUnitID <= 0)
             validationErrors["PlannedUnitID"] = "يجب اختيار الوحدة";
+        var bomDateError = GetSelectedBomEffectiveDateError();
+        if (bomDateError is not null)
+            validationErrors["BOMID"] = bomDateError;
 
         return !validationErrors.Any();
+    }
+
+    private async Task OpenMaterialIssueDraft()
+    {
+        if (isSaving || Id <= 0 || order.OrderStatus != 2 ||
+            !PermissionService.CanView("SCR_MATISS") ||
+            (!PermissionService.CanAdd("SCR_MATISS") && !PermissionService.CanEdit("SCR_MATISS")))
+            return;
+
+        isSaving = true;
+        try
+        {
+            var drafts = await IssueService.GetDraftIssueIdsForOrderAsync(Id);
+            if (drafts.Count > 1)
+            {
+                isSuccess = false;
+                resultMessage = "يوجد أكثر من إذن صرف مسودة لهذا الأمر؛ راجع القائمة بدل إنشاء إذن إضافي.";
+                return;
+            }
+            if (drafts.Count == 1)
+            {
+                if (!PermissionService.CanEdit("SCR_MATISS"))
+                {
+                    isSuccess = false;
+                    resultMessage = "يوجد إذن صرف مسودة لهذا الأمر، لكن صلاحية تعديل أذون الصرف غير متاحة لك.";
+                    return;
+                }
+                NavigationManager.NavigateTo($"/material-issues/edit/{drafts[0]}");
+                return;
+            }
+
+            var pendingMaterials = await IssueService.GetPendingMaterialsAsync(Id);
+            if (!pendingMaterials.Any())
+            {
+                isSuccess = false;
+                resultMessage = "لا توجد كميات مواد متبقية للصرف لهذا الأمر؛ راجع تفاصيله قبل إنشاء إذن جديد.";
+                return;
+            }
+            if (!PermissionService.CanAdd("SCR_MATISS"))
+            {
+                isSuccess = false;
+                resultMessage = "لا تملك صلاحية إنشاء إذن صرف جديد لهذا الأمر.";
+                return;
+            }
+
+            NavigationManager.NavigateTo($"/material-issues/edit/0?orderId={Id}");
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            resultMessage = $"تعذر فتح إذن الصرف: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            _ = ClearMessage();
+        }
     }
 
     // ===== تغيير الحالة =====

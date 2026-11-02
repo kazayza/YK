@@ -11,11 +11,24 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<StockCountEdit> Logger
 
-<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
+else if (isStockCountPermissionsLoading)
+{
+    <div class="no-access-luxury" dir="rtl" role="status"><div class="loading-luxury"><div class="loader-luxury"></div><p>جارٍ التحقق من صلاحيات الجرد...</p></div></div>
+}
+else if (stockCountPermissionsLoadFailed)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockCountPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadStockCountEditPermissionsAsync" disabled="@isStockCountPermissionsLoading">إعادة المحاولة</button></div>
+}
+else if (stockCountPermissionsLoadDenied)
+{
+    <div class="no-access-luxury" dir="rtl" role="alert"><h4>@stockCountPermissionsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoToStockCountEditLogin">تسجيل الدخول مجددًا</button></div>
+}
 else if (permissions == null || !permissions.CanView)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><h4>ليس لديك صلاحية</h4></div>}
 else
@@ -34,36 +47,109 @@ else
             </div>
         </div>
 
-        @if (isLoading) { <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div> }
+        @if (isRefreshingCountHeader && CountHeaderRefreshForCurrentDocument)
+        {
+            <div class="loading-luxury" role="status" style="padding:14px">جارٍ تحديث بيانات رأس الجرد بعد العملية...</div>
+        }
+        else if (countHeaderRefreshFailed && CountHeaderRefreshForCurrentDocument)
+        {
+            <div class="msg-luxury msg-error" role="alert">@countHeaderRefreshError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCountHeaderRefreshAsync" disabled="@(isRefreshingCountHeader || isSaving)">إعادة المحاولة</button></div>
+        }
+
+        @if (isLoadingInitialCountHeader && InitialCountHeaderLoadForCurrentDocument)
+        {
+            <div class="loading-luxury" role="status" style="padding:14px">جارٍ تحميل رأس الجرد...</div>
+        }
+        else if (initialCountHeaderLoadFailed && InitialCountHeaderLoadForCurrentDocument)
+        {
+            <div class="msg-luxury msg-error" role="alert">@initialCountHeaderLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadInitialCountHeaderAsync" disabled="@isLoadingInitialCountHeader">إعادة المحاولة</button></div>
+        }
+
+        @if (isRefreshingCountDetails && CountDetailsRefreshForCurrentDocument)
+        {
+            <div class="loading-luxury" role="status" style="padding:14px">جارٍ تحديث تفاصيل أصناف الجرد بعد العملية...</div>
+        }
+        else if (countDetailsRefreshFailed && CountDetailsRefreshForCurrentDocument)
+        {
+            <div class="msg-luxury msg-error" role="alert">@countDetailsRefreshError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryCountDetailsRefreshAsync" disabled="@(isRefreshingCountDetails || isSaving)">إعادة المحاولة</button></div>
+        }
+
+        @if (isLoadingInitialCountDetails && InitialCountDetailsLoadForCurrentDocument)
+        {
+            <div class="loading-luxury" role="status" style="padding:14px">جارٍ تحميل تفاصيل أصناف الجرد...</div>
+        }
+        else if (initialCountDetailsLoadFailed && InitialCountDetailsLoadForCurrentDocument)
+        {
+            <div class="msg-luxury msg-error" role="alert">@initialCountDetailsLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadInitialCountDetailsAsync" disabled="@isLoadingInitialCountDetails">إعادة المحاولة</button></div>
+        }
+
+        @if (countHeaderRefreshDenied && CountHeaderRefreshForCurrentDocument)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@countHeaderRefreshError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة لأوامر الجرد</button></div>
+        }
+        else if (countDetailsRefreshDenied && CountDetailsRefreshForCurrentDocument)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@countDetailsRefreshError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة لأوامر الجرد</button></div>
+        }
+        else if (initialCountHeaderLoadDenied && InitialCountHeaderLoadForCurrentDocument)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@initialCountHeaderLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة لأوامر الجرد</button></div>
+        }
+        else if (initialCountHeaderNotFound && InitialCountHeaderLoadForCurrentDocument)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@initialCountHeaderLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة لأوامر الجرد</button></div>
+        }
+        else if (initialCountDetailsLoadDenied && InitialCountDetailsLoadForCurrentDocument)
+        {
+            <div class="no-access-luxury" dir="rtl" role="alert"><h4>@initialCountDetailsLoadError</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة لأوامر الجرد</button></div>
+        }
+        else if (isLoading) { <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div> }
+        else if (CountHeaderRefreshBlocksDocument || CountDetailsRefreshBlocksDocument || InitialCountHeaderLoadBlocksDocument || InitialCountDetailsLoadBlocksDocument)
+        {
+            <div class="loading-luxury" role="status"><p>لن تُعرض بيانات الجرد حتى تكتمل قراءتها؛ أعد المحاولة قبل المتابعة.</p></div>
+        }
         else
         {
             <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">بيانات الجرد</h3></div>
                 <div class="form-grid-luxury c4">
                     <div class="f-field-luxury"><label class="f-label-luxury">الرقم</label><input type="text" class="f-input-luxury readonly" value="@(header.CountNumber ?? "تلقائي")" disabled /></div>
                     <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.CountDate" disabled="@isReadOnly" /></div>
-                    <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@(isReadOnly || CountId > 0)"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@(isReadOnly || CountId > 0)"><option value="0">-- اختر --</option>@if (WarehousesLoadedForCurrentUser){@foreach (var w in warehouses!){<option value="@w.Id">@w.Name</option>}}</select>@if (isLoadingWarehouses){<small role="status">جارٍ تحميل خيارات المخازن...</small>}else if(warehousesLoadFailed){<div class="msg-luxury msg-error" role="alert">@warehousesLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCountWarehousesAsync" disabled="@isLoadingWarehouses">إعادة المحاولة</button></div>}else if(warehousesLoadDenied){<div class="msg-luxury msg-error" role="alert">@warehousesLoadError</div>}</div>
                     <div class="f-field-luxury"><label class="f-label-luxury required">النوع</label><select class="f-input-luxury" @bind="header.CountType" disabled="@(isReadOnly || CountId > 0)"><option value="1">جرد شامل</option><option value="2">جرد جزئي</option><option value="3">جرد عشوائي</option></select></div>
                     @if (header.CountType == 2)
                     {
-                        <div class="f-field-luxury"><label class="f-label-luxury">التصنيف</label><select class="f-input-luxury" @bind="header.CategoryID" disabled="@(isReadOnly || CountId > 0)"><option value="0">الكل</option>@if (categories != null){@foreach (var c in categories){<option value="@c.Id">@c.Name</option>}}</select></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">التصنيف</label><select class="f-input-luxury" @bind="header.CategoryID" disabled="@(isReadOnly || CountId > 0)"><option value="0">الكل</option>@if (CategoriesLoadedForCurrentUser){@foreach (var c in categories!){<option value="@c.Id">@c.Name</option>}}</select></div>
                     }
-                    <div class="f-field-luxury"><label class="f-label-luxury">القائم بالعد والجرد</label><select class="f-input-luxury" @bind="header.CountedBy" disabled="@isReadOnly"><option value="0">--</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
-                    <div class="f-field-luxury"><label class="f-label-luxury">المشرف</label><select class="f-input-luxury" @bind="header.SupervisorID" disabled="@isReadOnly"><option value="0">--</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury">القائم بالعد والجرد</label><select class="f-input-luxury" @bind="header.CountedBy" disabled="@isReadOnly"><option value="0">--</option>@if (EmployeesLoadedForCurrentUser){@foreach (var e in employees!){<option value="@e.Id">@e.Name</option>}}</select></div>
+                    <div class="f-field-luxury"><label class="f-label-luxury">المشرف</label><select class="f-input-luxury" @bind="header.SupervisorID" disabled="@isReadOnly"><option value="0">--</option>@if (EmployeesLoadedForCurrentUser){@foreach (var e in employees!){<option value="@e.Id">@e.Name</option>}}</select>@if (isLoadingEmployees){<small role="status">جارٍ تحميل خيارات الموظفين...</small>}else if(employeesLoadFailed){<div class="msg-luxury msg-error" role="alert">@employeesLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCountEmployeesAsync" disabled="@isLoadingEmployees">إعادة المحاولة</button></div>}else if(employeesLoadDenied){<div class="msg-luxury msg-error" role="alert">@employeesLoadError</div>}</div>
                     <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="header.Notes" disabled="@isReadOnly" /></div>
                 </div>
             </div>
 
+            @if (isLoadingCategories)
+            {
+                <div class="loading-luxury" role="status"><p>جارٍ تحميل خيارات تصنيفات الجرد...</p></div>
+            }
+            else if (categoriesLoadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert">@categoriesLoadError <button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCountCategoriesAsync" disabled="@isLoadingCategories">إعادة المحاولة</button></div>
+            }
+            else if (categoriesLoadDenied)
+            {
+                <div class="msg-luxury msg-error" role="alert">@categoriesLoadError</div>
+            }
+
             @if (CountId > 0 && details.Any())
             {
-                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">أصناف الجرد</h3><span class="sec-badge-luxury">@details.Count صنف | تم جرد @details.Count(d => d.CountedQty.HasValue)</span><span class="total-mini-luxury">فرق: @details.Sum(d=>d.VarianceValue).ToString("#,##0.00")</span></div>
-                    <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">الدفتري</th><th class="tc">الفعلي</th><th class="tc">الفرق</th><th class="tl">قيمة الفرق</th>@if (header.CountStatus == 3 && permissions.CanApprove){<th class="tc">اعتماد</th>}</tr></thead><tbody>@{int n=0;}@foreach (var d in details){n++;var variance=(d.CountedQty ?? 0)-d.SystemQty;<tr class="@(variance!=0?(variance>0?"row-surplus":"row-shortage"):"")"><td class="td-n">@n</td><td><code class="code-tag-luxury">@d.ItemCode</code></td><td class="td-bold">@d.ItemNameAr</td><td class="td-muted">@d.UnitName</td><td class="tc num-cell">@d.SystemQty.ToString("#,##0.##")</td><td class="tc">@if (!isReadOnly && header.CountStatus <= 2){<input type="number" class="count-input-luxury" value="@d.CountedQty" @onchange="(e) => OnCountedQtyChanged(d.CountDetailID, e)" step="0.01" />}else{<span class="num-cell">@(d.CountedQty?.ToString("#,##0.##") ?? "—")</span>}</td><td class="tc num-cell">@if (d.CountedQty.HasValue){<strong class="@(variance>0?"var-surplus":variance<0?"var-shortage":"")">@variance.ToString("+#,##0.##;-#,##0.##;0")</strong>}else{<span>—</span>}</td><td class="tl num-cell">@(d.CountedQty.HasValue ? d.VarianceValue.ToString("#,##0.00") : "—")</td>@if (header.CountStatus == 3 && permissions.CanApprove){<td class="tc">@if (variance != 0){<label class="chk-luxury"><input type="checkbox" checked="@d.AdjustmentApproved" @onchange="(e) => OnApprovalChanged(d.CountDetailID, e)" /><span class="chk-box"></span></label>}</td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="6" class="tl"><strong>الإجمالي</strong></td><td class="tc num-cell"><strong>@details.Where(d => d.CountedQty.HasValue).Sum(d => (d.CountedQty ?? 0) - d.SystemQty).ToString("+#,##0.##;-#,##0.##;0")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.VarianceValue).ToString("#,##0.00") ج.م</strong></td>@if (header.CountStatus == 3 && permissions.CanApprove){<td></td>}</tr></tfoot></table></div></div>
+                <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">أصناف الجرد</h3><span class="sec-badge-luxury">@details.Count سطر | تم جرد @details.Count(d => d.CountedQty.HasValue)</span><span class="total-mini-luxury">فرق: @details.Sum(d=>d.VarianceValue).ToString("#,##0.00")</span></div>
+                    <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th>الباتش</th><th class="tc">الدفتري</th><th class="tc">الفعلي</th><th class="tc">الفرق</th><th class="tl">قيمة الفرق</th>@if (header.CountStatus == 3 && permissions.CanApprove){<th class="tc">اعتماد</th>}</tr></thead><tbody>@{int n=0;}@foreach (var d in details){n++;var variance=(d.CountedQty ?? 0)-d.SystemQty;<tr class="@(variance!=0?(variance>0?"row-surplus":"row-shortage"):"")"><td class="td-n">@n</td><td><code class="code-tag-luxury">@d.ItemCode</code></td><td class="td-bold">@d.ItemNameAr</td><td class="td-muted">@d.UnitName</td><td class="td-muted">@(string.IsNullOrWhiteSpace(d.BatchNumber) ? "—" : d.BatchNumber)</td><td class="tc num-cell">@d.SystemQty.ToString("#,##0.##")</td><td class="tc">@if (!isReadOnly && permissions.CanEdit && header.CountStatus <= 2){<input type="number" class="count-input-luxury" value="@d.CountedQty" @onchange="(e) => OnCountedQtyChanged(d.CountDetailID, e)" step="0.01" />}else{<span class="num-cell">@(d.CountedQty?.ToString("#,##0.##") ?? "—")</span>}</td><td class="tc num-cell">@if (d.CountedQty.HasValue){<strong class="@(variance>0?"var-surplus":variance<0?"var-shortage":"")">@variance.ToString("+#,##0.##;-#,##0.##;0")</strong>}else{<span>—</span>}</td><td class="tl num-cell">@(d.CountedQty.HasValue ? d.VarianceValue.ToString("#,##0.00") : "—")</td>@if (header.CountStatus == 3 && permissions.CanApprove){<td class="tc">@if (variance != 0){<label class="chk-luxury"><input type="checkbox" checked="@d.AdjustmentApproved" @onchange="(e) => OnApprovalChanged(d.CountDetailID, e)" /><span class="chk-box"></span></label>}</td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="7" class="tl"><strong>الإجمالي</strong></td><td class="tc num-cell"><strong>@details.Where(d => d.CountedQty.HasValue).Sum(d => (d.CountedQty ?? 0) - d.SystemQty).ToString("+#,##0.##;-#,##0.##;0")</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.VarianceValue).ToString("#,##0.00") ج.م</strong></td>@if (header.CountStatus == 3 && permissions.CanApprove){<td></td>}</tr></tfoot></table></div></div>
                 </div>
             }
 
             <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">
-                @if (isNewMode){<button class="btn-luxury btn-primary-luxury" @onclick="CreateCount" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}إنشاء وتحميل الأصناف</button>}
-                else if (header.CountStatus <= 2 && !isViewMode){<button class="btn-luxury btn-primary-luxury" @onclick="SaveCountedQties" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ الكميات الفعلية</button>}
-                else if (header.CountStatus == 3 && permissions.CanApprove && !isViewMode){<button class="btn-luxury btn-approve-quick" @onclick="ApproveAdjustments" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد التسويات</button>}
+                @if (isNewMode && permissions.CanAdd){<button class="btn-luxury btn-primary-luxury" @onclick="CreateCount" disabled="@(isSaving || CountHeaderRefreshFailedForCurrentDocument || CountDetailsRefreshFailedForCurrentDocument)">@if(isSaving){<div class="btn-spinner-sm"></div>}إنشاء وتحميل الأصناف</button>}
+                else if (!isNewMode && header.CountStatus <= 2 && !isViewMode && permissions.CanEdit){<button class="btn-luxury btn-primary-luxury" @onclick="SaveCountedQties" disabled="@(isSaving || CountHeaderRefreshFailedForCurrentDocument || CountDetailsRefreshFailedForCurrentDocument)">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ الكميات الفعلية</button>}
+                else if (header.CountStatus == 3 && permissions.CanApprove && !isViewMode){<button class="btn-luxury btn-approve-quick" @onclick="ApproveAdjustments" disabled="@(isSaving || CountHeaderRefreshFailedForCurrentDocument || CountDetailsRefreshFailedForCurrentDocument)">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد التسويات</button>}
             </div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
         }
     </div>
@@ -140,9 +226,74 @@ else
     private StockCountHeaderDto header = new() { CountDate = DateTime.Today, CountType = 1 };
     private List<StockCountDetailDto> details = new();
     private ModulePermissionDto? permissions;
+    private bool isStockCountPermissionsLoading;
+    private bool stockCountPermissionsLoadFailed, stockCountPermissionsLoadDenied;
+    private int stockCountPermissionsLoadVersion;
+    private string stockCountPermissionsLoadError = string.Empty;
     private List<LookupDto>? warehouses, employees, categories;
+    private bool isLoadingEmployees = true;
+    private bool employeesLoadFailed, employeesLoadDenied;
+    private int employeesLoadVersion;
+    private string employeesLoadError = string.Empty;
+    private int? employeesLoadedUserId;
+    private bool EmployeesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && employees is not null && employeesLoadedUserId == UserSession.UserID;
+    private bool isLoadingCategories = true;
+    private bool categoriesLoadFailed, categoriesLoadDenied;
+    private int categoriesLoadVersion;
+    private string categoriesLoadError = string.Empty;
+    private int? categoriesLoadedUserId;
+    private bool CategoriesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && categories is not null && categoriesLoadedUserId == UserSession.UserID;
+    private bool isLoadingWarehouses = true;
+    private bool warehousesLoadFailed, warehousesLoadDenied;
+    private int warehousesLoadVersion;
+    private string warehousesLoadError = string.Empty;
+    private int? warehousesLoadedUserId;
+    private bool WarehousesLoadedForCurrentUser =>
+        UserSession.IsLoggedIn && warehouses is not null && warehousesLoadedUserId == UserSession.UserID;
 
     private bool isLoading = true, isSaving = false;
+    private bool isRefreshingCountHeader;
+    private bool countHeaderRefreshFailed, countHeaderRefreshDenied;
+    private int countHeaderRefreshVersion;
+    private int? countHeaderRefreshCountId, countHeaderRefreshUserId;
+    private string countHeaderRefreshError = string.Empty;
+    private bool CountHeaderRefreshForCurrentDocument =>
+        UserSession.IsLoggedIn && countHeaderRefreshCountId == CountId && countHeaderRefreshUserId == UserSession.UserID;
+    private bool CountHeaderRefreshFailedForCurrentDocument =>
+        CountHeaderRefreshForCurrentDocument && (countHeaderRefreshFailed || countHeaderRefreshDenied);
+    private bool isRefreshingCountDetails;
+    private bool countDetailsRefreshFailed, countDetailsRefreshDenied;
+    private int countDetailsRefreshVersion;
+    private int? countDetailsRefreshCountId, countDetailsRefreshUserId;
+    private string countDetailsRefreshError = string.Empty;
+    private bool CountDetailsRefreshForCurrentDocument =>
+        UserSession.IsLoggedIn && countDetailsRefreshCountId == CountId && countDetailsRefreshUserId == UserSession.UserID;
+    private bool CountDetailsRefreshFailedForCurrentDocument =>
+        CountDetailsRefreshForCurrentDocument && (countDetailsRefreshFailed || countDetailsRefreshDenied);
+    private bool CountHeaderRefreshBlocksDocument =>
+        CountHeaderRefreshForCurrentDocument && (isRefreshingCountHeader || countHeaderRefreshFailed || countHeaderRefreshDenied);
+    private bool CountDetailsRefreshBlocksDocument =>
+        CountDetailsRefreshForCurrentDocument && (isRefreshingCountDetails || countDetailsRefreshFailed || countDetailsRefreshDenied);
+    private bool isLoadingInitialCountHeader;
+    private bool initialCountHeaderLoadFailed, initialCountHeaderLoadDenied, initialCountHeaderNotFound;
+    private int initialCountHeaderLoadVersion;
+    private int? initialCountHeaderLoadCountId, initialCountHeaderLoadUserId;
+    private string initialCountHeaderLoadError = string.Empty;
+    private bool InitialCountHeaderLoadForCurrentDocument =>
+        UserSession.IsLoggedIn && initialCountHeaderLoadCountId == CountId && initialCountHeaderLoadUserId == UserSession.UserID;
+    private bool InitialCountHeaderLoadBlocksDocument =>
+        InitialCountHeaderLoadForCurrentDocument && (isLoadingInitialCountHeader || initialCountHeaderLoadFailed || initialCountHeaderLoadDenied || initialCountHeaderNotFound);
+    private bool isLoadingInitialCountDetails;
+    private bool initialCountDetailsLoadFailed, initialCountDetailsLoadDenied;
+    private int initialCountDetailsLoadVersion;
+    private int? initialCountDetailsLoadCountId, initialCountDetailsLoadUserId;
+    private string initialCountDetailsLoadError = string.Empty;
+    private bool InitialCountDetailsLoadForCurrentDocument =>
+        UserSession.IsLoggedIn && initialCountDetailsLoadCountId == CountId && initialCountDetailsLoadUserId == UserSession.UserID;
+    private bool InitialCountDetailsLoadBlocksDocument =>
+        InitialCountDetailsLoadForCurrentDocument && (isLoadingInitialCountDetails || initialCountDetailsLoadFailed || initialCountDetailsLoadDenied);
     private string toast = ""; private bool toastOk = true;
 
     private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
@@ -155,24 +306,300 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
+        if (await LoadStockCountEditPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockCountEditPageDataAsync();
+    }
+
+    private async Task<bool> LoadStockCountEditPermissionsAsync()
+    {
+        if (isStockCountPermissionsLoading) return false;
+
+        var requestVersion = ++stockCountPermissionsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        isStockCountPermissionsLoading = true;
+        stockCountPermissionsLoadFailed = false;
+        stockCountPermissionsLoadDenied = false;
+        stockCountPermissionsLoadError = string.Empty;
+        permissions = null;
+        StateHasChanged();
+
         try
         {
-            if (!UserSession.IsLoggedIn) { Navigation.NavigateTo("/login"); return; }
-            if (!PermissionService.IsLoaded) await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(userId);
+
+            if (!IsCurrentStockCountEditPermissionsRequest(requestVersion, userId, pageUri)) return false;
             permissions = PermissionService.GetModule("SCR_COUNT");
-            if (permissions == null || !permissions.CanView) return;
-            warehouses = await LookupService.GetWarehousesAsync();
-            employees = await LookupService.GetEmployeesAsync();
-            categories = await LookupService.GetCategoriesAsync();
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count edit page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockCountEditPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockCountPermissionsLoadDenied = true;
+            stockCountPermissionsLoadError = "تعذر التحقق من صلاحيات الجلسة. سجّل الدخول مجددًا.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count edit page permissions for user {UserID}.", userId);
+            if (!IsCurrentStockCountEditPermissionsRequest(requestVersion, userId, pageUri)) return false;
+            stockCountPermissionsLoadFailed = true;
+            stockCountPermissionsLoadError = "تعذر تحميل صلاحيات الجرد. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == stockCountPermissionsLoadVersion)
+            {
+                isStockCountPermissionsLoading = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentStockCountEditPermissionsRequest(int requestVersion, int userId, string pageUri) =>
+        requestVersion == stockCountPermissionsLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadStockCountEditPermissionsAsync()
+    {
+        if (isStockCountPermissionsLoading || !stockCountPermissionsLoadFailed) return;
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        if (await LoadStockCountEditPermissionsAsync() && permissions?.CanView == true)
+            await LoadStockCountEditPageDataAsync();
+    }
+
+    private void GoToStockCountEditLogin() => Navigation.NavigateTo("/login", forceLoad: true);
+
+    private async Task LoadStockCountEditPageDataAsync()
+    {
+        isLoading = true;
+        try
+        {
+            await LoadCountWarehousesAsync();
+            await LoadCountEmployeesAsync();
+            await LoadCountCategoriesAsync();
             if (CountId > 0)
             {
-                var loaded = await InvService.GetCountByIdAsync(CountId);
-                if (loaded != null) { header = loaded; details = await InvService.GetCountDetailsAsync(CountId); }
-                else { toast = "أمر الجرد غير موجود"; toastOk = false; }
+                var countId = CountId;
+                if (await LoadInitialCountHeaderAsync(countId))
+                    await LoadInitialCountDetailsAsync(countId);
             }
         }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
         finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private async Task LoadCountWarehousesAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++warehousesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (warehousesLoadedUserId.HasValue && warehousesLoadedUserId != userId)
+        {
+            warehouses = null;
+            warehousesLoadedUserId = null;
+        }
+
+        isLoadingWarehouses = true;
+        warehousesLoadFailed = false;
+        warehousesLoadDenied = false;
+        warehousesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetWarehousesAsync();
+            if (!IsCurrentCountWarehouseLoad(requestVersion, userId, pageUri)) return;
+            warehouses = result;
+            warehousesLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count warehouse options for user {UserID}.", userId);
+            if (!IsCurrentCountWarehouseLoad(requestVersion, userId, pageUri)) return;
+            warehouses = null;
+            warehousesLoadedUserId = null;
+            warehousesLoadDenied = true;
+            warehousesLoadError = "ليس لديك صلاحية تحميل خيارات المخازن.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count warehouse options for user {UserID}.", userId);
+            if (!IsCurrentCountWarehouseLoad(requestVersion, userId, pageUri)) return;
+            warehousesLoadFailed = true;
+            warehousesLoadError = WarehousesLoadedForCurrentUser
+                ? "تعذر تحديث خيارات المخازن؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات المخازن. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == warehousesLoadVersion)
+            {
+                isLoadingWarehouses = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountWarehouseLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == warehousesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCountWarehousesAsync()
+    {
+        if (isLoadingWarehouses || !warehousesLoadFailed) return;
+        await LoadCountWarehousesAsync();
+    }
+
+    private async Task LoadCountEmployeesAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++employeesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (employeesLoadedUserId.HasValue && employeesLoadedUserId != userId)
+        {
+            employees = null;
+            employeesLoadedUserId = null;
+        }
+
+        isLoadingEmployees = true;
+        employeesLoadFailed = false;
+        employeesLoadDenied = false;
+        employeesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetEmployeesAsync();
+            if (!IsCurrentCountEmployeesLoad(requestVersion, userId, pageUri)) return;
+            employees = result;
+            employeesLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count employee options for user {UserID}.", userId);
+            if (!IsCurrentCountEmployeesLoad(requestVersion, userId, pageUri)) return;
+            employees = null;
+            employeesLoadedUserId = null;
+            employeesLoadDenied = true;
+            employeesLoadError = "ليس لديك صلاحية تحميل خيارات الموظفين.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count employee options for user {UserID}.", userId);
+            if (!IsCurrentCountEmployeesLoad(requestVersion, userId, pageUri)) return;
+            employeesLoadFailed = true;
+            employeesLoadError = EmployeesLoadedForCurrentUser
+                ? "تعذر تحديث خيارات الموظفين؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات الموظفين. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == employeesLoadVersion)
+            {
+                isLoadingEmployees = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountEmployeesLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == employeesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCountEmployeesAsync()
+    {
+        if (isLoadingEmployees || !employeesLoadFailed) return;
+        await LoadCountEmployeesAsync();
+    }
+
+    private async Task LoadCountCategoriesAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++categoriesLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (categoriesLoadedUserId.HasValue && categoriesLoadedUserId != userId)
+        {
+            categories = null;
+            categoriesLoadedUserId = null;
+        }
+
+        isLoadingCategories = true;
+        categoriesLoadFailed = false;
+        categoriesLoadDenied = false;
+        categoriesLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await LookupService.GetCategoriesAsync();
+            if (!IsCurrentCountCategoriesLoad(requestVersion, userId, pageUri)) return;
+            categories = result;
+            categoriesLoadedUserId = userId;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading stock count category options for user {UserID}.", userId);
+            if (!IsCurrentCountCategoriesLoad(requestVersion, userId, pageUri)) return;
+            categories = null;
+            categoriesLoadedUserId = null;
+            categoriesLoadDenied = true;
+            categoriesLoadError = "ليس لديك صلاحية تحميل خيارات تصنيفات الجرد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load stock count category options for user {UserID}.", userId);
+            if (!IsCurrentCountCategoriesLoad(requestVersion, userId, pageUri)) return;
+            categoriesLoadFailed = true;
+            categoriesLoadError = CategoriesLoadedForCurrentUser
+                ? "تعذر تحديث خيارات التصنيفات؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل خيارات تصنيفات الجرد. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == categoriesLoadVersion)
+            {
+                isLoadingCategories = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountCategoriesLoad(int requestVersion, int userId, string pageUri) =>
+        requestVersion == categoriesLoadVersion && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadCountCategoriesAsync()
+    {
+        if (isLoadingCategories || !categoriesLoadFailed) return;
+        await LoadCountCategoriesAsync();
     }
 
     private void OnCountedQtyChanged(int detailId, ChangeEventArgs e)
@@ -200,6 +627,275 @@ else
         if (item != null) item.AdjustmentApproved = val;
     }
 
+    private async Task<bool> LoadInitialCountHeaderAsync(int countId)
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+
+        var requestVersion = ++initialCountHeaderLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (initialCountHeaderLoadCountId != countId || initialCountHeaderLoadUserId != userId)
+            header = new StockCountHeaderDto { CountDate = DateTime.Today, CountType = 1 };
+        initialCountHeaderLoadCountId = countId;
+        initialCountHeaderLoadUserId = userId;
+        isLoadingInitialCountHeader = true;
+        initialCountHeaderLoadFailed = false;
+        initialCountHeaderLoadDenied = false;
+        initialCountHeaderNotFound = false;
+        initialCountHeaderLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await InvService.GetCountByIdAsync(countId);
+            if (!IsCurrentInitialCountHeaderLoad(requestVersion, countId, userId, pageUri)) return false;
+            if (result is null)
+            {
+                initialCountHeaderNotFound = true;
+                initialCountHeaderLoadError = "أمر الجرد غير موجود";
+                return false;
+            }
+
+            header = result;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading initial stock count header {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentInitialCountHeaderLoad(requestVersion, countId, userId, pageUri)) return false;
+            initialCountHeaderLoadDenied = true;
+            initialCountHeaderLoadError = "ليس لديك صلاحية تحميل بيانات رأس الجرد.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load initial stock count header {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentInitialCountHeaderLoad(requestVersion, countId, userId, pageUri)) return false;
+            initialCountHeaderLoadFailed = true;
+            initialCountHeaderLoadError = "تعذر تحميل بيانات رأس الجرد. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == initialCountHeaderLoadVersion)
+            {
+                isLoadingInitialCountHeader = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentInitialCountHeaderLoad(int requestVersion, int countId, int userId, string pageUri) =>
+        requestVersion == initialCountHeaderLoadVersion && CountId == countId && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadInitialCountHeaderAsync()
+    {
+        if (isLoadingInitialCountHeader || !initialCountHeaderLoadFailed || !InitialCountHeaderLoadForCurrentDocument) return;
+        var countId = CountId;
+        if (await LoadInitialCountHeaderAsync(countId))
+            await LoadInitialCountDetailsAsync(countId);
+    }
+
+    private async Task LoadInitialCountDetailsAsync(int countId)
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        var requestVersion = ++initialCountDetailsLoadVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        if (initialCountDetailsLoadCountId != countId || initialCountDetailsLoadUserId != userId)
+            details.Clear();
+        initialCountDetailsLoadCountId = countId;
+        initialCountDetailsLoadUserId = userId;
+        isLoadingInitialCountDetails = true;
+        initialCountDetailsLoadFailed = false;
+        initialCountDetailsLoadDenied = false;
+        initialCountDetailsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await InvService.GetCountDetailsAsync(countId);
+            if (!IsCurrentInitialCountDetailsLoad(requestVersion, countId, userId, pageUri)) return;
+            details = result;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading initial stock count details {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentInitialCountDetailsLoad(requestVersion, countId, userId, pageUri)) return;
+            details.Clear();
+            initialCountDetailsLoadDenied = true;
+            initialCountDetailsLoadError = "ليس لديك صلاحية تحميل تفاصيل الجرد.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load initial stock count details {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentInitialCountDetailsLoad(requestVersion, countId, userId, pageUri)) return;
+            initialCountDetailsLoadFailed = true;
+            initialCountDetailsLoadError = "تعذر تحميل تفاصيل أصناف الجرد. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == initialCountDetailsLoadVersion)
+            {
+                isLoadingInitialCountDetails = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentInitialCountDetailsLoad(int requestVersion, int countId, int userId, string pageUri) =>
+        requestVersion == initialCountDetailsLoadVersion && CountId == countId && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryLoadInitialCountDetailsAsync()
+    {
+        if (isLoadingInitialCountDetails || !initialCountDetailsLoadFailed || !InitialCountDetailsLoadForCurrentDocument) return;
+        await LoadInitialCountDetailsAsync(CountId);
+    }
+
+    private async Task<bool> RefreshCountHeaderAfterWriteAsync(int countId)
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+
+        var requestVersion = ++countHeaderRefreshVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        countHeaderRefreshCountId = countId;
+        countHeaderRefreshUserId = userId;
+        isRefreshingCountHeader = true;
+        countHeaderRefreshFailed = false;
+        countHeaderRefreshDenied = false;
+        countHeaderRefreshError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loaded = await InvService.GetCountByIdAsync(countId);
+            if (!IsCurrentCountHeaderRefresh(requestVersion, countId, userId, pageUri)) return false;
+            if (loaded is null)
+            {
+                Logger.LogWarning("Stock count header {CountID} was not found after a successful write for user {UserID}.", countId, userId);
+                countHeaderRefreshFailed = true;
+                countHeaderRefreshError = "تم تنفيذ العملية، لكن لم يتم العثور على بيانات رأس الجرد لتحديث الصفحة. أعد المحاولة.";
+                return false;
+            }
+
+            header = loaded;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied refreshing stock count header {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentCountHeaderRefresh(requestVersion, countId, userId, pageUri)) return false;
+            countHeaderRefreshDenied = true;
+            countHeaderRefreshError = "تم تنفيذ العملية، لكن تعذر تحديث بيانات الجرد بسبب صلاحية الجلسة.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh stock count header {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentCountHeaderRefresh(requestVersion, countId, userId, pageUri)) return false;
+            countHeaderRefreshFailed = true;
+            countHeaderRefreshError = "تم تنفيذ العملية، لكن تعذر تحديث بيانات الجرد. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == countHeaderRefreshVersion)
+            {
+                isRefreshingCountHeader = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountHeaderRefresh(int requestVersion, int countId, int userId, string pageUri) =>
+        requestVersion == countHeaderRefreshVersion && CountId == countId && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryCountHeaderRefreshAsync()
+    {
+        if (isRefreshingCountHeader || isSaving || !countHeaderRefreshFailed || !CountHeaderRefreshForCurrentDocument) return;
+        await RefreshCountHeaderAfterWriteAsync(CountId);
+    }
+
+    private async Task<bool> RefreshCountDetailsAfterWriteAsync(int countId)
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return false;
+        }
+
+        var requestVersion = ++countDetailsRefreshVersion;
+        var userId = UserSession.UserID;
+        var pageUri = Navigation.Uri;
+        countDetailsRefreshCountId = countId;
+        countDetailsRefreshUserId = userId;
+        isRefreshingCountDetails = true;
+        countDetailsRefreshFailed = false;
+        countDetailsRefreshDenied = false;
+        countDetailsRefreshError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await InvService.GetCountDetailsAsync(countId);
+            if (!IsCurrentCountDetailsRefresh(requestVersion, countId, userId, pageUri)) return false;
+            details = result;
+            return true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied refreshing stock count details {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentCountDetailsRefresh(requestVersion, countId, userId, pageUri)) return false;
+            details.Clear();
+            countDetailsRefreshDenied = true;
+            countDetailsRefreshError = "تم تنفيذ العملية، لكن تعذر تحديث تفاصيل الجرد بسبب صلاحية الجلسة.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh stock count details {CountID} for user {UserID}.", countId, userId);
+            if (!IsCurrentCountDetailsRefresh(requestVersion, countId, userId, pageUri)) return false;
+            countDetailsRefreshFailed = true;
+            countDetailsRefreshError = "تم تنفيذ العملية، لكن تعذر تحديث تفاصيل أصناف الجرد. أعد المحاولة.";
+            return false;
+        }
+        finally
+        {
+            if (requestVersion == countDetailsRefreshVersion)
+            {
+                isRefreshingCountDetails = false;
+                if (Navigation.Uri == pageUri) StateHasChanged();
+            }
+        }
+    }
+
+    private bool IsCurrentCountDetailsRefresh(int requestVersion, int countId, int userId, string pageUri) =>
+        requestVersion == countDetailsRefreshVersion && CountId == countId && UserSession.IsLoggedIn &&
+        UserSession.UserID == userId && Navigation.Uri == pageUri;
+
+    private async Task RetryCountDetailsRefreshAsync()
+    {
+        if (isRefreshingCountDetails || isSaving || !countDetailsRefreshFailed || !CountDetailsRefreshForCurrentDocument) return;
+        await RefreshCountDetailsAfterWriteAsync(CountId);
+    }
+
     private async Task CreateCount()
     {
         if (header.WarehouseID <= 0) { toast = "اختر المخزن"; toastOk = false; StateHasChanged(); return; }
@@ -209,9 +905,13 @@ else
             header.CountNumber = await InvService.GenerateCountNumberAsync();
             var newId = await InvService.InsertCountAsync(header, UserSession.UserID);
             CountId = newId; header.CountID = newId;
-            header = await InvService.GetCountByIdAsync(newId) ?? header;
-            details = await InvService.GetCountDetailsAsync(newId);
-            toast = $"تم الإنشاء وتحميل {details.Count} صنف "; toastOk = true;
+            var headerRefreshSucceeded = await RefreshCountHeaderAfterWriteAsync(newId);
+            var detailsRefreshSucceeded = false;
+            if (!countHeaderRefreshDenied) detailsRefreshSucceeded = await RefreshCountDetailsAfterWriteAsync(newId);
+            toast = headerRefreshSucceeded && detailsRefreshSucceeded
+                ? $"تم الإنشاء وتحميل {details.Count} صنف "
+                : "تم إنشاء أمر الجرد بنجاح؛ راجع تنبيه تحديث البيانات وأعد المحاولة.";
+            toastOk = true;
             Navigation.NavigateTo($"/stock-counts/edit/{newId}", forceLoad: false);
         }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
@@ -225,8 +925,8 @@ else
         {
             var items = details.Select(d => (d.CountDetailID, d.CountedQty)).ToList();
             await InvService.UpdateCountedQtiesBulkAsync(CountId, items, UserSession.UserID);
-            header = await InvService.GetCountByIdAsync(CountId) ?? header;
-            details = await InvService.GetCountDetailsAsync(CountId);
+            await RefreshCountHeaderAfterWriteAsync(CountId);
+            if (!countHeaderRefreshDenied) await RefreshCountDetailsAfterWriteAsync(CountId);
             toast = "تم حفظ الكميات "; toastOk = true;
         }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
@@ -247,10 +947,15 @@ else
         try
         {
             await InvService.ApproveAdjustmentsAsync(CountId, idsToApprove, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
-            header = await InvService.GetCountByIdAsync(CountId) ?? header;
-            details = await InvService.GetCountDetailsAsync(CountId);
+            var headerRefreshSucceeded = await RefreshCountHeaderAfterWriteAsync(CountId);
+            var detailsRefreshSucceeded = false;
+            if (!countHeaderRefreshDenied) detailsRefreshSucceeded = await RefreshCountDetailsAfterWriteAsync(CountId);
             isSaving = false; toast = "تم اعتماد التسويات وتحديث الأرصدة "; toastOk = true; StateHasChanged();
-            await Task.Delay(2000); Navigation.NavigateTo("/stock-counts");
+            if (headerRefreshSucceeded && detailsRefreshSucceeded)
+            {
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/stock-counts");
+            }
         }
         catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
     }

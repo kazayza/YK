@@ -6,6 +6,7 @@
 @inject UserSessionService UserSession
 @inject PermissionService PermissionService
 @inject NavigationManager Navigation
+@inject Microsoft.Extensions.Logging.ILogger<AuditLog> Logger
 
 <PageTitle>سجل العمليات</PageTitle>
 
@@ -77,6 +78,13 @@ else
         <div class="mudtabs-body-luxury">
             @if (_loading)
             {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+            else if (!string.IsNullOrWhiteSpace(_loadError))
+            {
+                <div role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b">
+                    <span>@_loadError</span>
+                    <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+                </div>
+            }
             else if (!filteredRecords.Any())
             {<div class="empty-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h4>لا يوجد سجلات</h4></div>}
             else
@@ -199,6 +207,7 @@ else
 @code {
     private bool _authorized = false;
     private bool _loading = true;
+    private string _loadError = string.Empty;
     private List<AuditLogDto> _records = new();
     private List<AuditLogDto> filteredRecords => _records.Where(r=>
         activeTab switch{
@@ -228,10 +237,52 @@ else
 
     private async Task LoadLookups()
     {
-        try{_tables=await AuditLogService.GetDistinctTablesAsync();}catch{}
-        try{_usersLookup=await UserService.GetAllAsync(new UserFilterDto());}catch{ _usersLookup=new(); }
+        try
+        {
+            _tables = await AuditLogService.GetDistinctTablesAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load audit-log table filter options.");
+            _tables = new();
+        }
+
+        try
+        {
+            _usersLookup = await UserService.GetAllAsync(new UserFilterDto());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load audit-log user filter options.");
+            _usersLookup = new();
+        }
     }
-    private async Task LoadData(){try{_loading=true; StateHasChanged(); _records=await AuditLogService.GetAllAsync(_filter); _stats=await AuditLogService.GetStatsAsync(_filter.DateFrom, _filter.DateTo);}catch{}finally{_loading=false;}}
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        _loadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var records = await AuditLogService.GetAllAsync(_filter);
+            var stats = await AuditLogService.GetStatsAsync(_filter.DateFrom, _filter.DateTo);
+            _records = records;
+            _stats = stats;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load audit-log records and statistics.");
+            _records = new();
+            _stats = new();
+            _loadError = "تعذر تحميل سجل العمليات. لم تُعرض بيانات غير مكتملة؛ أعد المحاولة.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
     private async Task ApplyFilters()=>await LoadData();
     private void OnSearchKeyUp(KeyboardEventArgs e){_searchTimer?.Stop(); _searchTimer?.Dispose(); _searchTimer=new System.Timers.Timer(400); _searchTimer.Elapsed+=async (s,args)=>{_searchTimer?.Stop(); await InvokeAsync(async()=>{await LoadData(); StateHasChanged();});}; _searchTimer.AutoReset=false; _searchTimer.Start();}
     private async Task ResetFilters(){_filter=new AuditLogFilterDto{DateFrom=DateTime.Today.AddDays(-7), DateTo=DateTime.Today}; activeTab="all"; await LoadData();}

@@ -18,6 +18,22 @@ namespace YKCoatings.Services
             _userSession = userSession;
         }
 
+        public void RequireCurrentUserSession()
+        {
+            if (!_userSession.IsLoggedIn || _userSession.UserID <= 0)
+                throw new UnauthorizedAccessException("جلسة المستخدم غير صالحة؛ سجّل الدخول مرة أخرى.");
+        }
+
+        public async Task<HashSet<string>> GetCurrentUserViewModuleCodesAsync()
+        {
+            RequireCurrentUserSession();
+            var modules = await _authService.GetUserModulesAsync(_userSession.UserID);
+            return modules
+                .Where(module => module.CanView && !string.IsNullOrWhiteSpace(module.ModuleCode))
+                .Select(module => module.ModuleCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
         public Task RequireCurrentUserPermissionAsync(
             string moduleCode,
             Func<ModulePermissionDto, bool> predicate,
@@ -37,6 +53,16 @@ namespace YKCoatings.Services
                 throw new UnauthorizedAccessException("جلسة المستخدم غير صالحة؛ سجّل الدخول مرة أخرى.");
 
             return RequireAnyUserPermissionAsync(_userSession.UserID, deniedMessage, requirements);
+        }
+
+        public async Task RequireCurrentUserAnyPrintPermissionAsync(string deniedMessage)
+        {
+            if (!_userSession.IsLoggedIn || _userSession.UserID <= 0)
+                throw new UnauthorizedAccessException("جلسة المستخدم غير صالحة؛ سجّل الدخول مرة أخرى.");
+
+            var permissions = await _authService.GetUserModulesAsync(_userSession.UserID);
+            if (!permissions.Any(permission => permission.CanPrint))
+                throw new UnauthorizedAccessException(deniedMessage);
         }
 
         /// <summary>

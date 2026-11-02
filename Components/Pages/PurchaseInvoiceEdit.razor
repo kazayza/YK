@@ -11,6 +11,7 @@
 @inject LookupService LookupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<PurchaseInvoiceEdit> Logger
 
 <PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
 
@@ -42,9 +43,33 @@ else
             <div class="approval-bar-luxury"><div class="ml-gold-line green"></div><div class="appr-left"><div class="appr-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><div class="appr-title">فاتورة بانتظار اعتمادك</div><div class="appr-sub">سيتم تحديث رصيد المورد وإنشاء القيد المحاسبي بعد الاعتماد</div></div></div><div class="appr-actions"><button class="btn-luxury btn-approve-quick" @onclick="ExecuteApprove" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد</button><button class="btn-luxury btn-reject-luxury" @onclick="DoShowReject" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>رفض</button></div></div>
         }
 
-        @if (isLoading){<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>}
+        @if (isLoading)
+        {
+            <div class="loading-luxury"><div class="loader-luxury"></div><p>جاري التحميل...</p></div>
+        }
+        else if (InvoiceId > 0 && invoiceRecordLoadDenied && !invoiceDataLoaded)
+        {
+            <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية قراءة بيانات الفاتورة.</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة للقائمة</button></div>
+        }
+        else if (InvoiceId > 0 && invoiceRecordNotFound)
+        {
+            <div class="no-access-luxury" dir="rtl"><h4>الفاتورة غير موجودة.</h4><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">العودة للقائمة</button></div>
+        }
+        else if (InvoiceId > 0 && invoiceRecordLoadFailed && !invoiceDataLoaded)
+        {
+            <div class="loading-luxury" dir="rtl"><div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>تعذر تحميل بيانات فاتورة الشراء. يرجى إعادة المحاولة.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadInvoiceDataAsync" disabled="@isLoading">إعادة المحاولة</button></div></div>
+        }
         else
         {
+            @if (InvoiceId > 0 && invoiceDataLoaded && invoiceRecordLoadFailed)
+            {
+                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px"><span>تعذر تحديث عرض الفاتورة؛ آخر بيانات ناجحة ما زالت معروضة. لم يتراجع نجاح الحفظ.</span><button class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadInvoiceDataAsync" disabled="@isLoading">إعادة المحاولة</button></div>
+            }
+            else if (InvoiceId > 0 && invoiceDataLoaded && invoiceRecordLoadDenied)
+            {
+                <div class="msg-luxury msg-info" role="status" style="margin-bottom:12px">تعذر تحديث عرض الفاتورة بسبب الصلاحيات؛ آخر بيانات ناجحة ما زالت معروضة.</div>
+            }
+
             @if (isNewMode && !isSourceLocked)
             {
                 <div class="doc-section-luxury"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><h3 class="sec-title-luxury">مصدر الفاتورة</h3></div>
@@ -58,7 +83,40 @@ else
             @if (header.InvoiceSource == 1 && isNewMode && !isGRNLoaded)
             {
                 <div class="doc-section-luxury grn-selector-section"><div class="ml-gold-line"></div><div class="sec-head-luxury"><div class="sec-icon-luxury cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><h3 class="sec-title-luxury">اختيار إذن الاستلام</h3></div>
-                    <div class="form-grid-luxury c2"><div class="f-field-luxury"><label class="f-label-luxury required">إذن الاستلام المعتمد</label><SearchableSelect Items="@availableGRNs" @bind-SelectedId="selectedGRNId" OnSelected="OnGRNSelected" Placeholder="ابحث برقم إذن الاستلام..." /></div></div>
+                    <div class="form-grid-luxury c2"><div class="f-field-luxury"><label class="f-label-luxury required">إذن الاستلام المعتمد</label><SearchableSelect Items="@availableGRNs" @bind-SelectedId="selectedGRNId" OnSelected="OnGRNSelected" Placeholder="ابحث برقم إذن الاستلام..." IsDisabled="@(!availableGRNsLoaded || isAvailableGRNsLoading || availableGRNs == null || !availableGRNs.Any() || isGRNSelectionLoading)" />
+                        @if (isAvailableGRNsLoading && !availableGRNsLoaded)
+                        {
+                            <div class="field-hint" role="status">جارٍ تحميل أذون الاستلام المعتمدة...</div>
+                        }
+                        else if (availableGRNsLoadFailed)
+                        {
+                            <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@(availableGRNsLoaded ? "تعذر تحديث أذون الاستلام؛ آخر الخيارات الناجحة ما زالت متاحة." : "تعذر تحميل أذون الاستلام. يرجى إعادة المحاولة.")</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadAvailableGRNsAsync" disabled="@isAvailableGRNsLoading">إعادة المحاولة</button></div>
+                        }
+                        else if (availableGRNsLoadDenied)
+                        {
+                            <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة أذون الاستلام المتاحة.</div>
+                        }
+                        else if (availableGRNsLoaded && (availableGRNs == null || !availableGRNs.Any()))
+                        {
+                            <div class="field-hint" role="status">لا توجد أذون استلام معتمدة متاحة للفوترة.</div>
+                        }
+                    </div></div>
+                    @if (isGRNSelectionLoading)
+                    {
+                        <div class="field-hint" role="status">جارٍ تحميل بيانات إذن الاستلام المختار...</div>
+                    }
+                    else if (grnSelectionLoadFailed)
+                    {
+                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px"><span>تعذر تحميل بيانات إذن الاستلام. لم تُطبق بيانات جزئية على الفاتورة.</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSelectedGRNAsync" disabled="@isGRNSelectionLoading">إعادة المحاولة</button></div>
+                    }
+                    else if (grnSelectionLoadDenied)
+                    {
+                        <div class="msg-luxury msg-info" role="status" style="margin-top:8px">ليس لديك صلاحية قراءة بيانات إذن الاستلام.</div>
+                    }
+                    else if (grnSelectionNotFound)
+                    {
+                        <div class="field-hint" role="alert" style="color:#b42318">تعذر العثور على بيانات إذن الاستلام المختار.</div>
+                    }
                     @if (grnLines != null && grnLines.Any())
                     {
                         <div style="margin-top:16px"><h4 class="po-lines-title-luxury">الأصناف المستلمة (@grnLines.Count(l => l.IsSelected) مختار)</h4>
@@ -74,11 +132,100 @@ else
                     <div class="form-grid-luxury c4">
                         <div class="f-field-luxury"><label class="f-label-luxury">رقم الفاتورة</label><input type="text" class="f-input-luxury readonly" value="@(header.InvoiceNumber ?? "تلقائي")" disabled /></div>
                         <div class="f-field-luxury"><label class="f-label-luxury required">التاريخ</label><input type="date" class="f-input-luxury" @bind="header.InvoiceDate" disabled="@isReadOnly" /></div>
-                        <div class="f-field-luxury"><label class="f-label-luxury required">المورد</label>@if (header.InvoiceSource == 1 && header.SupplierID > 0){<input type="text" class="f-input-luxury readonly" value="@header.SupplierNameAr" disabled />}else{<SearchableSelect Items="@suppliersSearchable" @bind-SelectedId="header.SupplierID" OnSelected="OnSupplierSelected" Placeholder="اختر المورد..." IsDisabled="@isReadOnly" />}</div>
-                        <div class="f-field-luxury"><label class="f-label-luxury">شروط الدفع</label><select class="f-input-luxury" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (paymentTerms != null){@foreach (var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select></div>
+                        <div class="f-field-luxury">
+                            <label class="f-label-luxury required">المورد</label>
+                            @if (header.InvoiceSource == 1 && header.SupplierID > 0)
+                            {
+                                <input type="text" class="f-input-luxury readonly" value="@header.SupplierNameAr" disabled />
+                            }
+                            else
+                            {
+                                <SearchableSelect Items="@suppliersSearchable" @bind-SelectedId="header.SupplierID" OnSelected="OnSupplierSelected" Placeholder="اختر المورد..." IsDisabled="@(isReadOnly || isSaving || !suppliersLoaded || suppliersSearchable == null || !suppliersSearchable.Any())" />
+                                @if (isSuppliersLoading && suppliersLoaded)
+                                {
+                                    <div class="field-hint" role="status">جارٍ تحديث قائمة الموردين؛ الخيارات السابقة متاحة.</div>
+                                }
+                                else if (isSuppliersLoading)
+                                {
+                                    <div class="field-hint" role="status">جارٍ تحميل قائمة الموردين...</div>
+                                }
+                                else if (suppliersLoadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@suppliersLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSuppliersAsync" disabled="@isSuppliersLoading">إعادة المحاولة</button></div>
+                                }
+                                else if (suppliersLoadDenied)
+                                {
+                                    <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة قائمة الموردين.</div>
+                                }
+                                else if (suppliersLoaded && (suppliersSearchable == null || !suppliersSearchable.Any()))
+                                {
+                                    <div class="field-hint" role="status">لا يوجد موردون نشطون متاحون.</div>
+                                }
+                                @if (isSupplierQuickInfoLoading)
+                                {
+                                    <div class="field-hint" role="status">جارٍ تحميل شروط الدفع والعملة الافتراضية للمورد...</div>
+                                }
+                                else if (supplierQuickInfoLoadFailed)
+                                {
+                                    <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@supplierQuickInfoLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadSupplierQuickInfoAsync" disabled="@(isSupplierQuickInfoLoading || isSaving)">إعادة المحاولة</button></div>
+                                }
+                                else if (supplierQuickInfoLoadDenied)
+                                {
+                                    <div class="msg-luxury msg-info" role="status" style="margin-top:6px">@supplierQuickInfoLoadError</div>
+                                }
+                            }
+                        </div>
+                        <div class="f-field-luxury">
+                            <label class="f-label-luxury">شروط الدفع</label>
+                            <select class="f-input-luxury" @bind="header.PaymentTermID" @bind:after="OnPaymentTermChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (paymentTerms != null){@foreach (var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select>
+                            @if (isPaymentTermsLoading && paymentTermsLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث شروط الدفع؛ الخيارات السابقة متاحة.</div>
+                            }
+                            else if (isPaymentTermsLoading)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحميل شروط الدفع...</div>
+                            }
+                            else if (paymentTermsLoadFailed)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@paymentTermsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPaymentTermsAsync" disabled="@isPaymentTermsLoading">إعادة المحاولة</button></div>
+                            }
+                            else if (paymentTermsLoadDenied)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة شروط الدفع.</div>
+                            }
+                            else if (paymentTermsLoaded && (paymentTerms == null || !paymentTerms.Any()))
+                            {
+                                <div class="field-hint" role="status">لا توجد شروط دفع نشطة.</div>
+                            }
+                        </div>
                         <div class="f-field-luxury"><label class="f-label-luxury">رقم فاتورة المورد</label><input type="text" class="f-input-luxury" @bind="header.SupplierInvoiceNo" disabled="@isReadOnly" placeholder="رقم فاتورة المورد..." /></div>
                         <div class="f-field-luxury"><label class="f-label-luxury">تاريخ فاتورة المورد</label><input type="date" class="f-input-luxury" @bind="header.SupplierInvoiceDate" disabled="@isReadOnly" /></div>
-                        <div class="f-field-luxury"><label class="f-label-luxury">العملة</label><select class="f-input-luxury" @bind="header.CurrencyID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (currencies != null){@foreach (var c in currencies){<option value="@c.Id">@c.Name</option>}}</select></div>
+                        <div class="f-field-luxury">
+                            <label class="f-label-luxury">العملة</label>
+                            <select class="f-input-luxury" @bind="header.CurrencyID" @bind:after="OnCurrencyChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if (currencies != null){@foreach (var c in currencies){<option value="@c.Id">@c.Name</option>}}</select>
+                            <small style="display:block;margin-top:4px;color:#64748b;font-size:.7rem">الحفظ بالعملة الافتراضية فقط، وبسعر صرف 1.</small>
+                            @if (isCurrenciesLoading && currenciesLoaded)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحديث العملات؛ الخيارات السابقة متاحة.</div>
+                            }
+                            else if (isCurrenciesLoading)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحميل العملات...</div>
+                            }
+                            else if (currenciesLoadFailed)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@currenciesLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadCurrenciesAsync" disabled="@isCurrenciesLoading">إعادة المحاولة</button></div>
+                            }
+                            else if (currenciesLoadDenied)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة العملات.</div>
+                            }
+                            else if (currenciesLoaded && (currencies == null || !currencies.Any()))
+                            {
+                                <div class="field-hint" role="status">لا توجد عملات نشطة.</div>
+                            }
+                        </div>
                         <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات..." /></div>
                     </div>
                     @if (header.InvoiceStatus == 1 && !string.IsNullOrEmpty(header.RejectionReason)){<div class="rejection-box-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><strong>سبب الرفض السابق:</strong> @header.RejectionReason</div>}
@@ -100,8 +247,66 @@ else
                     {
                         <div class="line-form-luxury"><div class="ml-gold-line"></div><div class="line-form-head-luxury"><h4>@(isEditLine ? "تعديل صنف" : "إضافة صنف")</h4><button class="btn-close-x-luxury" @onclick="CloseLineForm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
                             <div class="form-grid-luxury c3">
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الصنف</label><SearchableSelect Items="@purchaseItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." IsDisabled="@isEditLine" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury required">الوحدة</label><select class="f-input-luxury" @bind="editLine.UnitID"><option value="0">-- اختر --</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select></div>
+                                <div class="f-field-luxury">
+                                    <label class="f-label-luxury required">الصنف</label>
+                                    <SearchableSelect Items="@purchaseItems" @bind-SelectedId="editLine.ItemID" OnSelected="OnItemSelected" Placeholder="ابحث..." IsDisabled="@(isEditLine || isSavingLine || !purchaseItemsLoaded || purchaseItems == null || !purchaseItems.Any())" />
+                                    @if (isPurchaseItemsLoading && purchaseItemsLoaded)
+                                    {
+                                        <div class="field-hint" role="status">جارٍ تحديث قائمة الأصناف؛ الخيارات السابقة متاحة.</div>
+                                    }
+                                    else if (isPurchaseItemsLoading)
+                                    {
+                                        <div class="field-hint" role="status">جارٍ تحميل قائمة الأصناف...</div>
+                                    }
+                                    else if (purchaseItemsLoadFailed)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@purchaseItemsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadPurchaseItemsAsync" disabled="@(isPurchaseItemsLoading || isSavingLine)">إعادة المحاولة</button></div>
+                                    }
+                                    else if (purchaseItemsLoadDenied)
+                                    {
+                                        <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة قائمة الأصناف.</div>
+                                    }
+                                    else if (purchaseItemsLoaded && (purchaseItems == null || !purchaseItems.Any()))
+                                    {
+                                        <div class="field-hint" role="status">لا توجد أصناف نشطة متاحة للاختيار.</div>
+                                    }
+                                    @if (isItemQuickInfoLoading)
+                                    {
+                                        <div class="field-hint" role="status">جارٍ تحميل الوحدة والسعر الافتراضي للصنف...</div>
+                                    }
+                                    else if (itemQuickInfoLoadFailed)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@itemQuickInfoLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadItemQuickInfoAsync" disabled="@(isItemQuickInfoLoading || isSavingLine)">إعادة المحاولة</button></div>
+                                    }
+                                    else if (itemQuickInfoLoadDenied)
+                                    {
+                                        <div class="msg-luxury msg-info" role="status" style="margin-top:6px">@itemQuickInfoLoadError</div>
+                                    }
+                                </div>
+                                <div class="f-field-luxury">
+                                    <label class="f-label-luxury required">الوحدة</label>
+                                    <select class="f-input-luxury" @bind="editLine.UnitID" disabled="@(!unitsLoaded || units == null || !units.Any())"><option value="0">-- اختر --</option>@if (units != null){@foreach (var u in units){<option value="@u.Id">@u.Name</option>}}</select>
+                                    @if (isUnitsLoading && unitsLoaded)
+                                    {
+                                        <div class="field-hint" role="status">جارٍ تحديث الوحدات؛ الخيارات السابقة متاحة.</div>
+                                    }
+                                    else if (isUnitsLoading)
+                                    {
+                                        <div class="field-hint" role="status">جارٍ تحميل الوحدات...</div>
+                                    }
+                                    else if (unitsLoadFailed)
+                                    {
+                                        <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@unitsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadUnitsAsync" disabled="@isUnitsLoading">إعادة المحاولة</button></div>
+                                    }
+                                    else if (unitsLoadDenied)
+                                    {
+                                        <div class="msg-luxury msg-info" role="status" style="margin-top:6px">ليس لديك صلاحية قراءة الوحدات.</div>
+                                    }
+                                    else if (unitsLoaded && (units == null || !units.Any()))
+                                    {
+                                        <div class="field-hint" role="status">لا توجد وحدات نشطة.</div>
+                                    }
+                                </div>
                                 <div class="f-field-luxury"><label class="f-label-luxury required">الكمية</label><input type="number" class="f-input-luxury" @bind="editLine.Quantity" step="0.01" /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury required">سعر الوحدة</label><input type="number" class="f-input-luxury" @bind="editLine.UnitPrice" step="0.01" /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">خصم %</label><input type="number" class="f-input-luxury" @bind="editLine.DiscountPercent" step="0.01" /></div>
@@ -109,7 +314,7 @@ else
                             </div>
                             <div class="line-calc-bar-luxury"><span>قبل الضريبة: <strong>@editLine.LineTotal.ToString("#,##0.00")</strong></span><span>الضريبة: <strong>@editLine.TaxAmount.ToString("#,##0.00")</strong></span><span>الإجمالي: <strong>@editLine.LineTotalWithTax.ToString("#,##0.00")</strong></span></div>
                             @if (!string.IsNullOrEmpty(lineMsg)){<div class="form-msg-luxury @(lineMsgOk?"ok":"err")">@lineMsg</div>}
-                            <div class="line-form-btns-luxury"><button class="btn-luxury btn-primary-luxury" @onclick="SaveLine" disabled="@isSavingLine">@if(isSavingLine){<div class="btn-spinner-sm"></div>}@(isEditLine ? "تحديث" : "إضافة")</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseLineForm">إلغاء</button></div>
+                            <div class="line-form-btns-luxury"><button class="btn-luxury btn-primary-luxury" @onclick="SaveLine" disabled="@(isSavingLine || isItemQuickInfoLoading)">@if(isSavingLine){<div class="btn-spinner-sm"></div>}@(isEditLine ? "تحديث" : "إضافة")</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseLineForm">إلغاء</button></div>
                         </div>
                     }
                 </div>
@@ -141,7 +346,7 @@ else
 
             @if (!isViewMode && !isApprovalMode)
             {
-                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly){<button class="btn-luxury btn-primary-luxury" @onclick="SaveInvoice" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ الفاتورة" : "حفظ التعديلات")</button>@if (InvoiceId > 0 && header.InvoiceStatus == 1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>إرسال للاعتماد</button>}}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
+                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly && (isNewMode ? permissions.CanAdd : permissions.CanEdit)){<button class="btn-luxury btn-primary-luxury" @onclick="SaveInvoice" disabled="@(isSaving || isSupplierQuickInfoLoading)">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ الفاتورة" : "حفظ التعديلات")</button>@if (permissions.CanEdit && InvoiceId > 0 && header.InvoiceStatus == 1 && details.Any()){<button class="btn-luxury btn-warning-luxury" @onclick="SubmitForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>إرسال للاعتماد</button>}}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
             }
         }
     </div>
@@ -286,12 +491,44 @@ else
     private PurchaseInvoiceHeaderDto header = new() { InvoiceDate = DateTime.Today, ExchangeRate = 1 };
     private List<PurchaseInvoiceDetailDto> details = new();
     private ModulePermissionDto? permissions;
+    private int invoiceRecordLoadVersion;
+    private bool invoiceDataLoaded;
+    private bool invoiceRecordLoadFailed;
+    private bool invoiceRecordLoadDenied;
+    private bool invoiceRecordNotFound;
 
     private List<LookupDto>? paymentTerms, currencies, units;
+    private int paymentTermsLoadVersion;
+    private bool isPaymentTermsLoading, paymentTermsLoaded, paymentTermsLoadFailed, paymentTermsLoadDenied;
+    private string paymentTermsLoadError = string.Empty;
+    private int currenciesLoadVersion;
+    private bool isCurrenciesLoading, currenciesLoaded, currenciesLoadFailed, currenciesLoadDenied;
+    private string currenciesLoadError = string.Empty;
+    private int unitsLoadVersion;
+    private bool isUnitsLoading, unitsLoaded, unitsLoadFailed, unitsLoadDenied;
+    private string unitsLoadError = string.Empty;
+    private int suppliersLoadVersion;
+    private bool isSuppliersLoading, suppliersLoaded, suppliersLoadFailed, suppliersLoadDenied;
+    private string suppliersLoadError = string.Empty;
+    private int purchaseItemsLoadVersion;
+    private bool isPurchaseItemsLoading, purchaseItemsLoaded, purchaseItemsLoadFailed, purchaseItemsLoadDenied;
+    private string purchaseItemsLoadError = string.Empty;
     private List<SearchableItem>? suppliersSearchable, purchaseItems, availableGRNs;
+    private int availableGRNsLoadVersion;
+    private bool isAvailableGRNsLoading;
+    private bool availableGRNsLoaded;
+    private bool availableGRNsLoadFailed;
+    private bool availableGRNsLoadDenied;
 
     private List<GRNLineForInvoiceDto>? grnLines;
     private int selectedGRNId;
+    private int grnSelectionLoadVersion;
+    private int grnSelectionLoadedId;
+    private bool isGRNSelectionLoading;
+    private bool grnSelectionLoaded;
+    private bool grnSelectionLoadFailed;
+    private bool grnSelectionLoadDenied;
+    private bool grnSelectionNotFound;
     private bool isGRNLoaded = false, isSourceLocked = false;
 
     private bool isLoading = true, isSaving = false;
@@ -301,6 +538,13 @@ else
     private PurchaseInvoiceDetailEditDto editLine = new();
     private bool isSavingLine = false;
     private string lineMsg = ""; private bool lineMsgOk = true;
+    private int itemQuickInfoLoadVersion, selectedItemQuickInfoId;
+    private bool isItemQuickInfoLoading, itemQuickInfoLoadFailed, itemQuickInfoLoadDenied;
+    private string itemQuickInfoLoadError = string.Empty;
+    private int supplierQuickInfoLoadVersion, selectedSupplierQuickInfoId;
+    private bool isSupplierQuickInfoLoading, supplierQuickInfoLoadFailed, supplierQuickInfoLoadDenied;
+    private bool supplierPaymentTermManuallySet, supplierCurrencyManuallySet;
+    private string supplierQuickInfoLoadError = string.Empty;
 
     private bool showRejectDialog = false;
     private string rejectReason = "", rejectMsg = "";
@@ -347,13 +591,13 @@ else
             permissions = PermissionService.GetModule("SCR_PINV");
             if (permissions == null || !permissions.CanView) return;
             await LoadLookups();
-            if (InvoiceId > 0) await LoadInvoiceData();
+            if (InvoiceId > 0) await LoadInvoiceDataAsync();
             else
             {
                 var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
                 var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                 var source = query["source"];
-                if (source == "grn") { header.InvoiceSource = 1; availableGRNs = await LookupService.GetGRNsForInvoiceSearchableAsync(); }
+                if (source == "grn") { header.InvoiceSource = 1; await LoadAvailableGRNsAsync(); }
                 else if (source == "direct") { header.InvoiceSource = 3; isSourceLocked = true; }
             }
         }
@@ -363,22 +607,365 @@ else
 
     private async Task LoadLookups()
     {
-        paymentTerms = await LookupService.GetPaymentTermsAsync();
-        currencies = await LookupService.GetCurrenciesAsync();
-        units = await LookupService.GetUnitsAsync();
-        suppliersSearchable = await LookupService.GetSuppliersSearchableAsync();
-        purchaseItems = await LookupService.GetItemsForPurchaseSearchableAsync();
+        await LoadPaymentTermsAsync();
+        await LoadCurrenciesAsync();
+        await LoadUnitsAsync();
+        await LoadSuppliersAsync();
+        await LoadPurchaseItemsAsync();
     }
 
-    private async Task LoadInvoiceData()
+    private async Task LoadPaymentTermsAsync()
     {
-        var loaded = await InvService.GetInvoiceByIdAsync(InvoiceId);
-        if (loaded != null) { header = loaded; details = await InvService.GetInvoiceDetailsAsync(InvoiceId); isSourceLocked = true; isGRNLoaded = true; }
-        else { toast = "الفاتورة غير موجودة"; toastOk = false; }
+        if (isPaymentTermsLoading) return;
+
+        var requestVersion = ++paymentTermsLoadVersion;
+        var userId = UserSession.UserID;
+        isPaymentTermsLoading = true;
+        paymentTermsLoadFailed = false;
+        paymentTermsLoadDenied = false;
+        paymentTermsLoadError = string.Empty;
+        try
+        {
+            var loadedTerms = await LookupService.GetPaymentTermsAsync();
+            if (requestVersion != paymentTermsLoadVersion || UserSession.UserID != userId) return;
+
+            paymentTerms = loadedTerms;
+            paymentTermsLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading payment terms for purchase invoice.");
+            if (requestVersion != paymentTermsLoadVersion || UserSession.UserID != userId) return;
+
+            paymentTerms = null;
+            paymentTermsLoaded = false;
+            paymentTermsLoadDenied = true;
+            paymentTermsLoadError = "ليس لديك صلاحية قراءة شروط الدفع.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load payment terms for purchase invoice.");
+            if (requestVersion != paymentTermsLoadVersion || UserSession.UserID != userId) return;
+
+            paymentTermsLoadFailed = true;
+            paymentTermsLoadError = paymentTermsLoaded
+                ? "تعذر تحديث شروط الدفع؛ آخر الخيارات الناجحة ما زالت متاحة."
+                : "تعذر تحميل شروط الدفع. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == paymentTermsLoadVersion)
+            {
+                isPaymentTermsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadPaymentTermsAsync()
+    {
+        if (isPaymentTermsLoading) return;
+        await LoadPaymentTermsAsync();
+    }
+
+    private async Task LoadCurrenciesAsync()
+    {
+        if (isCurrenciesLoading) return;
+
+        var requestVersion = ++currenciesLoadVersion;
+        var userId = UserSession.UserID;
+        isCurrenciesLoading = true;
+        currenciesLoadFailed = false;
+        currenciesLoadDenied = false;
+        currenciesLoadError = string.Empty;
+        try
+        {
+            var loadedCurrencies = await LookupService.GetCurrenciesAsync();
+            if (requestVersion != currenciesLoadVersion || UserSession.UserID != userId) return;
+
+            currencies = loadedCurrencies;
+            currenciesLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading currencies for purchase invoice.");
+            if (requestVersion != currenciesLoadVersion || UserSession.UserID != userId) return;
+
+            currencies = null;
+            currenciesLoaded = false;
+            currenciesLoadDenied = true;
+            currenciesLoadError = "ليس لديك صلاحية قراءة العملات.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load currencies for purchase invoice.");
+            if (requestVersion != currenciesLoadVersion || UserSession.UserID != userId) return;
+
+            currenciesLoadFailed = true;
+            currenciesLoadError = currenciesLoaded
+                ? "تعذر تحديث العملات؛ آخر الخيارات الناجحة ما زالت متاحة."
+                : "تعذر تحميل العملات. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == currenciesLoadVersion)
+            {
+                isCurrenciesLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadCurrenciesAsync()
+    {
+        if (isCurrenciesLoading) return;
+        await LoadCurrenciesAsync();
+    }
+
+    private async Task LoadUnitsAsync()
+    {
+        if (isUnitsLoading) return;
+
+        var requestVersion = ++unitsLoadVersion;
+        var userId = UserSession.UserID;
+        isUnitsLoading = true;
+        unitsLoadFailed = false;
+        unitsLoadDenied = false;
+        unitsLoadError = string.Empty;
+        try
+        {
+            var loadedUnits = await LookupService.GetUnitsAsync();
+            if (requestVersion != unitsLoadVersion || UserSession.UserID != userId) return;
+
+            units = loadedUnits;
+            unitsLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading units for purchase invoice.");
+            if (requestVersion != unitsLoadVersion || UserSession.UserID != userId) return;
+
+            units = null;
+            unitsLoaded = false;
+            unitsLoadDenied = true;
+            unitsLoadError = "ليس لديك صلاحية قراءة الوحدات.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load units for purchase invoice.");
+            if (requestVersion != unitsLoadVersion || UserSession.UserID != userId) return;
+
+            unitsLoadFailed = true;
+            unitsLoadError = unitsLoaded
+                ? "تعذر تحديث الوحدات؛ آخر الخيارات الناجحة ما زالت متاحة."
+                : "تعذر تحميل الوحدات. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == unitsLoadVersion)
+            {
+                isUnitsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadUnitsAsync()
+    {
+        if (isUnitsLoading) return;
+        await LoadUnitsAsync();
+    }
+
+    private async Task LoadSuppliersAsync()
+    {
+        if (isSuppliersLoading) return;
+
+        var requestVersion = ++suppliersLoadVersion;
+        var userId = UserSession.UserID;
+        isSuppliersLoading = true;
+        suppliersLoadFailed = false;
+        suppliersLoadDenied = false;
+        suppliersLoadError = string.Empty;
+        try
+        {
+            var loadedSuppliers = await LookupService.GetSuppliersSearchableAsync();
+            if (requestVersion != suppliersLoadVersion || UserSession.UserID != userId) return;
+
+            suppliersSearchable = loadedSuppliers;
+            suppliersLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading suppliers for purchase invoice.");
+            if (requestVersion != suppliersLoadVersion || UserSession.UserID != userId) return;
+
+            suppliersSearchable = null;
+            suppliersLoaded = false;
+            suppliersLoadDenied = true;
+            suppliersLoadError = "ليس لديك صلاحية قراءة قائمة الموردين.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load suppliers for purchase invoice.");
+            if (requestVersion != suppliersLoadVersion || UserSession.UserID != userId) return;
+
+            suppliersLoadFailed = true;
+            suppliersLoadError = suppliersLoaded
+                ? "تعذر تحديث قائمة الموردين؛ آخر الخيارات الناجحة ما زالت متاحة."
+                : "تعذر تحميل قائمة الموردين. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == suppliersLoadVersion)
+            {
+                isSuppliersLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadSuppliersAsync()
+    {
+        if (isSuppliersLoading) return;
+        await LoadSuppliersAsync();
+    }
+
+    private async Task LoadPurchaseItemsAsync()
+    {
+        if (isPurchaseItemsLoading) return;
+
+        var requestVersion = ++purchaseItemsLoadVersion;
+        var userId = UserSession.UserID;
+        isPurchaseItemsLoading = true;
+        purchaseItemsLoadFailed = false;
+        purchaseItemsLoadDenied = false;
+        purchaseItemsLoadError = string.Empty;
+        try
+        {
+            var loadedItems = await LookupService.GetItemsForPurchaseSearchableAsync();
+            if (requestVersion != purchaseItemsLoadVersion || UserSession.UserID != userId) return;
+
+            purchaseItems = loadedItems;
+            purchaseItemsLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading purchase items for purchase invoice.");
+            if (requestVersion != purchaseItemsLoadVersion || UserSession.UserID != userId) return;
+
+            purchaseItems = null;
+            purchaseItemsLoaded = false;
+            purchaseItemsLoadDenied = true;
+            purchaseItemsLoadError = "ليس لديك صلاحية قراءة قائمة الأصناف.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase items for purchase invoice.");
+            if (requestVersion != purchaseItemsLoadVersion || UserSession.UserID != userId) return;
+
+            purchaseItemsLoadFailed = true;
+            purchaseItemsLoadError = purchaseItemsLoaded
+                ? "تعذر تحديث قائمة الأصناف؛ آخر الخيارات الناجحة ما زالت متاحة."
+                : "تعذر تحميل قائمة الأصناف. يرجى إعادة المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == purchaseItemsLoadVersion)
+            {
+                isPurchaseItemsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadPurchaseItemsAsync()
+    {
+        if (isPurchaseItemsLoading || isSavingLine) return;
+        await LoadPurchaseItemsAsync();
+    }
+
+    private Task OnPaymentTermChanged()
+    {
+        supplierPaymentTermManuallySet = true;
+        return Task.CompletedTask;
+    }
+
+    private Task OnCurrencyChanged()
+    {
+        // أسعار الصرف غير مدعومة في هذا المسار؛ اختيار عملة جديدة يبدأ بمعدل 1، والخدمة ترفض غير الافتراضية.
+        supplierCurrencyManuallySet = true;
+        header.ExchangeRate = 1m;
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadInvoiceDataAsync(bool postWriteRefresh = false)
+    {
+        var invoiceId = InvoiceId;
+        var userId = UserSession.UserID;
+        var requestVersion = ++invoiceRecordLoadVersion;
+        invoiceRecordLoadFailed = false;
+        invoiceRecordLoadDenied = false;
+        invoiceRecordNotFound = false;
+
+        try
+        {
+            var loadedHeader = await InvService.GetInvoiceByIdAsync(invoiceId);
+            if (requestVersion != invoiceRecordLoadVersion || InvoiceId != invoiceId || UserSession.UserID != userId) return;
+            if (loadedHeader == null)
+            {
+                if (postWriteRefresh)
+                {
+                    Logger.LogWarning("Purchase invoice {InvoiceID} was not returned after successful creation.", invoiceId);
+                    invoiceRecordLoadFailed = true;
+                }
+                else
+                {
+                    invoiceRecordNotFound = true;
+                }
+                return;
+            }
+
+            var loadedDetails = await InvService.GetInvoiceDetailsAsync(invoiceId);
+            if (requestVersion != invoiceRecordLoadVersion || InvoiceId != invoiceId || UserSession.UserID != userId) return;
+
+            header = loadedHeader;
+            details = loadedDetails;
+            isSourceLocked = true;
+            isGRNLoaded = true;
+            invoiceDataLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != invoiceRecordLoadVersion || InvoiceId != invoiceId || UserSession.UserID != userId) return;
+            invoiceRecordLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load purchase invoice {InvoiceID}.", invoiceId);
+            if (requestVersion != invoiceRecordLoadVersion || InvoiceId != invoiceId || UserSession.UserID != userId) return;
+            invoiceRecordLoadFailed = true;
+        }
+    }
+
+    private async Task RetryLoadInvoiceDataAsync()
+    {
+        if (isLoading || InvoiceId <= 0) return;
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            await LoadInvoiceDataAsync(postWriteRefresh: invoiceDataLoaded);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
     }
 
     private async Task OnSupplierSelected(SearchableItem? item)
     {
+        ResetSupplierQuickInfoState();
         if (item == null || item.Id <= 0)
         {
             header.SupplierID = 0;
@@ -394,120 +981,405 @@ else
         }
 
         header.SupplierID = item.Id;
+        header.SupplierNameAr = item.Name;
+        header.SupplierCode = item.Code;
         header.PaymentTermID = null;
         header.PaymentTermName = null;
         header.CurrencyID = null;
         header.CurrencyCode = null;
         header.CurrencySymbol = null;
         header.ExchangeRate = 1m;
+        selectedSupplierQuickInfoId = item.Id;
 
+        await LoadSupplierQuickInfoAsync(item.Id);
+    }
+
+    private async Task LoadSupplierQuickInfoAsync(int supplierId)
+    {
+        if (supplierId <= 0 || isReadOnly || isSaving || header.SupplierID != supplierId ||
+            selectedSupplierQuickInfoId != supplierId)
+            return;
+
+        var requestVersion = ++supplierQuickInfoLoadVersion;
+        var userId = UserSession.UserID;
+        isSupplierQuickInfoLoading = true;
+        supplierQuickInfoLoadFailed = false;
+        supplierQuickInfoLoadDenied = false;
+        supplierQuickInfoLoadError = string.Empty;
+        StateHasChanged();
         try
         {
-            var supplierInfo = await LookupService.GetSupplierQuickInfoAsync(item.Id);
+            var supplierInfo = await LookupService.GetSupplierQuickInfoAsync(supplierId);
+            if (requestVersion != supplierQuickInfoLoadVersion || header.SupplierID != supplierId ||
+                selectedSupplierQuickInfoId != supplierId || UserSession.UserID != userId)
+                return;
+
             if (supplierInfo != null)
             {
                 header.SupplierNameAr = supplierInfo.SupplierNameAr;
                 header.SupplierCode = supplierInfo.SupplierCode;
-                header.PaymentTermID = supplierInfo.PaymentTermID;
-                header.PaymentTermName = supplierInfo.PaymentTermName;
-                header.CurrencyID = supplierInfo.CurrencyID;
-                header.CurrencyCode = supplierInfo.CurrencyCode;
-                header.ExchangeRate = supplierInfo.ExchangeRate > 0 ? supplierInfo.ExchangeRate : 1m;
+                if (!supplierPaymentTermManuallySet)
+                {
+                    header.PaymentTermID = supplierInfo.PaymentTermID;
+                    header.PaymentTermName = supplierInfo.PaymentTermName;
+                }
+                if (!supplierCurrencyManuallySet)
+                {
+                    header.CurrencyID = supplierInfo.CurrencyID;
+                    header.CurrencyCode = supplierInfo.CurrencyCode;
+                    header.ExchangeRate = supplierInfo.ExchangeRate > 0 ? supplierInfo.ExchangeRate : 1m;
+                }
             }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading supplier defaults for purchase invoice {InvoiceID}, supplier {SupplierID}.", InvoiceId, supplierId);
+            if (requestVersion != supplierQuickInfoLoadVersion || header.SupplierID != supplierId ||
+                selectedSupplierQuickInfoId != supplierId || UserSession.UserID != userId)
+                return;
+
+            supplierQuickInfoLoadDenied = true;
+            supplierQuickInfoLoadError = "ليس لديك صلاحية قراءة إعدادات المورد الافتراضية.";
         }
         catch (Exception ex)
         {
-            toast = "خطأ في تحميل إعدادات المورد: " + ex.Message;
-            toastOk = false;
-        }
+            Logger.LogWarning(ex, "Failed to load supplier defaults for purchase invoice {InvoiceID}, supplier {SupplierID}.", InvoiceId, supplierId);
+            if (requestVersion != supplierQuickInfoLoadVersion || header.SupplierID != supplierId ||
+                selectedSupplierQuickInfoId != supplierId || UserSession.UserID != userId)
+                return;
 
-        StateHasChanged();
+            supplierQuickInfoLoadFailed = true;
+            supplierQuickInfoLoadError = "تعذر تحميل إعدادات المورد الافتراضية. راجع شروط الدفع والعملة أو أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == supplierQuickInfoLoadVersion)
+            {
+                isSupplierQuickInfoLoading = false;
+                StateHasChanged();
+            }
+        }
     }
 
-    private void SelectGRNSource()
+    private async Task RetryLoadSupplierQuickInfoAsync()
+    {
+        if (isSupplierQuickInfoLoading || isSaving || isReadOnly || selectedSupplierQuickInfoId <= 0 ||
+            header.SupplierID != selectedSupplierQuickInfoId)
+            return;
+        await LoadSupplierQuickInfoAsync(selectedSupplierQuickInfoId);
+    }
+
+    private void ResetSupplierQuickInfoState()
+    {
+        supplierQuickInfoLoadVersion++;
+        selectedSupplierQuickInfoId = 0;
+        isSupplierQuickInfoLoading = false;
+        supplierQuickInfoLoadFailed = false;
+        supplierQuickInfoLoadDenied = false;
+        supplierQuickInfoLoadError = string.Empty;
+        supplierPaymentTermManuallySet = false;
+        supplierCurrencyManuallySet = false;
+    }
+
+    private async Task LoadAvailableGRNsAsync()
+    {
+        if (isAvailableGRNsLoading || header.InvoiceSource != 1) return;
+
+        var requestVersion = ++availableGRNsLoadVersion;
+        var userId = UserSession.UserID;
+        isAvailableGRNsLoading = true;
+        availableGRNsLoadFailed = false;
+        availableGRNsLoadDenied = false;
+
+        try
+        {
+            var loadedGRNs = await LookupService.GetGRNsForInvoiceSearchableAsync();
+            if (requestVersion != availableGRNsLoadVersion || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+
+            availableGRNs = loadedGRNs;
+            availableGRNsLoaded = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != availableGRNsLoadVersion || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+            availableGRNs = null;
+            availableGRNsLoaded = false;
+            availableGRNsLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load available goods receipt notes for purchase invoice.");
+            if (requestVersion != availableGRNsLoadVersion || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+            availableGRNsLoadFailed = true;
+        }
+        finally
+        {
+            if (requestVersion == availableGRNsLoadVersion)
+                isAvailableGRNsLoading = false;
+        }
+    }
+
+    private async Task RetryLoadAvailableGRNsAsync()
+    {
+        if (isAvailableGRNsLoading || isLoading || header.InvoiceSource != 1) return;
+        await LoadAvailableGRNsAsync();
+    }
+
+    private async Task SelectGRNSource()
     {
         header.InvoiceSource = 1;
-        _ = Task.Run(async () => { availableGRNs = await LookupService.GetGRNsForInvoiceSearchableAsync(); await InvokeAsync(StateHasChanged); });
+        await LoadAvailableGRNsAsync();
     }
 
-    private void SelectDirectSource() { header.InvoiceSource = 3; isSourceLocked = true; grnLines = null; selectedGRNId = 0; }
-
-    private async Task OnGRNSelected(SearchableItem? item)
-{
-    if (item == null || item.Id == 0)
+    private void SelectDirectSource()
     {
+        availableGRNsLoadVersion++;
+        isAvailableGRNsLoading = false;
+        grnSelectionLoadVersion++;
+        isGRNSelectionLoading = false;
+        grnSelectionLoadFailed = false;
+        grnSelectionLoadDenied = false;
+        grnSelectionNotFound = false;
+        grnSelectionLoaded = false;
+        grnSelectionLoadedId = 0;
+        header.InvoiceSource = 3;
+        isSourceLocked = true;
         grnLines = null;
         selectedGRNId = 0;
-        return;
     }
 
-    selectedGRNId = item.Id;
-    header.GRNID = item.Id;
-
-    try
+    private async Task OnGRNSelected(SearchableItem? item)
     {
-        grnLines = await LookupService.GetGRNLinesForInvoiceAsync(item.Id);
-        foreach (var l in grnLines)
+        if (item == null || item.Id <= 0)
         {
-            l.IsSelected = true;
-            l.InvoiceUnitPrice = l.UnitCost;
-            l.InvoiceTaxRate = 14;
+            grnSelectionLoadVersion++;
+            isGRNSelectionLoading = false;
+            selectedGRNId = 0;
+            header.GRNID = null;
+            grnLines = null;
+            grnSelectionLoaded = false;
+            grnSelectionLoadedId = 0;
+            grnSelectionLoadFailed = false;
+            grnSelectionLoadDenied = false;
+            grnSelectionNotFound = false;
+            return;
         }
 
-        var grnInfo = await LookupService.GetGRNQuickInfoAsync(item.Id);
-            
+        selectedGRNId = item.Id;
+        await LoadSelectedGRNDataAsync(item.Id);
+    }
 
-        if (grnInfo != null)
+    private async Task LoadSelectedGRNDataAsync(int grnId)
+    {
+        if (grnId <= 0 || isGRNSelectionLoading || header.InvoiceSource != 1) return;
+
+        var requestVersion = ++grnSelectionLoadVersion;
+        var userId = UserSession.UserID;
+        isGRNSelectionLoading = true;
+        grnSelectionLoadFailed = false;
+        grnSelectionLoadDenied = false;
+        grnSelectionNotFound = false;
+        if (grnSelectionLoadedId != grnId)
         {
+            grnLines = null;
+            grnSelectionLoaded = false;
+        }
+
+        try
+        {
+            var loadedLines = await LookupService.GetGRNLinesForInvoiceAsync(grnId);
+            if (requestVersion != grnSelectionLoadVersion || selectedGRNId != grnId || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+
+            var grnInfo = await LookupService.GetGRNQuickInfoAsync(grnId);
+            if (requestVersion != grnSelectionLoadVersion || selectedGRNId != grnId || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+            if (grnInfo == null)
+            {
+                grnSelectionNotFound = true;
+                grnSelectionLoaded = false;
+                grnSelectionLoadedId = 0;
+                grnLines = null;
+                return;
+            }
+
+            var supplierInfo = grnInfo.SupplierID > 0
+                ? await LookupService.GetSupplierQuickInfoAsync(grnInfo.SupplierID)
+                : null;
+            if (requestVersion != grnSelectionLoadVersion || selectedGRNId != grnId || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+
+            foreach (var line in loadedLines)
+            {
+                line.IsSelected = true;
+                line.InvoiceUnitPrice = line.UnitCost;
+                line.InvoiceTaxRate = 14;
+            }
+
+            header.GRNID = grnId;
             header.SupplierID = grnInfo.SupplierID;
             header.SupplierNameAr = grnInfo.SupplierNameAr;
-
             if (grnInfo.PurchaseOrderID.HasValue)
                 header.PurchaseOrderID = grnInfo.PurchaseOrderID;
-        }
 
-        if (header.SupplierID > 0)
-        {
-            var supplierInfo = await LookupService.GetSupplierQuickInfoAsync(header.SupplierID);
             if (supplierInfo != null)
             {
                 header.SupplierNameAr = supplierInfo.SupplierNameAr;
                 header.SupplierCode = supplierInfo.SupplierCode;
-
                 if (supplierInfo.PaymentTermID.HasValue)
                     header.PaymentTermID = supplierInfo.PaymentTermID;
-
                 if (supplierInfo.CurrencyID.HasValue)
                 {
                     header.CurrencyID = supplierInfo.CurrencyID;
                     header.ExchangeRate = supplierInfo.ExchangeRate;
                 }
             }
-        }
 
-        StateHasChanged();
+            grnLines = loadedLines;
+            grnSelectionLoaded = true;
+            grnSelectionLoadedId = grnId;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (requestVersion != grnSelectionLoadVersion || selectedGRNId != grnId || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+            grnLines = null;
+            grnSelectionLoaded = false;
+            grnSelectionLoadedId = 0;
+            grnSelectionLoadDenied = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load selected goods receipt note {GRNID} for purchase invoice.", grnId);
+            if (requestVersion != grnSelectionLoadVersion || selectedGRNId != grnId || header.InvoiceSource != 1 || UserSession.UserID != userId) return;
+            grnSelectionLoadFailed = true;
+        }
+        finally
+        {
+            if (requestVersion == grnSelectionLoadVersion)
+                isGRNSelectionLoading = false;
+        }
     }
-    catch (Exception ex)
+
+    private async Task RetryLoadSelectedGRNAsync()
     {
-        toast = "خطأ في تحميل بيانات إذن الاستلام: " + ex.Message;
-        toastOk = false;
-        StateHasChanged();
+        if (isGRNSelectionLoading || isLoading || selectedGRNId <= 0 || header.InvoiceSource != 1) return;
+        await LoadSelectedGRNDataAsync(selectedGRNId);
     }
-}
 
     private void ToggleAllGRNLines(ChangeEventArgs e) { if (grnLines == null) return; var val = (bool)(e.Value ?? false); foreach (var l in grnLines) l.IsSelected = val; }
 
     private async Task OnItemSelected(SearchableItem? item)
     {
-        if (item == null) return;
+        if (item == null)
+        {
+            ResetItemQuickInfoState();
+            editLine.ItemID = 0;
+            editLine.UnitID = 0;
+            editLine.UnitPrice = 0;
+            return;
+        }
+
+        if (selectedItemQuickInfoId != item.Id)
+        {
+            // Do not carry the previous item's unit or price into the newly selected line.
+            editLine.UnitID = 0;
+            editLine.UnitPrice = 0;
+        }
+        selectedItemQuickInfoId = item.Id;
         editLine.ItemID = item.Id;
-        var info = await LookupService.GetItemQuickInfoAsync(item.Id);
-        if (info != null) { if (info.UnitID > 0) editLine.UnitID = info.UnitID; if (info.EstimatedPrice > 0) editLine.UnitPrice = info.EstimatedPrice; }
+        await LoadItemQuickInfoAsync(item.Id);
+    }
+
+    private async Task LoadItemQuickInfoAsync(int itemId)
+    {
+        if (itemId <= 0 || !showLineForm || isEditLine || isSavingLine) return;
+
+        var requestVersion = ++itemQuickInfoLoadVersion;
+        var userId = UserSession.UserID;
+        isItemQuickInfoLoading = true;
+        itemQuickInfoLoadFailed = false;
+        itemQuickInfoLoadDenied = false;
+        itemQuickInfoLoadError = string.Empty;
         StateHasChanged();
+        try
+        {
+            var info = await LookupService.GetItemQuickInfoAsync(itemId);
+            if (requestVersion != itemQuickInfoLoadVersion || !showLineForm || isEditLine ||
+                editLine.ItemID != itemId || selectedItemQuickInfoId != itemId || UserSession.UserID != userId)
+                return;
+
+            if (info != null)
+            {
+                // Keep any unit or price the user entered while this read was in flight.
+                if (info.UnitID > 0 && editLine.UnitID == 0)
+                    editLine.UnitID = info.UnitID;
+                if (info.EstimatedPrice > 0 && editLine.UnitPrice == 0)
+                    editLine.UnitPrice = info.EstimatedPrice;
+            }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading item quick information for purchase invoice {InvoiceID}, item {ItemID}.", InvoiceId, itemId);
+            if (requestVersion != itemQuickInfoLoadVersion || !showLineForm || isEditLine ||
+                editLine.ItemID != itemId || selectedItemQuickInfoId != itemId || UserSession.UserID != userId)
+                return;
+
+            itemQuickInfoLoadDenied = true;
+            itemQuickInfoLoadError = "ليس لديك صلاحية قراءة الوحدة والسعر الافتراضي للصنف.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load item quick information for purchase invoice {InvoiceID}, item {ItemID}.", InvoiceId, itemId);
+            if (requestVersion != itemQuickInfoLoadVersion || !showLineForm || isEditLine ||
+                editLine.ItemID != itemId || selectedItemQuickInfoId != itemId || UserSession.UserID != userId)
+                return;
+
+            itemQuickInfoLoadFailed = true;
+            itemQuickInfoLoadError = "تعذر تحميل الوحدة والسعر الافتراضي للصنف. أعد المحاولة أو أدخلهما يدويًا.";
+        }
+        finally
+        {
+            if (requestVersion == itemQuickInfoLoadVersion)
+            {
+                isItemQuickInfoLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadItemQuickInfoAsync()
+    {
+        if (isItemQuickInfoLoading || isSavingLine || !showLineForm || isEditLine || selectedItemQuickInfoId <= 0 ||
+            editLine.ItemID != selectedItemQuickInfoId)
+            return;
+        await LoadItemQuickInfoAsync(selectedItemQuickInfoId);
+    }
+
+    private void ResetItemQuickInfoState()
+    {
+        itemQuickInfoLoadVersion++;
+        selectedItemQuickInfoId = 0;
+        isItemQuickInfoLoading = false;
+        itemQuickInfoLoadFailed = false;
+        itemQuickInfoLoadDenied = false;
+        itemQuickInfoLoadError = string.Empty;
     }
 
     private async Task SaveInvoice()
     {
+        if (isSupplierQuickInfoLoading)
+        {
+            toast = "انتظر اكتمال تحميل إعدادات المورد قبل حفظ الفاتورة.";
+            toastOk = false;
+            StateHasChanged();
+            return;
+        }
+        if (header.InvoiceSource == 1 && selectedGRNId > 0 &&
+            (isGRNSelectionLoading || grnSelectionLoadFailed || grnSelectionLoadDenied ||
+             !grnSelectionLoaded || grnSelectionLoadedId != selectedGRNId || header.GRNID != selectedGRNId))
+        {
+            toast = "حمّل بيانات إذن الاستلام المختار بنجاح قبل حفظ الفاتورة.";
+            toastOk = false;
+            StateHasChanged();
+            return;
+        }
         if (header.SupplierID <= 0) { toast = "اختر المورد"; toastOk = false; StateHasChanged(); return; }
         isSaving = true; StateHasChanged();
         try
@@ -526,16 +1398,30 @@ else
                 }
                 else toast = $"تم الإنشاء: {header.InvoiceNumber} ";
                 toastOk = true; isSourceLocked = true; isGRNLoaded = true;
-                details = await InvService.GetInvoiceDetailsAsync(newId);
-                header = await InvService.GetInvoiceByIdAsync(newId) ?? header;
+                isLoading = true;
+                try
+                {
+                    await LoadInvoiceDataAsync(postWriteRefresh: true);
+                }
+                finally
+                {
+                    isLoading = false;
+                }
                 Navigation.NavigateTo($"/purchase-invoices/edit/{newId}", forceLoad: false);
             }
             else
             {
                 await InvService.UpdateInvoiceAsync(header, UserSession.UserID);
-                header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-                details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
                 toast = "تم الحفظ "; toastOk = true;
+                isLoading = true;
+                try
+                {
+                    await LoadInvoiceDataAsync(postWriteRefresh: true);
+                }
+                finally
+                {
+                    isLoading = false;
+                }
             }
         }
         catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
@@ -558,10 +1444,26 @@ else
         try
         {
             await InvService.ApproveAsync(InvoiceId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
-            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
-            toast = "تم اعتماد الفاتورة "; toastOk = true; isSaving = false; StateHasChanged();
-            await Task.Delay(2000); Navigation.NavigateTo("/purchase-invoices");
+            header.InvoiceStatus = 3;
+            toast = "تم اعتماد الفاتورة ";
+            toastOk = true;
+
+            isLoading = true;
+            try
+            {
+                await LoadInvoiceDataAsync(postWriteRefresh: true);
+            }
+            finally
+            {
+                isLoading = false;
+            }
+
+            isSaving = false;
+            StateHasChanged();
+            if (invoiceRecordLoadFailed || invoiceRecordLoadDenied) return;
+
+            await Task.Delay(2000);
+            Navigation.NavigateTo("/purchase-invoices");
         }
         catch (Exception ex) { isSaving = false; toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
     }
@@ -580,9 +1482,17 @@ else
         catch (Exception ex) { rejectMsg = "خطأ: " + ex.Message; }
     }
 
-    private void ShowAddLine() { isEditLine = false; editLine = new() { InvoiceID = InvoiceId, TaxRate = 14 }; lineMsg = ""; showLineForm = true; }
+    private void ShowAddLine()
+    {
+        ResetItemQuickInfoState();
+        isEditLine = false;
+        editLine = new() { InvoiceID = InvoiceId, TaxRate = 14 };
+        lineMsg = "";
+        showLineForm = true;
+    }
     private void ShowEditLine(PurchaseInvoiceDetailDto line)
     {
+        ResetItemQuickInfoState();
         isEditLine = true;
         editLine = new()
         {
@@ -593,9 +1503,15 @@ else
             BatchNumber = line.BatchNumber, ExpiryDate = line.ExpiryDate,
             GRNDetailID = line.GRNDetailID, PODetailID = line.PODetailID, Notes = line.Notes
         };
-        lineMsg = ""; showLineForm = true;
+        lineMsg = "";
+        showLineForm = true;
     }
-    private void CloseLineForm() { showLineForm = false; lineMsg = ""; }
+    private void CloseLineForm()
+    {
+        ResetItemQuickInfoState();
+        showLineForm = false;
+        lineMsg = "";
+    }
 
     private async Task SaveLine()
     {
@@ -603,15 +1519,28 @@ else
         if (editLine.ItemID == 0) { lineMsg = "اختر الصنف"; lineMsgOk = false; return; }
         if (editLine.UnitID == 0) { lineMsg = "اختر الوحدة"; lineMsgOk = false; return; }
         if (editLine.Quantity <= 0) { lineMsg = "أدخل الكمية"; lineMsgOk = false; return; }
+        if (isItemQuickInfoLoading) { lineMsg = "انتظر اكتمال تحميل معلومات الصنف قبل حفظ السطر."; lineMsgOk = false; StateHasChanged(); return; }
         if (isNewMode && InvoiceId == 0) { await SaveInvoice(); if (InvoiceId == 0) return; editLine.InvoiceID = InvoiceId; }
         isSavingLine = true; StateHasChanged();
         try
         {
             if (isEditLine) await InvService.UpdateDetailAsync(editLine, UserSession.UserID);
             else await InvService.InsertDetailAsync(editLine, UserSession.UserID);
-            details = await InvService.GetInvoiceDetailsAsync(InvoiceId);
-            header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header;
-            showLineForm = false; toast = isEditLine ? "تم التحديث " : "تم الإضافة "; toastOk = true;
+
+            ResetItemQuickInfoState();
+            showLineForm = false;
+            toast = isEditLine ? "تم التحديث " : "تم الإضافة ";
+            toastOk = true;
+
+            isLoading = true;
+            try
+            {
+                await LoadInvoiceDataAsync(postWriteRefresh: true);
+            }
+            finally
+            {
+                isLoading = false;
+            }
         }
         catch (Exception ex) { lineMsg = "خطأ: " + ex.Message; lineMsgOk = false; }
         finally { isSavingLine = false; StateHasChanged(); }
@@ -619,15 +1548,66 @@ else
 
     private async Task DeleteLine(int detailId)
     {
-        try { await InvService.DeleteDetailAsync(detailId, UserSession.UserID); details = await InvService.GetInvoiceDetailsAsync(InvoiceId); header = await InvService.GetInvoiceByIdAsync(InvoiceId) ?? header; toast = "تم الحذف "; toastOk = true; }
-        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; }
+        try
+        {
+            await InvService.DeleteDetailAsync(detailId, UserSession.UserID);
+            toast = "تم الحذف ";
+            toastOk = true;
+            isLoading = true;
+            try
+            {
+                await LoadInvoiceDataAsync(postWriteRefresh: true);
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            toast = "خطأ: " + ex.Message;
+            toastOk = false;
+        }
         StateHasChanged();
     }
 
     private async Task PrintDoc()
     {
-        try { var html = await InvService.GenerateReportHtmlAsync(InvoiceId, UserSession.UserID); await JS.InvokeVoidAsync("printHtml", html); }
-        catch (Exception ex) { toast = "خطأ: " + ex.Message; toastOk = false; StateHasChanged(); }
+        if (InvoiceId <= 0) return;
+
+        string html;
+        try
+        {
+            html = await InvService.GenerateReportHtmlAsync(InvoiceId, UserSession.UserID);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied generating purchase invoice print report {InvoiceID}.", InvoiceId);
+            toast = "ليس لديك صلاحية طباعة فاتورة الشراء.";
+            toastOk = false;
+            StateHasChanged();
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to generate purchase invoice print report {InvoiceID}.", InvoiceId);
+            toast = "تعذر تجهيز تقرير فاتورة الشراء للطباعة.";
+            toastOk = false;
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("printHtml", html);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to open print window for purchase invoice {InvoiceID}.", InvoiceId);
+            toast = "تم تجهيز التقرير لكن تعذر فتح نافذة الطباعة. حاول مرة أخرى.";
+            toastOk = false;
+            StateHasChanged();
+        }
     }
 
     private void GoBack() => Navigation.NavigateTo("/purchase-invoices");

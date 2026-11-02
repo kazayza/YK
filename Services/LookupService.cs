@@ -5,10 +5,40 @@ namespace YKCoatings.Services
 {
     public class LookupService : BaseDbService
     {
-        public LookupService(IConfiguration configuration) : base(configuration) { }
+        private readonly ModuleAuthorizationService _authorization;
+
+        public LookupService(IConfiguration configuration, ModuleAuthorizationService authorization) : base(configuration)
+        {
+            _authorization = authorization;
+        }
+
+        private static (string ModuleCode, Func<ModulePermissionDto, bool> Predicate) ViewOnly(string moduleCode) =>
+            (moduleCode, permission => permission.CanView);
+
+        private static (string ModuleCode, Func<ModulePermissionDto, bool> Predicate) ViewOrAdd(string moduleCode) =>
+            (moduleCode, permission => permission.CanView || permission.CanAdd);
+
+        private static (string ModuleCode, Func<ModulePermissionDto, bool> Predicate) AnyOperation(string moduleCode) =>
+            (moduleCode, permission => permission.CanView || permission.CanAdd || permission.CanEdit);
+
+        private static (string ModuleCode, Func<ModulePermissionDto, bool> Predicate) AddOrEdit(string moduleCode) =>
+            (moduleCode, permission => permission.CanAdd || permission.CanEdit);
+
+        private static (string ModuleCode, Func<ModulePermissionDto, bool> Predicate) AddOnly(string moduleCode) =>
+            (moduleCode, permission => permission.CanAdd);
+
+        private Task RequireLookupPermissionAsync(
+            string deniedMessage,
+            params (string ModuleCode, Func<ModulePermissionDto, bool> Predicate)[] requirements) =>
+            _authorization.RequireAnyCurrentUserPermissionAsync(deniedMessage, requirements);
 
         public async Task<List<LookupDto>> GetCategoriesAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_COUNT"),
+                AddOrEdit("SCR_ITEMS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT c.CategoryID AS Id, c.CategoryNameAr AS Name,
                                c.CategoryCode AS Code, c.ParentCategoryID AS ParentId,
@@ -23,6 +53,20 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetUnitsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_PRICELISTS"),
+                ViewOnly("SCR_QUOT"),
+                ViewOnly("SCR_SINV"),
+                ViewOnly("SCR_PRET"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                ViewOnly("SCR_TRANSFER"),
+                ViewOnly("SCR_GRN"),
+                AddOrEdit("SCR_ITEMS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT UnitID AS Id, UnitNameAr AS Name
                         FROM dbo.Units WHERE IsActive = 1
@@ -33,6 +77,10 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetParentCategoriesAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_CATEGORIES"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT CategoryID AS Id, CategoryNameAr AS Name, CategoryCode AS Code
                         FROM dbo.ItemCategories
@@ -44,6 +92,18 @@ namespace YKCoatings.Services
         
             public async Task<List<LookupDto>> GetEmployeesAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_COUNT"),
+                AnyOperation("SCR_ATTEND"),
+                AnyOperation("SCR_LOANS"),
+                AnyOperation("SCR_PENALTY"),
+                ViewOrAdd("SCR_LEAVE"),
+                ViewOnly("SCR_WAREHOUSES"),
+                ViewOnly("SCR_TRANSFER"),
+                ViewOnly("SCR_GRN"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT EmployeeID AS Id, FullNameAr AS Name
                         FROM dbo.Employees
@@ -54,6 +114,15 @@ namespace YKCoatings.Services
         }
                 public async Task<List<LookupDto>> GetPaymentTermsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_SUPPLIERS"),
+                ViewOnly("SCR_SINV"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                AnyOperation("SCR_CUSTOMERS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT PaymentTermID AS Id, TermNameAr AS Name
                         FROM dbo.PaymentTerms WHERE IsActive = 1
@@ -64,6 +133,26 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetCurrenciesAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_BANKACC"),
+                ViewOnly("SCR_BANK_ACCOUNTS"),
+                ViewOnly("SCR_SO"),
+                ViewOrAdd("SCR_RECV"),
+                ViewOrAdd("SCR_PAYV"),
+                ViewOnly("SCR_PRICELISTS"),
+                AnyOperation("SCR_CUSTOMERS"),
+                ViewOnly("SCR_SUPPLIERS"),
+                ViewOnly("SCR_CHEQUES"),
+                ViewOnly("SCR_CHEQUE"),
+                AddOnly("SCR_CASHTRANS"),
+                ViewOnly("SCR_SINV"),
+                ViewOnly("SCR_BANKS"),
+                ViewOnly("SCR_CASHBOX"),
+                ViewOnly("SCR_CASHBOXES"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT CurrencyID AS Id, CurrencyNameAr + ' (' + CurrencyCode + ')' AS Name
                         FROM dbo.Currencies WHERE IsActive = 1
@@ -74,6 +163,10 @@ namespace YKCoatings.Services
 
                 public async Task<List<LookupDto>> GetCustomerGroupsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                AnyOperation("SCR_CUSTOMERS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT GroupID AS Id, GroupNameAr AS Name
                         FROM dbo.CustomerGroups WHERE IsActive = 1
@@ -84,6 +177,11 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetPriceListsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_SO"),
+                AnyOperation("SCR_CUSTOMERS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT PriceListID AS Id, PriceListNameAr AS Name
                         FROM dbo.PriceLists WHERE IsActive = 1
@@ -94,6 +192,12 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetSalesRepsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                AnyOperation("SCR_CUSTOMERS"),
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_QUOT"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT sr.SalesRepID AS Id, e.FullNameAr AS Name
                         FROM dbo.SalesRepresentatives sr
@@ -105,6 +209,13 @@ namespace YKCoatings.Services
         }
                 public async Task<List<LookupDto>> GetDepartmentsAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_COST"),
+                ViewOnly("SCR_COSTCENTERS"),
+                ViewOnly("SCR_COST_CENTERS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT DepartmentID AS Id, DepartmentNameAr AS Name
                         FROM dbo.Departments WHERE IsActive = 1
@@ -115,6 +226,15 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetItemsForPurchaseAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_PRET"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                ViewOnly("SCR_GRN"),
+                ViewOnly("SCR_SUPPLIERS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID AS Id, ItemNameAr + ' (' + ItemCode + ')' AS Name
                         FROM dbo.Items 
@@ -125,6 +245,11 @@ namespace YKCoatings.Services
         }
                 public async Task<List<SearchableItem>> GetItemsSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_STOCK"),
+                ViewOnly("SCR_TRANSFER"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT ItemID AS Id, 
                                ItemNameAr + N' (' + ItemCode + N')' AS Name, 
@@ -139,6 +264,15 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetItemsForPurchaseSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_PRET"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                ViewOnly("SCR_GRN"),
+                ViewOnly("SCR_SUPPLIERS"));
+
             using var connection = CreateConnection();
             // تم التوسيع ليشمل كل الأصناف النشطة مع إظهار النوع والسعر - لأن المستخدم قد لا يجد أصنافه بسبب فلتر ItemType
             var sql = @"SELECT ItemID AS Id, 
@@ -155,6 +289,15 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetSuppliersSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOrAdd("SCR_RECV"),
+                ViewOrAdd("SCR_PAYV"),
+                ViewOnly("SCR_PRET"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                ViewOnly("SCR_GRN"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT SupplierID AS Id, 
                                SupplierNameAr AS Name, 
@@ -168,6 +311,14 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetCustomersSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_SO"),
+                ViewOrAdd("SCR_RECV"),
+                ViewOrAdd("SCR_PAYV"),
+                ViewOnly("SCR_QUOT"),
+                ViewOnly("SCR_SINV"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT CustomerID AS Id, 
                                CustomerNameAr AS Name, 
@@ -180,6 +331,10 @@ namespace YKCoatings.Services
         }
                 public async Task<int> GetEmployeeDepartmentAsync(int employeeId)
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"));
+
             using var connection = CreateConnection();
             var result = await connection.QueryFirstOrDefaultAsync<int?>(
                 "SELECT DepartmentID FROM dbo.Employees WHERE EmployeeID = @ID",
@@ -189,6 +344,18 @@ namespace YKCoatings.Services
 
         public async Task<ItemQuickInfoDto?> GetItemQuickInfoAsync(int itemId)
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_PR"),
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_QUOT"),
+                ViewOnly("SCR_SINV"),
+                ViewOnly("SCR_PRET"),
+                ViewOnly("SCR_PO"),
+                ViewOnly("SCR_PINV"),
+                ViewOnly("SCR_TRANSFER"),
+                ViewOnly("SCR_GRN"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT 
                             i.PrimaryUnitID AS UnitID,
@@ -205,6 +372,12 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetItemsForSaleSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_QUOT"),
+                ViewOnly("SCR_SINV"));
+
             using var connection = CreateConnection();
             // إصلاح جذري: كان يستثني المنتج التام (نوع 4) - الآن يشمل كل الأصناف النشطة مع سعر البيع
             var sql = @"SELECT ItemID AS Id, 
@@ -224,6 +397,11 @@ namespace YKCoatings.Services
 
         public async Task<CustomerQuickInfoDto?> GetCustomerQuickInfoAsync(int customerId)
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_SO"),
+                ViewOnly("SCR_SINV"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT c.CustomerID, c.CustomerNameAr, c.CustomerCode,
                                c.PaymentTermID, c.CurrencyID,
@@ -237,6 +415,12 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetCashBoxesLookupAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_BANKS"),
+                ViewOnly("SCR_CASHBOX"),
+                ViewOnly("SCR_CASHBOXES"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT CashBoxID AS Id, CashBoxNameAr AS Name, CashBoxCode AS Code FROM dbo.CashBoxes WHERE IsActive=1 ORDER BY CashBoxNameAr";
             var result = await connection.QueryAsync<LookupDto>(sql);
@@ -245,6 +429,12 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetCashBoxesSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_BANKS"),
+                ViewOnly("SCR_CASHBOX"),
+                ViewOnly("SCR_CASHBOXES"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT CashBoxID AS Id, CashBoxNameAr AS Name, CashBoxCode AS Code FROM dbo.CashBoxes WHERE IsActive=1 ORDER BY CashBoxNameAr";
             var result = await connection.QueryAsync<SearchableItem>(sql);
@@ -253,6 +443,10 @@ namespace YKCoatings.Services
 
         public async Task<List<LookupDto>> GetChartOfAccountsLookupAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_COA"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT AccountID AS Id, AccountNameAr + ' (' + AccountCode + ')' AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND IsGroup=0 ORDER BY AccountCode";
             var result = await connection.QueryAsync<LookupDto>(sql);
@@ -261,8 +455,32 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetChartOfAccountsSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_BANKACC"),
+                ViewOnly("SCR_BANK_ACCOUNTS"),
+                ViewOnly("SCR_LEDGER"),
+                ViewOnly("SCR_ACCLEDGER"),
+                ViewOnly("SCR_ACCOUNT_LEDGER"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 ORDER BY AccountCode";
+            var result = await connection.QueryAsync<SearchableItem>(sql);
+            return result.ToList();
+        }
+
+        public async Task<List<SearchableItem>> GetJournalPostingAccountsSearchableAsync()
+        {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOrAdd("SCR_JV"),
+                ViewOrAdd("SCR_JV_NEW"));
+
+            using var connection = CreateConnection();
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code
+                        FROM dbo.ChartOfAccounts
+                        WHERE IsActive=1 AND IsDetailAccount=1
+                        ORDER BY AccountCode";
             var result = await connection.QueryAsync<SearchableItem>(sql);
             return result.ToList();
         }
@@ -275,22 +493,35 @@ namespace YKCoatings.Services
 
         public async Task<List<SearchableItem>> GetRevenueAccountsSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOrAdd("SCR_RECV"));
+
             using var connection = CreateConnection();
-            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND AccountType=4 ORDER BY AccountCode";
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND IsDetailAccount=1 AND AccountType=4 ORDER BY AccountCode";
             var result = await connection.QueryAsync<SearchableItem>(sql);
             return result.ToList();
         }
 
         public async Task<List<SearchableItem>> GetExpenseAccountsSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOrAdd("SCR_PAYV"));
+
             using var connection = CreateConnection();
-            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND AccountType=5 ORDER BY AccountCode";
+            var sql = @"SELECT AccountID AS Id, AccountNameAr AS Name, AccountCode AS Code FROM dbo.ChartOfAccounts WHERE IsActive=1 AND IsDetailAccount=1 AND AccountType=6 ORDER BY AccountCode";
             var result = await connection.QueryAsync<SearchableItem>(sql);
             return result.ToList();
         }
 
         public async Task<List<SearchableItem>> GetBankAccountsSearchableAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_BANKACC"),
+                ViewOnly("SCR_BANK_ACCOUNTS"));
+
             using var connection = CreateConnection();
             try
             {
@@ -304,8 +535,19 @@ namespace YKCoatings.Services
             }
         }
 
-        public async Task<List<LookupDto>> GetCostCentersAsync()
+        public Task<List<LookupDto>> GetCostCentersAsync() =>
+            GetCostCentersCoreAsync(rethrowReadFailure: false);
+
+        public Task<List<LookupDto>> GetCostCentersForJournalEntryAsync() =>
+            GetCostCentersCoreAsync(rethrowReadFailure: true);
+
+        private async Task<List<LookupDto>> GetCostCentersCoreAsync(bool rethrowReadFailure)
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOrAdd("SCR_JV"),
+                ViewOrAdd("SCR_JV_NEW"));
+
             using var connection = CreateConnection();
             try
             {
@@ -315,6 +557,9 @@ namespace YKCoatings.Services
             }
             catch
             {
+                if (rethrowReadFailure)
+                    throw;
+
                 return new List<LookupDto>();
             }
         }
@@ -323,6 +568,10 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<List<LookupDto>> GetSuppliersAsync()
         {
+        await RequireLookupPermissionAsync(
+            "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+            ViewOnly("SCR_SUPPLIERS"));
+
         using var connection = CreateConnection();
         var sql = @"SELECT SupplierID AS Id, 
                        SupplierNameAr AS Name,
@@ -339,6 +588,16 @@ namespace YKCoatings.Services
 // ==========================================
 public async Task<List<LookupDto>> GetWarehousesAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_SO"),
+        ViewOnly("SCR_COUNT"),
+        ViewOnly("SCR_SRET"),
+        ViewOnly("SCR_TRANS"),
+        ViewOnly("SCR_SINV"),
+        ViewOnly("SCR_STOCK"),
+        ViewOnly("SCR_TRANSFER"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT WarehouseID AS Id, 
                        WarehouseNameAr AS Name,
@@ -352,6 +611,12 @@ public async Task<List<LookupDto>> GetWarehousesAsync()
 
     public async Task<SupplierQuickInfoDto?> GetSupplierQuickInfoAsync(int supplierId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PRET"),
+        ViewOnly("SCR_PO"),
+        ViewOnly("SCR_PINV"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT 
                     s.SupplierID,
@@ -382,6 +647,10 @@ public async Task<List<LookupDto>> GetWarehousesAsync()
 // ==========================================
 public async Task<SupplierItemPriceDto?> GetSupplierItemPriceAsync(int supplierId, int itemId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PO"));
+
     using var connection = CreateConnection();
     var sql = @"
         DECLARE @SupplierPrice DECIMAL(18,4) = 0;
@@ -493,6 +762,10 @@ public async Task<List<SupplierItemPriceDto>> GetSupplierItemPricesBulkAsync(int
 // ==========================================
 public async Task<List<ApprovedPRForPODto>> GetApprovedPRsForPOAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PO"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT 
                     pr.RequestID,
@@ -522,6 +795,10 @@ public async Task<List<ApprovedPRForPODto>> GetApprovedPRsForPOAsync()
 // ==========================================
 public async Task<List<PRLineForPODto>> GetPRLinesForPOAsync(int requestId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PO"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT 
                     RequestDetailID,
@@ -553,6 +830,10 @@ public async Task<List<PRLineForPODto>> GetPRLinesForPOAsync(int requestId)
 // ==========================================
 public async Task<List<SearchableItem>> GetApprovedPRsSearchableAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PO"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT DISTINCT
                     pr.RequestID AS Id,
@@ -573,6 +854,12 @@ public async Task<List<SearchableItem>> GetApprovedPRsSearchableAsync()
 // ==========================================
 public async Task<List<LookupDto>> GetReceivingWarehousesAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PRET"),
+        ViewOnly("SCR_PO"),
+        ViewOnly("SCR_GRN"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT WarehouseID AS Id, 
                        WarehouseNameAr AS Name,
@@ -590,6 +877,11 @@ public async Task<List<LookupDto>> GetReceivingWarehousesAsync()
 // ==========================================
 public async Task<decimal> GetExchangeRateAsync(int currencyId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_SO"),
+        ViewOnly("SCR_PO"));
+
     using var connection = CreateConnection();
     var result = await connection.QueryFirstOrDefaultAsync<decimal?>(
         "SELECT ExchangeRate FROM dbo.Currencies WHERE CurrencyID = @ID",
@@ -603,6 +895,10 @@ public async Task<decimal> GetExchangeRateAsync(int currencyId)
 // ==========================================
 public async Task<List<POForGRNDto>> GetPOsForGRNAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_GRN"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     po.PurchaseOrderID,
@@ -634,6 +930,10 @@ public async Task<List<POForGRNDto>> GetPOsForGRNAsync()
 // ==========================================
 public async Task<List<POLineForGRNDto>> GetPOLinesForGRNAsync(int purchaseOrderId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_GRN"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     PODetailID,
@@ -663,6 +963,10 @@ public async Task<List<POLineForGRNDto>> GetPOLinesForGRNAsync(int purchaseOrder
 // ==========================================
 public async Task<List<SearchableItem>> GetPOsForGRNSearchableAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_GRN"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT DISTINCT
                     po.PurchaseOrderID AS Id,
@@ -684,6 +988,10 @@ public async Task<List<SearchableItem>> GetPOsForGRNSearchableAsync()
 // ==========================================
 public async Task<List<GRNForInvoiceDto>> GetGRNsForInvoiceAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PINV"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     GRNID, GRNNumber, GRNDate,
@@ -703,6 +1011,10 @@ public async Task<List<GRNForInvoiceDto>> GetGRNsForInvoiceAsync()
 // ==========================================
 public async Task<List<SearchableItem>> GetGRNsForInvoiceSearchableAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PINV"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     GRNID AS Id,
@@ -720,6 +1032,10 @@ public async Task<List<SearchableItem>> GetGRNsForInvoiceSearchableAsync()
 // ==========================================
 public async Task<List<GRNLineForInvoiceDto>> GetGRNLinesForInvoiceAsync(int grnId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PINV"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     grd.GRNDetailID,
@@ -754,6 +1070,10 @@ public async Task<List<GRNLineForInvoiceDto>> GetGRNLinesForInvoiceAsync(int grn
 // ==========================================
 public async Task<GRNForInvoiceDto?> GetGRNQuickInfoAsync(int grnId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PINV"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     grn.GRNID, grn.GRNNumber, grn.GRNDate,
@@ -774,6 +1094,10 @@ public async Task<GRNForInvoiceDto?> GetGRNQuickInfoAsync(int grnId)
 // ==========================================
 public async Task<List<SearchableItem>> GetInvoicesForReturnSearchableAsync()
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PRET"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     InvoiceID AS Id,
@@ -790,6 +1114,10 @@ public async Task<List<SearchableItem>> GetInvoicesForReturnSearchableAsync()
 // ==========================================
 public async Task<InvoiceForReturnDto?> GetInvoiceQuickInfoForReturnAsync(int invoiceId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PRET"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT InvoiceID, InvoiceNumber, InvoiceDate,
                        SupplierNameAr, SupplierID, WarehouseID,
@@ -804,6 +1132,10 @@ public async Task<InvoiceForReturnDto?> GetInvoiceQuickInfoForReturnAsync(int in
 // ==========================================
 public async Task<List<InvoiceLineForReturnDto>> GetInvoiceLinesForReturnAsync(int invoiceId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_PRET"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT
                     pid.InvoiceDetailID,
@@ -833,6 +1165,10 @@ public async Task<List<InvoiceLineForReturnDto>> GetInvoiceLinesForReturnAsync(i
 // ==========================================
 public async Task<List<SearchableItem>> GetWarehouseItemsSearchableAsync(int warehouseId)
 {
+    await RequireLookupPermissionAsync(
+        "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+        ViewOnly("SCR_TRANSFER"));
+
     using var connection = CreateConnection();
     var sql = @"SELECT 
                     i.ItemID AS Id,
@@ -851,6 +1187,16 @@ public async Task<List<SearchableItem>> GetWarehouseItemsSearchableAsync(int war
 }
             public async Task<List<LookupDto>> GetDepartmentsLookupAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_LV_BALANCE"),
+                ViewOnly("SCR_LOANS"),
+                ViewOnly("SCR_LEAVE"),
+                ViewOnly("SCR_PENALTY"),
+                ViewOnly("SCR_ATTEND"),
+                AnyOperation("SCR_EMP"),
+                AnyOperation("SCR_DEPARTMENTS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT DepartmentID AS Id, DepartmentNameAr AS Name
                         FROM dbo.Departments
@@ -862,6 +1208,10 @@ public async Task<List<SearchableItem>> GetWarehouseItemsSearchableAsync(int war
 
         public async Task<List<LookupDto>> GetJobTitlesLookupAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                AnyOperation("SCR_EMP"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT JobTitleID AS Id, JobTitleNameAr AS Name
                         FROM dbo.JobTitles
@@ -873,6 +1223,11 @@ public async Task<List<SearchableItem>> GetWarehouseItemsSearchableAsync(int war
 
         public async Task<List<LookupDto>> GetManagersLookupAsync()
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                AnyOperation("SCR_EMP"),
+                AnyOperation("SCR_DEPARTMENTS"));
+
             using var connection = CreateConnection();
             var sql = @"SELECT EmployeeID AS Id, FullNameAr AS Name
                         FROM dbo.Employees
@@ -883,6 +1238,10 @@ public async Task<List<SearchableItem>> GetWarehouseItemsSearchableAsync(int war
         }
                 public async Task<int> GetEmployeeIdByCodeAsync(string code)
         {
+            await RequireLookupPermissionAsync(
+                "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
+                ViewOnly("SCR_ATTEND"));
+
             using var connection = CreateConnection();
             return await connection.QueryFirstOrDefaultAsync<int>(
                 "SELECT EmployeeID FROM dbo.Employees WHERE EmployeeCode = @Code AND IsActive = 1",
