@@ -10,10 +10,12 @@ builder.Services.AddRazorComponents()
 
 // === Services ===
 builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ItemService>();
 builder.Services.AddScoped<ItemImportService>();
 builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<CategoryImportService>();
 builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<WarehouseService>();
 builder.Services.AddScoped<SupplierService>();

@@ -1,0 +1,160 @@
+@page "/categories/import"
+@using Microsoft.AspNetCore.Components.Forms
+@using YKCoatings.Services
+@inject CategoryImportService CategoryImportService
+@inject UserSessionService UserSession
+@inject NavigationManager Navigation
+
+<PageTitle>استيراد التصنيفات من Excel - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="import-denied" dir="rtl"><h3>يجب تسجيل الدخول أولاً</h3></div>
+}
+else
+{
+    <div class="item-import-page" dir="rtl">
+        <header class="import-header">
+            <div class="import-header-mark">YK</div>
+            <div class="import-title-wrap">
+                <span class="import-eyebrow">إدارة التصنيفات</span>
+                <h1>استيراد التصنيفات</h1>
+                <p>معاينة الصفوف قبل الحفظ</p>
+            </div>
+            <button class="import-back" @onclick='() => Navigation.NavigateTo("/categories")'>العودة للتصنيفات</button>
+        </header>
+
+        <section class="import-card">
+            <div class="import-card-heading">
+                <div><h2>1 — اختر ملف القالب</h2><p>ملف Excel .xlsx، حتى 500 صف.</p></div>
+                <a class="import-template-link" href="/templates/Categories_Import_Template.xlsx" download="Categories_Import_Template.xlsx">تنزيل قالب Excel</a>
+            </div>
+            <div class="import-file-area">
+                <label class="file-label">ملف الاستيراد</label>
+                <InputFile OnChange="OnFile" accept=".xlsx" />
+                @if (file is not null) { <span class="file-meta">@file.Name</span> }
+                <button class="import-primary" @onclick="Preview" disabled="@(file is null)">معاينة والتحقق</button>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrEmpty(msg))
+        {
+            <div class="import-message @(isError ? "error" : "success")">@msg</div>
+        }
+
+        @if (rows is not null)
+        {
+            <section class="import-card">
+                <h2>2 — نتيجة المعاينة (@rows.Count صف)</h2>
+                <button class="import-primary save-button" @onclick="Commit" disabled="@(!rows.Any(r=>r.IsValid))">حفظ الصفوف الصالحة</button>
+                <div class="import-table-wrap">
+                    <table class="import-table">
+                        <thead><tr><th>صف</th><th>الكود</th><th>الاسم</th><th>الأب</th><th>الحالة</th></tr></thead>
+                        <tbody>
+                        @foreach (var r in rows)
+                        {
+                            <tr class="@(r.IsValid ? "" : "invalid-row")">
+                                <td>@r.RowNumber</td>
+                                <td class="code-cell">@(r.CategoryCode ?? "—")</td>
+                                <td>@(r.CategoryNameAr ?? "—")</td>
+                                <td>@(r.ParentCategoryCode ?? "—")</td>
+                                <td>@(r.IsValid ? "صالح" : string.Join("؛ ", r.Errors))</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    IBrowserFile? file;
+    List<CategoryImportService.CatRow>? rows;
+    string msg = "";
+    bool isError = false;
+
+    void OnFile(InputFileChangeEventArgs e) { file = e.File; rows = null; msg = ""; }
+
+    async Task Preview()
+    {
+        if (file is null) return;
+        await using var s = file.OpenReadStream(10 * 1024 * 1024);
+        var (r, errs) = await CategoryImportService.PreviewWorkbookAsync(s);
+        rows = r;
+        if (errs.Count > 0) { msg = string.Join("؛ ", errs); isError = true; }
+        else { msg = $"اكتملت المعاينة: {rows.Count} صف."; isError = false; }
+    }
+
+    async Task Commit()
+    {
+        if (rows is null) return;
+        try
+        {
+            var n = await CategoryImportService.CommitAsync(rows, UserSession.UserID);
+            msg = $"تم حفظ {n} تصنيف.";
+            isError = false;
+            rows = null; file = null;
+        }
+        catch (Exception ex) { msg = ex.Message; isError = true; }
+    }
+}
+<style>
+.item-import-page{max-width:1500px;margin:0 auto;padding:18px 20px 40px;color:#111827;font-family:'Tajawal','Segoe UI',sans-serif}
+.import-header{position:relative;overflow:hidden;display:flex;align-items:center;gap:16px;padding:22px 24px;border-radius:18px;background:linear-gradient(125deg,#080d17 0%,#141a27 65%,#1c1b17 100%);color:#f9f5e8;border:1px solid rgba(212,175,55,.35);box-shadow:0 16px 34px rgba(7,11,20,.14);margin-bottom:18px}
+.import-header:before{content:'';position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,#d4af37,#f2d47a,transparent)}
+.import-header-mark{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,.11);border:1px solid rgba(212,175,55,.32);color:#e4c35e;font-weight:900;letter-spacing:1px}
+.import-title-wrap{flex:1}
+.import-eyebrow{font-size:.68rem;letter-spacing:.12em;color:#d4af37;font-weight:800}
+.import-title-wrap h1{font-size:1.3rem;margin:4px 0;color:#f5e6c8;font-weight:900}
+.import-title-wrap p{font-size:.78rem;color:#aab2c0;margin:0}
+.import-back,.import-primary,.import-template-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:10px 15px;text-decoration:none;font:700 .78rem 'Tajawal','Segoe UI',sans-serif;cursor:pointer;transition:.2s}
+.import-back{background:transparent;border:1px solid rgba(255,255,255,.2);color:#f5e6c8}
+.import-back:hover{border-color:#d4af37;color:#f2d47a}
+.import-card{background:#fff;border:1px solid #e8e2d0;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 6px 20px rgba(10,15,30,.035)}
+.import-card-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.import-card-heading h2{font-size:1rem;color:#111827;margin:0 0 4px;font-weight:900}
+.import-card-heading p{font-size:.76rem;color:#7b8492;margin:0}
+.import-template-link{background:#111827;color:#f5e6c8;border:1px solid rgba(212,175,55,.55)}
+.import-template-link:hover{background:#1d2635;color:#f2d47a}
+.import-file-area{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px;border:1px dashed #d8c996;border-radius:12px;background:#fcfaf4}
+.file-label{font-size:.78rem;font-weight:800;color:#283244}
+.file-meta{font-size:.75rem;color:#6b7280;direction:ltr}
+.import-primary{border:1px solid #c9a73a;background:linear-gradient(135deg,#e5c75c,#c9a12a);color:#151515;box-shadow:0 5px 14px rgba(212,175,55,.2)}
+.import-primary:hover:not(:disabled){filter:brightness(1.03);transform:translateY(-1px)}
+.import-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.small-spinner{width:13px;height:13px;border:2px solid rgba(0,0,0,.2);border-top-color:#111;border-radius:50%;animation:importSpin .7s linear infinite}
+.import-safety-note,.import-footer-note{margin-top:14px;padding:12px 14px;border-radius:10px;background:#fbf7e9;border:1px solid #eee1b3;color:#5d4b16;font-size:.74rem;line-height:1.8}
+.import-message{margin:0 0 15px;padding:12px 15px;border-radius:10px;font-size:.8rem;font-weight:700}
+.import-message.success{background:#effaf3;color:#146c3a;border:1px solid #cdebd7}
+.import-message.error{background:#fff1f0;color:#a62d22;border:1px solid #f5d0cc}
+.import-error-list{background:#fff4f2;border:1px solid #f1cbc6;color:#982a21;border-radius:10px;padding:12px 16px;font-size:.78rem;line-height:1.8}
+.summary-pills{display:flex;gap:7px;flex-wrap:wrap}
+.summary-pill,.state-pill{padding:5px 9px;border-radius:999px;font-size:.69rem;font-weight:800;white-space:nowrap}
+.summary-pill.new,.state-pill.new{background:#eaf7ed;color:#21713c}
+.summary-pill.conflict,.state-pill.conflict{background:#fff6df;color:#826112}
+.summary-pill.invalid,.state-pill.invalid{background:#fff0ee;color:#a62d22}
+.import-actions-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;color:#657080;font-size:.74rem}
+.save-button{min-width:180px}
+.import-table-wrap{overflow:auto;border:1px solid #e8e2d0;border-radius:12px}
+.import-table{width:100%;min-width:950px;border-collapse:collapse;font-size:.75rem}
+.import-table th{background:#101725;color:#f5e6c8;padding:11px 10px;text-align:right;white-space:nowrap;border-bottom:2px solid #d4af37}
+.import-table td{padding:10px;border-bottom:1px solid #eee9dc;vertical-align:top;color:#273244}
+.import-table tbody tr:nth-child(even){background:#fcfbf7}
+.import-table tbody tr.invalid-row{background:#fff9f8}
+.import-table tbody tr.conflict-row{background:#fffdf6}
+.code-cell{font-family:Consolas,monospace;direction:ltr;text-align:right;font-weight:800;color:#8a6b13}
+.decision-select{min-width:130px;padding:7px 9px;border:1px solid #ded5bb;border-radius:8px;background:#fff;font:700 .72rem 'Tajawal','Segoe UI',sans-serif;color:#182131}
+.decision-disabled,.review-hint{font-size:.7rem;color:#737b87}
+.row-errors{margin:0;padding-right:17px;color:#9e3026;line-height:1.7}
+.diff-details{min-width:220px}
+.diff-details summary{cursor:pointer;color:#856815;font-weight:800;font-size:.72rem}
+.diff-scroll{max-height:260px;overflow:auto;margin-top:8px}
+.diff-table{width:100%;border-collapse:collapse;font-size:.69rem}
+.diff-table th{background:#f2ead0;color:#292313;padding:7px;text-align:right}
+.diff-table td{border-bottom:1px solid #eee7d6;padding:7px;max-width:190px;overflow-wrap:anywhere}
+.no-diff{color:#737b87;font-size:.7rem}
+.import-denied{direction:rtl;max-width:600px;margin:50px auto;padding:24px;background:#101725;color:#f5e6c8;border:1px solid #d4af37;border-radius:16px;text-align:center}
+.import-denied button{padding:9px 14px;border:1px solid #d4af37;border-radius:9px;background:#d4af37;color:#111;font-weight:800}
+</style>

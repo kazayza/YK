@@ -1,0 +1,68 @@
+@inject ToastService ToastService
+@implements IDisposable
+
+<div class="yk-toast-container">
+    @foreach (var toast in ToastService.Toasts)
+    {
+        <div class="yk-toast yk-toast-@toast.Type.ToString().ToLower()" @key="toast.Id">
+            <span>@toast.Text</span>
+            <button class="yk-toast-close" @onclick="() => Dismiss(toast.Id)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ToastService.OnChanged += HandleChanged;
+    }
+
+    private void HandleChanged()
+    {
+        InvokeAsync(StateHasChanged);
+        // auto-dismiss each new toast after 4s
+        foreach (var t in ToastService.Toasts.ToList())
+        {
+            var id = t.Id;
+            _ = Task.Delay(4000).ContinueWith(_ => InvokeAsync(() => ToastService.Remove(id)));
+        }
+    }
+
+    private void Dismiss(Guid id) => ToastService.Remove(id);
+
+    public void Dispose()
+    {
+        ToastService.OnChanged -= HandleChanged;
+    }
+}
+
+<style>
+.yk-toast-container {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 360px;
+}
+.yk-toast {
+    padding: 12px 14px;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.15);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: .82rem;
+    font-weight: 700;
+    animation: ykToastIn .2s ease;
+}
+.yk-toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.yk-toast-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.yk-toast-info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+.yk-toast-close { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; color: inherit; opacity: .7; }
+.yk-toast-close:hover { opacity: 1; }
+@@keyframes ykToastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+</style>

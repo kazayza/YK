@@ -275,8 +275,8 @@ namespace YKCoatings.Services
                         (SELECT COUNT(*) FROM dbo.Customers WHERE IsActive = 1 AND CAST(CreatedDate AS DATE) >= {prevStart} AND CAST(CreatedDate AS DATE) < {monthStart}) AS PrevCustomers,
                         (SELECT COUNT(*) FROM dbo.Employees WHERE IsActive = 1 AND EmployeeStatus = 1 AND CAST(HireDate AS DATE) >= {monthStart}) AS NewEmployees,
                         (SELECT COUNT(*) FROM dbo.Employees WHERE IsActive = 1 AND EmployeeStatus = 1 AND CAST(HireDate AS DATE) >= {prevStart} AND CAST(HireDate AS DATE) < {monthStart}) AS PrevEmployees,
-                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {monthStart}) AS NewPOs,
-                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(OrderDate AS DATE) >= {prevStart} AND CAST(OrderDate AS DATE) < {monthStart}) AS PrevPOs";
+                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(PODate AS DATE) >= {monthStart}) AS NewPOs,
+                        (SELECT COUNT(*) FROM dbo.PurchaseOrders WHERE CAST(PODate AS DATE) >= {prevStart} AND CAST(PODate AS DATE) < {monthStart}) AS PrevPOs";
                 var deltas = await connection.QueryFirstOrDefaultAsync<DashboardDeltasDto>(sql) ?? new DashboardDeltasDto();
                 if (!HasViewPermission(viewModuleCodes, "SCR_ITEMS"))
                     deltas.NewItems = deltas.PrevItems = 0;

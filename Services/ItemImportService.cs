@@ -71,10 +71,19 @@ public sealed class ItemImportService : BaseDbService
 
         using var connection = CreateConnection();
         var categories = (await connection.QueryAsync<CategoryReference>(@"
+WITH CatRoot AS (
+    SELECT CategoryID, CategoryCode AS RootCode
+    FROM dbo.ItemCategories
+    WHERE ParentCategoryID IS NULL
+    UNION ALL
+    SELECT c.CategoryID, r.RootCode
+    FROM dbo.ItemCategories c
+    INNER JOIN CatRoot r ON r.CategoryID = c.ParentCategoryID
+)
 SELECT c.CategoryID AS Id, c.CategoryCode AS Code,
-       p.CategoryCode AS ParentCode, ISNULL(c.IsActive, 0) AS IsActive
+       ISNULL(r.RootCode, c.CategoryCode) AS ParentCode, ISNULL(c.IsActive, 0) AS IsActive
 FROM dbo.ItemCategories c
-LEFT JOIN dbo.ItemCategories p ON p.CategoryID = c.ParentCategoryID")).ToList();
+LEFT JOIN CatRoot r ON r.CategoryID = c.CategoryID")).ToList();
 
         var units = (await connection.QueryAsync<UnitReference>(@"
 SELECT UnitID AS Id, UnitCode AS Code, ISNULL(IsActive, 0) AS IsActive
@@ -156,10 +165,19 @@ FROM dbo.Units")).ToList();
         try
         {
             var categories = (await connection.QueryAsync<CategoryReference>(@"
+WITH CatRoot AS (
+    SELECT CategoryID, CategoryCode AS RootCode
+    FROM dbo.ItemCategories
+    WHERE ParentCategoryID IS NULL
+    UNION ALL
+    SELECT c.CategoryID, r.RootCode
+    FROM dbo.ItemCategories c
+    INNER JOIN CatRoot r ON r.CategoryID = c.ParentCategoryID
+)
 SELECT c.CategoryID AS Id, c.CategoryCode AS Code,
-       p.CategoryCode AS ParentCode, ISNULL(c.IsActive, 0) AS IsActive
+       ISNULL(r.RootCode, c.CategoryCode) AS ParentCode, ISNULL(c.IsActive, 0) AS IsActive
 FROM dbo.ItemCategories c
-LEFT JOIN dbo.ItemCategories p ON p.CategoryID = c.ParentCategoryID",
+LEFT JOIN CatRoot r ON r.CategoryID = c.CategoryID",
                 transaction: transaction)).ToList();
 
             var units = (await connection.QueryAsync<UnitReference>(@"
