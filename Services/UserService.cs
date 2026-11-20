@@ -195,12 +195,14 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                     u.LastLoginDate,
                     u.LastLoginIP,
                     w.WarehouseNameAr AS DefaultWarehouseName,
-                    cb.CashBoxNameAr AS DefaultCashBoxName
+                    cb.CashBoxNameAr AS DefaultCashBoxName,
+                    cur.CurrencyNameAr AS DefaultCurrencyName
                 FROM dbo.SystemUsers u
                 INNER JOIN dbo.UserRoles r ON u.RoleID = r.RoleID
                 LEFT JOIN dbo.Employees e ON u.EmployeeID = e.EmployeeID
                 LEFT JOIN dbo.Warehouses w ON u.DefaultWarehouseID = w.WarehouseID
                 LEFT JOIN dbo.CashBoxes cb ON u.DefaultCashBoxID = cb.CashBoxID
+                LEFT JOIN dbo.Currencies cur ON u.DefaultCurrencyID = cur.CurrencyID
                 WHERE 1=1";
 
             var parameters = new DynamicParameters();
@@ -281,6 +283,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                     u.DefaultLanguage,
                     u.DefaultWarehouseID,
                     u.DefaultCashBoxID,
+                    u.DefaultCurrencyID,
                     u.ProfileImage,
                     u.Notes,
                     u.LastLoginDate,
@@ -320,7 +323,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                     RoleID, EmployeeID,
                     IsActive, MustChangePassword,
                     MaxFailedAttempts, PasswordExpiryDays,
-                    DefaultLanguage, DefaultWarehouseID, DefaultCashBoxID,
+                    DefaultLanguage, DefaultWarehouseID, DefaultCashBoxID, DefaultCurrencyID,
                     ProfileImage, Notes,
                     PasswordChangedDate, CreatedBy, CreatedDate
                 ) VALUES (
@@ -328,7 +331,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                     @RoleID, @EmployeeID,
                     @IsActive, @MustChangePassword,
                     @MaxFailedAttempts, @PasswordExpiryDays,
-                    @DefaultLanguage, @DefaultWarehouseID, @DefaultCashBoxID,
+                    @DefaultLanguage, @DefaultWarehouseID, @DefaultCashBoxID, @DefaultCurrencyID,
                     @ProfileImage, @Notes,
                     GETDATE(), @CreatedBy, GETDATE()
                 );
@@ -350,6 +353,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                 dto.DefaultLanguage,
                 dto.DefaultWarehouseID,
                 dto.DefaultCashBoxID,
+                dto.DefaultCurrencyID,
                 dto.ProfileImage,
                 dto.Notes,
                 CreatedBy = createdBy
@@ -389,6 +393,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                     DefaultLanguage = @DefaultLanguage,
                     DefaultWarehouseID = @DefaultWarehouseID,
                     DefaultCashBoxID = @DefaultCashBoxID,
+                    DefaultCurrencyID = @DefaultCurrencyID,
                     ProfileImage = @ProfileImage,
                     Notes = @Notes,
                     ModifiedBy = @ModifiedBy,
@@ -411,6 +416,7 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
                 dto.DefaultLanguage,
                 dto.DefaultWarehouseID,
                 dto.DefaultCashBoxID,
+                dto.DefaultCurrencyID,
                 dto.ProfileImage,
                 dto.Notes,
                 ModifiedBy = modifiedBy
@@ -623,8 +629,30 @@ WHERE UserID=@UserID AND IsActive=1 AND ISNULL(IsLocked,0)=0",
             var result = await connection.QueryAsync<LookupDto>(sql);
             return result.ToList();
         }
+
         // ══════════════════════════════════════
-// 13) جلب صلاحيات المستخدم الخاصة (Override)
+        // 13) جلب العملات للـ Dropdown
+        // ══════════════════════════════════════
+        public async Task<List<LookupDto>> GetCurrenciesLookupAsync()
+        {
+            await RequireCurrentUserAdminPermissionAsync(p => p.CanAdd || p.CanEdit, "ليس لديك صلاحية إدارة المستخدمين.");
+            using var connection = CreateConnection();
+
+            var sql = @"
+                SELECT
+                    CurrencyID AS Id,
+                    CurrencyNameAr + ' (' + CurrencyCode + ')' AS Name,
+                    CurrencyCode AS Code
+                FROM dbo.Currencies
+                WHERE IsActive = 1
+                ORDER BY IsDefault DESC, CurrencyNameAr";
+
+            var result = await connection.QueryAsync<LookupDto>(sql);
+            return result.ToList();
+        }
+
+        // ══════════════════════════════════════
+        // 14) جلب صلاحيات المستخدم الخاصة (Override)
 // ══════════════════════════════════════
 public async Task<List<UserPermissionEditDto>> GetUserPermissionsAsync(int userId)
 {

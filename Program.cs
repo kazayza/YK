@@ -20,6 +20,7 @@ builder.Services.AddScoped<UnitService>();
 builder.Services.AddScoped<WarehouseService>();
 builder.Services.AddScoped<SupplierService>();
 builder.Services.AddScoped<CustomerService>();
+builder.Services.AddScoped<CustomerGroupService>();
 builder.Services.AddScoped<PriceListService>();
 builder.Services.AddScoped<SettingService>();
 builder.Services.AddScoped<NotificationService>();

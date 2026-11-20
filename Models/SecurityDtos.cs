@@ -36,6 +36,7 @@ namespace YKCoatings.Models
         // الإعدادات الافتراضية
         public string? DefaultWarehouseName { get; set; }
         public string? DefaultCashBoxName { get; set; }
+        public string? DefaultCurrencyName { get; set; }
     }
 
     // ══════════════════════════════════════
@@ -71,6 +72,7 @@ namespace YKCoatings.Models
         public string DefaultLanguage { get; set; } = "ar";
         public int? DefaultWarehouseID { get; set; }
         public int? DefaultCashBoxID { get; set; }
+        public int? DefaultCurrencyID { get; set; }
 
         // بيانات إضافية
         public string? ProfileImage { get; set; }

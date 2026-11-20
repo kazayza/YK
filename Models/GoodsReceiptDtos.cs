@@ -23,6 +23,10 @@
 
         public int InspectionStatus { get; set; }
         public string? InspectionStatusName { get; set; }
+        public int? AssignedInspectorID { get; set; }
+        public int? InspectedBy { get; set; }
+        public DateTime? InspectionRequestedDate { get; set; }
+        public DateTime? InspectionCompletedDate { get; set; }
 
         public string? SupplierInvoiceNo { get; set; }
         public string? ReceivedByName { get; set; }
@@ -68,10 +72,17 @@
         // الاستلام والفحص
         public int? ReceivedBy { get; set; }
         public string? ReceivedByName { get; set; }
+        // Assigned inspector is selected before sending the receipt for inspection.
+        public int? AssignedInspectorID { get; set; }
+        public string? AssignedInspectorName { get; set; }
+        // InspectedBy records the employee who actually submitted the inspection result.
         public int? InspectedBy { get; set; }
         public string? InspectedByName { get; set; }
         public int InspectionStatus { get; set; }
         public string? InspectionNotes { get; set; }
+        public DateTime? InspectionRequestedDate { get; set; }
+        public DateTime? InspectionCompletedDate { get; set; }
+        public DateTime? ApprovalRequestedDate { get; set; }
 
         // الاعتماد
         public int? ApprovedBy { get; set; }
@@ -105,14 +116,19 @@
         public int UnitID { get; set; }
         public string? UnitName { get; set; }
 
+        // المخزن الخاص بسطر الاستلام
+        public int WarehouseID { get; set; }
+        public string? WarehouseNameAr { get; set; }
+
         // الكميات
         public decimal OrderedQty { get; set; }
         public decimal ReceivedQty { get; set; }
         public decimal? AcceptedQty { get; set; }
         public decimal RejectedQty { get; set; }
 
-        // الباتش والصلاحية
+        // BatchNumber is the inventory lot used by posting; SupplierBatchNumber preserves the supplier's label.
         public string? BatchNumber { get; set; }
+        public string? SupplierBatchNumber { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public DateTime? ManufactureDate { get; set; }
 
@@ -151,14 +167,18 @@
         // الوحدة
         public int UnitID { get; set; }
 
+        // المخزن الخاص بسطر الاستلام
+        public int WarehouseID { get; set; }
+
         // الكميات
         public decimal OrderedQty { get; set; }
         public decimal ReceivedQty { get; set; }
         public decimal? AcceptedQty { get; set; }
         public decimal RejectedQty { get; set; }
 
-        // الباتش والصلاحية
+        // BatchNumber is the inventory lot used by posting; SupplierBatchNumber preserves the supplier's label.
         public string? BatchNumber { get; set; }
+        public string? SupplierBatchNumber { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public DateTime? ManufactureDate { get; set; }
 
@@ -178,6 +198,16 @@
         public decimal? PORemainingToReceive { get; set; }
 
         public string? Notes { get; set; }
+    }
+
+    // ==========================================
+    // نتائج فحص سطور إذن الاستلام
+    // ==========================================
+    public class GoodsReceiptInspectionLineEditDto
+    {
+        public int GRNDetailID { get; set; }
+        public decimal? AcceptedQty { get; set; }
+        public string? QualityNotes { get; set; }
     }
 
     // ==========================================

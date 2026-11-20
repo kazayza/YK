@@ -1,0 +1,110 @@
+:root {
+    --yk-toast-offset-top: 76px;
+    --yk-toast-offset-right: 20px;
+}
+
+.toast-luxury,
+.toast-container,
+.toast-container-luxury,
+.toast-notification,
+.toast-notification-luxury,
+.toast-wrap,
+.quote-toast,
+.quotation-toast,
+.v-toast,
+.toast-msg,
+.pb-toast-msg {
+    position: fixed !important;
+    top: var(--yk-toast-offset-top) !important;
+    right: var(--yk-toast-offset-right) !important;
+    left: auto !important;
+    bottom: auto !important;
+    z-index: 2147483000 !important;
+    max-width: min(520px, calc(100vw - 32px)) !important;
+}
+
+/* Align alerts with the main work area instead of covering the RTL sidebar. */
+.app-shell:not(.sidebar-collapsed) .toast-luxury,
+.app-shell:not(.sidebar-collapsed) .toast-container,
+.app-shell:not(.sidebar-collapsed) .toast-container-luxury,
+.app-shell:not(.sidebar-collapsed) .toast-notification,
+.app-shell:not(.sidebar-collapsed) .toast-notification-luxury,
+.app-shell:not(.sidebar-collapsed) .toast-wrap,
+.app-shell:not(.sidebar-collapsed) .quote-toast,
+.app-shell:not(.sidebar-collapsed) .quotation-toast,
+.app-shell:not(.sidebar-collapsed) .v-toast,
+.app-shell:not(.sidebar-collapsed) .toast-msg,
+.app-shell:not(.sidebar-collapsed) .pb-toast-msg {
+    right: calc(var(--sb-width, 300px) + 20px) !important;
+}
+
+.toast-luxury .toast-card-luxury,
+.toast-container .toast-card,
+.toast-container-luxury .toast-card-luxury,
+.toast-wrap .toast {
+    max-width: min(520px, calc(100vw - 32px)) !important;
+}
+
+.yk-toast-visible {
+    visibility: visible !important;
+    pointer-events: auto !important;
+    animation: ykToastEnter 180ms ease-out both !important;
+}
+
+.yk-toast-dismissed {
+    pointer-events: none !important;
+    animation: ykToastExit 240ms ease-in forwards !important;
+}
+
+@keyframes ykToastEnter {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ykToastExit {
+    from { opacity: 1; transform: translateY(0); visibility: visible; }
+    to { opacity: 0; transform: translateY(-8px); visibility: hidden; }
+}
+
+@media (max-width: 1024px) {
+    :root { --yk-toast-offset-top: 68px; --yk-toast-offset-right: 12px; }
+
+    .app-shell:not(.sidebar-collapsed) .toast-luxury,
+    .app-shell:not(.sidebar-collapsed) .toast-container,
+    .app-shell:not(.sidebar-collapsed) .toast-container-luxury,
+    .app-shell:not(.sidebar-collapsed) .toast-notification,
+    .app-shell:not(.sidebar-collapsed) .toast-notification-luxury,
+    .app-shell:not(.sidebar-collapsed) .toast-wrap,
+    .app-shell:not(.sidebar-collapsed) .quote-toast,
+    .app-shell:not(.sidebar-collapsed) .quotation-toast,
+    .app-shell:not(.sidebar-collapsed) .v-toast,
+    .app-shell:not(.sidebar-collapsed) .toast-msg,
+    .app-shell:not(.sidebar-collapsed) .pb-toast-msg {
+        right: 12px !important;
+        max-width: calc(100vw - 24px) !important;
+    }
+
+    .toast-luxury .toast-card-luxury,
+    .toast-container .toast-card,
+    .toast-container-luxury .toast-card-luxury,
+    .toast-wrap .toast {
+        min-width: 0 !important;
+        max-width: calc(100vw - 24px) !important;
+    }
+}
+
+@media print {
+    .toast-luxury,
+    .toast-container,
+    .toast-container-luxury,
+    .toast-notification,
+    .toast-notification-luxury,
+    .toast-wrap,
+    .quote-toast,
+    .quotation-toast,
+    .v-toast,
+    .toast-msg,
+    .pb-toast-msg {
+        display: none !important;
+    }
+}

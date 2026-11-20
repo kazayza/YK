@@ -7,7 +7,7 @@
 @inject NavigationManager Navigation
 @inject Microsoft.Extensions.Logging.ILogger<ExpenseView> Logger
 
-<PageTitle>عرض المصروف</PageTitle>
+<PageTitle>عرض المصروف -    Pro</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -90,6 +90,7 @@ else
                     <div class="detail-row account-row"><span>حساب المصروف</span><strong>@(expense.ExpenseAccountNameAr ?? "—")</strong><small>@(expense.ExpenseAccountCode ?? "")</small></div>
                     <div class="detail-row account-row"><span>الحساب الدائن</span><strong>@(expense.CreditAccountNameAr ?? expense.CashBoxNameAr ?? expense.BankName ?? "—")</strong><small>@(expense.CreditAccountCode ?? "")</small></div>
                     <div class="detail-row"><span>مركز التكلفة</span><strong>@(expense.CostCenterNameAr ?? "—")</strong></div>
+                    <div class="detail-row"><span>حالة القيد</span><strong class="reference-value">@GetJournalStatusLabel(expense)</strong></div>
                     <div class="detail-row"><span>رقم القيد</span><strong class="reference-value">@(expense.JournalNumber ?? "—")</strong></div>
                 </div>
             </article>
@@ -143,7 +144,7 @@ else
             <div class="footer-actions">
                 @if (expense.JournalID.HasValue && PermissionService.CanView("SCR_JV"))
                 {
-                    <button class="expense-action primary" @onclick='() => Navigation.NavigateTo($"/journal-entries/{expense.JournalID.Value}")'>عرض القيد المرتبط</button>
+                    <button class="expense-action primary" @onclick='() => Navigation.NavigateTo($"/journal-entries/{expense.JournalID.Value}")'>@GetJournalOpenLabel(expense)</button>
                 }
                 <button class="expense-action quiet" @onclick='() => Navigation.NavigateTo("/expenses")'>العودة إلى المصروفات</button>
             </div>
@@ -311,6 +312,34 @@ else
             isLoading = false;
         }
     }
+
+    private static string GetJournalStatusLabel(ExpenseListDto item)
+    {
+        if (!item.JournalID.HasValue && !item.IsPosted)
+        {
+            return item.ExpenseStatus switch
+            {
+                1 => "لا يوجد قيد بعد — يُنشأ عند الاعتماد",
+                3 => "لا يوجد قيد مرتبط",
+                _ => "مصروف معتمد بلا قيد — يلزم المراجعة"
+            };
+        }
+        if (!item.JournalID.HasValue)
+            return "المصروف معلّم كمرحل بلا قيد — يلزم المراجعة";
+
+        if (item.ExpenseStatus == 2 && item.IsPosted && item.JournalStatus == 2)
+            return "قيد مرحّل";
+        if (item.ExpenseStatus == 1 && !item.IsPosted && item.JournalStatus == 1)
+            return "قيد مسودة قديم غير مرحّل";
+        return "تعارض بين حالة المصروف والقيد — يلزم المراجعة";
+    }
+
+    private static string GetJournalOpenLabel(ExpenseListDto item) =>
+        item.ExpenseStatus == 1 && !item.IsPosted && item.JournalStatus == 1
+            ? "عرض قيد مسودة قديم"
+            : item.ExpenseStatus == 2 && item.IsPosted && item.JournalStatus == 2
+                ? "عرض القيد المرحّل"
+                : "عرض القيد المرتبط للمراجعة";
 
     private static string GetStatusName(int status) => status switch
     {

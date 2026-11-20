@@ -8,7 +8,7 @@
 @inject NavigationManager Navigation
 @inject Microsoft.Extensions.Logging.ILogger<Expenses> Logger
 
-<PageTitle>المصروفات</PageTitle>
+<PageTitle>المصروفات -    Pro</PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
@@ -26,7 +26,7 @@ else
                 <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
                 <div class="lh-text">
                     <h2 class="lh-title">المصروفات</h2>
-                    <p class="lh-subtitle">مصروفات مربوطة بمركز تكلفة + فترة محاسبية + قيد أوتوماتيك</p>
+                    <p class="lh-subtitle">قيد المصروف يُنشأ عند الاعتماد + مركز تكلفة + فترة محاسبية</p>
                 </div>
             </div>
             <div class="lh-actions">
@@ -77,7 +77,7 @@ else
             <div class="stat-luxury"><div class="st-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div><div class="st-info"><span class="st-value">@allList.Count</span><span class="st-label">إجمالي المصروفات</span></div><div class="st-gold-line"></div></div>
             <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(e=>e.ExpenseStatus==2)</span><span class="st-label">معتمدة</span></div><div class="st-gold-line"></div></div>
             <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(e=>e.CostCenterID!=null)</span><span class="st-label">بمركز تكلفة</span></div><div class="st-gold-line"></div></div>
-            <div class="stat-luxury"><div class="st-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(e=>e.JournalID!=null)</span><span class="st-label">بقيد تلقائي</span></div><div class="st-gold-line"></div></div>
+            <div class="stat-luxury"><div class="st-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@allList.Count(e=>e.ExpenseStatus == 2 && e.JournalID.HasValue && e.IsPosted && e.JournalStatus == 2)</span><span class="st-label">بقيد مرحّل</span></div><div class="st-gold-line"></div></div>
         </div>
 
         <div class="filter-luxury">
@@ -88,10 +88,10 @@ else
         </div>
 
         <div class="table-card-luxury">
-            <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>المصروفات — قيد أوتوماتيك + مركز تكلفة + فترة</h3></div>
+            <div class="card-head-luxury"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>المصروفات — القيد عند الاعتماد + مركز تكلفة + فترة</h3></div>
             <div class="table-responsive">
                 <table class="table-luxury detailed">
-                    <thead><tr><th class="th-num">#</th><th>رقم المصروف</th><th>التاريخ</th><th>الفترة</th><th>حساب المصروف</th><th>مركز التكلفة</th><th>المبلغ</th><th>الحساب الدائن</th><th>الحالة</th><th>قيد؟</th><th class="th-actions">إجراءات</th></tr></thead>
+                    <thead><tr><th class="th-num">#</th><th>رقم المصروف</th><th>التاريخ</th><th>الفترة</th><th>حساب المصروف</th><th>مركز التكلفة</th><th>المبلغ</th><th>الحساب الدائن</th><th>الحالة</th><th>حالة القيد</th><th class="th-actions">إجراءات</th></tr></thead>
                     <tbody>
                         @{int n=0;}
                         @foreach(var exp in filtered){n++;
@@ -105,11 +105,36 @@ else
                                 <td><span class="amount-luxury remaining">@exp.Amount.ToString("#,##0.00")</span></td>
                                 <td class="td-muted">@(exp.CreditAccountNameAr ?? exp.CashBoxNameAr ?? exp.BankName ?? "—")</td>
                                 <td>@if(exp.ExpenseStatus==1){<span class="status-badge-luxury" style="--sc:#6b7280"><span class="status-dot" style="--sc:#6b7280"></span>مسودة</span>}else if(exp.ExpenseStatus==2){<span class="status-badge-luxury" style="--sc:#10b981"><span class="status-dot" style="--sc:#10b981"></span>معتمد</span>}else{<span class="status-badge-luxury" style="--sc:#ef4444"><span class="status-dot" style="--sc:#ef4444"></span>ملغي</span>}</td>
-                                <td>@if(exp.JournalID!=null){<span class="coa-detail detail" title="@exp.JournalNumber"><i class=bi-check-lg></i> @exp.JournalNumber</span>}else{<span class="coa-detail group">—</span>}</td>
+                                <td>
+                                    @if (!exp.JournalID.HasValue && !exp.IsPosted && exp.ExpenseStatus == 1)
+                                    {
+                                        <span class="coa-detail group">— يُنشأ عند الاعتماد</span>
+                                    }
+                                    else if (!exp.JournalID.HasValue && !exp.IsPosted && exp.ExpenseStatus == 3)
+                                    {
+                                        <span class="coa-detail group">—</span>
+                                    }
+                                    else if (!exp.JournalID.HasValue)
+                                    {
+                                        <span class="coa-detail group" style="background:#fef2f2;color:#991b1b;border-color:#fecaca" title="مصروف معتمد بلا قيد مرتبط؛ يلزم المراجعة">مراجعة القيد</span>
+                                    }
+                                    else if (exp.ExpenseStatus == 2 && exp.IsPosted && exp.JournalStatus == 2)
+                                    {
+                                        <span class="coa-detail detail" title="@exp.JournalNumber"><i class=bi-check-lg></i> مرحّل @exp.JournalNumber</span>
+                                    }
+                                    else if (exp.ExpenseStatus == 1 && !exp.IsPosted && exp.JournalStatus == 1)
+                                    {
+                                        <span class="coa-detail group" title="قيد مسودة قديم غير مرحّل: @exp.JournalNumber">مسودة قديمة</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="coa-detail group" style="background:#fef2f2;color:#991b1b;border-color:#fecaca" title="تعارض بين حالة المصروف وحالة القيد؛ يلزم المراجعة">مراجعة القيد</span>
+                                    }
+                                </td>
                                 <td class="td-center"><div class="actions-wrap-luxury">
                                     <button class="act-btn view" title="عرض تفاصيل المصروف" aria-label="عرض تفاصيل المصروف" @onclick="()=>ShowDetails(exp)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/></svg></button>
-                                    <button class="act-btn view" title="عرض القيد" aria-label="عرض القيد" @onclick="()=>ViewJournal(exp.JournalID)" disabled="@(exp.JournalID==null)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                                    @if(exp.ExpenseStatus==1 && permissions?.CanEdit == true && ((exp.JournalID == null && !exp.IsPosted) || (exp.JournalID != null && permissions?.CanApprove == true))){<button class="act-btn edit" title="تعديل" @onclick="()=>EditExpense(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
+                                    <button class="act-btn view" title="@GetJournalOpenLabel(exp)" aria-label="@GetJournalOpenLabel(exp)" @onclick="()=>ViewJournal(exp.JournalID)" disabled="@(exp.JournalID==null)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                                    @if(exp.ExpenseStatus==1 && permissions?.CanEdit == true && (!exp.IsPosted || permissions?.CanApprove == true)){<button class="act-btn edit" title="تعديل المسودة" aria-label="تعديل المسودة" @onclick="()=>EditExpense(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                     @if(exp.ExpenseStatus==1 && permissions?.CanApprove == true){<button class="act-btn approve" title="اعتماد" @onclick="()=>Approve(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
                                     @if(exp.ExpenseStatus==1 && permissions?.CanDelete == true){<button class="act-btn delete" title="حذف" @onclick="()=>ShowDelete(exp)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                 </div></td>
@@ -127,7 +152,7 @@ else
     <div class="modal-overlay-luxury" @onclick="CloseDelete"><div class="modal-card-luxury small" @onclick:stopPropagation="true">
         <div class="ml-gold-line danger"></div>
         <div class="delete-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div>
-        <h4>تأكيد الحذف</h4><p>حذف المصروف: <strong class="delete-name">@deleteExp?.ExpenseNumber</strong>؟ سيتم حذف القيد التلقائي أيضاً.</p>
+        <h4>تأكيد الحذف</h4><p>حذف المصروف: <strong class="delete-name">@deleteExp?.ExpenseNumber</strong>؟ سيُفحص أي قيد مسودة قديم مرتبط قبل حذفه؛ القيد المرحّل لن يُحذف بهذه العملية.</p>
         @if(!string.IsNullOrEmpty(deleteMsg)){<div class="msg-luxury msg-error">@deleteMsg</div>}
         <div class="ml-footer center"><button class="btn-luxury btn-danger-luxury" @onclick="ConfirmDelete">حذف</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseDelete">إلغاء</button></div>
     </div></div>
@@ -153,6 +178,7 @@ else
                 <div class="expense-detail-item"><span>الخزينة</span><strong>@(detailsExpense.CashBoxNameAr ?? "—")</strong></div>
                 <div class="expense-detail-item"><span>الحالة</span><strong>@(detailsExpense.StatusName ?? "—")</strong></div>
                 <div class="expense-detail-item"><span>المرجع</span><strong>@(detailsExpense.Reference ?? "—")</strong></div>
+                <div class="expense-detail-item"><span>حالة القيد</span><strong>@GetJournalStatusLabel(detailsExpense)</strong></div>
                 <div class="expense-detail-item"><span>رقم القيد</span><strong>@(detailsExpense.JournalNumber ?? "—")</strong></div>
                 <div class="expense-detail-item"><span>تاريخ الإنشاء</span><strong>@detailsExpense.CreatedDate.ToString("dd/MM/yyyy HH:mm")</strong></div>
                 <div class="expense-detail-item detail-wide"><span>البيان</span><strong>@(detailsExpense.Description ?? "—")</strong></div>
@@ -164,7 +190,7 @@ else
             <div class="expense-details-actions">
                 @if (detailsExpense.JournalID.HasValue)
                 {
-                    <button class="btn-luxury btn-primary-luxury" @onclick="()=>ViewJournal(detailsExpense.JournalID)">فتح القيد</button>
+                    <button class="btn-luxury btn-primary-luxury" @onclick="()=>ViewJournal(detailsExpense.JournalID)">@GetJournalOpenLabel(detailsExpense)</button>
                 }
                 @if (detailsExpense.CashBoxID.HasValue && PermissionService.CanViewCashBoxStatement)
                 {
@@ -454,6 +480,34 @@ else
             ? $"/cash-box-statement?cashBoxId={cashBoxId.Value}"
             : "/cash-box-statement");
     }
+
+    private static string GetJournalStatusLabel(ExpenseListDto expense)
+    {
+        if (!expense.JournalID.HasValue && !expense.IsPosted)
+        {
+            return expense.ExpenseStatus switch
+            {
+                1 => "لا يوجد قيد بعد — يُنشأ عند الاعتماد",
+                3 => "لا يوجد قيد مرتبط",
+                _ => "مصروف معتمد بلا قيد — يلزم المراجعة"
+            };
+        }
+        if (!expense.JournalID.HasValue)
+            return "المصروف معلّم كمرحل بلا قيد — يلزم المراجعة";
+
+        if (expense.ExpenseStatus == 2 && expense.IsPosted && expense.JournalStatus == 2)
+            return "قيد مرحّل";
+        if (expense.ExpenseStatus == 1 && !expense.IsPosted && expense.JournalStatus == 1)
+            return "قيد مسودة قديم غير مرحّل";
+        return "تعارض بين حالة المصروف والقيد — يلزم المراجعة";
+    }
+
+    private static string GetJournalOpenLabel(ExpenseListDto expense) =>
+        expense.ExpenseStatus == 1 && !expense.IsPosted && expense.JournalStatus == 1
+            ? "عرض قيد مسودة قديم"
+            : expense.ExpenseStatus == 2 && expense.IsPosted && expense.JournalStatus == 2
+                ? "عرض القيد المرحّل"
+                : "عرض القيد المرتبط للمراجعة";
 
     private static string GetPaymentMethodName(int? method) => method switch
     {

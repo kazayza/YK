@@ -151,14 +151,16 @@ namespace YKCoatings.Services
                             d.PriceDetailID, d.PriceListID, d.ItemID,
                             i.ItemCode, i.ItemNameAr, d.UnitID, u.UnitNameAr AS UnitName,
                             d.UnitPrice, ISNULL(d.MinQty, 1) AS MinQty,
+                            d.MaxQty,
                             ISNULL(d.DiscountPercent, 0) AS DiscountPercent,
+                            d.StartDate, d.EndDate,
                             ISNULL(d.MinSellingPrice, 0) AS MinSellingPrice,
-                            d.IsActive
+                            d.IsActive, d.CreatedDate
                         FROM dbo.PriceListDetails d
                         INNER JOIN dbo.Items i ON d.ItemID = i.ItemID
                         INNER JOIN dbo.Units u ON d.UnitID = u.UnitID
-                        WHERE d.PriceListID = @PriceListID AND d.IsActive = 1
-                        ORDER BY i.ItemNameAr";
+                        WHERE d.PriceListID = @PriceListID
+                        ORDER BY i.ItemNameAr, d.MinQty, d.MaxQty";
             var result = await connection.QueryAsync<PriceListDetailDto>(sql, new { PriceListID = priceListId });
             return result.ToList();
         }
@@ -167,9 +169,12 @@ namespace YKCoatings.Services
         {
             await RequirePriceListPermissionAsync(userId, p => p.CanAdd, "ليس لديك صلاحية إضافة أسعار إلى القائمة.");
             using var connection = CreateConnection();
-            var sql = @"INSERT INTO dbo.PriceListDetails 
-                        (PriceListID, ItemID, UnitID, UnitPrice, MinQty, DiscountPercent, MinSellingPrice, IsActive, CreatedDate)
-                        VALUES (@PriceListID, @ItemID, @UnitID, @UnitPrice, @MinQty, @DiscountPercent, @MinSellingPrice, 1, GETDATE());
+            var sql = @"INSERT INTO dbo.PriceListDetails
+                        (PriceListID, ItemID, UnitID, UnitPrice, MinQty, MaxQty,
+                         DiscountPercent, StartDate, EndDate, MinSellingPrice, IsActive, CreatedDate)
+                        VALUES
+                        (@PriceListID, @ItemID, @UnitID, @UnitPrice, @MinQty, @MaxQty,
+                         @DiscountPercent, @StartDate, @EndDate, @MinSellingPrice, @IsActive, GETDATE());
                         SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var newId = await connection.ExecuteScalarAsync<int>(sql, detail);
@@ -186,8 +191,10 @@ namespace YKCoatings.Services
             await RequirePriceListPermissionAsync(userId, p => p.CanEdit, "ليس لديك صلاحية تعديل أسعار القائمة.");
             using var connection = CreateConnection();
             var sql = @"UPDATE dbo.PriceListDetails SET
-                            UnitPrice=@UnitPrice, MinQty=@MinQty,
-                            DiscountPercent=@DiscountPercent, MinSellingPrice=@MinSellingPrice
+                            ItemID=@ItemID, UnitID=@UnitID,
+                            UnitPrice=@UnitPrice, MinQty=@MinQty, MaxQty=@MaxQty,
+                            DiscountPercent=@DiscountPercent, StartDate=@StartDate, EndDate=@EndDate,
+                            MinSellingPrice=@MinSellingPrice, IsActive=@IsActive
                         WHERE PriceDetailID=@PriceDetailID";
 
             await connection.ExecuteAsync(sql, detail);

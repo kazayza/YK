@@ -1,0 +1,493 @@
+@page "/customer-groups"
+
+@using YKCoatings.Models
+@using YKCoatings.Services
+@inject UserSessionService UserSession
+@inject PermissionService PermissionService
+@inject CustomerGroupService CustomerGroupService
+@inject LookupService LookupService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<CustomerGroups> Logger
+
+<PageTitle>مجموعات العملاء - واي كي كوتينج</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول أولًا</h4></div>
+}
+else if (permissionLoadFailed)
+{
+    <div class="cg-page" dir="rtl">
+        <div class="cg-alert error" role="alert">
+            <span>تعذر التحقق من صلاحيات مجموعات العملاء.</span>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="RetryPermissionsAsync" disabled="@isLoading">إعادة المحاولة</button>
+        </div>
+    </div>
+}
+else if (permissions?.CanView != true)
+{
+    <div class="no-access-luxury" dir="rtl"><h4>ليس لديك صلاحية عرض مجموعات العملاء</h4></div>
+}
+else
+{
+    <div class="cg-page" dir="rtl">
+        <header class="cg-header">
+            <div class="cg-title">
+                <div class="cg-title-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                </div>
+                <div><h1>مجموعات العملاء</h1><p>تصنيف العملاء وتحديد خصم وقائمة أسعار افتراضيين</p></div>
+            </div>
+            <div class="cg-header-actions">
+                <span class="cg-count">@(hasLoadedGroups ? $"{filteredGroups.Count} مجموعة" : isLoading ? "جارٍ التحميل" : "العدد غير متاح")</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick='() => Navigation.NavigateTo("/customers")'>العودة للعملاء</button>
+                @if (permissions.CanAdd)
+                {
+                    <button type="button" class="btn-luxury btn-primary-luxury" @onclick="ShowAdd">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        مجموعة جديدة
+                    </button>
+                }
+            </div>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(resultMessage))
+        {
+            <div class="cg-alert @(resultSuccess ? "success" : "error")" role="status">
+                <span>@resultMessage</span>
+                <button type="button" class="cg-alert-close" aria-label="إغلاق" @onclick="() => resultMessage = string.Empty">×</button>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="cg-alert error" role="alert">
+                <span>@loadError</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">إعادة تحميل المجموعات</button>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(priceListLoadError))
+        {
+            <div class="cg-alert warning" role="alert">
+                <span>تعذر تحديث قوائم الأسعار؛ لن تتأثر بيانات المجموعات، لكن راجع القائمة المرتبطة قبل التعديل.</span>
+                <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadPriceListsAsync" disabled="@isLoadingPriceLists">إعادة تحميل القوائم</button>
+            </div>
+        }
+
+        <section class="cg-toolbar" aria-label="البحث والتصفية">
+            <div class="cg-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="search" placeholder="بحث بالكود أو الاسم..." @bind="searchText" @bind:event="oninput" @bind:after="ApplyFilter" />
+            </div>
+            <select class="cg-filter" @bind="statusFilter" @bind:after="ApplyFilter" aria-label="تصفية حسب الحالة">
+                <option value="all">كل الحالات</option>
+                <option value="active">النشطة</option>
+                <option value="inactive">غير النشطة</option>
+            </select>
+            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="LoadData" disabled="@isLoading">@(isLoading ? "جارٍ التحديث..." : "تحديث")</button>
+        </section>
+
+        @if (!hasLoadedGroups && isLoading)
+        {
+            <div class="cg-state" role="status"><span class="cg-spinner"></span> جاري تحميل مجموعات العملاء...</div>
+        }
+        else if (!hasLoadedGroups && !string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="cg-state error" role="alert">تعذر عرض البيانات حتى ينجح التحميل.</div>
+        }
+        else if (hasLoadedGroups && filteredGroups.Count == 0)
+        {
+            <div class="cg-state">لا توجد مجموعات مطابقة للبحث أو التصفية.</div>
+        }
+        else if (hasLoadedGroups)
+        {
+            <div class="cg-table-wrap">
+                <div class="cg-table-scroll">
+                    <table class="cg-table">
+                        <thead>
+                            <tr><th>#</th><th>الكود</th><th>المجموعة (عربي)</th><th>الاسم الإنجليزي</th><th>خصم المجموعة</th><th>قائمة الأسعار</th><th>العملاء</th><th>الحالة</th><th>الوصف</th><th>الإجراءات</th></tr>
+                        </thead>
+                        <tbody>
+                            @{ var rowNumber = 0; }
+                            @foreach (var group in filteredGroups)
+                            {
+                                rowNumber++;
+                                <tr>
+                                    <td class="cg-muted">@rowNumber</td>
+                                    <td><code class="cg-code">@group.GroupCode</code></td>
+                                    <td class="cg-name">@group.GroupNameAr</td>
+                                    <td class="cg-muted" dir="ltr">@(group.GroupNameEn ?? "—")</td>
+                                    <td><span class="cg-discount">@group.DiscountPercent.ToString("0.##")%</span></td>
+                                    <td class="cg-muted">@GetPriceListLabel(group)</td>
+                                    <td><span class="cg-customer-count">@group.CustomerCount</span></td>
+                                    <td><span class="cg-status @(group.IsActive ? "active" : "inactive")">@(group.IsActive ? "نشطة" : "غير نشطة")</span></td>
+                                    <td class="cg-description">@(string.IsNullOrWhiteSpace(group.Description) ? "—" : group.Description)</td>
+                                    <td>
+                                        <div class="cg-row-actions">
+                                            @if (permissions.CanEdit)
+                                            {
+                                                <button type="button" class="cg-icon-btn edit" title="تعديل" @onclick="() => ShowEdit(group)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                                </button>
+                                            }
+                                            @if (group.IsActive && permissions.CanDelete)
+                                            {
+                                                <button type="button" class="cg-icon-btn disable" title="تعطيل" @onclick="() => ChangeStatusAsync(group, false)" disabled="@isChangingStatus">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                                                </button>
+                                            }
+                                            else if (!group.IsActive && permissions.CanEdit)
+                                            {
+                                                <button type="button" class="cg-icon-btn enable" title="تفعيل" @onclick="() => ChangeStatusAsync(group, true)" disabled="@isChangingStatus">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="cg-table-footer">المعروض @filteredGroups.Count مجموعة — إجمالي السجلات المحمّلة @groups.Count</div>
+            </div>
+        }
+    </div>
+
+    @if (showForm)
+    {
+        <div class="cg-modal-backdrop" @onclick="CloseForm">
+            <section class="cg-modal" role="dialog" aria-modal="true" aria-labelledby="cg-modal-title" @onclick:stopPropagation="true">
+                <div class="cg-modal-topline"></div>
+                <header class="cg-modal-header">
+                    <div><h2 id="cg-modal-title">@(editItem.GroupID == 0 ? "إضافة مجموعة عملاء" : "تعديل مجموعة العملاء")</h2><p>الخصم والقائمة هنا قيم افتراضية للعميل ويمكن تعديلها في بطاقة العميل.</p></div>
+                    <button type="button" class="cg-alert-close" aria-label="إغلاق" @onclick="CloseForm" disabled="@isSaving">×</button>
+                </header>
+                <form class="cg-form" @onsubmit="SaveGroupAsync" @onsubmit:preventDefault="true">
+                    @if (!string.IsNullOrWhiteSpace(formMessage))
+                    {
+                        <div class="cg-alert error" role="alert">@formMessage</div>
+                    }
+                    <div class="cg-form-grid">
+                        <label class="cg-field"><span>كود المجموعة <b>*</b></span><input @bind="editItem.GroupCode" maxlength="20" required dir="ltr" autocomplete="off" disabled="@isSaving" placeholder="WHL" /></label>
+                        <label class="cg-field"><span>الاسم بالعربية <b>*</b></span><input @bind="editItem.GroupNameAr" maxlength="100" required disabled="@isSaving" placeholder="عملاء جملة" /></label>
+                        <label class="cg-field"><span>الاسم بالإنجليزية</span><input @bind="editItem.GroupNameEn" maxlength="100" dir="ltr" disabled="@isSaving" placeholder="Wholesale" /></label>
+                        <label class="cg-field"><span>خصم افتراضي (%) <b>*</b></span><input type="number" @bind="editItem.DiscountPercent" min="0" max="100" step="0.01" required disabled="@isSaving" /></label>
+                        <label class="cg-field cg-field-wide"><span>قائمة الأسعار الافتراضية</span>
+                            <select @bind="editItem.PriceListID" disabled="@isSaving">
+                                <option value="">بدون قائمة خاصة — استخدم الافتراضية</option>
+                                @foreach (var list in priceLists)
+                                {
+                                    <option value="@list.Id">@list.Name</option>
+                                }
+                                @if (editItem.PriceListID.HasValue && !priceLists.Any(x => x.Id == editItem.PriceListID.Value))
+                                {
+                                    <option value="@editItem.PriceListID.Value">@(editItem.PriceListID.Value < 0 ? $"القيمة الحالية {editItem.PriceListID.Value} (قيمة قديمة غير معرّفة)" : $"القائمة الحالية #{editItem.PriceListID.Value} (غير موجودة ضمن القوائم النشطة)")</option>
+                                }
+                            </select>
+                            @if (!hasLoadedPriceLists)
+                            {
+                                <small>قائمة الاختيار لم تُحمّل؛ القيمة الحالية محفوظة حتى يختار المستخدم غيرها.</small>
+                            }
+                        </label>
+                        <label class="cg-field cg-field-wide"><span>الوصف</span><textarea @bind="editItem.Description" maxlength="500" rows="3" disabled="@isSaving" placeholder="ملاحظات المجموعة أو سياسة التعامل..."></textarea></label>
+                    </div>
+                    <footer class="cg-modal-footer">
+                        <button type="submit" class="btn-luxury btn-primary-luxury" disabled="@isSaving">
+                            @(isSaving ? "جارٍ الحفظ..." : editItem.GroupID == 0 ? "إضافة المجموعة" : "حفظ التعديلات")
+                        </button>
+                        <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="CloseForm" disabled="@isSaving">إلغاء</button>
+                    </footer>
+                </form>
+            </section>
+        </div>
+    }
+}
+
+<style>
+.cg-page{display:flex;flex-direction:column;gap:16px;max-width:1500px;margin:0 auto;font-family:'Tajawal',sans-serif;color:#172033}
+.cg-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 22px;background:linear-gradient(120deg,#fff,#fbfaf6);border:1px solid #e8e2d0;border-radius:18px;box-shadow:0 8px 24px rgba(15,23,42,.045)}
+.cg-title{display:flex;align-items:center;gap:14px}.cg-title h1{font-size:1.4rem;margin:0 0 3px;font-weight:800;color:#172033}.cg-title p{margin:0;color:#7a8495;font-size:.9rem}.cg-title-icon{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;color:#9c7c2e;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.2)}.cg-title-icon svg{width:24px;height:24px}
+.cg-header-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.cg-count{font-size:.85rem;font-weight:800;color:#806523;background:#faf4df;border:1px solid #eee0ae;padding:8px 12px;border-radius:999px}
+.cg-toolbar{display:flex;align-items:center;gap:10px;padding:12px;background:#fff;border:1px solid #e8e2d0;border-radius:15px}.cg-search{display:flex;align-items:center;gap:8px;flex:1;min-width:220px;border:1px solid #e7e9ee;border-radius:10px;padding:0 11px;background:#fbfcfe}.cg-search svg{width:18px;height:18px;color:#8b95a5;flex-shrink:0}.cg-search input{width:100%;border:0;outline:0;background:transparent;padding:11px 2px;font:inherit}.cg-filter{min-width:150px;border:1px solid #e7e9ee;border-radius:10px;background:#fff;padding:10px 12px;font:inherit;color:#394357}
+.cg-table-wrap{background:#fff;border:1px solid #e8e2d0;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.035)}.cg-table-scroll{overflow:auto}.cg-table{width:100%;border-collapse:collapse;min-width:1000px}.cg-table th{background:#fbfaf6;color:#7b6a3e;font-size:.82rem;font-weight:800;text-align:right;padding:13px 12px;border-bottom:1px solid #eee8d9;white-space:nowrap}.cg-table td{padding:12px;border-bottom:1px solid #f0f1f3;font-size:.9rem;vertical-align:middle}.cg-table tbody tr:hover{background:#fffdf7}.cg-table tbody tr:last-child td{border-bottom:0}.cg-muted{color:#7b8492}.cg-code{font-family:ui-monospace,monospace;font-weight:800;letter-spacing:.04em;background:#f4f5f7;border:1px solid #e8eaee;padding:4px 8px;border-radius:7px;color:#495263}.cg-name{font-weight:800;color:#202a3b}.cg-discount{display:inline-block;font-weight:800;color:#166534;background:#edf8ef;border:1px solid #cdebd2;border-radius:999px;padding:4px 9px;white-space:nowrap}.cg-customer-count{display:inline-grid;place-items:center;min-width:28px;height:28px;border-radius:9px;background:#f5f6f8;font-weight:800}.cg-status{display:inline-block;padding:4px 9px;border-radius:999px;font-weight:800;font-size:.78rem;white-space:nowrap}.cg-status.active{color:#166534;background:#edf8ef}.cg-status.inactive{color:#9b1c1c;background:#fff0f0}.cg-description{max-width:180px;color:#778091;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cg-row-actions{display:flex;gap:6px}.cg-icon-btn{width:32px;height:32px;border:1px solid #e6e8ec;border-radius:9px;background:#fff;display:grid;place-items:center;cursor:pointer}.cg-icon-btn svg{width:16px;height:16px}.cg-icon-btn.edit{color:#3764a5}.cg-icon-btn.disable{color:#b42318}.cg-icon-btn.enable{color:#16803c}.cg-icon-btn:disabled{opacity:.45;cursor:not-allowed}.cg-table-footer{padding:10px 14px;background:#fbfaf6;border-top:1px solid #eee8d9;color:#7b8492;font-size:.82rem}.cg-state{display:flex;justify-content:center;align-items:center;gap:10px;padding:40px 18px;border:1px dashed #d8dce4;border-radius:14px;background:#fff;color:#748094}.cg-state.error{color:#9b1c1c}.cg-spinner{width:18px;height:18px;border:2px solid #eee3bd;border-top-color:#b28c25;border-radius:50%;animation:cgspin .8s linear infinite}.cg-alert{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border-radius:11px;font-size:.9rem}.cg-alert.error{color:#8b1e1e;background:#fff3f2;border:1px solid #f1c5c2}.cg-alert.success{color:#17643a;background:#effaf2;border:1px solid #c9ebd2}.cg-alert.warning{color:#805d12;background:#fff9e9;border:1px solid #f0dfac}.cg-alert-close{border:0;background:transparent;font-size:1.5rem;line-height:1;color:inherit;cursor:pointer}.cg-modal-backdrop{position:fixed;inset:0;z-index:1200;background:rgba(7,11,20,.58);display:grid;place-items:center;padding:18px;overflow:auto}.cg-modal{position:relative;width:min(680px,100%);max-height:calc(100vh - 36px);overflow:auto;background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.28)}.cg-modal-topline{height:4px;background:linear-gradient(90deg,#806523,#d4af37,#f0df9d)}.cg-modal-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:20px 22px 12px}.cg-modal-header h2{margin:0 0 5px;font-size:1.2rem;color:#1e293b}.cg-modal-header p{margin:0;color:#7b8492;font-size:.87rem}.cg-form{padding:0 22px 20px}.cg-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.cg-field{display:flex;flex-direction:column;gap:6px;font-size:.88rem;font-weight:700;color:#394357}.cg-field b{color:#b42318}.cg-field input,.cg-field select,.cg-field textarea{width:100%;box-sizing:border-box;border:1px solid #dfe3e9;border-radius:9px;padding:10px 11px;background:#fff;color:#202a3b;font:inherit;outline:none}.cg-field input:focus,.cg-field select:focus,.cg-field textarea:focus{border-color:#c5a13a;box-shadow:0 0 0 3px rgba(212,175,55,.13)}.cg-field input:disabled,.cg-field select:disabled,.cg-field textarea:disabled{background:#f4f5f7}.cg-field small{font-weight:500;color:#8a94a3}.cg-field-wide{grid-column:1/-1}.cg-modal-footer{display:flex;justify-content:flex-start;gap:9px;margin-top:18px;padding-top:14px;border-top:1px solid #eef0f3}.cg-modal-footer button{min-width:125px}
+@@keyframes cgspin{to{transform:rotate(360deg)}}
+@@media(max-width:760px){.cg-header{align-items:flex-start;flex-direction:column}.cg-header-actions{width:100%}.cg-toolbar{align-items:stretch;flex-direction:column}.cg-search{min-width:0}.cg-filter{width:100%}.cg-form-grid{grid-template-columns:1fr}.cg-field-wide{grid-column:auto}.cg-modal-footer{flex-direction:column}.cg-modal-footer button{width:100%}}
+</style>
+
+@code {
+    private ModulePermissionDto? permissions;
+    private bool permissionLoadFailed;
+    private bool isLoading;
+    private bool hasLoadedGroups;
+    private bool isLoadingPriceLists;
+    private bool hasLoadedPriceLists;
+    private bool isSaving;
+    private bool isChangingStatus;
+    private bool showForm;
+    private List<CustomerGroupDto> groups = new();
+    private List<CustomerGroupDto> filteredGroups = new();
+    private List<LookupDto> priceLists = new();
+    private CustomerGroupDto editItem = new();
+    private string searchText = string.Empty;
+    private string statusFilter = "all";
+    private string loadError = string.Empty;
+    private string priceListLoadError = string.Empty;
+    private string formMessage = string.Empty;
+    private string resultMessage = string.Empty;
+    private bool resultSuccess = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserSession.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await LoadPermissionsAsync();
+        if (permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private async Task RetryPermissionsAsync()
+    {
+        if (isLoading) return;
+        await LoadPermissionsAsync();
+        if (permissions?.CanView == true)
+            await LoadData();
+    }
+
+    private async Task LoadPermissionsAsync()
+    {
+        permissionLoadFailed = false;
+        permissions = null;
+        try
+        {
+            if (!PermissionService.IsLoaded)
+                await PermissionService.LoadPermissionsAsync(UserSession.UserID);
+            permissions = PermissionService.GetModule("SCR_CUSTOMERS");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            permissions = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer-group page permissions.");
+            permissionLoadFailed = true;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        if (permissions?.CanView != true || isLoading) return;
+
+        isLoading = true;
+        loadError = string.Empty;
+        StateHasChanged();
+        try
+        {
+            var loadedGroups = await CustomerGroupService.GetAllAsync(includeInactive: true);
+            groups = loadedGroups;
+            ApplyFilter();
+            hasLoadedGroups = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            groups = new();
+            filteredGroups = new();
+            hasLoadedGroups = false;
+            loadError = "ليس لديك صلاحية عرض مجموعات العملاء.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load customer groups.");
+            loadError = hasLoadedGroups
+                ? "تعذر تحديث مجموعات العملاء؛ المعروض آخر تحميل ناجح."
+                : "تعذر تحميل مجموعات العملاء. أعد المحاولة.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+
+        if (hasLoadedGroups && !hasLoadedPriceLists)
+            await LoadPriceListsAsync();
+    }
+
+    private async Task LoadPriceListsAsync()
+    {
+        if (isLoadingPriceLists) return;
+        isLoadingPriceLists = true;
+        priceListLoadError = string.Empty;
+        try
+        {
+            var loadedLists = await LookupService.GetPriceListsAsync();
+            priceLists = loadedLists;
+            hasLoadedPriceLists = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            priceLists = new();
+            hasLoadedPriceLists = false;
+            priceListLoadError = "ليس لديك صلاحية قراءة قوائم الأسعار.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load price-list options for customer groups.");
+            priceListLoadError = "تعذر تحميل قوائم الأسعار.";
+        }
+        finally
+        {
+            isLoadingPriceLists = false;
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<CustomerGroupDto> query = groups;
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var value = searchText.Trim();
+            query = query.Where(group =>
+                group.GroupCode.Contains(value, StringComparison.OrdinalIgnoreCase)
+                || group.GroupNameAr.Contains(value, StringComparison.OrdinalIgnoreCase)
+                || (group.GroupNameEn?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        query = statusFilter switch
+        {
+            "active" => query.Where(group => group.IsActive),
+            "inactive" => query.Where(group => !group.IsActive),
+            _ => query
+        };
+        filteredGroups = query.ToList();
+    }
+
+    private string GetPriceListLabel(CustomerGroupDto group)
+    {
+        if (!group.PriceListID.HasValue || group.PriceListID.Value == 0)
+            return "غير محددة — القائمة الافتراضية";
+        if (group.PriceListID.Value < 0)
+            return $"قيمة قديمة ({group.PriceListID.Value}) — غير مستخدمة كتسعير";
+        return group.PriceListName ?? $"قائمة #{group.PriceListID.Value}";
+    }
+
+    private void ShowAdd()
+    {
+        if (permissions?.CanAdd != true) return;
+        editItem = new CustomerGroupDto { DiscountPercent = 0, IsActive = true };
+        formMessage = string.Empty;
+        showForm = true;
+    }
+
+    private void ShowEdit(CustomerGroupDto group)
+    {
+        if (permissions?.CanEdit != true) return;
+        editItem = new CustomerGroupDto
+        {
+            GroupID = group.GroupID,
+            GroupCode = group.GroupCode,
+            GroupNameAr = group.GroupNameAr,
+            GroupNameEn = group.GroupNameEn,
+            DiscountPercent = group.DiscountPercent,
+            PriceListID = group.PriceListID,
+            PriceListName = group.PriceListName,
+            Description = group.Description,
+            IsActive = group.IsActive,
+            CreatedDate = group.CreatedDate,
+            CustomerCount = group.CustomerCount
+        };
+        formMessage = string.Empty;
+        showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        if (isSaving) return;
+        showForm = false;
+        formMessage = string.Empty;
+    }
+
+    private async Task SaveGroupAsync()
+    {
+        if (isSaving) return;
+        if (editItem.GroupID == 0 && permissions?.CanAdd != true) return;
+        if (editItem.GroupID > 0 && permissions?.CanEdit != true) return;
+
+        isSaving = true;
+        formMessage = string.Empty;
+        try
+        {
+            if (editItem.GroupID == 0)
+                await CustomerGroupService.InsertAsync(editItem, UserSession.UserID);
+            else
+                await CustomerGroupService.UpdateAsync(editItem, UserSession.UserID);
+
+            showForm = false;
+            resultMessage = editItem.GroupID == 0 ? "تمت إضافة مجموعة العملاء." : "تم حفظ تعديلات مجموعة العملاء.";
+            resultSuccess = true;
+            await LoadData();
+        }
+        catch (ArgumentException ex)
+        {
+            formMessage = ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            formMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            formMessage = "ليس لديك صلاحية تنفيذ هذه العملية.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save customer group {GroupID}.", editItem.GroupID);
+            formMessage = "تعذر حفظ مجموعة العملاء. لم تُعرض تفاصيل تقنية.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ChangeStatusAsync(CustomerGroupDto group, bool isActive)
+    {
+        if (isChangingStatus) return;
+        if (isActive && permissions?.CanEdit != true) return;
+        if (!isActive && permissions?.CanDelete != true) return;
+
+        var action = isActive ? "تفعيل" : "تعطيل";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"هل تريد {action} مجموعة {group.GroupNameAr}؟");
+        if (!confirmed) return;
+
+        isChangingStatus = true;
+        try
+        {
+            var result = await CustomerGroupService.SetActiveAsync(group.GroupID, isActive, UserSession.UserID);
+            resultMessage = result.Message;
+            resultSuccess = result.Success;
+            if (result.Success)
+                await LoadData();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            resultMessage = "ليس لديك صلاحية تنفيذ هذه العملية.";
+            resultSuccess = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to change status for customer group {GroupID}.", group.GroupID);
+            resultMessage = "تعذر تغيير حالة مجموعة العملاء.";
+            resultSuccess = false;
+        }
+        finally
+        {
+            isChangingStatus = false;
+        }
+    }
+}

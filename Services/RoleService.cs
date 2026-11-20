@@ -288,6 +288,7 @@ namespace YKCoatings.Services
         {
             await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية حفظ صلاحيات الأدوار.");
             using var connection = CreateConnection();
+            await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
 
             try
@@ -350,6 +351,7 @@ namespace YKCoatings.Services
         {
             await RequireCurrentRolePermissionAsync(p => p.CanEdit, "ليس لديك صلاحية نسخ صلاحيات الأدوار.");
             using var connection = CreateConnection();
+            await connection.OpenAsync();
             using var transaction = connection.BeginTransaction();
 
             try

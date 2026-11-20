@@ -236,19 +236,23 @@ else
         <div class="ml-header"><h3>@(editDto.AccountID==0?"حساب جديد":"تعديل حساب") — ChartOfAccounts الفعلي</h3><button class="btn-close-x" @onclick="CloseEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
         <div class="ml-body">
             <div class="form-grid-luxury">
-                <div class="fg"><label>كود الحساب</label><input type="text" @bind="editDto.AccountCode" placeholder="تلقائي" /></div>
+                <div class="fg"><label>كود الحساب</label><input type="text" @bind="editDto.AccountCode" placeholder="تلقائي" disabled="@(editDto.AccountID > 0)" /></div>
                 <div class="fg"><label>النوع *</label><select @bind="editDto.AccountType"><option value="1">أصول</option><option value="2">التزامات</option><option value="3">حقوق ملكية</option><option value="4">إيرادات</option><option value="5">تكلفة</option><option value="6">مصروفات</option></select></div>
                 <div class="fg"><label>الطبيعة</label><select @bind="editDto.AccountNature"><option value="1">مدين</option><option value="2">دائن</option></select></div>
-                <div class="fg"><label>الحساب الأب</label><select @bind="editDto.ParentAccountID"><option value="0">— رئيسي —</option>@foreach(var acc in flatAccounts.Where(a=>!a.IsDetailAccount)){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}</select></div>
+                <div class="fg"><label>الحساب الأب</label><select @bind="editDto.ParentAccountID" disabled="@(editDto.AccountID > 0)"><option value="0">— رئيسي —</option>@foreach(var acc in flatAccounts.Where(a=>!a.IsDetailAccount)){<option value="@acc.AccountID">@acc.AccountCode - @acc.AccountNameAr</option>}</select></div>
                 <div class="fg full"><label>اسم الحساب عربي *</label><input type="text" @bind="editDto.AccountNameAr" /></div>
                 <div class="fg full"><label>اسم الحساب انجليزي</label><input type="text" @bind="editDto.AccountNameEn" /></div>
                 <div class="fg"><label>تفصيلي؟ (IsDetailAccount)</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsDetailAccount" /><span></span></label></div>
                 <div class="fg"><label>نشط؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsActive" /><span></span></label></div>
-                <div class="fg"><label>نظامي؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsSystemAccount" /><span></span></label></div>
+                <div class="fg"><label>نظامي؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.IsSystemAccount" disabled="@(editDto.AccountID > 0)" /><span></span></label></div>
                 <div class="fg"><label>مركز تكلفة؟</label><label class="switch-luxury"><input type="checkbox" @bind="editDto.CostCenterRequired" /><span></span></label></div>
-                <div class="fg"><label>الرصيد الافتتاحي</label><input type="number" @bind="editDto.OpeningBalance" step="0.01" /></div>
+                <div class="fg"><label>الرصيد الافتتاحي</label><input type="number" @bind="editDto.OpeningBalance" step="0.01" disabled="@(editDto.AccountID > 0)" /></div>
                 <div class="fg"><label>الترتيب</label><input type="number" @bind="editDto.SortOrder" /></div>
                 <div class="fg full"><label>الوصف</label><textarea @bind="editDto.Description" rows="2"></textarea></div>
+                @if (editDto.AccountID > 0)
+                {
+                    <div class="fg full"><small style="color:#8B5E00">كود الحساب والأب والرصيد الافتتاحي ووسم «حساب نظامي» غير قابلة للتعديل من هذه النافذة؛ تغييرها قد يؤثر في ربط الحسابات أو أرصدة الافتتاح.</small></div>
+                }
             </div>
             @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
         </div>
@@ -457,7 +461,7 @@ else
     private string searchText = "";
     private int filterType = 0;
     private int filterDetail = 0;
-    private int viewMode = 0; // 0=Tree+Details, 1=Detailed Table
+    private int viewMode = 1; // 0=Tree+Details, 1=Detailed Table
     private HashSet<int> expandedIds = new();
     private bool isAllExpanded = true;
     private ChartOfAccountDto? selectedAccount = null;

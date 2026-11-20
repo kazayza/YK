@@ -414,8 +414,8 @@ else
             var permissionsLoaded = await LoadPermissions();
             _copyFromRoleId = 0;
             ShowSuccess(permissionsLoaded
-                ? "تم نسخ الصلاحيات بنجاح - اضغط حفظ لتثبيتها"
-                : "تم نسخ الصلاحيات، لكن تعذر تحديث عرض المصفوفة. استخدم إعادة المحاولة.");
+                ? "تم نسخ الصلاحيات وحفظها بنجاح."
+                : "تم حفظ الصلاحيات المنسوخة، لكن تعذر تحديث عرض المصفوفة. استخدم إعادة المحاولة.");
         }
         catch (Exception ex)
         {

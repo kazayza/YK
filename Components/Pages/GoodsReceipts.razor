@@ -11,7 +11,7 @@
 @inject IJSRuntime JS
 @inject Microsoft.Extensions.Logging.ILogger<GoodsReceipts> Logger
 
-<PageTitle>أذونات الاستلام - واي كي كوتينج</PageTitle>
+<PageTitle>أذونات الاستلام - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -100,7 +100,7 @@ else
                 <div class="stat-luxury"><div class="st-icon gray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="st-info"><span class="st-value">@receipts.Count(r => r.GRNStatus == 1)</span><span class="st-label">مسودة</span></div><div class="st-gold-line"></div></div>
                 <div class="stat-luxury"><div class="st-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div class="st-info"><span class="st-value">@receipts.Count(r => r.GRNStatus == 2)</span><span class="st-label">معتمد</span></div><div class="st-gold-line"></div></div>
                 <div class="stat-luxury"><div class="st-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="st-info"><span class="st-value">@receipts.Count(r => r.GRNStatus == 3)</span><span class="st-label">مرتبط بفاتورة</span></div><div class="st-gold-line"></div></div>
-                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@receipts.Count(r => r.InspectionStatus == 1)</span><span class="st-label">انتظار فحص</span></div><div class="st-gold-line"></div></div>
+                <div class="stat-luxury"><div class="st-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="st-info"><span class="st-value">@receipts.Count(r => r.GRNStatus == 1 && r.InspectionStatus == 1 && r.InspectionRequestedDate.HasValue)</span><span class="st-label">بانتظار الفحص</span></div><div class="st-gold-line"></div></div>
                 <div class="stat-luxury"><div class="st-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg></div><div class="st-info"><span class="st-value">@receipts.Where(r => r.TotalRejectedQty > 0).Count()</span><span class="st-label">بها مرفوض</span></div><div class="st-gold-line"></div></div>
             </div>
         }
@@ -148,15 +148,48 @@ else
                                     <td class="td-center">@grn.TotalReceivedQty.ToString("#,##0.##")</td>
                                     <td class="td-center">@if (grn.TotalRejectedQty > 0){<span class="rejected-badge-luxury">@grn.TotalRejectedQty.ToString("#,##0.##")</span>}else{<span class="td-muted">0</span>}</td>
                                     <td><span class="amount-luxury">@grn.TotalCost.ToString("#,##0.00")</span></td>
-                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetInspectionColor(grn.InspectionStatus)">@GoodsReceiptService.GetInspectionStatusName(grn.InspectionStatus)</span></td>
+                                    <td class="td-center"><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetInspectionColor(grn.InspectionStatus)">@GetInspectionStatusLabel(grn)</span></td>
                                     <td class="td-center"><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetStatusColor(grn.GRNStatus)">@GoodsReceiptService.GetStatusName(grn.GRNStatus)</span></td>
-                                    <td class="td-center"><div class="actions-wrap-luxury">
-                                        @if (permissions.CanEdit && grn.GRNStatus == 1){<button class="act-btn edit" title="تعديل" @onclick="() => EditReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
-                                        else{<button class="act-btn view" title="عرض" @onclick="() => ViewReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>}
-                                        @if (permissions.CanPrint){<button class="act-btn print" title="طباعة" @onclick="() => PrintReceipt(grn.GRNID)" disabled="@isPrintingReceipt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg></button>}
-                                        @if (permissions.CanApprove && grn.GRNStatus == 1){<button class="act-btn approve" title="اعتماد" @onclick="() => EditReceipt(grn.GRNID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
-                                        @if (permissions.CanDelete && grn.GRNStatus == 1){<button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(grn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
-                                    </div></td>
+                                    <td class="td-center">
+                                        <div class="actions-wrap-luxury">
+                                            @if (CanInspectReceipt(grn))
+                                            {
+                                                <button class="grn-step-action inspect" title="فتح فحص الاستلام" @onclick="() => EditReceipt(grn.GRNID)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2"/><path d="m9 13 2 2 4-4"/></svg><span>فحص</span>
+                                                </button>
+                                            }
+                                            else if (CanEditReceipt(grn))
+                                            {
+                                                <button class="act-btn edit" title="تعديل" @onclick="() => EditReceipt(grn.GRNID)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="act-btn view" title="عرض" @onclick="() => ViewReceipt(grn.GRNID)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                                </button>
+                                            }
+                                            @if (permissions.CanPrint)
+                                            {
+                                                <button class="act-btn print" title="طباعة" @onclick="() => PrintReceipt(grn.GRNID)" disabled="@isPrintingReceipt">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+                                                </button>
+                                            }
+                                            @if (CanApproveReceipt(grn))
+                                            {
+                                                <button class="grn-step-action approve" title="اعتماد وترحيل الكميات المقبولة" @onclick="() => EditReceipt(grn.GRNID)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg><span>اعتماد</span>
+                                                </button>
+                                            }
+                                            @if (CanDeleteReceipt(grn))
+                                            {
+                                                <button class="act-btn delete" title="حذف" @onclick="() => ShowDeleteDialog(grn)">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -230,7 +263,13 @@ else
 .opt-arrow{width:16px;height:16px;color:#cbd5e1;margin-right:auto;flex-shrink:0}
 .add-overlay-portal-luxury{position:fixed;inset:0;z-index:99998;background:rgba(7,11,20,.12);backdrop-filter:blur(1px)}
 .ml-gold-line.danger{background:linear-gradient(90deg,transparent,#ef4444,#dc2626,transparent)}
-.actions-wrap-luxury{display:flex;gap:4px;justify-content:center}
+.actions-wrap-luxury{display:flex;gap:4px;justify-content:center;align-items:center;flex-wrap:wrap}
+.grn-step-action{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:30px;padding:5px 8px;border:1px solid;border-radius:8px;background:#fff;cursor:pointer;font-family:'Tajawal',sans-serif;font-size:.72rem;font-weight:800;white-space:nowrap}
+.grn-step-action svg{width:14px;height:14px;flex:none}
+.grn-step-action.inspect{color:#7c3aed;border-color:#ddd6fe}
+.grn-step-action.inspect:hover{background:#f5f3ff}
+.grn-step-action.approve{color:#059669;border-color:#a7f3d0}
+.grn-step-action.approve:hover{background:#ecfdf5}
 .act-btn{width:32px;height:32px;border-radius:10px;border:1.5px solid;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;transition:.2s}
 .act-btn.view{color:#2563eb;border-color:#bfdbfe}
 .act-btn.view:hover{background:#eff6ff}
@@ -238,6 +277,8 @@ else
 .act-btn.edit:hover{background:rgba(212,175,55,.08);border-color:var(--gold)}
 .act-btn.print{color:#0891b2;border-color:#a5f3fc}
 .act-btn.print:hover{background:#ecfeff}
+.act-btn.inspect{color:#7c3aed;border-color:#ddd6fe}
+.act-btn.inspect:hover{background:#f5f3ff}
 .act-btn.approve{color:#059669;border-color:#a7f3d0}
 .act-btn.approve:hover{background:#ecfdf5}
 .act-btn.delete{color:#ef4444;border-color:#fee2e2}
@@ -263,6 +304,7 @@ else
     private List<GoodsReceiptListDto>? receipts;
     private List<GoodsReceiptListDto> filtered = new();
     private ModulePermissionDto? permissions;
+    private ModulePermissionDto? qcPermissions;
     private int receiptPermissionsLoadVersion;
     private bool isReceiptPermissionsLoading, receiptPermissionsLoadFailed, receiptPermissionsLoadDenied;
     private string receiptPermissionsLoadError = string.Empty;
@@ -313,6 +355,7 @@ else
 
             if (!IsCurrentGoodsReceiptsPermissionRequest(requestVersion, userId)) return false;
             permissions = PermissionService.GetModule("SCR_GRN");
+            qcPermissions = PermissionService.GetModule("SCR_QC");
             return true;
         }
         catch (UnauthorizedAccessException ex)
@@ -417,6 +460,43 @@ else
         await LoadData();
     }
 
+    private static bool IsInspectionPending(GoodsReceiptListDto receipt) =>
+        receipt.GRNStatus == 1 && receipt.InspectionStatus == 1 && receipt.InspectionRequestedDate.HasValue;
+
+    private static string GetInspectionStatusLabel(GoodsReceiptListDto receipt) =>
+        IsInspectionPending(receipt)
+            ? "بانتظار الفحص"
+            : GoodsReceiptService.GetInspectionStatusName(receipt.InspectionStatus);
+
+    private bool CanInspectReceipt(GoodsReceiptListDto receipt) =>
+        IsInspectionPending(receipt) &&
+        receipt.AssignedInspectorID.HasValue &&
+        receipt.AssignedInspectorID.Value > 0 &&
+        receipt.AssignedInspectorID == UserSession.CurrentEmployeeID &&
+        qcPermissions?.CanView == true && qcPermissions?.CanApprove == true;
+
+    private bool CanApproveReceipt(GoodsReceiptListDto receipt) =>
+        permissions?.CanApprove == true &&
+        receipt.GRNStatus == 1 &&
+        receipt.InspectionStatus == 2 &&
+        receipt.InspectionRequestedDate.HasValue &&
+        receipt.InspectionCompletedDate.HasValue &&
+        receipt.AssignedInspectorID.HasValue &&
+        receipt.AssignedInspectorID == receipt.InspectedBy &&
+        receipt.TotalAcceptedQty > 0;
+
+    private bool CanEditReceipt(GoodsReceiptListDto receipt) =>
+        permissions?.CanEdit == true &&
+        receipt.GRNStatus == 1 &&
+        !IsInspectionPending(receipt) &&
+        receipt.InspectionStatus != 2;
+
+    private bool CanDeleteReceipt(GoodsReceiptListDto receipt) =>
+        permissions?.CanDelete == true &&
+        receipt.GRNStatus == 1 &&
+        !IsInspectionPending(receipt) &&
+        receipt.InspectionStatus != 2;
+
     private void Filter()
     {
         if (receipts == null) return;
@@ -448,7 +528,7 @@ else
     private void ViewReceipt(int id)
     {
         var grn = receipts?.FirstOrDefault(r => r.GRNID == id);
-        if (grn != null && grn.GRNStatus == 1 && permissions != null && (permissions.CanEdit || permissions.CanApprove))
+        if (grn != null && (CanEditReceipt(grn) || CanInspectReceipt(grn) || CanApproveReceipt(grn)))
             Navigation.NavigateTo($"/goods-receipts/edit/{id}");
         else
             Navigation.NavigateTo($"/goods-receipts/view/{id}");

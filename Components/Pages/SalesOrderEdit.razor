@@ -13,7 +13,7 @@
 @inject IJSRuntime JS
 @inject Microsoft.Extensions.Logging.ILogger<SalesOrderEdit> Logger
 
-<PageTitle>@pageTitle - واي كي كوتينج</PageTitle>
+<PageTitle>@pageTitle - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول</h4></div>}
@@ -144,7 +144,7 @@ else
                             <div class="form-grid cols-4">
                                 <div class="form-field" style="grid-column:span 2"><label class="field-label required">العميل</label><SearchableSelect Items="@customersSearchable" @bind-SelectedId="header.CustomerID" OnSelected="OnCustomerSelected" Placeholder="ابحث بالاسم أو الكود..." IsDisabled="@isReadOnly" /></div>
                                 <div class="form-field"><label class="field-label">المندوب</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="7" r="3"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><select class="field-select" @bind="header.SalesRepID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(salesReps!=null){@foreach(var r in salesReps){<option value="@r.Id">@r.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
-                                <div class="form-field"><label class="field-label">قائمة الأسعار</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select class="field-select" @bind="header.PriceListID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(priceLists!=null){@foreach(var p in priceLists){<option value="@p.Id">@p.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                                <div class="form-field"><label class="field-label">قائمة الأسعار</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><select class="field-select" @bind="header.PriceListID" @bind:after="MarkPriceListManuallySelected" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(priceLists!=null){@foreach(var p in priceLists){<option value="@p.Id">@p.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                                 <div class="form-field"><label class="field-label">شروط الدفع</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><select class="field-select" @bind="header.PaymentTermID" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(paymentTerms!=null){@foreach(var pt in paymentTerms){<option value="@pt.Id">@pt.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                                 <div class="form-field"><label class="field-label">العملة</label><div class="select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><select class="field-select" @bind="header.CurrencyID" @bind:after="OnCurrencyChanged" disabled="@isReadOnly"><option value="0">-- اختر --</option>@if(currencies!=null){@foreach(var c in currencies){<option value="@c.Id">@c.Name</option>}}</select><svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                             </div>
@@ -498,6 +498,7 @@ else
     private List<LookupDto>? paymentTerms;
     private List<LookupDto>? currencies;
     private List<LookupDto>? priceLists;
+    private bool priceListManuallySelected;
     private List<LookupDto>? salesReps;
     private List<LookupDto>? units;
     private List<SearchableItem>? customersSearchable;
@@ -629,7 +630,7 @@ else
             {
                 var full = await LookupService.GetCustomerQuickInfoAsync(header.CustomerID);
                 if (full != null)
-                    customerInfo = new SalesCustomerExtendedDto { CustomerID = full.CustomerID, CustomerNameAr = full.CustomerNameAr, CustomerCode = full.CustomerCode, CreditLimit = full.CreditLimit, CurrentBalance = full.CurrentBalance };
+                    customerInfo = new SalesCustomerExtendedDto { CustomerID = full.CustomerID, CustomerNameAr = full.CustomerNameAr, CustomerCode = full.CustomerCode, CreditLimit = full.CreditLimit, CurrentBalance = full.CurrentBalance, PriceListID = full.PriceListID, PriceListName = full.PriceListName };
             }
             catch (Exception ex)
             {
@@ -701,7 +702,51 @@ else
         var tax = Math.Round(net * line.TaxRate / 100m, 2, MidpointRounding.AwayFromZero);
         return net + tax;
     }
-    private async Task OnCustomerSelected(SearchableItem? item){if(item==null||item.Id==0){customerInfo=null;header.CustomerID=0;return;}header.CustomerID=item.Id;try{var full=await LookupService.GetCustomerQuickInfoAsync(item.Id);if(full!=null){customerBaseInfo=full; customerInfo=new SalesCustomerExtendedDto{CustomerID=full.CustomerID, CustomerNameAr=full.CustomerNameAr, CustomerCode=full.CustomerCode, CreditLimit=full.CreditLimit, CurrentBalance=full.CurrentBalance};if(full.PaymentTermID.HasValue)header.PaymentTermID=full.PaymentTermID;if(full.CurrencyID.HasValue){header.CurrencyID=full.CurrencyID;header.ExchangeRate=full.ExchangeRate;}} }catch(Exception ex){await ShowToastAsync("خطأ في تحميل بيانات العميل: "+ex.Message,false);}}
+    private void MarkPriceListManuallySelected() => priceListManuallySelected = true;
+
+    private async Task OnCustomerSelected(SearchableItem? item)
+    {
+        if (item == null || item.Id == 0)
+        {
+            customerInfo = null;
+            header.CustomerID = 0;
+            if (isNewMode && !priceListManuallySelected)
+                header.PriceListID = null;
+            return;
+        }
+
+        header.CustomerID = item.Id;
+        try
+        {
+            var full = await LookupService.GetCustomerQuickInfoAsync(item.Id);
+            if (full == null) return;
+
+            customerBaseInfo = full;
+            customerInfo = new SalesCustomerExtendedDto
+            {
+                CustomerID = full.CustomerID,
+                CustomerNameAr = full.CustomerNameAr,
+                CustomerCode = full.CustomerCode,
+                CreditLimit = full.CreditLimit,
+                CurrentBalance = full.CurrentBalance,
+                PriceListID = full.PriceListID,
+                PriceListName = full.PriceListName
+            };
+
+            if (isNewMode && !priceListManuallySelected)
+                header.PriceListID = full.PriceListID;
+            if (full.PaymentTermID.HasValue) header.PaymentTermID = full.PaymentTermID;
+            if (full.CurrencyID.HasValue)
+            {
+                header.CurrencyID = full.CurrencyID;
+                header.ExchangeRate = full.ExchangeRate;
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowToastAsync("خطأ في تحميل بيانات العميل: " + ex.Message, false);
+        }
+    }
     private async Task OnCurrencyChanged(){if(header.CurrencyID.HasValue&&header.CurrencyID.Value>0){header.ExchangeRate=await LookupService.GetExchangeRateAsync(header.CurrencyID.Value);StateHasChanged();}}
     private async Task OnItemSelected(SearchableItem? item){if(item==null)return;editLine.ItemID=item.Id;editLine.ItemCode=item.Code;editLine.ItemNameAr=item.Name;var info=await LookupService.GetItemQuickInfoAsync(item.Id);if(info!=null){if(info.UnitID>0)editLine.UnitID=info.UnitID;editLine.UnitPrice=info.SalesPrice>0?info.SalesPrice:info.EstimatedPrice;}StateHasChanged();}
     private async Task SaveOrder()

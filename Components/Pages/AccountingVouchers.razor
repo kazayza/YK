@@ -115,7 +115,7 @@ else
                 <label class="v-search">
                     <span class="sr-only">بحث في السندات</span>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                    <input type="search" placeholder="بحث برقم السند أو الجهة أو الخزينة" @bind="searchText" @bind:event="oninput" />
+                    <input type="search" placeholder="بحث برقم السند أو الجهة أو المصدر" @bind="searchText" @bind:event="oninput" />
                 </label>
                 <select class="v-filter" @bind="filterStatus">
                     <option value="0">كل الحالات</option><option value="1">مسودة</option><option value="2">معتمد</option><option value="3">ملغي</option>
@@ -158,7 +158,7 @@ else
                     <div class="table-responsive">
                         <table class="v-table">
                             <thead>
-                                <tr><th>#</th><th>النوع</th><th>رقم السند</th><th>التاريخ</th><th>الجهة</th><th>الخزينة</th><th>المبلغ المحلي</th><th>طريقة الدفع</th><th>القيد</th><th>الحالة</th><th>إجراءات</th></tr>
+                                <tr><th>#</th><th>النوع</th><th>رقم السند</th><th>التاريخ</th><th>الجهة</th><th>المصدر</th><th>المبلغ المحلي</th><th>طريقة الدفع</th><th>القيد</th><th>الحالة</th><th>إجراءات</th></tr>
                             </thead>
                             <tbody>
                                 @{ var rowNo = 0; }
@@ -212,15 +212,20 @@ else
                     <div><h2>@FormSectionTitle</h2><p>احفظ المسودة أولاً، ثم اعتمدها عبر إجراء الترحيل الحالي.</p></div>
                     <span class="v-status" style="--status-color:@StatusColor(CurrentStatus)">@CurrentStatusName</span>
                 </div>
-                <p class="v-form-note">اختر فاتورة أو أكثر بعد تحديد العميل أو المورد لتخصيص المبلغ عليها؛ لا تُرحّل التسوية إلا على حساب الذمم وتُحدّث مدفوعات الفواتير عند الاعتماد. إذا لم تختر فاتورة يبقى السند عملية عامة. @if (currentIsPayment){<span> للمصروف الجديد المدفوع مباشرة، استخدم «مصروف جديد» من شاشة المصروفات؛ لا تنشئ سند صرف إضافياً للمصروف نفسه.</span>}</p>
+                @if ((currentIsReceipt && receiptDto.CashBoxID > 0 && receiptDto.BankAccountID.GetValueOrDefault() > 0)
+                    || (currentIsPayment && paymentDto.CashBoxID > 0 && paymentDto.BankAccountID.GetValueOrDefault() > 0))
+                {
+                    <div class="v-alert v-alert-error" role="alert">هذه المسودة محفوظة بمصدرين؛ اختر الخزينة أو البنك فقط، ثم احفظ قبل الاعتماد.</div>
+                }
+                <p class="v-form-note">مصدر السند واحد فقط: خزينة أو بنك؛ اختيار أحد الحقلين يمسح الآخر. اختر فاتورة أو أكثر بعد تحديد العميل أو المورد لتخصيص المبلغ عليها؛ لا تُرحّل التسوية إلا على حساب الذمم وتُحدّث مدفوعات الفواتير عند الاعتماد. إذا لم تختر فاتورة يبقى السند عملية عامة. @if (currentIsPayment){<span> للمصروف الجديد المدفوع مباشرة، استخدم «مصروف جديد» من شاشة المصروفات؛ لا تنشئ سند صرف إضافياً للمصروف نفسه.</span>}</p>
 
                 @if (currentIsReceipt)
                 {
                     <div class="v-form-grid">
                         <label class="v-field"><span>رقم السند</span><input value="@receiptDto.ReceiptNumber" placeholder="يُحدّد عند حفظ المسودة" disabled /></label>
                         <label class="v-field"><span>تاريخ السند <b>*</b></span><input type="date" @bind="receiptDto.ReceiptDate" disabled="@isViewRoute" /></label>
-                        <label class="v-field"><span>الخزينة <b>*</b></span><select @bind="receiptDto.CashBoxID" disabled="@isViewRoute"><option value="0">اختر الخزينة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
-                        <label class="v-field"><span>حساب البنك</span><select @bind="receiptDto.BankAccountID" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
+                        <label class="v-field"><span>الخزينة (المصدر)</span><select @bind="receiptDto.CashBoxID" @bind:after="ReceiptCashBoxSourceChanged" disabled="@isViewRoute"><option value="0">غير محددة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
+                        <label class="v-field"><span>البنك (المصدر)</span><select @bind="receiptDto.BankAccountID" @bind:after="ReceiptBankSourceChanged" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
                         <label class="v-field"><span>نوع الجهة</span><select @bind="receiptDto.EntityType" @bind:after="ReceiptEntityTypeChanged" disabled="@isViewRoute"><option value="1">عميل</option><option value="2">مورد</option><option value="3">جهة أخرى</option></select></label>
                         <label class="v-field"><span>الجهة</span><select @bind="receiptDto.EntityID" @bind:after="ReceiptEntityChanged" disabled="@isViewRoute"><option value="0">@(receiptDto.EntityType == 3 ? "بدون معرف — اكتب الاسم أدناه" : "اختر الجهة")</option>@if(receiptDto.EntityType==1){@foreach(var x in customers){<option value="@x.Id">@x.Name (@x.Code)</option>}}else if(receiptDto.EntityType==2){@foreach(var x in suppliers){<option value="@x.Id">@x.Name (@x.Code)</option>}}</select></label>
                         <label class="v-field v-field-wide"><span>المستلم من</span><input @bind="receiptDto.ReceivedFrom" disabled="@isViewRoute" placeholder="يُستكمل من الجهة أو يُكتب يدوياً" /></label>
@@ -332,8 +337,8 @@ else
                     <div class="v-form-grid">
                         <label class="v-field"><span>رقم السند</span><input value="@paymentDto.PaymentNumber" placeholder="يُحدّد عند حفظ المسودة" disabled /></label>
                         <label class="v-field"><span>تاريخ السند <b>*</b></span><input type="date" @bind="paymentDto.PaymentDate" disabled="@isViewRoute" /></label>
-                        <label class="v-field"><span>الخزينة <b>*</b></span><select @bind="paymentDto.CashBoxID" disabled="@isViewRoute"><option value="0">اختر الخزينة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
-                        <label class="v-field"><span>حساب البنك</span><select @bind="paymentDto.BankAccountID" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
+                        <label class="v-field"><span>الخزينة (المصدر)</span><select @bind="paymentDto.CashBoxID" @bind:after="PaymentCashBoxSourceChanged" disabled="@isViewRoute"><option value="0">غير محددة</option>@foreach (var box in cashBoxes){<option value="@box.Id">@box.Name (@box.Code)</option>}</select></label>
+                        <label class="v-field"><span>البنك (المصدر)</span><select @bind="paymentDto.BankAccountID" @bind:after="PaymentBankSourceChanged" disabled="@isViewRoute"><option value="0">غير محدد</option>@foreach (var bank in bankAccounts){<option value="@bank.Id">@bank.Name</option>}</select></label>
                         <label class="v-field"><span>نوع الجهة</span><select @bind="paymentDto.EntityType" @bind:after="PaymentEntityTypeChanged" disabled="@isViewRoute"><option value="1">مورد</option><option value="2">عميل</option><option value="3">جهة أخرى</option></select></label>
                         <label class="v-field"><span>الجهة</span><select @bind="paymentDto.EntityID" @bind:after="PaymentEntityChanged" disabled="@isViewRoute"><option value="0">@(paymentDto.EntityType == 3 ? "بدون معرف — اكتب الاسم أدناه" : "اختر الجهة")</option>@if(paymentDto.EntityType==1){@foreach(var x in suppliers){<option value="@x.Id">@x.Name (@x.Code)</option>}}else if(paymentDto.EntityType==2){@foreach(var x in customers){<option value="@x.Id">@x.Name (@x.Code)</option>}}</select></label>
                         <label class="v-field v-field-wide"><span>المدفوع له</span><input @bind="paymentDto.PaidTo" disabled="@isViewRoute" placeholder="يُستكمل من الجهة أو يُكتب يدوياً" /></label>
@@ -752,14 +757,18 @@ else
             loadedRows.AddRange(loadedReceipts.Select(x => new VoucherRow
             {
                 IsReceipt = true, Id = x.ReceiptID, Number = x.ReceiptNumber ?? "", Date = x.ReceiptDate,
-                Party = x.EntityName ?? x.ReceivedFrom ?? "—", CashBox = x.CashBoxNameAr ?? "—", CashBoxId = x.CashBoxID,
+                Party = x.EntityName ?? x.ReceivedFrom ?? "—",
+                CashBox = x.BankAccountID.GetValueOrDefault() > 0 ? (x.BankAccountName ?? $"بنك #{x.BankAccountID}") : (x.CashBoxNameAr ?? "—"),
+                CashBoxId = x.BankAccountID.GetValueOrDefault() > 0 ? 0 : x.CashBoxID,
                 Amount = x.Amount, AmountLocal = x.AmountLocal, CurrencyCode = x.CurrencyCode ?? "", Method = x.PaymentMethodName ?? "—",
                 Status = x.ReceiptStatus, StatusName = x.StatusName ?? "غير محدد", IsPosted = x.IsPosted, JournalId = x.JournalID, JournalNumber = x.JournalNumber
             }));
             loadedRows.AddRange(loadedPayments.Select(x => new VoucherRow
             {
                 IsReceipt = false, Id = x.PaymentID, Number = x.PaymentNumber ?? "", Date = x.PaymentDate,
-                Party = x.EntityName ?? x.PaidTo ?? "—", CashBox = x.CashBoxNameAr ?? "—", CashBoxId = x.CashBoxID,
+                Party = x.EntityName ?? x.PaidTo ?? "—",
+                CashBox = x.BankAccountID.GetValueOrDefault() > 0 ? (x.BankAccountName ?? $"بنك #{x.BankAccountID}") : (x.CashBoxNameAr ?? "—"),
+                CashBoxId = x.BankAccountID.GetValueOrDefault() > 0 ? 0 : x.CashBoxID,
                 Amount = x.Amount, AmountLocal = x.AmountLocal, CurrencyCode = x.CurrencyCode ?? "", Method = x.PaymentMethodName ?? "—",
                 Status = x.PaymentStatus, StatusName = x.StatusName ?? "غير محدد", IsPosted = x.IsPosted, JournalId = x.JournalID
             }));
@@ -859,7 +868,7 @@ else
         formError = formSuccess = "";
         if (currentIsReceipt)
         {
-            if (receiptDto.CashBoxID <= 0) { formError = "اختر الخزينة."; return; }
+            if (!HasExactlyOneVoucherSource(receiptDto.CashBoxID, receiptDto.BankAccountID)) { formError = "اختر مصدرًا واحدًا فقط للسند: خزينة أو بنك."; return; }
             if (receiptDto.Amount <= 0) { formError = "أدخل مبلغاً أكبر من صفر."; return; }
             if (receiptDto.CurrencyID.HasValue && receiptDto.ExchangeRate <= 0) { formError = "أدخل سعر صرف موجباً للعملة المختارة."; return; }
             if (receiptDto.IsInvoiceSettlement)
@@ -868,10 +877,15 @@ else
                 if (ReceiptAllocationTotal != receiptDto.Amount) { formError = "يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير."; return; }
                 if (receiptDto.InvoiceAllocations.Any(x => !IsReceiptInvoiceCompatible(x))) { formError = "عملة أو سعر صرف إحدى الفواتير لا يطابق السند؛ أزلها أو اضبط العملة أولاً."; return; }
             }
+            else if (receiptDto.RevenueAccountID.GetValueOrDefault() <= 0)
+            {
+                formError = "اختر حساب الإيراد للسند العام.";
+                return;
+            }
         }
         else
         {
-            if (paymentDto.CashBoxID <= 0) { formError = "اختر الخزينة."; return; }
+            if (!HasExactlyOneVoucherSource(paymentDto.CashBoxID, paymentDto.BankAccountID)) { formError = "اختر مصدرًا واحدًا فقط للسند: خزينة أو بنك."; return; }
             if (paymentDto.Amount <= 0) { formError = "أدخل مبلغاً أكبر من صفر."; return; }
             if (paymentDto.CurrencyID.HasValue && paymentDto.ExchangeRate <= 0) { formError = "أدخل سعر صرف موجباً للعملة المختارة."; return; }
             if (paymentDto.IsInvoiceSettlement)
@@ -879,6 +893,11 @@ else
                 if (paymentDto.InvoiceAllocations.Count == 0) { formError = "اختر فاتورة واحدة على الأقل للتسوية."; return; }
                 if (PaymentAllocationTotal != paymentDto.Amount) { formError = "يجب أن يساوي مبلغ السند مجموع تخصيصات الفواتير."; return; }
                 if (paymentDto.InvoiceAllocations.Any(x => !IsPaymentInvoiceCompatible(x))) { formError = "عملة أو سعر صرف إحدى الفواتير لا يطابق السند؛ أزلها أو اضبط العملة أولاً."; return; }
+            }
+            else if (paymentDto.ExpenseAccountID.GetValueOrDefault() <= 0)
+            {
+                formError = "اختر حساب المصروف للسند العام.";
+                return;
             }
         }
 
@@ -1149,6 +1168,29 @@ else
             paymentDto.ExpenseAccountNameAr = null;
         }
         CalcPaymentLocal();
+    }
+
+    private static bool HasExactlyOneVoucherSource(int cashBoxId, int? bankAccountId) =>
+        (cashBoxId > 0) != (bankAccountId.GetValueOrDefault() > 0);
+
+    private void ReceiptCashBoxSourceChanged()
+    {
+        if (receiptDto.CashBoxID > 0) receiptDto.BankAccountID = null;
+    }
+
+    private void ReceiptBankSourceChanged()
+    {
+        if (receiptDto.BankAccountID.GetValueOrDefault() > 0) receiptDto.CashBoxID = 0;
+    }
+
+    private void PaymentCashBoxSourceChanged()
+    {
+        if (paymentDto.CashBoxID > 0) paymentDto.BankAccountID = null;
+    }
+
+    private void PaymentBankSourceChanged()
+    {
+        if (paymentDto.BankAccountID.GetValueOrDefault() > 0) paymentDto.CashBoxID = 0;
     }
 
     private void CalcReceiptLocal() => receiptDto.AmountLocal = receiptDto.Amount * (receiptDto.ExchangeRate <= 0 ? 1 : receiptDto.ExchangeRate);

@@ -308,7 +308,7 @@ else
                 var selectedList = priceLists.FirstOrDefault(x => x.PriceListID == selectedPriceListId);
                 <div class="table-card-luxury">
                     <div class="card-head-luxury">
-                        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><path d="M7 7h.01"/></svg>أسعار أصناف — @(selectedList?.PriceListNameAr ?? "")</h3>
+                        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><path d="M7 7h.01"/></svg>أسعار أصناف — @(selectedList?.PriceListNameAr ?? "") <span class="lh-badge">رقم القائمة: @selectedPriceListId</span></h3>
                         <div class="head-actions">
                             @if (permissions.CanAdd)
                             {
@@ -353,32 +353,40 @@ else
                                 <table class="table-luxury">
                                     <thead>
                                         <tr>
-                                            <th class="th-num">#</th>
+                                            <th class="th-num">رقم التفاصيل</th>
                                             <th>الصنف</th>
                                             <th>الوحدة</th>
                                             <th class="th-num">السعر</th>
                                             <th class="th-num">أقل كمية</th>
+                                            <th class="th-num">أقصى كمية</th>
                                             <th class="th-num">خصم %</th>
+                                            <th>من تاريخ</th>
+                                            <th>إلى تاريخ</th>
                                             <th class="th-num">أقل سعر بيع</th>
+                                            <th>الحالة</th>
+                                            <th>تاريخ الإضافة</th>
                                             <th class="th-actions">إجراءات</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @{ var dIdx = 0; }
                                         @foreach (var d in details)
                                         {
-                                            dIdx++;
                                             <tr>
-                                                <td class="td-num">@dIdx</td>
+                                                <td class="td-num">@d.PriceDetailID</td>
                                                 <td>
                                                     <b>@d.ItemNameAr</b>
                                                     <code class="doc-num-luxury" style="margin-right:6px;font-size:.7rem">@d.ItemCode</code>
                                                 </td>
                                                 <td class="td-muted">@d.UnitName</td>
                                                 <td class="td-center"><span class="amount-luxury">@d.UnitPrice.ToString("N2")</span></td>
-                                                <td class="td-center">@d.MinQty</td>
-                                                <td class="td-center">@d.DiscountPercent%</td>
+                                                <td class="td-center">@d.MinQty.ToString("N2")</td>
+                                                <td class="td-center">@(d.MaxQty.HasValue ? d.MaxQty.Value.ToString("N2") : "بدون حد أعلى")</td>
+                                                <td class="td-center">@d.DiscountPercent.ToString("N2")%</td>
+                                                <td class="td-center">@(d.StartDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                                <td class="td-center">@(d.EndDate?.ToString("yyyy-MM-dd") ?? "مفتوح")</td>
                                                 <td class="td-center">@(d.MinSellingPrice > 0 ? d.MinSellingPrice.ToString("N2") : "—")</td>
+                                                <td class="td-center">@(d.IsActive ? "نشط" : "موقوف")</td>
+                                                <td class="td-center">@(d.CreatedDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                                                 <td class="td-center">
                                                     <div class="actions-wrap-luxury">
                                                         @if (permissions.CanEdit)
@@ -387,9 +395,9 @@ else
                                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></svg>
                                                             </button>
                                                         }
-                                                        @if (permissions.CanDelete)
+                                                        @if (permissions.CanDelete && d.IsActive)
                                                         {
-                                                            <button class="act-btn del" title="حذف" @onclick="() => DeleteDetail(d.PriceDetailID)">
+                                                            <button class="act-btn del" title="إيقاف" @onclick="() => DeleteDetail(d.PriceDetailID)">
                                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                                                             </button>
                                                         }
@@ -539,7 +547,7 @@ else
                         <div class="form-grid-luxury">
                             <div class="fg">
                                 <label>الصنف <span class="req">*</span></label>
-                                <select @bind="editDetail.ItemID" disabled="@(isEditDetail || !hasLoadedFinishedItems || isLoadingFinishedItems || finishedItemsReadDenied)">
+                                <select @bind="editDetail.ItemID" disabled="@(!hasLoadedFinishedItems || isLoadingFinishedItems || finishedItemsReadDenied)">
                                     <option value="0">-- اختر الصنف --</option>
                                     @if (finishedItems != null)
                                     {
@@ -610,12 +618,27 @@ else
                                 <input type="number" @bind="editDetail.MinQty" step="0.01" min="0" />
                             </div>
                             <div class="fg">
+                                <label>أقصى كمية (اختياري)</label>
+                                <input type="number" @bind="editDetail.MaxQty" step="0.01" min="0" />
+                            </div>
+                            <div class="fg">
                                 <label>خصم %</label>
                                 <input type="number" @bind="editDetail.DiscountPercent" step="0.01" min="0" max="100" />
                             </div>
                             <div class="fg">
+                                <label>من تاريخ (اختياري)</label>
+                                <input type="date" @bind="editDetail.StartDate" />
+                            </div>
+                            <div class="fg">
+                                <label>إلى تاريخ (اختياري)</label>
+                                <input type="date" @bind="editDetail.EndDate" />
+                            </div>
+                            <div class="fg">
                                 <label>أقل سعر بيع</label>
                                 <input type="number" @bind="editDetail.MinSellingPrice" step="0.01" min="0" />
+                            </div>
+                            <div class="fg full">
+                                <label class="chk-lab"><span class="switch-luxury"><input type="checkbox" @bind="editDetail.IsActive" /><span></span></span>تفصيل نشط</label>
                             </div>
                         </div>
                         @if (!string.IsNullOrEmpty(detailMessage))
@@ -1243,7 +1266,7 @@ else
     }
     // ===== التفاصيل =====
     private void ShowAddDetailDialog()
-    { isEditDetail = false; editDetail = new PriceListDetailEditDto { PriceListID = selectedPriceListId, MinQty = 1 }; detailMessage = ""; showDetailDialog = true; }
+    { isEditDetail = false; editDetail = new PriceListDetailEditDto { PriceListID = selectedPriceListId, MinQty = 1, IsActive = true }; detailMessage = ""; showDetailDialog = true; }
 
     private void ShowEditDetailDialog(PriceListDetailDto d)
     {
@@ -1256,8 +1279,12 @@ else
             UnitID = d.UnitID,
             UnitPrice = d.UnitPrice,
             MinQty = d.MinQty,
+            MaxQty = d.MaxQty,
             DiscountPercent = d.DiscountPercent,
-            MinSellingPrice = d.MinSellingPrice
+            StartDate = d.StartDate,
+            EndDate = d.EndDate,
+            MinSellingPrice = d.MinSellingPrice,
+            IsActive = d.IsActive
         };
         detailMessage = "";
         showDetailDialog = true;
@@ -1271,6 +1298,12 @@ else
         if (editDetail.ItemID == 0) { detailMessage = "اختر الصنف"; detailSuccess = false; return; }
         if (editDetail.UnitID == 0) { detailMessage = "اختر الوحدة"; detailSuccess = false; return; }
         if (editDetail.UnitPrice <= 0) { detailMessage = "أدخل السعر"; detailSuccess = false; return; }
+        if (editDetail.MinQty < 0) { detailMessage = "أقل كمية لا يمكن أن تكون سالبة"; detailSuccess = false; return; }
+        if (editDetail.MaxQty.HasValue && editDetail.MaxQty.Value < editDetail.MinQty) { detailMessage = "أقصى كمية يجب ألا تقل عن أقل كمية"; detailSuccess = false; return; }
+        if (editDetail.DiscountPercent < 0 || editDetail.DiscountPercent > 100) { detailMessage = "نسبة الخصم يجب أن تكون بين 0 و100"; detailSuccess = false; return; }
+        if (editDetail.MinSellingPrice < 0) { detailMessage = "أقل سعر بيع لا يمكن أن يكون سالبًا"; detailSuccess = false; return; }
+        if (editDetail.StartDate.HasValue && editDetail.EndDate.HasValue && editDetail.StartDate.Value.Date > editDetail.EndDate.Value.Date)
+        { detailMessage = "تاريخ البداية يجب ألا يكون بعد تاريخ النهاية"; detailSuccess = false; return; }
 
         isSavingDetail = true; StateHasChanged();
         try

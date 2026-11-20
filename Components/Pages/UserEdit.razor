@@ -102,6 +102,7 @@ else
                     <div class="field-luxury"><label class="fl-label">اللغة الافتراضية</label><div class="select-wrap-luxury-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><select @bind="_dto.DefaultLanguage"><option value="ar">العربية</option><option value="en">English</option></select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                     <div class="field-luxury"><label class="fl-label">المخزن الافتراضي</label><div class="select-wrap-luxury-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><select @bind="_dto.DefaultWarehouseID"><option value="">— بدون —</option>@foreach(var wh in _warehousesLookup){<option value="@wh.Id">@wh.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                     <div class="field-luxury"><label class="fl-label">الصندوق الافتراضي</label><div class="select-wrap-luxury-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg><select @bind="_dto.DefaultCashBoxID"><option value="">— بدون —</option>@foreach(var cb in _cashBoxesLookup){<option value="@cb.Id">@cb.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
+                    <div class="field-luxury"><label class="fl-label">العملة الافتراضية</label><div class="select-wrap-luxury-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M8 10h8M8 14h8M12 6v12"/></svg><select @bind="_dto.DefaultCurrencyID"><option value="">— بدون —</option>@foreach(var currency in _currenciesLookup){<option value="@currency.Id">@currency.Name</option>}</select><svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div></div>
                     <div class="field-luxury full"><label class="fl-label">ملاحظات</label><textarea class="form-textarea-luxury" @bind="_dto.Notes" placeholder="ملاحظات..." rows="3"></textarea></div>
                 </div>
             }
@@ -242,6 +243,7 @@ else
     private List<LookupDto> _employeesLookup = new();
     private List<LookupDto> _warehousesLookup = new();
     private List<LookupDto> _cashBoxesLookup = new();
+    private List<LookupDto> _currenciesLookup = new();
     private List<UserPermissionEditDto> _userPermissions = new();
     private bool _loadingPerms = false;
     private bool _savingPerms = false;
@@ -269,6 +271,7 @@ else
             _employeesLookup = await UserService.GetAvailableEmployeesLookupAsync(_isNew ? null : _dto.EmployeeID);
             _warehousesLookup = await UserService.GetWarehousesLookupAsync();
             _cashBoxesLookup = await UserService.GetCashBoxesLookupAsync();
+            _currenciesLookup = await UserService.GetCurrenciesLookupAsync();
         }
         catch (Exception ex){ShowError("خطأ في تحميل البيانات المساعدة: " + ex.Message);}
     }

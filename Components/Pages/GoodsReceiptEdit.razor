@@ -41,9 +41,13 @@ else
                 <div class="lh-right">
                     <button class="btn-luxury btn-back-luxury" @onclick="GoBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19 7-7-7-7"/></svg>رجوع</button>
                     <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
-                    <div class="lh-text"><h2 class="lh-title">@pageTitle</h2><div class="lh-meta">@if (!string.IsNullOrEmpty(header.GRNNumber)){<code class="doc-num-luxury">@header.GRNNumber</code><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetStatusColor(header.GRNStatus)">@GoodsReceiptService.GetStatusName(header.GRNStatus)</span><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetInspectionColor(header.InspectionStatus)">@GoodsReceiptService.GetInspectionStatusName(header.InspectionStatus)</span>}</div></div>
+                    <div class="lh-text"><h2 class="lh-title">@pageTitle</h2><div class="lh-meta">@if (!string.IsNullOrEmpty(header.GRNNumber)){<code class="doc-num-luxury">@header.GRNNumber</code><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetStatusColor(header.GRNStatus)">@GoodsReceiptService.GetStatusName(header.GRNStatus)</span><span class="status-badge-luxury" style="--sc:@GoodsReceiptService.GetInspectionColor(header.InspectionStatus)">@inspectionStatusLabel</span>}</div></div>
                 </div>
                 <div class="lh-actions">
+                    @if (canInspect)
+                    {
+                        <a class="btn-luxury btn-inspect-luxury btn-sm-luxury" style="text-decoration:none" href="#grn-inspection-panel">فحص الاستلام</a>
+                    }
                     <div class="workflow-mini"><span class="wm-dot done">1 طلب</span><span class="wm-line done"></span><span class="wm-dot done">2 أمر</span><span class="wm-line done"></span><span class="wm-dot active">3 استلام</span><span class="wm-line"></span><span class="wm-dot">4 فاتورة</span><span class="wm-line"></span><span class="wm-dot">5 مرتجع</span></div>
                     @if (permissions.CanPrint && ReceiptId > 0){<button class="btn-luxury btn-ghost-luxury" @onclick="PrintDoc" disabled="@isPrinting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>@(isPrinting ? "جارٍ تجهيز الطباعة..." : "طباعة")</button>}
                 </div>
@@ -67,8 +71,8 @@ else
         {
             <div class="approval-bar-luxury">
                 <div class="ml-gold-line green"></div>
-                <div class="appr-left"><div class="appr-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><div class="appr-title">إذن الاستلام جاهز للاعتماد</div><div class="appr-sub">فحص الجودة @GoodsReceiptService.GetInspectionStatusName(header.InspectionStatus) - يمكن اعتماد الاستلام الآن</div></div></div>
-                <div class="appr-actions"><button class="btn-luxury btn-approve-quick" @onclick="ExecuteApprove" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد الاستلام</button><button class="btn-luxury btn-reject-luxury" @onclick="ExecuteCancel" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>إلغاء</button></div>
+                <div class="appr-left"><div class="appr-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></div><div><div class="appr-title">إذن الاستلام جاهز للاعتماد</div><div class="appr-sub">تم قبول الفحص؛ الاعتماد النهائي سيرحّل الكميات المقبولة إلى المخزون</div></div></div>
+                <div class="appr-actions"><button class="btn-luxury btn-approve-quick" @onclick="ExecuteApprove" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg>}اعتماد وترحيل</button><button class="btn-luxury btn-reject-luxury" @onclick="ExecuteCancel" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>إلغاء</button></div>
             </div>
         }
 
@@ -199,7 +203,7 @@ else
                     @if (poLines != null && poLines.Any())
                     {
                         <div style="margin-top:16px"><h4 class="po-lines-title-luxury">الأصناف المتبقية للاستلام (@poLines.Count(l=>l.IsSelected) مختار)</h4>
-                            <div class="tbl-card-luxury" style="margin-top:10px"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th class="tc" style="width:40px"><input type="checkbox" checked="@poLines.All(l=>l.IsSelected)" @onchange="ToggleAllPOLines" /></th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">مطلوب</th><th class="tc">تم استلامه</th><th class="tc">متبقي</th><th class="tc">الكمية الآن</th><th>الباتش</th><th>الصلاحية</th></tr></thead><tbody>@foreach (var line in poLines){<tr class="@(!line.IsSelected?"tr-deselected":"")"><td class="tc"><input type="checkbox" @bind="line.IsSelected" /></td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="tc">@line.OrderedQty.ToString("#,##0.##")</td><td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td><td class="tc"><strong class="remaining-qty-luxury">@line.RemainingToReceive.ToString("#,##0.##")</strong></td><td class="tc"><input type="number" class="inline-input-luxury" @bind="line.QtyToReceive" step="0.01" min="0" max="@line.RemainingToReceive" disabled="@(!line.IsSelected)" /></td><td><input type="text" class="inline-input-luxury" @bind="line.BatchNumber" placeholder="باتش..." disabled="@(!line.IsSelected)" /></td><td><input type="date" class="inline-input-luxury" @bind="line.ExpiryDate" disabled="@(!line.IsSelected)" /></td></tr>}</tbody></table></div></div>
+                            <div class="tbl-card-luxury" style="margin-top:10px"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th class="tc" style="width:40px"><input type="checkbox" checked="@poLines.All(l=>l.IsSelected)" @onchange="ToggleAllPOLines" /></th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">مطلوب</th><th class="tc">تم استلامه</th><th class="tc">متبقي</th><th class="tc">الكمية الآن</th><th>باتش المورد (اختياري)</th><th>الصلاحية</th></tr></thead><tbody>@foreach (var line in poLines){<tr class="@(!line.IsSelected?"tr-deselected":"")"><td class="tc"><input type="checkbox" @bind="line.IsSelected" /></td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="tc">@line.OrderedQty.ToString("#,##0.##")</td><td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td><td class="tc"><strong class="remaining-qty-luxury">@line.RemainingToReceive.ToString("#,##0.##")</strong></td><td class="tc"><input type="number" class="inline-input-luxury" @bind="line.QtyToReceive" step="0.01" min="0" max="@line.RemainingToReceive" disabled="@(!line.IsSelected)" /></td><td><input type="text" class="inline-input-luxury" @bind="line.BatchNumber" placeholder="اختياري" disabled="@(!line.IsSelected)" /></td><td><input type="date" class="inline-input-luxury" @bind="line.ExpiryDate" disabled="@(!line.IsSelected)" /></td></tr>}</tbody></table></div></div>
                         </div>
                     }
                 </div>
@@ -242,7 +246,8 @@ else
                                 }
                             }
                         </div>
-                        <div class="f-field-luxury"><label class="f-label-luxury required">المخزن</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@(isReadOnly || !warehousesLoaded || warehouses == null || !warehouses.Any() || (header.GRNSource == 1 && selectedPOId > 0 && isSelectedPOInfoLoading))"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select>
+                        <div class="f-field-luxury"><label class="f-label-luxury required">مخزن مبدئي للسطور</label><select class="f-input-luxury" @bind="header.WarehouseID" disabled="@(isReadOnly || !warehousesLoaded || warehouses == null || !warehouses.Any() || (header.GRNSource == 1 && selectedPOId > 0 && isSelectedPOInfoLoading))"><option value="0">-- اختر --</option>@if (warehouses != null){@foreach (var w in warehouses){<option value="@w.Id">@w.Name</option>}}</select>
+                            <small class="field-hint">يُستخدم كقيمة مبدئية فقط؛ يمكن اختيار مخزن مختلف لكل صنف.</small>
                             @if (isWarehousesLoading && warehousesLoaded)
                             {
                                 <div class="field-hint" role="status">جارٍ تحديث مخازن الاستلام؛ الخيارات السابقة متاحة.</div>
@@ -291,9 +296,38 @@ else
                         <div class="f-field-luxury"><label class="f-label-luxury">إذن التسليم</label><input type="text" class="f-input-luxury" @bind="header.DeliveryNoteNo" disabled="@isReadOnly" placeholder="رقم إذن التسليم..." /></div>
                     </div>
                     <div class="form-grid-luxury c4" style="margin-top:14px">
-                        <div class="f-field-luxury"><label class="f-label-luxury">الفاحص</label><select class="f-input-luxury" @bind="header.InspectedBy" disabled="@(isReadOnly || !employeesLoaded || employees == null || !employees.Any())"><option value="0">-- اختر --</option>@if (employees != null){@foreach (var e in employees){<option value="@e.Id">@e.Name</option>}}</select></div>
-                        <div class="f-field-luxury"><label class="f-label-luxury">حالة الفحص</label><select class="f-input-luxury" @bind="header.InspectionStatus" disabled="@isReadOnly"><option value="1">لم يتم الفحص</option><option value="2">مقبول</option><option value="3">مرفوض</option></select></div>
-                        <div class="f-field-luxury c2"><label class="f-label-luxury">ملاحظات الفحص</label><input type="text" class="f-input-luxury" @bind="header.InspectionNotes" disabled="@isReadOnly" placeholder="ملاحظات..." /></div>
+                        <div class="f-field-luxury">
+                            <label class="f-label-luxury required">مسئول الفحص</label>
+                            <select class="f-input-luxury" @bind="header.AssignedInspectorID" disabled="@(isReadOnly || !permissions.CanEdit || isQualityInspectorsLoading || qualityInspectors == null)">
+                                <option value="0">-- اختر مسئول الفحص --</option>
+                                @if (qualityInspectors != null)
+                                {
+                                    @foreach (var inspector in qualityInspectors)
+                                    {
+                                        <option value="@inspector.Id">@inspector.Name</option>
+                                    }
+                                }
+                            </select>
+                            @if (isQualityInspectorsLoading)
+                            {
+                                <div class="field-hint" role="status">جارٍ تحميل مسئولي الفحص...</div>
+                            }
+                            else if (qualityInspectorsLoadFailed)
+                            {
+                                <div class="msg-luxury msg-error" role="alert" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px"><span>@qualityInspectorsLoadError</span><button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryLoadQualityInspectorsAsync" disabled="@isQualityInspectorsLoading">إعادة المحاولة</button></div>
+                            }
+                            else if (qualityInspectorsLoadDenied)
+                            {
+                                <div class="msg-luxury msg-info" role="status" style="margin-top:6px">@qualityInspectorsLoadError</div>
+                            }
+                            else if (qualityInspectorsLoaded && (qualityInspectors == null || !qualityInspectors.Any()))
+                            {
+                                <div class="field-hint" role="status">لا يوجد مسئول فحص نشط لديه صلاحية فحص الجودة وعرض الإذن.</div>
+                            }
+                        </div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">حالة الفحص</label><input type="text" class="f-input-luxury readonly" value="@inspectionStatusLabel" disabled /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">سجل نتيجة الفحص</label><input type="text" class="f-input-luxury readonly" value="@(header.InspectedByName ?? "لم يسجل بعد")" disabled /></div>
+                        <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات الفحص</label><input type="text" class="f-input-luxury readonly" value="@(header.InspectionNotes ?? "—")" disabled /></div>
                     </div>
                     <div class="form-grid-luxury c1" style="margin-top:14px"><div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="header.Notes" disabled="@isReadOnly" placeholder="ملاحظات عامة..." /></div></div>
                 </div>
@@ -307,7 +341,7 @@ else
                     @if (!details.Any() && !showLineForm){<div class="empty-lines-luxury"><div class="empty-icon-luxury"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><p>لا توجد أصناف مستلمة.</p></div>}
                     else
                     {
-                        <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="tc">مستلم</th><th class="tc">مقبول</th><th class="tc">مرفوض</th><th>الباتش</th><th>الصلاحية</th><th class="tl">التكلفة</th><th class="tl">الإجمالي</th><th class="tc">الجودة</th>@if (!isReadOnly){<th class="tc">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach (var line in details){n++;<tr><td class="td-n">@n</td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td><td class="tc">@(line.AcceptedQty?.ToString("#,##0.##") ?? "—")</td><td class="tc">@if(line.RejectedQty>0){<span class="rejected-badge-luxury">@line.RejectedQty.ToString("#,##0.##")</span>}else{<span>0</span>}</td><td class="td-muted">@(line.BatchNumber ?? "—")</td><td class="td-muted">@(line.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td><td class="tl num-cell">@line.UnitCost.ToString("#,##0.00")</td><td class="tl num-cell"><strong>@line.LineTotalCost.ToString("#,##0.00")</strong></td><td class="tc"><span class="quality-badge-luxury" style="--qc:@GoodsReceiptService.GetInspectionColor(line.QualityStatus)">@GoodsReceiptService.GetQualityStatusName(line.QualityStatus)</span></td>@if (!isReadOnly){<td class="tc"><div class="line-actions-luxury">@if (permissions.CanEdit){<button class="act-btn-luxury edit" @onclick="() => ShowEditLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}@if (permissions.CanDelete){<button class="act-btn-luxury del" @onclick="() => DeleteLine(line.GRNDetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="10" class="tl"><strong>الإجمالي</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalCost).ToString("#,##0.00") ج.م</strong></td><td colspan="@(!isReadOnly ? 2 : 1)"></td></tr></tfoot></table></div></div>
+                        <div class="tbl-card-luxury"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th>المخزن</th><th class="tc">مستلم</th><th class="tc">مقبول</th><th class="tc">مرفوض</th><th>باتش المورد</th><th>باتش المخزون</th><th>الصلاحية</th><th class="tl">التكلفة</th><th class="tl">الإجمالي</th><th class="tc">الجودة</th>@if (!isReadOnly){<th class="tc">إجراءات</th>}</tr></thead><tbody>@{int n=0;}@foreach (var line in details){n++;<tr><td class="td-n">@n</td><td><code class="code-tag-luxury">@line.ItemCode</code></td><td class="td-bold">@line.ItemNameAr</td><td class="td-muted">@line.UnitName</td><td class="td-muted">@(line.WarehouseNameAr ?? "—")</td><td class="tc">@line.ReceivedQty.ToString("#,##0.##")</td><td class="tc">@(line.AcceptedQty?.ToString("#,##0.##") ?? "—")</td><td class="tc">@if(line.RejectedQty>0){<span class="rejected-badge-luxury">@line.RejectedQty.ToString("#,##0.##")</span>}else{<span>0</span>}</td><td class="td-muted">@(line.SupplierBatchNumber ?? "—")</td><td class="td-muted">@(string.IsNullOrWhiteSpace(line.BatchNumber) ? "—" : (string.IsNullOrWhiteSpace(line.SupplierBatchNumber) ? $"{line.BatchNumber} (داخلي)" : line.BatchNumber))</td><td class="td-muted">@(line.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td><td class="tl num-cell">@line.UnitCost.ToString("#,##0.00")</td><td class="tl num-cell"><strong>@line.LineTotalCost.ToString("#,##0.00")</strong></td><td class="tc"><span class="quality-badge-luxury" style="--qc:@GoodsReceiptService.GetInspectionColor(line.QualityStatus)">@GoodsReceiptService.GetQualityStatusName(line.QualityStatus)</span></td>@if (!isReadOnly){<td class="tc"><div class="line-actions-luxury">@if (permissions.CanEdit){<button class="act-btn-luxury edit" @onclick="() => ShowEditLine(line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}@if (permissions.CanDelete){<button class="act-btn-luxury del" @onclick="() => DeleteLine(line.GRNDetailID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}</div></td>}</tr>}</tbody><tfoot><tr class="total-row-luxury"><td colspan="12" class="tl"><strong>الإجمالي</strong></td><td class="tl num-cell"><strong>@details.Sum(d => d.LineTotalCost).ToString("#,##0.00") ج.م</strong></td><td colspan="@(!isReadOnly ? 2 : 1)"></td></tr></tfoot></table></div></div>
                     }
 
                     @if (showLineForm)
@@ -374,14 +408,25 @@ else
                                         <div class="field-hint" role="status">لا توجد وحدات قياس نشطة متاحة.</div>
                                     }
                                 </div>
+                                <div class="f-field-luxury">
+                                    <label class="f-label-luxury required">مخزن الصنف</label>
+                                    <select class="f-input-luxury" @bind="editLine.WarehouseID" disabled="@(isReadOnly || !warehousesLoaded || warehouses == null || !warehouses.Any())">
+                                        <option value="0">-- اختر مخزن الصنف --</option>
+                                        @if (warehouses != null)
+                                        {
+                                            @foreach (var warehouse in warehouses)
+                                            {
+                                                <option value="@warehouse.Id">@warehouse.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
                                 <div class="f-field-luxury"><label class="f-label-luxury required">الكمية المستلمة</label><input type="number" class="f-input-luxury" @bind="editLine.ReceivedQty" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">الكمية المقبولة</label><input type="number" class="f-input-luxury" @bind="editLine.AcceptedQty" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">الكمية المرفوضة</label><input type="number" class="f-input-luxury" @bind="editLine.RejectedQty" step="0.01" /></div>
+                                <div class="f-field-luxury c2"><div class="field-hint">يسجل مسئول الفحص الكمية المقبولة والمرفوضة بعد إرسال الإذن للفحص.</div></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury required">تكلفة الوحدة</label><input type="number" class="f-input-luxury" @bind="editLine.UnitCost" step="0.01" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">رقم الباتش</label><input type="text" class="f-input-luxury" @bind="editLine.BatchNumber" placeholder="Batch..." /></div>
+                                <div class="f-field-luxury"><label class="f-label-luxury">باتش المورد (اختياري)</label><input type="text" class="f-input-luxury" @bind="editLine.SupplierBatchNumber" placeholder="اتركه فارغًا إذا لم يقدّم المورد رقمًا..." /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">تاريخ الإنتاج</label><input type="date" class="f-input-luxury" @bind="editLine.ManufactureDate" /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">تاريخ الصلاحية</label><input type="date" class="f-input-luxury" @bind="editLine.ExpiryDate" /></div>
-                                <div class="f-field-luxury"><label class="f-label-luxury">حالة الجودة</label><select class="f-input-luxury" @bind="editLine.QualityStatus"><option value="1">انتظار فحص</option><option value="2">مقبول</option><option value="3">مرفوض</option></select></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">موقع التخزين</label><input type="text" class="f-input-luxury" @bind="editLine.StorageLocation" placeholder="رف / منطقة..." /></div>
                                 <div class="f-field-luxury"><label class="f-label-luxury">ملاحظات</label><input type="text" class="f-input-luxury" @bind="editLine.Notes" placeholder="ملاحظات..." /></div>
                             </div>
@@ -393,14 +438,57 @@ else
                 </div>
             }
 
+            @if (canInspect)
+            {
+                <div id="grn-inspection-panel" class="doc-section-luxury" dir="rtl">
+                    <div class="ml-gold-line"></div>
+                    <div class="sec-head-luxury"><h3 class="sec-title-luxury">فحص الاستلام</h3><span class="sec-badge-luxury">مسند إليك</span></div>
+                    <div class="msg-luxury msg-info" role="status">سجّل الكمية المقبولة لكل سطر؛ والكمية المرفوضة تُحسب تلقائيًا. عند وجود كمية مقبولة سيُرسل الإذن للاعتماد تلقائيًا.</div>
+                    <div class="tbl-card-luxury" style="margin-top:12px"><div class="table-responsive"><table class="tbl-luxury"><thead><tr><th>#</th><th>الصنف</th><th class="tc">المستلم</th><th class="tc">المقبول</th><th class="tc">المرفوض (محسوب)</th><th>ملاحظات الجودة</th></tr></thead><tbody>
+                        @foreach (var line in details)
+                        {
+                            <tr>
+                                <td>@line.LineNumber</td>
+                                <td class="td-bold">@line.ItemNameAr</td>
+                                <td class="tc">@line.ReceivedQty.ToString("#,##0.####")</td>
+                                <td class="tc"><input type="number" class="inline-input-luxury" @bind="line.AcceptedQty" min="0" max="@line.ReceivedQty" step="0.0001" /></td>
+                                <td class="tc">@Math.Max(0m, line.ReceivedQty - line.AcceptedQty.GetValueOrDefault()).ToString("#,##0.####")</td>
+                                <td><input type="text" class="inline-input-luxury" @bind="line.QualityNotes" placeholder="ملاحظة اختيارية..." /></td>
+                            </tr>
+                        }
+                    </tbody></table></div></div>
+                    <div class="f-field-luxury" style="margin-top:12px"><label class="f-label-luxury">ملاحظات الفحص</label><textarea class="f-input-luxury" @bind="inspectionNotesDraft" rows="3" placeholder="نتيجة الفحص أو الملاحظات العامة..."></textarea></div>
+                    <button type="button" class="btn-luxury btn-primary-luxury" @onclick="SubmitInspectionAsync" disabled="@isSaving">@(isSaving ? "جارٍ تسجيل الفحص..." : "تسجيل الفحص وإرسال للاعتماد")</button>
+                </div>
+            }
+
             @if (!isViewMode && !canApprove)
             {
-                <div class="doc-actions-luxury"><div class="ml-gold-line"></div><div class="doc-actions-right">@if (!isReadOnly){<button class="btn-luxury btn-primary-luxury" @onclick="SaveReceipt" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}@(isNewMode ? "حفظ إذن الاستلام" : "حفظ التعديلات")</button>@if (ReceiptId > 0 && header.GRNStatus == 1 && details.Any()){@if (header.InspectionStatus == 1){<button class="btn-luxury btn-inspect-luxury" @onclick="SendForInspection" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>إرسال للفحص</button>}@if (header.InspectionStatus == 2){<button class="btn-luxury btn-warning-luxury" @onclick="SendForApproval" disabled="@isSaving"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>إرسال للاعتماد</button>}}}</div><button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button></div>
+                <div class="doc-actions-luxury">
+                    <div class="ml-gold-line"></div>
+                    <div class="doc-actions-right">
+                        @if (!isReadOnly)
+                        {
+                            <button class="btn-luxury btn-primary-luxury" @onclick="SaveReceipt" disabled="@isSaving">
+                                @if (isSaving){<div class="btn-spinner-sm"></div>}
+                                else{<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21V13H7v8"/></svg>}
+                                @(isNewMode ? "حفظ إذن الاستلام" : "حفظ التعديلات")
+                            </button>
+                        }
+                        @if (canSendForInspection)
+                        {
+                            <button class="btn-luxury btn-inspect-luxury" @onclick="SendForInspection" disabled="@isSaving">
+                                @(header.InspectionStatus == 3 ? "إعادة الإرسال للفحص" : "إرسال للفحص")
+                            </button>
+                        }
+                    </div>
+                    <button class="btn-luxury btn-ghost-luxury" @onclick="GoBack">رجوع</button>
+                </div>
             }
         }
     </div>
 
-    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick='() => toast = ""'><i class=bi-x-lg></i></button></div></div>}
+    @if (!string.IsNullOrEmpty(toast)){<div class="toast-luxury"><div class="toast-card-luxury @(toastOk?"success":"error")"><span>@toast</span><button @onclick="DismissToast"><i class=bi-x-lg></i></button></div></div>}
 }
 
 <style>
@@ -521,6 +609,7 @@ else
     private GoodsReceiptHeaderDto header = new() { GRNDate = DateTime.Today, InspectionStatus = 1 };
     private List<GoodsReceiptDetailDto> details = new();
     private ModulePermissionDto? permissions;
+    private ModulePermissionDto? qcPermissions;
     private int receiptPermissionLoadVersion;
     private bool isReceiptPermissionLoading, receiptPermissionLoadFailed, receiptPermissionLoadDenied;
     private string receiptPermissionLoadError = string.Empty;
@@ -533,6 +622,11 @@ else
     private int employeesLoadVersion;
     private bool isEmployeesLoading, employeesLoaded, employeesLoadFailed, employeesLoadDenied;
     private string employeesLoadError = string.Empty;
+    private List<LookupDto>? qualityInspectors;
+    private int qualityInspectorsLoadVersion;
+    private bool isQualityInspectorsLoading, qualityInspectorsLoaded, qualityInspectorsLoadFailed, qualityInspectorsLoadDenied;
+    private string qualityInspectorsLoadError = string.Empty;
+    private string inspectionNotesDraft = string.Empty;
     private List<LookupDto>? units;
     private int unitsLoadVersion;
     private bool isUnitsLoading, unitsLoaded, unitsLoadFailed, unitsLoadDenied;
@@ -580,6 +674,7 @@ else
     private string printError = string.Empty;
     private bool isSaving = false;
     private string toast = "";
+    private int toastGeneration;
     private bool toastOk = true;
 
     private bool showLineForm = false;
@@ -592,11 +687,41 @@ else
     private bool isViewMode => Navigation.Uri.ToLower().Contains("/view/");
     private bool isNewMode => ReceiptId == 0;
 
+    private bool canInspect =>
+        !isNewMode && !isViewMode &&
+        header.GRNStatus == 1 &&
+        header.InspectionStatus == 1 &&
+        header.InspectionRequestedDate.HasValue &&
+        details.Any() &&
+        header.AssignedInspectorID.HasValue && header.AssignedInspectorID.Value > 0 &&
+        header.AssignedInspectorID == UserSession.CurrentEmployeeID &&
+        (qcPermissions?.CanApprove ?? false);
+
     private bool canApprove =>
         !isNewMode && !isViewMode &&
         header.GRNStatus == 1 &&
-        details.Any() &&
+        header.InspectionStatus == 2 &&
+        header.InspectionRequestedDate.HasValue &&
+        header.InspectionCompletedDate.HasValue &&
+        header.AssignedInspectorID.HasValue &&
+        header.AssignedInspectorID == header.InspectedBy &&
+        details.Any(d => d.AcceptedQty.GetValueOrDefault() > 0) &&
         (permissions?.CanApprove ?? false);
+
+    private bool canSendForInspection =>
+        !isNewMode && !isViewMode &&
+        header.GRNStatus == 1 &&
+        details.Any() &&
+        !showLineForm &&
+        header.AssignedInspectorID.GetValueOrDefault() > 0 &&
+        (permissions?.CanEdit ?? false) &&
+        (header.InspectionStatus == 3 ||
+         (header.InspectionStatus == 1 && !header.InspectionRequestedDate.HasValue));
+
+    private string inspectionStatusLabel =>
+        header.InspectionStatus == 1 && header.InspectionRequestedDate.HasValue
+            ? "بانتظار الفحص"
+            : GoodsReceiptService.GetInspectionStatusName(header.InspectionStatus);
 
     private bool isReadOnly
     {
@@ -604,7 +729,11 @@ else
         {
             if (isViewMode) return true;
             if (isNewMode) return false;
-            return header.GRNStatus != 1;
+            if (header.GRNStatus != 1) return true;
+            if (!(permissions?.CanEdit ?? false)) return true;
+            if (header.InspectionStatus == 2) return true;
+            if (header.InspectionStatus == 1 && header.InspectionRequestedDate.HasValue) return true;
+            return false;
         }
     }
 
@@ -656,6 +785,7 @@ else
 
             if (!IsCurrentReceiptPermissionRequest(requestVersion, userId)) return false;
             permissions = PermissionService.GetModule("SCR_GRN");
+            qcPermissions = PermissionService.GetModule("SCR_QC");
             return true;
         }
         catch (UnauthorizedAccessException ex)
@@ -744,6 +874,7 @@ else
     {
         await LoadWarehousesAsync();
         await LoadEmployeesAsync();
+        await LoadQualityInspectorsAsync();
         await LoadUnitsAsync();
         await LoadSuppliersAsync();
         await LoadPurchaseItemsAsync();
@@ -859,6 +990,59 @@ else
     {
         if (isEmployeesLoading) return;
         await LoadEmployeesAsync();
+    }
+
+    private async Task LoadQualityInspectorsAsync()
+    {
+        if (isQualityInspectorsLoading) return;
+
+        var requestVersion = ++qualityInspectorsLoadVersion;
+        var userId = UserSession.UserID;
+        isQualityInspectorsLoading = true;
+        qualityInspectorsLoadFailed = false;
+        qualityInspectorsLoadDenied = false;
+        qualityInspectorsLoadError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var loadedInspectors = await GrnService.GetQualityInspectorsAsync();
+            if (requestVersion != qualityInspectorsLoadVersion || !UserSession.IsLoggedIn || UserSession.UserID != userId) return;
+            qualityInspectors = loadedInspectors ?? new List<LookupDto>();
+            qualityInspectorsLoaded = true;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Logger.LogWarning(ex, "Access denied loading goods receipt quality inspectors.");
+            if (requestVersion != qualityInspectorsLoadVersion || !UserSession.IsLoggedIn || UserSession.UserID != userId) return;
+            qualityInspectors = null;
+            qualityInspectorsLoaded = false;
+            qualityInspectorsLoadDenied = true;
+            qualityInspectorsLoadError = "ليس لديك صلاحية قراءة قائمة مسئولي الفحص.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load goods receipt quality inspectors.");
+            if (requestVersion != qualityInspectorsLoadVersion || !UserSession.IsLoggedIn || UserSession.UserID != userId) return;
+            qualityInspectorsLoadFailed = true;
+            qualityInspectorsLoadError = qualityInspectorsLoaded
+                ? "تعذر تحديث مسئولي الفحص؛ آخر الخيارات الناجحة ما زالت متاحة. أعد المحاولة."
+                : "تعذر تحميل مسئولي الفحص. أعد المحاولة.";
+        }
+        finally
+        {
+            if (requestVersion == qualityInspectorsLoadVersion)
+            {
+                isQualityInspectorsLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task RetryLoadQualityInspectorsAsync()
+    {
+        if (isQualityInspectorsLoading) return;
+        await LoadQualityInspectorsAsync();
     }
 
     private async Task LoadUnitsAsync()
@@ -1061,6 +1245,13 @@ else
 
             header = loadedHeader;
             details = loadedDetails ?? new List<GoodsReceiptDetailDto>();
+            inspectionNotesDraft = header.InspectionNotes ?? string.Empty;
+            if (header.InspectionStatus == 1 && header.InspectionRequestedDate.HasValue &&
+                header.AssignedInspectorID == UserSession.CurrentEmployeeID)
+            {
+                foreach (var line in details)
+                    line.AcceptedQty ??= line.ReceivedQty;
+            }
             receiptDetailsLoaded = true;
             isSourceLocked = true;
             isPOLoaded = true;
@@ -1599,7 +1790,7 @@ else
     private async Task SaveReceipt()
     {
         if (header.SupplierID <= 0) { await ShowToastAsync("اختر المورد", false); return; }
-        if (header.WarehouseID <= 0) { await ShowToastAsync("اختر المخزن", false); return; }
+        if (header.WarehouseID <= 0) { await ShowToastAsync("اختر المخزن المبدئي؛ ويمكن تغيير مخزن كل صنف على سطره", false); return; }
 
         isSaving = true; StateHasChanged();
         try
@@ -1646,52 +1837,68 @@ else
 
     private async Task SendForInspection()
     {
-        if (!details.Any()){ await ShowToastAsync("أضف أصناف أولاً", false); return; }
+        if (!details.Any()){ await ShowToastAsync("أضف الأصناف واحفظها أولاً", false); return; }
+        if (header.AssignedInspectorID.GetValueOrDefault() <= 0){ await ShowToastAsync("حدد مسئول الفحص أولاً", false); return; }
         isSaving = true; StateHasChanged();
         try
         {
             await GrnService.UpdateReceiptAsync(header, UserSession.UserID);
             await GrnService.RequestInspectionAsync(ReceiptId, UserSession.UserID);
-            await ShowToastAsync("تم إرسال طلب الفحص ");
+            await RefreshReceiptHeaderAfterWriteAsync(ReceiptId);
+            var inspectorName = string.IsNullOrWhiteSpace(header.AssignedInspectorName) ? "المسئول المحدد" : header.AssignedInspectorName;
+            await ShowToastAsync($"تم إرسال الإذن للفحص إلى {inspectorName}. سيظهر الإشعار داخل التطبيق.");
         }
         catch (Exception ex){ await ShowToastAsync("خطأ: " + ex.Message, false); }
         finally{ isSaving = false; }
     }
 
-    private async Task SendForApproval()
+    private async Task SubmitInspectionAsync()
     {
-        if (!details.Any()){ await ShowToastAsync("أضف أصناف أولاً", false); return; }
-        if (header.InspectionStatus != 2){ await ShowToastAsync("يجب إتمام الفحص وقبول البضاعة قبل طلب الاعتماد", false); return; }
+        if (!canInspect){ await ShowToastAsync("لا يمكنك تسجيل فحص هذا الإذن", false); return; }
+        if (details.Any(d => !d.AcceptedQty.HasValue))
+        {
+            await ShowToastAsync("حدد الكمية المقبولة لكل صنف؛ وسيتم حساب المرفوض تلقائيًا", false);
+            return;
+        }
+
         isSaving = true; StateHasChanged();
         try
         {
-            await GrnService.UpdateReceiptAsync(header, UserSession.UserID);
-            await GrnService.RequestApprovalAsync(ReceiptId, UserSession.UserID);
-            await ShowToastAsync("تم إرسال طلب الاعتماد ");
+            var result = await GrnService.CompleteInspectionAsync(
+                ReceiptId,
+                details.Select(d => new GoodsReceiptInspectionLineEditDto
+                {
+                    GRNDetailID = d.GRNDetailID,
+                    AcceptedQty = d.AcceptedQty,
+                    QualityNotes = d.QualityNotes
+                }).ToList(),
+                inspectionNotesDraft,
+                UserSession.UserID);
+
+            await RefreshReceiptDetailsAfterWriteAsync(ReceiptId);
+            await RefreshReceiptHeaderAfterWriteAsync(ReceiptId);
+            await ShowToastAsync(result == 2
+                ? "تم تسجيل الفحص وإرسال إشعار الاعتماد؛ سيُرحّل المخزون عند الاعتماد النهائي"
+                : "تم تسجيل نتيجة الفحص بالرفض وإشعار منشئ الإذن", result == 2);
         }
-        catch (Exception ex){ await ShowToastAsync("خطأ: " + ex.Message, false); }
+        catch (Exception ex){ await ShowToastAsync("خطأ في تسجيل الفحص: " + ex.Message, false); }
         finally{ isSaving = false; }
     }
 
     private async Task ExecuteApprove()
     {
-        if (!details.Any()){ toast = "لا يمكن اعتماد إذن استلام بدون أصناف"; toastOk = false; StateHasChanged(); return; }
-        if (header.InspectionStatus != 2){ toast = "يجب تسجيل نتيجة الفحص كمقبول قبل اعتماد إذن الاستلام"; toastOk = false; StateHasChanged(); return; }
-        try{ var confirmed = await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد إذن الاستلام؟ سيتم حفظ نتيجة الفحص مقبولًا مع الاعتماد."); if (!confirmed) return; } catch { return; }
-        isSaving = true; toast = ""; StateHasChanged();
+        if (!canApprove){ await ShowToastAsync("لا يمكن اعتماد الإذن قبل قبول الفحص من المسئول المحدد", false); return; }
+        try{ var confirmed = await JS.InvokeAsync<bool>("confirm","هل تريد اعتماد الإذن وترحيل الكميات المقبولة إلى المخزون؟"); if (!confirmed) return; } catch { return; }
+        isSaving = true; toastGeneration++; toast = string.Empty; StateHasChanged();
         try
         {
-            await GrnService.ApproveAsync(
-                ReceiptId,
-                UserSession.CurrentUserID,
-                UserSession.CurrentEmployeeID,
-                header.InspectionStatus,
-                header.InspectedBy,
-                header.InspectionNotes);
-            header.GRNStatus = 2; toast = "تم اعتماد إذن الاستلام بنجاح "; toastOk = true; isSaving = false; StateHasChanged();
-            await Task.Delay(2000); Navigation.NavigateTo("/goods-receipts");
+            await GrnService.ApproveAsync(ReceiptId, UserSession.CurrentUserID, UserSession.CurrentEmployeeID);
+            header.GRNStatus = 2;
+            isSaving = false;
+            await ShowToastAsync("تم اعتماد الإذن وترحيل الكميات المقبولة بنجاح");
+            Navigation.NavigateTo("/goods-receipts");
         }
-        catch (Exception ex){ isSaving = false; toast = "خطأ في الاعتماد: " + ex.Message; toastOk = false; StateHasChanged(); }
+        catch (Exception ex){ isSaving = false; await ShowToastAsync("خطأ في الاعتماد والترحيل: " + ex.Message, false); }
     }
 
     private async Task ExecuteCancel()
@@ -1702,7 +1909,7 @@ else
         catch (Exception ex) { await ShowToastAsync("خطأ: " + ex.Message, false); }
     }
 
-    private void ShowAddLine(){ ResetSelectedItemInfoLoadState(); isEditLine = false; editLine = new() { GRNID = ReceiptId, QualityStatus = 1 }; lineMsg = ""; showLineForm = true; }
+    private void ShowAddLine(){ ResetSelectedItemInfoLoadState(); isEditLine = false; editLine = new() { GRNID = ReceiptId, WarehouseID = header.WarehouseID, QualityStatus = 1 }; lineMsg = ""; showLineForm = true; }
     private void ShowEditLine(GoodsReceiptDetailDto line)
     {
         ResetSelectedItemInfoLoadState();
@@ -1710,12 +1917,13 @@ else
         editLine = new()
         {
             GRNDetailID = line.GRNDetailID, GRNID = line.GRNID,
-            ItemID = line.ItemID, UnitID = line.UnitID,
+            ItemID = line.ItemID, UnitID = line.UnitID, WarehouseID = line.WarehouseID,
             OrderedQty = line.OrderedQty,
             ReceivedQty = line.ReceivedQty,
             AcceptedQty = line.AcceptedQty,
             RejectedQty = line.RejectedQty,
             BatchNumber = line.BatchNumber,
+            SupplierBatchNumber = line.SupplierBatchNumber,
             ExpiryDate = line.ExpiryDate,
             ManufactureDate = line.ManufactureDate,
             UnitCost = line.UnitCost,
@@ -1735,6 +1943,7 @@ else
         if (isSelectedItemInfoLoading) { lineMsg = "جارٍ تحميل معلومات الصنف؛ انتظر قبل إضافة الصنف."; lineMsgOk = false; return; }
         if (editLine.ItemID == 0) { lineMsg = "اختر الصنف"; lineMsgOk = false; return; }
         if (editLine.UnitID == 0) { lineMsg = "اختر الوحدة"; lineMsgOk = false; return; }
+        if (editLine.WarehouseID <= 0) { lineMsg = "اختر مخزنًا لهذا الصنف"; lineMsgOk = false; return; }
         if (editLine.ReceivedQty <= 0) { lineMsg = "أدخل الكمية المستلمة"; lineMsgOk = false; return; }
         if (isNewMode && ReceiptId == 0){ await SaveReceipt(); if (ReceiptId == 0) return; editLine.GRNID = ReceiptId; }
         isSavingLine = true; StateHasChanged();
@@ -1812,9 +2021,22 @@ else
 
     private void GoBack() => Navigation.NavigateTo("/goods-receipts");
 
+    private void DismissToast()
+    {
+        toastGeneration++;
+        toast = string.Empty;
+        StateHasChanged();
+    }
+
     private async Task ShowToastAsync(string message, bool ok = true)
     {
+        var generation = ++toastGeneration;
         toast = message; toastOk = ok; StateHasChanged();
-        await Task.Delay(4000); toast = ""; StateHasChanged();
+        await Task.Delay(3000);
+        if (generation == toastGeneration)
+        {
+            toast = "";
+            StateHasChanged();
+        }
     }
 }

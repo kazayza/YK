@@ -647,3 +647,130 @@ window.sessionTimeoutManager = (() => {
         }
     };
 })();
+
+// سلوك موحد للتنبيهات المؤقتة داخل صفحات النظام.
+window.ykToastAutoDismiss = (function () {
+    const selector = [
+        '.toast-luxury', '.toast-container', '.toast-container-luxury',
+        '.toast-notification', '.toast-notification-luxury', '.toast-wrap',
+        '.quote-toast', '.quotation-toast', '.v-toast', '.toast-msg', '.pb-toast-msg'
+    ].join(',');
+    const dismissAfterMs = 3000;
+    const states = new WeakMap();
+    let observer = null;
+
+    function isElement(node) {
+        return !!node && node.nodeType === 1;
+    }
+
+    function messageText(element) {
+        const clone = element.cloneNode(true);
+        clone.querySelectorAll('button, svg, i, [aria-hidden="true"]').forEach(node => node.remove());
+        return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function classSignature(element) {
+        return Array.from(element.classList)
+            .filter(name => name !== 'yk-toast-visible' && name !== 'yk-toast-dismissed')
+            .sort()
+            .join(' ');
+    }
+
+    function clearToastState(element) {
+        const state = states.get(element);
+        if (state) clearTimeout(state.timer);
+        states.delete(element);
+        element.classList.remove('yk-toast-visible', 'yk-toast-dismissed');
+    }
+
+    function scheduleDismissal(element) {
+        if (!isElement(element) || !element.isConnected) return;
+
+        const message = messageText(element);
+        if (!message) {
+            clearToastState(element);
+            return;
+        }
+
+        const signature = classSignature(element);
+        const previous = states.get(element);
+        if (previous && previous.message === message && previous.classSignature === signature &&
+            !element.classList.contains('yk-toast-dismissed')) return;
+        if (previous) clearTimeout(previous.timer);
+
+        element.classList.remove('yk-toast-visible', 'yk-toast-dismissed');
+        void element.offsetWidth;
+        element.classList.add('yk-toast-visible');
+
+        const state = { message, classSignature: signature, timer: null };
+        state.timer = setTimeout(() => {
+            if (!element.isConnected || states.get(element) !== state) return;
+            if (messageText(element) !== message || classSignature(element) !== signature) {
+                scheduleDismissal(element);
+                return;
+            }
+            element.classList.remove('yk-toast-visible');
+            element.classList.add('yk-toast-dismissed');
+        }, dismissAfterMs);
+        states.set(element, state);
+    }
+
+    function processNode(node) {
+        if (!isElement(node)) return;
+        if (node.matches(selector)) scheduleDismissal(node);
+        node.querySelectorAll(selector).forEach(scheduleDismissal);
+    }
+
+    function forgetNode(node) {
+        if (!isElement(node)) return;
+        const removed = [];
+        if (node.matches(selector)) removed.push(node);
+        node.querySelectorAll(selector).forEach(element => removed.push(element));
+        removed.forEach(clearToastState);
+    }
+
+    function onMutations(records) {
+        const pending = new Set();
+        records.forEach(record => {
+            if (record.type === 'childList') {
+                record.addedNodes.forEach(processNode);
+                record.removedNodes.forEach(forgetNode);
+            }
+
+            const target = isElement(record.target) ? record.target : record.target.parentElement;
+            const toast = target && target.closest(selector);
+            if (!toast) return;
+
+            if (record.type === 'attributes' && record.attributeName === 'class') {
+                const state = states.get(toast);
+                if (state && state.classSignature === classSignature(toast)) return;
+            }
+            pending.add(toast);
+        });
+        pending.forEach(scheduleDismissal);
+    }
+
+    function start() {
+        if (observer || !document.body) return;
+        observer = new MutationObserver(onMutations);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+        processNode(document.body);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start, { once: true });
+    } else {
+        start();
+    }
+
+    return {
+        start,
+        refresh: function (root) { processNode(root || document.body); }
+    };
+})();

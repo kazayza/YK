@@ -161,15 +161,17 @@ namespace YKCoatings.Services
             return result.ToList();
         }
 
-                public async Task<List<LookupDto>> GetCustomerGroupsAsync()
+        public async Task<List<LookupDto>> GetCustomerGroupsAsync()
         {
             await RequireLookupPermissionAsync(
                 "ليس لديك صلاحية استخدام بيانات الاختيار المطلوبة لهذه العملية.",
                 AnyOperation("SCR_CUSTOMERS"));
 
             using var connection = CreateConnection();
-            var sql = @"SELECT GroupID AS Id, GroupNameAr AS Name
-                        FROM dbo.CustomerGroups WHERE IsActive = 1
+            var sql = @"SELECT GroupID AS Id, GroupNameAr AS Name, GroupCode AS Code,
+                               ISNULL(DiscountPercent, 0) AS DiscountPercent, PriceListID
+                        FROM dbo.CustomerGroups
+                        WHERE ISNULL(IsActive, 0) <> 0
                         ORDER BY GroupNameAr";
             var result = await connection.QueryAsync<LookupDto>(sql);
             return result.ToList();
@@ -406,9 +408,24 @@ namespace YKCoatings.Services
             var sql = @"SELECT c.CustomerID, c.CustomerNameAr, c.CustomerCode,
                                c.PaymentTermID, c.CurrencyID,
                                ISNULL(cur.ExchangeRate,1) AS ExchangeRate,
-                               c.CreditLimit, c.CurrentBalance
+                               ISNULL(c.CreditLimit, 0) AS CreditLimit,
+                               ISNULL(c.CurrentBalance, 0) AS CurrentBalance,
+                               COALESCE(customerPrice.PriceListID, groupPrice.PriceListID, defaultPrice.PriceListID) AS PriceListID,
+                               COALESCE(customerPrice.PriceListNameAr, groupPrice.PriceListNameAr, defaultPrice.PriceListNameAr) AS PriceListName
                         FROM dbo.Customers c
                         LEFT JOIN dbo.Currencies cur ON c.CurrencyID=cur.CurrencyID
+                        LEFT JOIN dbo.CustomerGroups cg ON c.CustomerGroupID = cg.GroupID
+                        LEFT JOIN dbo.PriceLists customerPrice
+                            ON customerPrice.PriceListID = c.PriceListID AND ISNULL(customerPrice.IsActive, 0) <> 0
+                        LEFT JOIN dbo.PriceLists groupPrice
+                            ON groupPrice.PriceListID = cg.PriceListID AND ISNULL(groupPrice.IsActive, 0) <> 0
+                        OUTER APPLY
+                        (
+                            SELECT TOP (1) PriceListID, PriceListNameAr
+                            FROM dbo.PriceLists
+                            WHERE ISNULL(IsActive, 0) <> 0 AND IsDefault = 1
+                            ORDER BY PriceListID
+                        ) defaultPrice
                         WHERE c.CustomerID=@ID";
             return await connection.QueryFirstOrDefaultAsync<CustomerQuickInfoDto>(sql, new { ID = customerId });
         }
@@ -1046,7 +1063,7 @@ public async Task<List<GRNLineForInvoiceDto>> GetGRNLinesForInvoiceAsync(int grn
                     i.ItemNameAr,
                     grd.UnitID,
                     u.UnitNameAr AS UnitName,
-                    grn.WarehouseID,
+                    COALESCE(NULLIF(grd.WarehouseID, 0), NULLIF(grn.WarehouseID, 0)) AS WarehouseID,
                     ISNULL(grd.AcceptedQty, grd.ReceivedQty) AS ReceivedQty,
                     grd.AcceptedQty,
                     grd.UnitCost,

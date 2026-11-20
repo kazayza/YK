@@ -12,7 +12,7 @@
 @inject IJSRuntime JS
 @inject Microsoft.Extensions.Logging.ILogger<CustomerForm> Logger
 
-<PageTitle>@PageTitleText - واي كي كوتينج</PageTitle>
+<PageTitle>@PageTitleText - واي كي كوتينج   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {<div class="no-access-luxury" dir="rtl"><div class="na-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4>يجب تسجيل الدخول أولاً</h4></div>}
@@ -103,18 +103,22 @@ else
                                 <label class="field-label">مجموعة العميل</label>
                                 <div class="select-wrap">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-                                    <select class="field-select" @bind="model.CustomerGroupID" disabled="@(isViewMode || !hasLoadedCustomerGroupsLookup || isLoadingCustomerGroupsLookup || customerGroupsLookupReadDenied)">
+                                    <select class="field-select" @bind="model.CustomerGroupID" @bind:after="ApplyCustomerGroupDefaultsAsync" disabled="@(isViewMode || !hasLoadedCustomerGroupsLookup || isLoadingCustomerGroupsLookup || customerGroupsLookupReadDenied)">
                                         <option value="0">-- بدون --</option>
                                         @if (customerGroups != null)
                                         {
                                             @foreach (var item in customerGroups)
                                             {
-                                                <option value="@item.Id">@item.Name</option>
+                                                <option value="@item.Id">@item.Name (@item.Code) — خصم @item.DiscountPercent.ToString("0.##")%</option>
                                             }
                                         }
                                     </select>
                                     <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
                                 </div>
+                                @if (!string.IsNullOrWhiteSpace(customerGroupDefaultsMessage))
+                                {
+                                    <span class="field-hint" role="status">@customerGroupDefaultsMessage</span>
+                                }
                                 @if (isLoadingCustomerGroupsLookup)
                                 {
                                     <span class="field-hint" role="status">جاري تحميل مجموعات العملاء...</span>
@@ -591,6 +595,8 @@ else
     private bool currenciesLookupReadFailed;
     private bool currenciesLookupReadDenied;
     private List<LookupDto>? customerGroups;
+    private string customerGroupDefaultsMessage = string.Empty;
+    private int previousCustomerGroupId;
     private long customerGroupsLookupLoadVersion;
     private bool isLoadingCustomerGroupsLookup;
     private bool hasLoadedCustomerGroupsLookup;
@@ -719,7 +725,7 @@ else
     private bool HasAccessToCurrentMode(){if(permissions==null)return false;if(isNewMode)return permissions.CanAdd;if(isEditMode)return permissions.CanEdit;return permissions.CanView;}
     private async Task LoadPageAsync()
     {
-        isLoading=true;formMessage="";contactMessage="";
+        isLoading=true;formMessage="";contactMessage="";customerGroupDefaultsMessage=string.Empty;previousCustomerGroupId=0;
         if (customerRecordContextId != CustomerId)
         {
             customerRecordLoadVersion++;
@@ -795,6 +801,7 @@ else
             }
 
             model = loaded;
+            previousCustomerGroupId = loaded.CustomerGroupID.GetValueOrDefault();
             customerRecordLoaded = true;
         }
         catch (UnauthorizedAccessException)
@@ -957,6 +964,74 @@ else
             if (loadVersion == customerGroupsLookupLoadVersion)
                 isLoadingCustomerGroupsLookup = false;
         }
+    }
+
+    private Task ApplyCustomerGroupDefaultsAsync()
+    {
+        var selectedGroupId = model.CustomerGroupID.GetValueOrDefault();
+        var previousGroup = customerGroups?.FirstOrDefault(group => group.Id == previousCustomerGroupId);
+        var discountMatchesPreviousDefault = previousGroup is not null
+            ? model.DiscountPercent == previousGroup.DiscountPercent
+            : model.DiscountPercent == 0;
+        var priceListMatchesPreviousDefault = previousGroup is not null
+            ? model.PriceListID.GetValueOrDefault() == previousGroup.PriceListID.GetValueOrDefault()
+            : model.PriceListID.GetValueOrDefault() <= 0;
+
+        if (selectedGroupId <= 0)
+        {
+            if (discountMatchesPreviousDefault)
+                model.DiscountPercent = 0;
+            if (priceListMatchesPreviousDefault)
+                model.PriceListID = null;
+
+            previousCustomerGroupId = 0;
+            customerGroupDefaultsMessage = "أزيلت افتراضيات المجموعة السابقة؛ أُبقيت أي قيم خصم أو قائمة أسعار عُدلت يدويًا.";
+            return Task.CompletedTask;
+        }
+
+        var selectedGroup = customerGroups?.FirstOrDefault(group => group.Id == selectedGroupId);
+        if (selectedGroup is null)
+        {
+            customerGroupDefaultsMessage = "تعذر تحديد افتراضيات المجموعة؛ راجع الخصم وقائمة الأسعار يدويًا.";
+            return Task.CompletedTask;
+        }
+
+        if (discountMatchesPreviousDefault)
+            model.DiscountPercent = selectedGroup.DiscountPercent;
+
+        var selectedGroupPriceListId = selectedGroup.PriceListID.GetValueOrDefault();
+        var groupHasPriceList = selectedGroupPriceListId > 0;
+        var groupPriceListAvailable = !groupHasPriceList
+            || priceLists?.Any(list => list.Id == selectedGroupPriceListId) == true;
+        var priceListWasApplied = priceListMatchesPreviousDefault && groupPriceListAvailable;
+        if (priceListWasApplied)
+            model.PriceListID = groupHasPriceList ? selectedGroupPriceListId : null;
+
+        previousCustomerGroupId = selectedGroupId;
+        var discountMessage = discountMatchesPreviousDefault
+            ? $"الخصم الافتراضي للمجموعة {selectedGroup.DiscountPercent:0.##}%"
+            : "احتُفظ بخصم العميل المعدل يدويًا";
+        string priceListMessage;
+        if (!priceListMatchesPreviousDefault)
+        {
+            priceListMessage = "احتُفظت بقائمة الأسعار المعدلة يدويًا";
+        }
+        else if (!groupPriceListAvailable)
+        {
+            priceListMessage = "لم تُطبق قائمة المجموعة لأن خيارات قوائم الأسعار غير متاحة؛ أعد تحميلها قبل الحفظ";
+        }
+        else if (groupHasPriceList)
+        {
+            var priceListName = priceLists?.FirstOrDefault(list => list.Id == selectedGroupPriceListId)?.Name;
+            priceListName = string.IsNullOrWhiteSpace(priceListName) ? $"#{selectedGroupPriceListId}" : priceListName;
+            priceListMessage = $"قائمة الأسعار {priceListName}";
+        }
+        else
+        {
+            priceListMessage = "لا توجد قائمة خاصة للمجموعة؛ ستُستخدم القائمة الافتراضية عند التسعير";
+        }
+        customerGroupDefaultsMessage = $"{discountMessage}؛ {priceListMessage}. راجع القيم في تبويب المالية قبل الحفظ.";
+        return Task.CompletedTask;
     }
 
     private async Task RetryPriceListLookupAsync()

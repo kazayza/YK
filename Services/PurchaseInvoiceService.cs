@@ -868,7 +868,15 @@ namespace YKCoatings.Services
                                           AND (jd.AccountID IS NULL OR jd.AccountID<=0
                                                OR coa.AccountID IS NULL
                                                OR ISNULL(coa.IsActive,1)<>1
-                                               OR ISNULL(coa.IsDetailAccount,0)<>1
+                                               OR (
+                                                    ISNULL(coa.IsDetailAccount,0)<>1
+                                                    AND NOT (
+                                                        ISNULL(coa.AccountCode,N'')=N'2101'
+                                                        AND ISNULL(coa.IsSystemAccount,0)=1
+                                                        AND ISNULL(coa.AccountType,0)=2
+                                                        AND UPPER(LTRIM(RTRIM(ISNULL(coa.LinkedEntityType,N''))))=N'SUPPLIER'
+                                                    )
+                                               )
                                                OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
                                                OR jd.CostCenterID<0
                                                OR (jd.CostCenterID>0 AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))

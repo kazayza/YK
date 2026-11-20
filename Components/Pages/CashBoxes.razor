@@ -12,7 +12,7 @@
 @inject IJSRuntime JS
 @inject Microsoft.Extensions.Logging.ILogger<CashBoxes> Logger
 
-<PageTitle>الخزائن والبنوك</PageTitle>
+<PageTitle>الخزائن والبنوك -   </PageTitle>
 
 @if (!UserSession.IsLoggedIn)
 {
@@ -114,6 +114,10 @@ else
                                         {
                                             <button class="act-btn view" title="كشف حساب" @onclick="() => ViewStatement(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
                                         }
+                                        @if(permissions.CanPost && cb.OpeningBalance != 0m && cb.AccountID.GetValueOrDefault() > 0 && !cb.HasOpeningBalanceJournal && coaList.Any(account => account.AccountID == cb.AccountID.GetValueOrDefault() && account.AccountType == 1 && account.IsDetailAccount))
+                                        {
+                                            <button type="button" class="btn-luxury btn-ghost-luxury btn-opening-balance" @onclick="() => ShowOpeningBalanceDialogAsync(cb)">قيد افتتاحي</button>
+                                        }
                                         @if(permissions.CanEdit){<button class="act-btn edit" title="تعديل" @onclick="() => EditBox(cb.CashBoxID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                         @if(permissions.CanDelete){<button class="act-btn delete" title="حذف" @onclick="() => ShowDelete(cb)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
                                     </div></td>
@@ -159,6 +163,78 @@ else
             </div>
             <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="SaveEdit" disabled="@isSaving">@if(isSaving){<div class="btn-spinner-sm"></div>}حفظ</button><button class="btn-luxury btn-ghost-luxury" @onclick="CloseEdit">إلغاء</button></div>
         </div></div>
+    }
+
+    @if (showOpeningBalanceDialog && openingBalanceBox is not null)
+    {
+        <div class="modal-overlay-luxury" @onclick="CloseOpeningBalanceDialog">
+            <div class="modal-card-luxury large" @onclick:stopPropagation="true">
+                <div class="ml-gold-line"></div>
+                <div class="ml-header">
+                    <h3>مراجعة قيد افتتاح الخزينة</h3>
+                    <button type="button" class="btn-close-x" @onclick="CloseOpeningBalanceDialog" aria-label="إغلاق">×</button>
+                </div>
+                <div class="ml-body">
+                    <p>الخزينة: <strong>@openingBalanceBox.CashBoxNameAr</strong> (@openingBalanceBox.CashBoxCode)</p>
+                    <p>الحساب: <strong>@openingBalanceBox.AccountNameAr</strong> (@openingBalanceBox.AccountCode)</p>
+                    <p>المبلغ الافتتاحي: <strong>@Math.Abs(openingBalanceBox.OpeningBalance).ToString("#,##0.00")</strong></p>
+                    <p>تاريخ القيد: <strong>@openingJournalDate.ToString("yyyy-MM-dd")</strong></p>
+
+                    <div class="opening-balance-warning" role="alert">
+                        هذا الإجراء ينشئ قيدًا محاسبيًا جديدًا ولا يغيّر رصيد الخزينة. راجع كشف الأستاذ أولًا؛ لا تتابع إذا كان هذا الافتتاح مسجلًا بقيد سابق حتى لا يتكرر.
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(cashBoxLookupWarning))
+                    {
+                        <div class="msg-luxury msg-error" role="alert">
+                            @cashBoxLookupWarning
+                            <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="RetryCashBoxLookupsAsync" disabled="@isRefreshingCashBoxLookups">إعادة تحميل الحسابات</button>
+                        </div>
+                    }
+
+                    <div class="fg opening-offset-field">
+                        <label for="opening-offset-account">الحساب المقابل — الأرباح المرحلة *</label>
+                        <select id="opening-offset-account" @bind="openingOffsetAccountId">
+                            <option value="0">— اختر حساب الأرباح المرحلة —</option>
+                            @foreach (var account in OpeningEquityAccounts)
+                            {
+                                <option value="@account.AccountID">@account.AccountCode - @account.AccountNameAr</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="opening-balance-preview">
+                        @if (openingBalanceBox.OpeningBalance >= 0m)
+                        {
+                            <div>مدين: @openingBalanceBox.AccountNameAr — @Math.Abs(openingBalanceBox.OpeningBalance).ToString("#,##0.00")</div>
+                            <div>دائن: @(OpeningEquityAccounts.FirstOrDefault(account => account.AccountID == openingOffsetAccountId)?.AccountNameAr ?? "الأرباح المرحلة") — @Math.Abs(openingBalanceBox.OpeningBalance).ToString("#,##0.00")</div>
+                        }
+                        else
+                        {
+                            <div>مدين: @(OpeningEquityAccounts.FirstOrDefault(account => account.AccountID == openingOffsetAccountId)?.AccountNameAr ?? "الأرباح المرحلة") — @Math.Abs(openingBalanceBox.OpeningBalance).ToString("#,##0.00")</div>
+                            <div>دائن: @openingBalanceBox.AccountNameAr — @Math.Abs(openingBalanceBox.OpeningBalance).ToString("#,##0.00")</div>
+                        }
+                    </div>
+
+                    <label class="opening-balance-confirm">
+                        <input type="checkbox" @bind="confirmedNoPreviousOpeningJournal" />
+                        <span>راجعت كشف حساب الأستاذ وتأكدت أن رصيد الافتتاح غير مسجل في قيد سابق.</span>
+                    </label>
+
+                    @if (!string.IsNullOrWhiteSpace(openingBalanceMessage))
+                    {
+                        <div class="msg-luxury msg-error" role="alert">@openingBalanceMessage</div>
+                    }
+                </div>
+                <div class="ml-footer">
+                    <button type="button" class="btn-luxury btn-primary-luxury" @onclick="PostOpeningBalanceJournalAsync"
+                            disabled="@(isPostingOpeningBalance || !confirmedNoPreviousOpeningJournal || openingOffsetAccountId <= 0 || !OpeningEquityAccounts.Any())">
+                        @(isPostingOpeningBalance ? "جارٍ ترحيل القيد..." : "تأكيد وترحيل القيد")
+                    </button>
+                    <button type="button" class="btn-luxury btn-ghost-luxury" @onclick="CloseOpeningBalanceDialog" disabled="@isPostingOpeningBalance">إلغاء</button>
+                </div>
+            </div>
+        </div>
     }
 
     @if (showDeleteDialog)
@@ -245,6 +321,13 @@ else
 .empty-icon-luxury{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.1);display:flex;align-items:center;justify-content:center;color:var(--gold-dark)}
 .empty-icon-luxury svg{width:28px;height:28px}
 .empty-sub{color:#9ca3af;font-size:.82rem;margin-top:6px}
+.btn-opening-balance{font-size:.72rem;padding:5px 8px;white-space:nowrap}
+.opening-balance-warning{padding:12px 14px;border:1px solid #fcd34d;border-radius:12px;background:#fffbeb;color:#92400e;font-size:.84rem;line-height:1.7;margin:12px 0}
+.opening-offset-field{margin:14px 0}
+.opening-offset-field select{width:100%;min-height:42px;border:1px solid #e8e2d0;border-radius:10px;padding:8px 12px;font-family:'Tajawal',sans-serif}
+.opening-balance-preview{display:grid;gap:6px;padding:12px;border-radius:12px;background:#f8fafc;color:#0f172a;font-size:.86rem;font-weight:700}
+.opening-balance-confirm{display:flex;align-items:flex-start;gap:9px;margin-top:14px;color:#334155;font-size:.82rem;line-height:1.6;cursor:pointer}
+.opening-balance-confirm input{margin-top:4px;accent-color:#9C7C2E}
 </style>
 
 @code {
@@ -264,7 +347,19 @@ else
     private string editMsg = "";
     private bool editOk = true;
     private List<ChartOfAccountDto> coaList = new();
+    private List<ChartOfAccountDto> OpeningEquityAccounts => coaList
+        .Where(account => account.IsActive && account.IsDetailAccount
+            && account.AccountType == 3 && account.AccountNature == 2)
+        .OrderBy(account => account.AccountCode)
+        .ToList();
     private List<LookupDto> currencies = new();
+    private bool showOpeningBalanceDialog;
+    private CashBoxListDto? openingBalanceBox;
+    private int openingOffsetAccountId;
+    private DateTime openingJournalDate = DateTime.Today;
+    private bool confirmedNoPreviousOpeningJournal;
+    private bool isPostingOpeningBalance;
+    private string openingBalanceMessage = string.Empty;
     private string cashBoxLookupWarning = string.Empty;
     private bool isRefreshingCashBoxLookups = false;
 
@@ -406,6 +501,78 @@ else
 
     private void CloseEdit(){ showEdit=false; }
     private void ViewStatement(int id) => Navigation.NavigateTo($"/cash-box-statement?cashBoxId={id}");
+
+    private async Task ShowOpeningBalanceDialogAsync(CashBoxListDto cashBox)
+    {
+        if (isPostingOpeningBalance || cashBox.OpeningBalance == 0m || cashBox.HasOpeningBalanceJournal)
+            return;
+
+        if (coaList.Count == 0)
+            await LoadCashBoxLookupsAsync();
+
+        openingBalanceBox = cashBox;
+        openingJournalDate = DateTime.Today;
+        confirmedNoPreviousOpeningJournal = false;
+        openingBalanceMessage = string.Empty;
+
+        var retainedEarningsAccount = OpeningEquityAccounts.FirstOrDefault(account =>
+            account.AccountNameAr?.Contains("أرباح مرحلة", StringComparison.OrdinalIgnoreCase) == true
+            || account.AccountNameEn?.Contains("retained", StringComparison.OrdinalIgnoreCase) == true);
+        openingOffsetAccountId = retainedEarningsAccount?.AccountID ?? 0;
+        showOpeningBalanceDialog = true;
+    }
+
+    private void CloseOpeningBalanceDialog()
+    {
+        if (isPostingOpeningBalance) return;
+        showOpeningBalanceDialog = false;
+        openingBalanceBox = null;
+        confirmedNoPreviousOpeningJournal = false;
+        openingBalanceMessage = string.Empty;
+    }
+
+    private async Task PostOpeningBalanceJournalAsync()
+    {
+        if (openingBalanceBox is null || isPostingOpeningBalance) return;
+        if (!confirmedNoPreviousOpeningJournal)
+        {
+            openingBalanceMessage = "راجع كشف حساب الأستاذ وأكد عدم وجود قيد افتتاحي سابق قبل المتابعة.";
+            return;
+        }
+        if (openingOffsetAccountId <= 0 || !OpeningEquityAccounts.Any(account => account.AccountID == openingOffsetAccountId))
+        {
+            openingBalanceMessage = "اختر حساب أرباح مرحلة نشطًا وتفصيليًا قبل الترحيل.";
+            return;
+        }
+
+        isPostingOpeningBalance = true;
+        openingBalanceMessage = string.Empty;
+        try
+        {
+            var journalNumber = await TreasuryService.PostCashBoxOpeningBalanceAsync(
+                openingBalanceBox.CashBoxID,
+                openingBalanceBox.AccountID.GetValueOrDefault(),
+                openingBalanceBox.OpeningBalance,
+                openingOffsetAccountId,
+                openingJournalDate,
+                confirmedNoPreviousOpeningJournal,
+                UserSession.UserID);
+            toast = $"تم ترحيل قيد الافتتاح رقم {journalNumber}";
+            toastOk = true;
+            showOpeningBalanceDialog = false;
+            openingBalanceBox = null;
+            confirmedNoPreviousOpeningJournal = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            openingBalanceMessage = "تعذر ترحيل القيد: " + ex.Message;
+        }
+        finally
+        {
+            isPostingOpeningBalance = false;
+        }
+    }
 
     private async Task SaveEdit()
     {

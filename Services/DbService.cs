@@ -59,6 +59,8 @@
         public string? Code { get; set; }
         public int? ParentId { get; set; }
         public string? ParentCode { get; set; }
+        public decimal DiscountPercent { get; set; }
+        public int? PriceListID { get; set; }
     }
 
     public class UserLoginDto
@@ -234,9 +236,13 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
         public string? UnitName { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal MinQty { get; set; }
+        public decimal? MaxQty { get; set; }
         public decimal DiscountPercent { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public decimal MinSellingPrice { get; set; }
         public bool IsActive { get; set; }
+        public DateTime? CreatedDate { get; set; }
     }
 
     public class PriceListDetailEditDto
@@ -247,8 +253,12 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
         public int UnitID { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal MinQty { get; set; }
+        public decimal? MaxQty { get; set; }
         public decimal DiscountPercent { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public decimal MinSellingPrice { get; set; }
+        public bool IsActive { get; set; } = true;
     }
         // ==========================================
     // إعدادات النظام
@@ -422,6 +432,8 @@ public bool RequiresPasswordChange => MustChangePassword || PasswordExpired;
     public decimal ExchangeRate { get; set; } = 1;
     public decimal CreditLimit { get; set; }
     public decimal CurrentBalance { get; set; }
+    public int? PriceListID { get; set; }
+    public string? PriceListName { get; set; }
 }
 
     public class ApprovedQtyDto

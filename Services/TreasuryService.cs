@@ -1,6 +1,7 @@
 using System.Data;
 using Dapper;
 using ClosedXML.Excel;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using YKCoatings.Models;
 
@@ -8,6 +9,8 @@ namespace YKCoatings.Services
 {
     public class TreasuryService : BaseDbService
     {
+        private const string CashBoxOpeningBalanceSourceDocType = "CashBoxOpeningBalance";
+
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
         private readonly ModuleAuthorizationService _authorization;
@@ -241,8 +244,8 @@ namespace YKCoatings.Services
                     throw new InvalidOperationException($"مبلغ التسوية على الفاتورة {state.InvoiceNumber} يتجاوز المتبقي المتاح ({Math.Max(0, remaining):#,##0.00}).");
 
                 var candidateAccountId = await ResolveInvoiceControlAccountAsync(
-                    connection, transaction, isSalesInvoice, state.InvoiceID, state.InvoiceNumber ?? "",
-                    state.TotalAmount, state.ExchangeRate);
+                    connection, transaction, isSalesInvoice, state.InvoiceID, state.PartyID,
+                    state.InvoiceNumber ?? "", state.TotalAmount, state.ExchangeRate);
                 if (controlAccountId.HasValue && controlAccountId.Value != candidateAccountId)
                     throw new InvalidOperationException("الفواتير المختارة مرتبطة بحسابات ذمم مختلفة؛ أنشئ سنداً منفصلاً لكل حساب ذمم.");
                 controlAccountId = candidateAccountId;
@@ -264,6 +267,7 @@ namespace YKCoatings.Services
             IDbTransaction transaction,
             bool isSalesInvoice,
             int invoiceId,
+            int partyId,
             string invoiceNumber,
             decimal totalAmount,
             decimal exchangeRate)
@@ -288,12 +292,19 @@ namespace YKCoatings.Services
                    FROM dbo.JournalEntryDetails jd
                    INNER JOIN dbo.ChartOfAccounts coa ON coa.AccountID=jd.AccountID
                    WHERE jd.JournalID=@JournalID AND coa.AccountType=@AccountType
+                     AND UPPER(LTRIM(RTRIM(ISNULL(coa.LinkedEntityType,N''))))=UPPER(@LinkedEntityType)
+                     AND (coa.LinkedEntityID IS NULL OR coa.LinkedEntityID=@PartyID)
+                     AND (ISNULL(coa.IsDetailAccount,0)=1
+                          OR (ISNULL(coa.IsSystemAccount,0)=1 AND coa.AccountCode=@ControlAccountCode))
                      AND {sideAmount}>0 AND ISNULL({oppositeAmount},0)=0
                      AND ABS({sideAmount}-@ExpectedLocalAmount)<=0.02",
                 new
                 {
                     JournalID = journalIds[0],
                     AccountType = accountType,
+                    LinkedEntityType = isSalesInvoice ? "Customer" : "Supplier",
+                    ControlAccountCode = isSalesInvoice ? "1103" : "2101",
+                    PartyID = partyId,
                     ExpectedLocalAmount = Math.Round(totalAmount * (exchangeRate <= 0 ? 1 : exchangeRate), 2, MidpointRounding.AwayFromZero)
                 }, transaction)).Distinct().ToList();
             if (candidates.Count != 1)
@@ -386,9 +397,17 @@ namespace YKCoatings.Services
             IDbConnection connection, IDbTransaction? transaction, int cashBoxId,
             int? bankAccountId, string context)
         {
-            if (bankAccountId.GetValueOrDefault() > 0)
+            if (cashBoxId < 0 || bankAccountId.GetValueOrDefault() < 0)
+                throw new InvalidOperationException($"{context}: معرف مصدر النقدية غير صالح.");
+
+            var hasCashBox = cashBoxId > 0;
+            var hasBankAccount = bankAccountId.GetValueOrDefault() > 0;
+            if (hasCashBox == hasBankAccount)
+                throw new InvalidOperationException($"{context}: اختر مصدرًا واحدًا فقط — خزينة أو بنكًا، ولا تترك المصدر فارغًا.");
+
+            if (hasBankAccount)
                 await EnsureBankAccountLocalCurrencyAsync(connection, transaction, bankAccountId, context);
-            if (cashBoxId > 0)
+            else
                 await EnsureCashBoxLocalCurrencyAsync(connection, transaction, cashBoxId, context);
         }
 
@@ -421,6 +440,82 @@ namespace YKCoatings.Services
                     throw new InvalidOperationException("سند الصرف المرتبط بالشيك غير موجود.");
                 await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
                     connection, transaction, payment.CurrencyID, payment.ExchangeRate);
+            }
+        }
+
+        private static async Task<(int AnyActivity, int PostedActivity)> GetCashBoxActivityCountsAsync(
+            IDbConnection connection, IDbTransaction transaction, int cashBoxId)
+        {
+            var knownActivity = await connection.QueryFirstOrDefaultAsync<(int AnyActivity, int PostedActivity)>(
+                @"SELECT
+                    (SELECT COUNT(*) FROM dbo.ReceiptVouchers WITH (UPDLOCK,HOLDLOCK) WHERE CashBoxID=@ID)
+                    + (SELECT COUNT(*) FROM dbo.PaymentVouchers WITH (UPDLOCK,HOLDLOCK) WHERE CashBoxID=@ID)
+                    + (SELECT COUNT(*) FROM dbo.CashTransfers WITH (UPDLOCK,HOLDLOCK) WHERE FromCashBoxID=@ID OR ToCashBoxID=@ID) AS AnyActivity,
+                    (SELECT COUNT(*) FROM dbo.ReceiptVouchers WITH (UPDLOCK,HOLDLOCK)
+                     WHERE CashBoxID=@ID AND (ReceiptStatus=2 OR ISNULL(IsPosted,0)=1 OR JournalID IS NOT NULL))
+                    + (SELECT COUNT(*) FROM dbo.PaymentVouchers WITH (UPDLOCK,HOLDLOCK)
+                       WHERE CashBoxID=@ID AND (PaymentStatus=2 OR ISNULL(IsPosted,0)=1 OR JournalID IS NOT NULL))
+                    + (SELECT COUNT(*) FROM dbo.CashTransfers WITH (UPDLOCK,HOLDLOCK)
+                       WHERE (FromCashBoxID=@ID OR ToCashBoxID=@ID)
+                         AND (Status=2 OR ISNULL(IsPosted,0)=1 OR JournalID IS NOT NULL)) AS PostedActivity",
+                new { ID = cashBoxId }, transaction);
+
+            var overheadActivity = await connection.QueryFirstOrDefaultAsync<(int AnyActivity, int PostedActivity)>(
+                @"DECLARE @Count INT=0, @SQL NVARCHAR(MAX);
+                  IF OBJECT_ID(N'dbo.OverheadExpenses',N'U') IS NOT NULL
+                     AND COL_LENGTH(N'dbo.OverheadExpenses',N'CashBoxID') IS NOT NULL
+                     AND COL_LENGTH(N'dbo.OverheadExpenses',N'IsPosted') IS NOT NULL
+                  BEGIN
+                      SET @SQL=N'SELECT @CountOut=COUNT(*) FROM dbo.OverheadExpenses WHERE CashBoxID=@CashBoxID AND ISNULL(IsPosted,0)=1';
+                      IF COL_LENGTH(N'dbo.OverheadExpenses',N'ExpenseStatus') IS NOT NULL
+                          SET @SQL=@SQL+N' AND ISNULL(ExpenseStatus,1)<>3';
+                      EXEC sys.sp_executesql @SQL,
+                           N'@CashBoxID INT,@CountOut INT OUTPUT',
+                           @CashBoxID=@ID,@CountOut=@Count OUTPUT;
+                  END;
+                  SELECT @Count AS AnyActivity,@Count AS PostedActivity;",
+                new { ID = cashBoxId }, transaction);
+
+            return (knownActivity.AnyActivity + overheadActivity.AnyActivity,
+                    knownActivity.PostedActivity + overheadActivity.PostedActivity);
+        }
+
+        private static async Task ValidateGenericVoucherCounterAccountAsync(
+            IDbConnection connection, IDbTransaction transaction, int? accountId,
+            int expectedAccountType, int? costCenterId, string voucherNumber, string accountLabel)
+        {
+            if (accountId.GetValueOrDefault() <= 0)
+                throw new InvalidOperationException($"سند {voucherNumber}: اختر {accountLabel} صالحًا قبل الاعتماد.");
+
+            var account = await connection.QueryFirstOrDefaultAsync<(
+                int? AccountID, int AccountType, bool IsActive, bool IsDetailAccount, bool CostCenterRequired)>(
+                @"SELECT AccountID, AccountType, ISNULL(IsActive,1) AS IsActive,
+                         ISNULL(IsDetailAccount,0) AS IsDetailAccount,
+                         ISNULL(CostCenterRequired,0) AS CostCenterRequired
+                  FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK)
+                  WHERE AccountID=@ID",
+                new { ID = accountId }, transaction);
+            if (!account.AccountID.HasValue || !account.IsActive
+                || !account.IsDetailAccount || account.AccountType != expectedAccountType)
+                throw new InvalidOperationException($"سند {voucherNumber}: {accountLabel} يجب أن يكون حسابًا تفصيليًا نشطًا من النوع المحاسبي المناسب.");
+
+            if (costCenterId.GetValueOrDefault() < 0)
+                throw new InvalidOperationException($"سند {voucherNumber}: معرف مركز التكلفة غير صالح.");
+
+            if (costCenterId.GetValueOrDefault() > 0)
+            {
+                var costCenterIsActive = await connection.ExecuteScalarAsync<bool>(
+                    @"SELECT CONVERT(bit, CASE WHEN EXISTS (
+                          SELECT 1 FROM dbo.CostCenters WITH (UPDLOCK,HOLDLOCK)
+                          WHERE CostCenterID=@ID AND ISNULL(IsActive,1)=1
+                      ) THEN 1 ELSE 0 END)",
+                    new { ID = costCenterId }, transaction);
+                if (!costCenterIsActive)
+                    throw new InvalidOperationException($"سند {voucherNumber}: مركز التكلفة المحدد غير نشط أو غير موجود.");
+            }
+            else if (account.CostCenterRequired)
+            {
+                throw new InvalidOperationException($"سند {voucherNumber}: الحساب {accountLabel} يتطلب مركز تكلفة.");
             }
         }
 
@@ -464,7 +559,8 @@ namespace YKCoatings.Services
         private async Task VerifyVoucherJournalAsync(
             IDbConnection connection, IDbTransaction transaction, int journalId, int voucherId,
             string voucherNumber, DateTime voucherDate, decimal amountLocal,
-            int sourceAccountId, bool isReceipt, int? expectedCounterAccountId)
+            int sourceAccountId, bool isReceipt, int? expectedCounterAccountId,
+            string? expectedCounterEntityType, int? expectedCounterEntityId)
         {
             if (journalId <= 0 || voucherId <= 0 || sourceAccountId <= 0 || amountLocal <= 0m
                 || string.IsNullOrWhiteSpace(voucherNumber))
@@ -473,6 +569,10 @@ namespace YKCoatings.Services
             var counterAccountId = expectedCounterAccountId.GetValueOrDefault();
             if (counterAccountId > 0 && counterAccountId == sourceAccountId)
                 throw new InvalidOperationException($"قيد {voucherNumber} يربط مصدر النقدية بالحساب المقابل نفسه؛ أُلغي الاعتماد.");
+            if ((!string.IsNullOrWhiteSpace(expectedCounterEntityType) || expectedCounterEntityId.HasValue)
+                && (counterAccountId <= 0 || string.IsNullOrWhiteSpace(expectedCounterEntityType)
+                    || expectedCounterEntityId.GetValueOrDefault() <= 0))
+                throw new InvalidOperationException($"قيد {voucherNumber} لا يحمل تعريف جهة صالحًا لحساب الذمم؛ أُلغي الاعتماد.");
 
             var journal = await connection.QueryFirstOrDefaultAsync<VoucherJournalValidationState>(
                 @"SELECT je.JournalID, je.JournalStatus, je.JournalDate,
@@ -494,12 +594,38 @@ namespace YKCoatings.Services
                                                      AND (jd.AccountID IS NULL OR jd.AccountID<=0
                                                           OR coa.AccountID IS NULL
                                                           OR ISNULL(coa.IsActive,1)<>1
-                                                          OR ISNULL(coa.IsDetailAccount,0)<>1
+                                                          OR (ISNULL(coa.IsDetailAccount,0)<>1
+                                                              AND NOT (
+                                                                  UPPER(ISNULL(@ExpectedCounterEntityType,N'')) IN (N'CUSTOMER',N'SUPPLIER')
+                                                                  AND jd.AccountID=@CounterAccountID
+                                                                  AND ISNULL(coa.AccountType,0)=CASE UPPER(ISNULL(@ExpectedCounterEntityType,N''))
+                                                                      WHEN N'CUSTOMER' THEN 1 WHEN N'SUPPLIER' THEN 2 ELSE -1 END
+                                                                  AND ISNULL(coa.IsSystemAccount,0)=1
+                                                                  AND ((UPPER(@ExpectedCounterEntityType)=N'CUSTOMER' AND coa.AccountCode=N'1103')
+                                                                    OR (UPPER(@ExpectedCounterEntityType)=N'SUPPLIER' AND coa.AccountCode=N'2101'))
+                                                                  AND UPPER(LTRIM(RTRIM(ISNULL(coa.LinkedEntityType,N''))))=UPPER(@ExpectedCounterEntityType)
+                                                                  AND (coa.LinkedEntityID IS NULL OR coa.LinkedEntityID=@ExpectedCounterEntityID)
+                                                                  AND UPPER(LTRIM(RTRIM(ISNULL(jd.EntityType,N''))))=UPPER(@ExpectedCounterEntityType)
+                                                                  AND jd.EntityID=@ExpectedCounterEntityID
+                                                              ))
                                                           OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
                                                           OR jd.CostCenterID<0
                                                           OR (jd.CostCenterID>0
                                                               AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))))
                                          THEN 1 ELSE 0 END),0) AS InvalidDetailCount,
+                         ISNULL(SUM(CASE WHEN @ExpectedCounterEntityType IS NOT NULL
+                                               AND jd.AccountID=@CounterAccountID
+                                               AND (UPPER(LTRIM(RTRIM(ISNULL(coa.LinkedEntityType,N''))))<>UPPER(@ExpectedCounterEntityType)
+                                                    OR (coa.LinkedEntityID IS NOT NULL AND coa.LinkedEntityID<>@ExpectedCounterEntityID)
+                                                    OR ISNULL(coa.AccountType,0)<>CASE UPPER(ISNULL(@ExpectedCounterEntityType,N''))
+                                                        WHEN N'CUSTOMER' THEN 1 WHEN N'SUPPLIER' THEN 2 ELSE -1 END
+                                                    OR (ISNULL(coa.IsDetailAccount,0)<>1 AND
+                                                        (ISNULL(coa.IsSystemAccount,0)<>1
+                                                         OR (UPPER(@ExpectedCounterEntityType)=N'CUSTOMER' AND coa.AccountCode<>N'1103')
+                                                         OR (UPPER(@ExpectedCounterEntityType)=N'SUPPLIER' AND coa.AccountCode<>N'2101')))
+                                                    OR UPPER(LTRIM(RTRIM(ISNULL(jd.EntityType,N''))))<>UPPER(@ExpectedCounterEntityType)
+                                                    OR ISNULL(jd.EntityID,0)<>ISNULL(@ExpectedCounterEntityID,0))
+                                          THEN 1 ELSE 0 END),0) AS InvalidCounterEntityCount,
                          ISNULL(SUM(jd.DebitAmount),0) AS DetailDebit,
                          ISNULL(SUM(jd.CreditAmount),0) AS DetailCredit,
                          ISNULL(SUM(CASE WHEN jd.AccountID=@SourceAccountID THEN jd.DebitAmount ELSE 0 END),0) AS SourceDebit,
@@ -520,11 +646,15 @@ namespace YKCoatings.Services
                 {
                     JournalID = journalId,
                     SourceAccountID = sourceAccountId,
-                    CounterAccountID = counterAccountId > 0 ? counterAccountId : (int?)null
+                    CounterAccountID = counterAccountId > 0 ? counterAccountId : (int?)null,
+                    ExpectedCounterEntityType = string.IsNullOrWhiteSpace(expectedCounterEntityType) ? null : expectedCounterEntityType.Trim(),
+                    ExpectedCounterEntityID = expectedCounterEntityId
                 }, transaction);
 
             if (journal is null || journal.JournalStatus != 2)
                 throw new InvalidOperationException($"لم ينتج ترحيل {voucherNumber} قيداً مرحّلاً؛ أُلغي الاعتماد.");
+            if (journal.InvalidCounterEntityCount > 0)
+                throw new InvalidOperationException($"قيد {voucherNumber} لا يربط حساب الذمم بالعميل/المورد الصحيح؛ أُلغي الاعتماد.");
             if (journal.JournalDate is not DateTime journalDate || journalDate.Date != voucherDate.Date)
                 throw new InvalidOperationException($"تاريخ قيد {voucherNumber} لا يطابق تاريخ السند؛ أُلغي الاعتماد.");
             var expectedSourceDocType = isReceipt ? "ReceiptVoucher" : "PaymentVoucher";
@@ -748,6 +878,7 @@ namespace YKCoatings.Services
             public decimal HeaderCredit { get; set; }
             public int DetailCount { get; set; }
             public int InvalidDetailCount { get; set; }
+            public int InvalidCounterEntityCount { get; set; }
             public decimal DetailDebit { get; set; }
             public decimal DetailCredit { get; set; }
             public decimal SourceDebit { get; set; }
@@ -959,7 +1090,11 @@ namespace YKCoatings.Services
                              ORDER BY cb.CashBoxNameAr";
                 var result = await connection.QueryAsync<CashBoxListDto>(sqlDirect);
                 var list = result.ToList();
-                if (list.Any()) return list;
+                if (list.Any())
+                {
+                    await PopulateCashBoxOpeningJournalFlagsAsync(connection, list);
+                    return list;
+                }
                 directList = list;
             }
             catch (Exception ex)
@@ -982,6 +1117,7 @@ namespace YKCoatings.Services
                         cb.CurrentBalanceCalc = cb.CurrentBalance;
                     }
                 }
+                await PopulateCashBoxOpeningJournalFlagsAsync(connection, viewList);
                 return viewList;
             }
             catch (Exception ex)
@@ -994,6 +1130,35 @@ namespace YKCoatings.Services
 
                 _logger.LogError(ex, "Both cash-box list queries failed; propagating the cash-box list error.");
                 throw;
+            }
+        }
+
+        private async Task PopulateCashBoxOpeningJournalFlagsAsync(
+            SqlConnection connection, List<CashBoxListDto> cashBoxes)
+        {
+            var cashBoxIds = cashBoxes
+                .Select(cashBox => cashBox.CashBoxID)
+                .Where(id => id > 0)
+                .Distinct()
+                .ToArray();
+            if (cashBoxIds.Length == 0) return;
+
+            try
+            {
+                var journalCashBoxIds = await connection.QueryAsync<int>(
+                    @"SELECT DISTINCT SourceDocID
+                      FROM dbo.JournalEntries
+                      WHERE SourceDocType=@SourceDocType
+                        AND SourceDocID IN @CashBoxIDs",
+                    new { SourceDocType = CashBoxOpeningBalanceSourceDocType, CashBoxIDs = cashBoxIds });
+                var postedIds = journalCashBoxIds.ToHashSet();
+                foreach (var cashBox in cashBoxes)
+                    cashBox.HasOpeningBalanceJournal = postedIds.Contains(cashBox.CashBoxID);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Could not check opening-balance journals for the cash-box list.");
             }
         }
 
@@ -1129,39 +1294,90 @@ namespace YKCoatings.Services
                 userId, p => p.CanEdit, "ليس لديك صلاحية تعديل الخزائن.");
 
             using var connection = CreateConnection();
-            // كان الخطأ هنا: لا يتم تحديث OpeningBalance نهائياً عند التعديل!
-            // تم الإصلاح: إضافة OpeningBalance + تحديث CurrentBalance إذا لم تكن هناك حركات
-            var hasTrans = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM (SELECT CashBoxID FROM dbo.ReceiptVouchers WHERE CashBoxID=@ID UNION ALL SELECT CashBoxID FROM dbo.PaymentVouchers WHERE CashBoxID=@ID) t",
-                new { ID = dto.CashBoxID });
-
-            var sql = hasTrans == 0
-                ? @"UPDATE dbo.CashBoxes SET CashBoxNameAr=@CashBoxNameAr, CashBoxNameEn=@CashBoxNameEn, CashBoxType=@CashBoxType, AccountID=NULLIF(@AccountID,0),
-                        CurrencyID=NULLIF(@CurrencyID,0), OpeningBalance=@OpeningBalance, CurrentBalance=@OpeningBalance,
-                        IsActive=@IsActive, IsDefault=@IsDefault, MaxLimit=@MaxLimit, MinLimit=@MinLimit, Notes=@Notes,
-                        CustodianEmployeeID=NULLIF(@CustodianEmployeeID,0), ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE CashBoxID=@CashBoxID"
-                : @"UPDATE dbo.CashBoxes SET CashBoxNameAr=@CashBoxNameAr, CashBoxNameEn=@CashBoxNameEn, CashBoxType=@CashBoxType, AccountID=NULLIF(@AccountID,0),
-                        CurrencyID=NULLIF(@CurrencyID,0), OpeningBalance=@OpeningBalance,
-                        IsActive=@IsActive, IsDefault=@IsDefault, MaxLimit=@MaxLimit, MinLimit=@MinLimit, Notes=@Notes,
-                        CustodianEmployeeID=NULLIF(@CustodianEmployeeID,0), ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE CashBoxID=@CashBoxID";
-
-            await connection.ExecuteAsync(sql, new
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction(IsolationLevel.Serializable);
+            try
             {
-                dto.CashBoxID,
-                dto.CashBoxNameAr,
-                dto.CashBoxNameEn,
-                dto.CashBoxType,
-                dto.AccountID,
-                dto.CurrencyID,
-                dto.OpeningBalance,
-                dto.IsActive,
-                dto.IsDefault,
-                dto.MaxLimit,
-                dto.MinLimit,
-                dto.Notes,
-                dto.CustodianEmployeeID,
-                UserID = userId
-            });
+                var current = await connection.QueryFirstOrDefaultAsync<(
+                    int? CashBoxID, int? AccountID, int? CurrencyID, decimal OpeningBalance)>(
+                    @"SELECT CashBoxID, AccountID, CurrencyID, ISNULL(OpeningBalance,0) AS OpeningBalance
+                      FROM dbo.CashBoxes WITH (UPDLOCK,HOLDLOCK)
+                      WHERE CashBoxID=@ID",
+                    new { ID = dto.CashBoxID }, trans);
+                if (!current.CashBoxID.HasValue)
+                    throw new InvalidOperationException("الخزينة غير موجودة أو تم حذفها.");
+
+                var hasOpeningJournal = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+                      WHERE SourceDocType=@SourceDocType AND SourceDocID=@CashBoxID",
+                    new
+                    {
+                        SourceDocType = CashBoxOpeningBalanceSourceDocType,
+                        CashBoxID = dto.CashBoxID
+                    }, trans);
+                if (hasOpeningJournal > 0
+                    && (dto.OpeningBalance != current.OpeningBalance
+                        || dto.AccountID.GetValueOrDefault() != current.AccountID.GetValueOrDefault()
+                        || dto.CurrencyID.GetValueOrDefault() != current.CurrencyID.GetValueOrDefault()))
+                    throw new InvalidOperationException(
+                        "تم ترحيل افتتاح هذه الخزينة؛ لا تغيّر الرصيد أو الحساب أو العملة مباشرة. راجع المحاسب لإنشاء قيد تسوية.");
+
+                var activityCounts = await GetCashBoxActivityCountsAsync(connection, trans, dto.CashBoxID);
+                if (activityCounts.PostedActivity > 0
+                    && (dto.OpeningBalance != current.OpeningBalance
+                        || dto.AccountID.GetValueOrDefault() != current.AccountID.GetValueOrDefault()
+                        || dto.CurrencyID.GetValueOrDefault() != current.CurrencyID.GetValueOrDefault()))
+                    throw new InvalidOperationException(
+                        "للخزينة حركات مالية مرحّلة؛ لا تغيّر الرصيد الافتتاحي أو الحساب أو العملة مباشرة. أنشئ قيد تسوية بعد مراجعة المحاسب.");
+
+                // لا يُعاد ضبط CurrentBalance إلى الافتتاحي ما دامت هناك حركة مرتبطة بالخزينة.
+                var hasTrans = activityCounts.AnyActivity;
+
+                var sql = hasTrans == 0
+                    ? @"UPDATE dbo.CashBoxes SET CashBoxNameAr=@CashBoxNameAr, CashBoxNameEn=@CashBoxNameEn, CashBoxType=@CashBoxType, AccountID=NULLIF(@AccountID,0),
+                            CurrencyID=NULLIF(@CurrencyID,0), OpeningBalance=@OpeningBalance, CurrentBalance=@OpeningBalance,
+                            IsActive=@IsActive, IsDefault=@IsDefault, MaxLimit=@MaxLimit, MinLimit=@MinLimit, Notes=@Notes,
+                            CustodianEmployeeID=NULLIF(@CustodianEmployeeID,0), ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE CashBoxID=@CashBoxID"
+                    : @"UPDATE dbo.CashBoxes SET CashBoxNameAr=@CashBoxNameAr, CashBoxNameEn=@CashBoxNameEn, CashBoxType=@CashBoxType, AccountID=NULLIF(@AccountID,0),
+                            CurrencyID=NULLIF(@CurrencyID,0), OpeningBalance=@OpeningBalance,
+                            IsActive=@IsActive, IsDefault=@IsDefault, MaxLimit=@MaxLimit, MinLimit=@MinLimit, Notes=@Notes,
+                            CustodianEmployeeID=NULLIF(@CustodianEmployeeID,0), ModifiedBy=@UserID, ModifiedDate=GETDATE() WHERE CashBoxID=@CashBoxID";
+
+                var updated = await connection.ExecuteAsync(sql, new
+                {
+                    dto.CashBoxID,
+                    dto.CashBoxNameAr,
+                    dto.CashBoxNameEn,
+                    dto.CashBoxType,
+                    dto.AccountID,
+                    dto.CurrencyID,
+                    dto.OpeningBalance,
+                    dto.IsActive,
+                    dto.IsDefault,
+                    dto.MaxLimit,
+                    dto.MinLimit,
+                    dto.Notes,
+                    dto.CustodianEmployeeID,
+                    UserID = userId
+                }, trans);
+                if (updated != 1)
+                    throw new InvalidOperationException("لم يتم تحديث بيانات الخزينة.");
+
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while updating cash box {CashBoxID}.",
+                        dto.CashBoxID);
+                }
+                throw;
+            }
+
             try
             {
                 await _audit.WriteAuditLogAsync(userId, 2, "CashBoxes", dto.CashBoxID.ToString(), moduleName: "SCR_BANKS", description: $"تعديل خزينة: {dto.CashBoxNameAr} - رصيد افتتاحي {dto.OpeningBalance}");
@@ -1180,13 +1396,293 @@ namespace YKCoatings.Services
                 userId, p => p.CanDelete, "ليس لديك صلاحية حذف الخزائن.");
 
             using var connection = CreateConnection();
-            var hasTrans = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM (SELECT CashBoxID FROM dbo.ReceiptVouchers WHERE CashBoxID=@ID UNION ALL SELECT CashBoxID FROM dbo.PaymentVouchers WHERE CashBoxID=@ID) t",
-                new { ID = id });
-            if (hasTrans > 0) throw new Exception("لا يمكن حذف خزينة بها حركات");
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction(IsolationLevel.Serializable);
+            try
+            {
+                var cashBoxId = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT CashBoxID FROM dbo.CashBoxes WITH (UPDLOCK,HOLDLOCK) WHERE CashBoxID=@ID",
+                    new { ID = id }, trans);
+                if (!cashBoxId.HasValue)
+                    throw new InvalidOperationException("الخزينة غير موجودة أو تم حذفها.");
 
-            await connection.ExecuteAsync("DELETE FROM dbo.CashBoxes WHERE CashBoxID=@ID", new { ID = id });
+                var hasTrans = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM (SELECT CashBoxID FROM dbo.ReceiptVouchers WHERE CashBoxID=@ID UNION ALL SELECT CashBoxID FROM dbo.PaymentVouchers WHERE CashBoxID=@ID) t",
+                    new { ID = id }, trans);
+                if (hasTrans > 0) throw new Exception("لا يمكن حذف خزينة بها حركات");
+
+                var hasOpeningJournal = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+                      WHERE SourceDocType=@SourceDocType AND SourceDocID=@CashBoxID",
+                    new { SourceDocType = CashBoxOpeningBalanceSourceDocType, CashBoxID = id }, trans);
+                if (hasOpeningJournal > 0)
+                    throw new InvalidOperationException("لا يمكن حذف خزينة مرتبطة بقيد افتتاحي؛ احتفظ بسجلها المحاسبي.");
+
+                var deleted = await connection.ExecuteAsync(
+                    "DELETE FROM dbo.CashBoxes WHERE CashBoxID=@ID",
+                    new { ID = id }, trans);
+                if (deleted != 1)
+                    throw new InvalidOperationException("لم يتم حذف الخزينة؛ أُلغيت العملية.");
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while deleting cash box {CashBoxID}.",
+                        id);
+                }
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 3, "CashBoxes", id.ToString(), moduleName: "SCR_BANKS", description: "حذف خزينة");
+        }
+
+        public async Task<string> PostCashBoxOpeningBalanceAsync(
+            int cashBoxId,
+            int expectedCashAccountId,
+            decimal expectedOpeningBalance,
+            int offsetAccountId,
+            DateTime journalDate,
+            bool confirmedNoPreviousOpeningJournal,
+            int userId)
+        {
+            await RequireCashBoxPermissionAsync(
+                userId, p => p.CanPost, "ليس لديك صلاحية ترحيل رصيد افتتاحي للخزينة.");
+            if (cashBoxId <= 0) throw new ArgumentOutOfRangeException(nameof(cashBoxId));
+            if (expectedCashAccountId <= 0) throw new ArgumentOutOfRangeException(nameof(expectedCashAccountId));
+            if (offsetAccountId <= 0) throw new ArgumentOutOfRangeException(nameof(offsetAccountId));
+            if (!confirmedNoPreviousOpeningJournal)
+                throw new InvalidOperationException("راجع كشف حساب الخزينة أولاً وأكد أن الرصيد الافتتاحي لم يُسجل بقيد سابق.");
+
+            var postingDate = journalDate.Date;
+            using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction(IsolationLevel.Serializable);
+            try
+            {
+                var cashBox = await connection.QueryFirstOrDefaultAsync<(
+                    int? CashBoxID, string? CashBoxCode, string? CashBoxNameAr,
+                    int? AccountID, decimal OpeningBalance, int? CurrencyID, bool IsActive)>(
+                    @"SELECT cb.CashBoxID, cb.CashBoxCode, cb.CashBoxNameAr, cb.AccountID,
+                             ISNULL(cb.OpeningBalance,0) AS OpeningBalance, cb.CurrencyID,
+                             CONVERT(bit,ISNULL(cb.IsActive,1)) AS IsActive
+                      FROM dbo.CashBoxes cb WITH (UPDLOCK,HOLDLOCK)
+                      WHERE cb.CashBoxID=@ID",
+                    new { ID = cashBoxId }, trans);
+                if (!cashBox.CashBoxID.HasValue)
+                    throw new InvalidOperationException("الخزينة غير موجودة.");
+                if (!cashBox.IsActive)
+                    throw new InvalidOperationException("لا يمكن ترحيل افتتاح خزينة غير نشطة.");
+                if (!cashBox.AccountID.HasValue || cashBox.AccountID.Value <= 0)
+                    throw new InvalidOperationException("اربط الخزينة أولاً بحساب صندوق تفصيلي في شجرة الحسابات.");
+                if (cashBox.AccountID.Value != expectedCashAccountId
+                    || cashBox.OpeningBalance != expectedOpeningBalance)
+                    throw new InvalidOperationException("تغير الحساب أو الرصيد الافتتاحي بعد فتح نافذة المراجعة؛ أعد تحميل الصفحة وراجع القيد من جديد.");
+                if (cashBox.OpeningBalance == 0m)
+                    throw new InvalidOperationException("الرصيد الافتتاحي للخزينة صفر؛ لا يوجد مبلغ لترحيله.");
+                if (cashBox.AccountID.Value == offsetAccountId)
+                    throw new InvalidOperationException("لا يمكن استخدام حساب الصندوق نفسه كحساب مقابل.");
+
+                var existingOpeningJournal = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+                      WHERE SourceDocType=@SourceDocType AND SourceDocID=@CashBoxID",
+                    new
+                    {
+                        SourceDocType = CashBoxOpeningBalanceSourceDocType,
+                        CashBoxID = cashBoxId
+                    }, trans);
+                if (existingOpeningJournal > 0)
+                    throw new InvalidOperationException("يوجد قيد افتتاحي مرتبط بهذه الخزينة بالفعل؛ لم يتم إنشاء قيد مكرر.");
+
+                var accounts = (await connection.QueryAsync<(
+                    int AccountID, int AccountType, int AccountNature,
+                    bool IsDetailAccount, bool IsActive, bool CostCenterRequired, int? CurrencyID)>(
+                    @"SELECT coa.AccountID, coa.AccountType,
+                             ISNULL(coa.AccountNature,1) AS AccountNature,
+                             CONVERT(bit,ISNULL(coa.IsDetailAccount,0)) AS IsDetailAccount,
+                             CONVERT(bit,ISNULL(coa.IsActive,1)) AS IsActive,
+                             CONVERT(bit,ISNULL(coa.CostCenterRequired,0)) AS CostCenterRequired,
+                             coa.CurrencyID
+                      FROM dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK)
+                      WHERE coa.AccountID IN @AccountIDs",
+                    new { AccountIDs = new[] { cashBox.AccountID.Value, offsetAccountId } }, trans))
+                    .ToDictionary(account => account.AccountID);
+
+                if (!accounts.TryGetValue(cashBox.AccountID.Value, out var cashAccount)
+                    || !cashAccount.IsActive || !cashAccount.IsDetailAccount
+                    || cashAccount.AccountType != 1 || cashAccount.AccountNature != 1)
+                    throw new InvalidOperationException("الحساب المرتبط بالخزينة غير نشط أو ليس حساب أصل تفصيلياً ذا طبيعة مدينة.");
+                if (!accounts.TryGetValue(offsetAccountId, out var offsetAccount)
+                    || !offsetAccount.IsActive || !offsetAccount.IsDetailAccount
+                    || offsetAccount.AccountType != 3 || offsetAccount.AccountNature != 2)
+                    throw new InvalidOperationException("اختر حساب أرباح مرحلة/حقوق ملكية نشطاً وتفصيلياً ذا طبيعة دائنة.");
+                if (cashAccount.CostCenterRequired || offsetAccount.CostCenterRequired)
+                    throw new InvalidOperationException("أحد الحسابين يتطلب مركز تكلفة؛ لم يُنشأ قيد بلا مركز تكلفة.");
+
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, trans, cashBox.CurrencyID, 1m);
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, trans, cashAccount.CurrencyID, 1m);
+                await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
+                    connection, trans, offsetAccount.CurrencyID, 1m);
+
+                var accountingPeriod = await connection.QueryFirstOrDefaultAsync<(
+                    int? FiscalYearID, int? PeriodID, int? YearStatus, int? PeriodStatus,
+                    DateTime? YearStart, DateTime? YearEnd, DateTime? PeriodStart, DateTime? PeriodEnd)>(
+                    @"SELECT TOP 1 fy.FiscalYearID, ap.PeriodID, fy.YearStatus, ap.PeriodStatus,
+                             fy.StartDate AS YearStart, fy.EndDate AS YearEnd,
+                             ap.StartDate AS PeriodStart, ap.EndDate AS PeriodEnd
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK,HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK,HOLDLOCK)
+                        ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND @JournalDate BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+                        AND @JournalDate BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+                      ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+                    new { JournalDate = postingDate }, trans);
+                if (!accountingPeriod.FiscalYearID.HasValue || !accountingPeriod.PeriodID.HasValue
+                    || !accountingPeriod.YearStatus.HasValue || accountingPeriod.YearStatus.Value != 1
+                    || !accountingPeriod.PeriodStatus.HasValue || accountingPeriod.PeriodStatus.Value != 1
+                    || !accountingPeriod.YearStart.HasValue || !accountingPeriod.YearEnd.HasValue
+                    || !accountingPeriod.PeriodStart.HasValue || !accountingPeriod.PeriodEnd.HasValue)
+                    throw new InvalidOperationException("لا توجد سنة وفترة محاسبية مفتوحتان تغطيان تاريخ القيد؛ لم يتم الترحيل.");
+
+                var journalNumber = await connection.QueryFirstOrDefaultAsync<string>(
+                    @"DECLARE @NextNum NVARCHAR(50);
+                      EXEC dbo.sp_GetNextNumber @SequenceCode=@SeqCode, @NextNumber=@NextNum OUTPUT;
+                      SELECT @NextNum AS JournalNumber;",
+                    new { SeqCode = "JV" }, trans);
+                if (string.IsNullOrWhiteSpace(journalNumber))
+                    throw new InvalidOperationException("تعذر توليد رقم قيد اليومية؛ أُلغيت عملية الترحيل.");
+
+                var amount = Math.Abs(cashBox.OpeningBalance);
+                var cashDebit = cashBox.OpeningBalance > 0m ? amount : 0m;
+                var cashCredit = cashBox.OpeningBalance < 0m ? amount : 0m;
+                var offsetDebit = cashCredit;
+                var offsetCredit = cashDebit;
+                var description = $"افتتاح رصيد الخزينة {cashBox.CashBoxCode} - {cashBox.CashBoxNameAr}";
+
+                var journalId = await connection.ExecuteScalarAsync<int>(
+                    @"INSERT INTO dbo.JournalEntries
+                        (JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID,
+                         SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType,
+                         JournalStatus, IsAutoGenerated, PostedBy, PostedDate, CreatedBy, CreatedDate)
+                      VALUES
+                        (@JournalNumber, @JournalDate, @Description, @Reference, @SourceDocType, @SourceDocID,
+                         @SourceDocNumber, @TotalDebit, @TotalCredit, @FiscalYearID, @PeriodID, 1,
+                         2, 1, @UserID, GETDATE(), @UserID, GETDATE());
+                      SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                    new
+                    {
+                        JournalNumber = journalNumber,
+                        JournalDate = postingDate,
+                        Description = description,
+                        Reference = cashBox.CashBoxCode,
+                        SourceDocType = CashBoxOpeningBalanceSourceDocType,
+                        SourceDocID = cashBoxId,
+                        SourceDocNumber = cashBox.CashBoxCode,
+                        TotalDebit = amount,
+                        TotalCredit = amount,
+                        accountingPeriod.FiscalYearID,
+                        accountingPeriod.PeriodID,
+                        UserID = userId
+                    }, trans);
+                if (journalId <= 0)
+                    throw new InvalidOperationException("لم يتم إنشاء رأس القيد؛ أُلغيت عملية الترحيل.");
+
+                await connection.ExecuteAsync(
+                    @"INSERT INTO dbo.JournalEntryDetails
+                        (JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description)
+                      VALUES (@JournalID, 1, @CashAccountID, @CashDebit, @CashCredit, @Description);
+                      INSERT INTO dbo.JournalEntryDetails
+                        (JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description)
+                      VALUES (@JournalID, 2, @OffsetAccountID, @OffsetDebit, @OffsetCredit, @Description);",
+                    new
+                    {
+                        JournalID = journalId,
+                        CashAccountID = cashBox.AccountID.Value,
+                        OffsetAccountID = offsetAccountId,
+                        CashDebit = cashDebit,
+                        CashCredit = cashCredit,
+                        OffsetDebit = offsetDebit,
+                        OffsetCredit = offsetCredit,
+                        Description = description
+                    }, trans);
+
+                await ApplyCashBoxOpeningAccountDeltaAsync(
+                    connection, trans, cashBox.AccountID.Value, cashBox.OpeningBalance);
+                await ApplyCashBoxOpeningAccountDeltaAsync(
+                    connection, trans, offsetAccountId, -cashBox.OpeningBalance);
+
+                trans.Commit();
+                try
+                {
+                    await _audit.WriteAuditLogAsync(
+                        userId, 2, "JournalEntries", journalId.ToString(), moduleName: "SCR_BANKS",
+                        description: $"ترحيل افتتاح خزينة {cashBox.CashBoxNameAr} بمبلغ {cashBox.OpeningBalance:N2} - القيد {journalNumber}");
+                }
+                catch (Exception auditException)
+                {
+                    _logger.LogError(auditException,
+                        "Audit logging failed after posting the opening balance for cash box {CashBoxID}.",
+                        cashBoxId);
+                }
+
+                return journalNumber;
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after posting the opening balance for cash box {CashBoxID}.",
+                        cashBoxId);
+                }
+                throw;
+            }
+        }
+
+        private static async Task ApplyCashBoxOpeningAccountDeltaAsync(
+            SqlConnection connection, SqlTransaction transaction, int accountId, decimal delta)
+        {
+            var affected = await connection.ExecuteAsync(
+                @"UPDATE dbo.ChartOfAccounts
+                  SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta
+                  WHERE AccountID=@ID",
+                new { Delta = delta, ID = accountId }, transaction);
+            if (affected != 1)
+                throw new InvalidOperationException("تعذر تحديث رصيد حساب القيد؛ أُلغيت عملية الترحيل.");
+
+            var visited = new HashSet<int> { accountId };
+            var currentAccountId = accountId;
+            for (var depth = 0; depth < 50; depth++)
+            {
+                var parentId = await connection.ExecuteScalarAsync<int?>(
+                    @"SELECT ParentAccountID
+                      FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK)
+                      WHERE AccountID=@ID",
+                    new { ID = currentAccountId }, transaction);
+                if (!parentId.HasValue || parentId.Value <= 0) return;
+                if (!visited.Add(parentId.Value))
+                    throw new InvalidOperationException("توجد دورة في شجرة الحسابات؛ أُلغيت عملية ترحيل الافتتاح.");
+
+                var parentAffected = await connection.ExecuteAsync(
+                    @"UPDATE dbo.ChartOfAccounts
+                      SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta
+                      WHERE AccountID=@ID",
+                    new { Delta = delta, ID = parentId.Value }, transaction);
+                if (parentAffected != 1)
+                    throw new InvalidOperationException("تعذر تحديث رصيد الحساب الأب؛ أُلغيت عملية الترحيل.");
+                currentAccountId = parentId.Value;
+            }
+
+            throw new InvalidOperationException("تجاوز عمق شجرة الحسابات الحد الآمن؛ أُلغيت عملية الترحيل.");
         }
 
         public async Task<List<VoucherInvoiceAllocationDto>> GetSalesInvoicesForSettlementAsync(int customerId, int? currentReceiptId = null)
@@ -1370,7 +1866,7 @@ namespace YKCoatings.Services
                 var sql = @"INSERT INTO dbo.ReceiptVouchers(ReceiptNumber, ReceiptDate, ReceivedFrom, EntityType, EntityID, PaymentMethod, CashBoxID, BankAccountID,
                             Amount, CurrencyID, ExchangeRate, AmountLocal, ChequeNumber, ChequeDate, ChequeBankName, TransferRef, Description, RevenueAccountID, CostCenterID,
                             ReceiptStatus, Notes, CreatedBy, CreatedDate)
-                            VALUES(@ReceiptNumber, @ReceiptDate, @ReceivedFrom, @EntityType, NULLIF(@EntityID,0), @PaymentMethod, @CashBoxID, NULLIF(@BankAccountID,0),
+                            VALUES(@ReceiptNumber, @ReceiptDate, @ReceivedFrom, @EntityType, NULLIF(@EntityID,0), @PaymentMethod, NULLIF(@CashBoxID,0), NULLIF(@BankAccountID,0),
                             @Amount, NULLIF(@CurrencyID,0), @ExchangeRate, @AmountLocal, @ChequeNumber, @ChequeDate, @ChequeBankName, @TransferRef, @Description,
                             NULLIF(@RevenueAccountID,0), NULLIF(@CostCenterID,0), 1, @Notes, @CreatedBy, GETDATE());
                             SELECT CAST(SCOPE_IDENTITY() AS INT);";
@@ -1455,7 +1951,7 @@ namespace YKCoatings.Services
 
                 await PrepareReceiptSettlementAsync(connection, trans, dto, userId, dto.ReceiptID);
                 var sql = @"UPDATE dbo.ReceiptVouchers SET ReceiptDate=@ReceiptDate, ReceivedFrom=@ReceivedFrom, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
-                            PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
+                            PaymentMethod=@PaymentMethod, CashBoxID=NULLIF(@CashBoxID,0), BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
                             ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
                             TransferRef=@TransferRef, Description=@Description, RevenueAccountID=NULLIF(@RevenueAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
                             Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
@@ -1519,16 +2015,25 @@ namespace YKCoatings.Services
                 var rv = await connection.QueryFirstOrDefaultAsync<(
                     string ReceiptNumber, int ReceiptStatus, decimal Amount, int CashBoxID, int? BankAccountID,
                     int? CreatedBy, int? EntityType, int? EntityID, int? CurrencyID, decimal ExchangeRate,
-                    decimal AmountLocal, DateTime ReceiptDate, int? RevenueAccountID, int? JournalID, bool IsPosted)>(
+                    decimal AmountLocal, DateTime ReceiptDate, int? RevenueAccountID, int? CostCenterID,
+                    int? JournalID, bool IsPosted)>(
                     @"SELECT ReceiptNumber,ReceiptStatus,Amount,CashBoxID,BankAccountID,CreatedBy,EntityType,EntityID,CurrencyID,
                              ISNULL(ExchangeRate,1) AS ExchangeRate,ISNULL(AmountLocal,Amount) AS AmountLocal,
-                             ReceiptDate,RevenueAccountID,JournalID,ISNULL(IsPosted,0) AS IsPosted
+                             ReceiptDate,RevenueAccountID,CostCenterID,JournalID,ISNULL(IsPosted,0) AS IsPosted
                       FROM dbo.ReceiptVouchers WITH (UPDLOCK,HOLDLOCK) WHERE ReceiptID=@ID",
                     new { ID = id }, trans);
                 if (rv.ReceiptNumber == null) throw new Exception("السند غير موجود");
                 if (rv.ReceiptStatus != 1) throw new Exception("السند ليس مسودة");
                 if (rv.IsPosted || rv.JournalID.GetValueOrDefault() > 0)
                     throw new InvalidOperationException("لا يمكن اعتماد مسودة مرتبطة مسبقاً بقيد أو معلّمة كمرحّلة؛ راجع ارتباطها أولاً.");
+                var approverEmployeeId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID=@UserID",
+                    new { UserID = userId }, trans);
+                if (!approverEmployeeId.HasValue)
+                    throw new InvalidOperationException("لا يمكن اعتماد سند القبض لأن المستخدم الحالي غير مرتبط بموظف.");
+                if (empId.HasValue && empId.Value != approverEmployeeId.Value)
+                    throw new InvalidOperationException("معرّف الموظف الممرر لا يطابق الموظف المرتبط بمستخدم الاعتماد.");
+
                 await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
                     connection, trans, rv.CurrencyID, rv.ExchangeRate);
 
@@ -1555,6 +2060,11 @@ namespace YKCoatings.Services
                         new { AccountID = controlAccountId.Value, ID = id }, trans);
                 }
 
+                if (!isInvoiceSettlement)
+                    await ValidateGenericVoucherCounterAccountAsync(
+                        connection, trans, rv.RevenueAccountID, 4,
+                        rv.CostCenterID, rv.ReceiptNumber, "حساب الإيراد");
+
                 var sourceAccountId = await ResolveVoucherSourceAccountIdAsync(
                     connection, trans, rv.CashBoxID, rv.BankAccountID, rv.ReceiptNumber);
                 await connection.ExecuteAsync("EXEC dbo.sp_PostReceiptVoucher @ReceiptID, @UserID", new { ReceiptID = id, UserID = userId }, trans);
@@ -1570,7 +2080,9 @@ namespace YKCoatings.Services
                     expectedCounterAccountId = rv.RevenueAccountID;
                 await VerifyVoucherJournalAsync(
                     connection, trans, journalId, id, rv.ReceiptNumber, rv.ReceiptDate,
-                    rv.AmountLocal, sourceAccountId, true, expectedCounterAccountId);
+                    rv.AmountLocal, sourceAccountId, true, expectedCounterAccountId,
+                    isInvoiceSettlement ? "Customer" : null,
+                    isInvoiceSettlement ? rv.EntityID : null);
 
                 if (isInvoiceSettlement)
                 {
@@ -1596,8 +2108,8 @@ namespace YKCoatings.Services
                 await ApplyJournalAccountBalancesAsync(connection, trans, journalId);
 
                 var approvedReceipt = await connection.ExecuteAsync(
-                    "UPDATE dbo.ReceiptVouchers SET ReceiptStatus=2, ApprovedBy=@EmpID, ApprovedDate=GETDATE() WHERE ReceiptID=@ID AND ReceiptStatus=1",
-                    new { EmpID = empId, ID = id }, trans);
+                    "UPDATE dbo.ReceiptVouchers SET ReceiptStatus=2, ApprovedBy=@EmployeeID, ApprovedDate=GETDATE() WHERE ReceiptID=@ID AND ReceiptStatus=1",
+                    new { EmployeeID = approverEmployeeId.Value, ID = id }, trans);
                 if (approvedReceipt != 1)
                     throw new InvalidOperationException("تغيرت حالة سند القبض أثناء الاعتماد؛ أُلغيت العملية.");
 
@@ -1666,13 +2178,15 @@ namespace YKCoatings.Services
             var sql = @"SELECT pv.PaymentID, pv.PaymentNumber, pv.PaymentDate, pv.PaidTo, pv.EntityType, pv.EntityID,
                                CASE WHEN pv.EntityType=1 THEN s.SupplierNameAr WHEN pv.EntityType=2 THEN c.CustomerNameAr ELSE pv.PaidTo END AS EntityName,
                                s.SupplierNameAr, c.CustomerNameAr,
-                               pv.CashBoxID, cb.CashBoxNameAr, pv.BankAccountID, pv.Amount, ISNULL(pv.AmountLocal, pv.Amount) AS AmountLocal,
+                               pv.CashBoxID, cb.CashBoxNameAr, pv.BankAccountID, ba.BankName AS BankAccountName,
+                               pv.Amount, ISNULL(pv.AmountLocal, pv.Amount) AS AmountLocal,
                                pv.CurrencyID, cur.CurrencyCode, pv.PaymentMethod,
                                CASE pv.PaymentMethod WHEN 1 THEN N'نقدي' WHEN 2 THEN N'تحويل بنكي' WHEN 3 THEN N'شيك' ELSE N'أخرى' END AS PaymentMethodName,
                                pv.Description, pv.PaymentStatus, CASE pv.PaymentStatus WHEN 1 THEN N'مسودة' WHEN 2 THEN N'معتمد' WHEN 3 THEN N'ملغي' ELSE N'غير محدد' END AS StatusName,
                                ISNULL(pv.IsPosted,0) AS IsPosted, pv.JournalID, pv.CreatedDate
                         FROM dbo.PaymentVouchers pv
                         LEFT JOIN dbo.CashBoxes cb ON pv.CashBoxID=cb.CashBoxID
+                        LEFT JOIN dbo.BankAccounts ba ON pv.BankAccountID=ba.BankAccountID
                         LEFT JOIN dbo.Suppliers s ON pv.EntityType=1 AND pv.EntityID=s.SupplierID
                         LEFT JOIN dbo.Customers c ON pv.EntityType=2 AND pv.EntityID=c.CustomerID
                         LEFT JOIN dbo.Currencies cur ON pv.CurrencyID=cur.CurrencyID
@@ -1763,7 +2277,7 @@ namespace YKCoatings.Services
                 var sql = @"INSERT INTO dbo.PaymentVouchers(PaymentNumber, PaymentDate, PaidTo, EntityType, EntityID, PaymentMethod, CashBoxID, BankAccountID,
                             Amount, CurrencyID, ExchangeRate, AmountLocal, ChequeNumber, ChequeDate, ChequeBankName, TransferRef, Description, ExpenseAccountID, CostCenterID,
                             PaymentStatus, Notes, CreatedBy, CreatedDate)
-                            VALUES(@PaymentNumber, @PaymentDate, @PaidTo, @EntityType, NULLIF(@EntityID,0), @PaymentMethod, @CashBoxID, NULLIF(@BankAccountID,0),
+                            VALUES(@PaymentNumber, @PaymentDate, @PaidTo, @EntityType, NULLIF(@EntityID,0), @PaymentMethod, NULLIF(@CashBoxID,0), NULLIF(@BankAccountID,0),
                             @Amount, NULLIF(@CurrencyID,0), @ExchangeRate, @AmountLocal, @ChequeNumber, @ChequeDate, @ChequeBankName, @TransferRef, @Description,
                             NULLIF(@ExpenseAccountID,0), NULLIF(@CostCenterID,0), 1, @Notes, @CreatedBy, GETDATE());
                             SELECT CAST(SCOPE_IDENTITY() AS INT);";
@@ -1848,7 +2362,7 @@ namespace YKCoatings.Services
 
                 await PreparePaymentSettlementAsync(connection, trans, dto, userId, dto.PaymentID);
                 var sql = @"UPDATE dbo.PaymentVouchers SET PaymentDate=@PaymentDate, PaidTo=@PaidTo, EntityType=@EntityType, EntityID=NULLIF(@EntityID,0),
-                            PaymentMethod=@PaymentMethod, CashBoxID=@CashBoxID, BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
+                            PaymentMethod=@PaymentMethod, CashBoxID=NULLIF(@CashBoxID,0), BankAccountID=NULLIF(@BankAccountID,0), Amount=@Amount, CurrencyID=NULLIF(@CurrencyID,0),
                             ExchangeRate=@ExchangeRate, AmountLocal=@AmountLocal, ChequeNumber=@ChequeNumber, ChequeDate=@ChequeDate, ChequeBankName=@ChequeBankName,
                             TransferRef=@TransferRef, Description=@Description, ExpenseAccountID=NULLIF(@ExpenseAccountID,0), CostCenterID=NULLIF(@CostCenterID,0),
                             Notes=@Notes, ModifiedBy=@UserID, ModifiedDate=GETDATE()
@@ -1912,16 +2426,26 @@ namespace YKCoatings.Services
                 var pv = await connection.QueryFirstOrDefaultAsync<(
                     string PaymentNumber, int PaymentStatus, int CashBoxID, int? BankAccountID, int? CreatedBy,
                     int? EntityType, int? EntityID, int? CurrencyID, decimal ExchangeRate, decimal Amount,
-                    decimal AmountLocal, DateTime PaymentDate, int? ExpenseAccountID, int? JournalID, bool IsPosted)>(
+                    decimal AmountLocal, DateTime PaymentDate, int? ExpenseAccountID, int? CostCenterID,
+                    int? JournalID, bool IsPosted)>(
                     @"SELECT PaymentNumber,PaymentStatus,CashBoxID,BankAccountID,CreatedBy,EntityType,EntityID,CurrencyID,
                              ISNULL(ExchangeRate,1) AS ExchangeRate,Amount,ISNULL(AmountLocal,Amount) AS AmountLocal,
-                             PaymentDate,ExpenseAccountID,JournalID,ISNULL(IsPosted,0) AS IsPosted
+                             PaymentDate,ExpenseAccountID,CostCenterID,JournalID,ISNULL(IsPosted,0) AS IsPosted
                       FROM dbo.PaymentVouchers WITH (UPDLOCK,HOLDLOCK) WHERE PaymentID=@ID",
                     new { ID = id }, trans);
                 if (pv.PaymentNumber == null) throw new Exception("السند غير موجود");
                 if (pv.PaymentStatus != 1) throw new Exception("السند ليس مسودة");
                 if (pv.IsPosted || pv.JournalID.GetValueOrDefault() > 0)
                     throw new InvalidOperationException("لا يمكن اعتماد مسودة مرتبطة مسبقاً بقيد أو معلّمة كمرحّلة؛ راجع ارتباطها أولاً.");
+
+                var approverEmployeeId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID=@UserID",
+                    new { UserID = userId }, trans);
+                if (!approverEmployeeId.HasValue)
+                    throw new InvalidOperationException("لا يمكن اعتماد سند الصرف لأن المستخدم الحالي غير مرتبط بموظف.");
+                if (empId.HasValue && empId.Value != approverEmployeeId.Value)
+                    throw new InvalidOperationException("معرّف الموظف الممرر لا يطابق الموظف المرتبط بمستخدم الاعتماد.");
+
                 await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
                     connection, trans, pv.CurrencyID, pv.ExchangeRate);
 
@@ -1933,20 +2457,27 @@ namespace YKCoatings.Services
                     ? await GetPaymentInvoiceAllocationsCoreAsync(connection, trans, id)
                     : new List<VoucherInvoiceAllocationDto>();
                 int? controlAccountId = null;
+                var invoiceSettlementSupplierId = 0;
                 if (isInvoiceSettlement)
                 {
                     await _authorization.RequireUserPermissionAsync(
                         userId, "SCR_PINV", p => p.CanView, "يلزم صلاحية عرض فواتير المشتريات لاعتماد تسويتها.");
-                    if (pv.EntityType != 1 || !pv.EntityID.HasValue)
+                    invoiceSettlementSupplierId = pv.EntityID.GetValueOrDefault();
+                    if (pv.EntityType != 1 || invoiceSettlementSupplierId <= 0)
                         throw new InvalidOperationException("سند تسوية فواتير المشتريات لا يرتبط بمورد صالح.");
 
                     controlAccountId = await ValidateInvoiceAllocationsAsync(
-                        connection, trans, false, pv.EntityID.Value, pv.CurrencyID, pv.ExchangeRate,
+                        connection, trans, false, invoiceSettlementSupplierId, pv.CurrencyID, pv.ExchangeRate,
                         pv.Amount, invoiceAllocations, id);
                     await connection.ExecuteAsync(
                         "UPDATE dbo.PaymentVouchers SET ExpenseAccountID=@AccountID WHERE PaymentID=@ID AND PaymentStatus=1",
                         new { AccountID = controlAccountId.Value, ID = id }, trans);
                 }
+
+                if (!isInvoiceSettlement)
+                    await ValidateGenericVoucherCounterAccountAsync(
+                        connection, trans, pv.ExpenseAccountID, 6,
+                        pv.CostCenterID, pv.PaymentNumber, "حساب المصروف");
 
                 var sourceAccountId = await ResolveVoucherSourceAccountIdAsync(
                     connection, trans, pv.CashBoxID, pv.BankAccountID, pv.PaymentNumber);
@@ -1963,16 +2494,23 @@ namespace YKCoatings.Services
                     expectedCounterAccountId = pv.ExpenseAccountID;
                 await VerifyVoucherJournalAsync(
                     connection, trans, journalId, id, pv.PaymentNumber, pv.PaymentDate,
-                    pv.AmountLocal, sourceAccountId, false, expectedCounterAccountId);
+                    pv.AmountLocal, sourceAccountId, false, expectedCounterAccountId,
+                    isInvoiceSettlement ? "Supplier" : null,
+                    isInvoiceSettlement ? pv.EntityID : null);
 
                 if (isInvoiceSettlement)
+                {
                     await ApplyPaymentInvoicePaidAmountsAsync(connection, trans, invoiceAllocations, userId);
+                    await connection.ExecuteAsync(
+                        "EXEC dbo.sp_UpdateSupplierBalanceAfterInvoice @SupplierID",
+                        new { SupplierID = invoiceSettlementSupplierId }, trans);
+                }
 
                 await ApplyJournalAccountBalancesAsync(connection, trans, journalId);
 
                 var approvedPayment = await connection.ExecuteAsync(
-                    "UPDATE dbo.PaymentVouchers SET PaymentStatus=2, ApprovedBy=@UserID, ApprovedDate=GETDATE() WHERE PaymentID=@ID AND PaymentStatus=1",
-                    new { UserID = userId, ID = id }, trans);
+                    "UPDATE dbo.PaymentVouchers SET PaymentStatus=2, ApprovedBy=@EmployeeID, ApprovedDate=GETDATE() WHERE PaymentID=@ID AND PaymentStatus=1",
+                    new { EmployeeID = approverEmployeeId.Value, ID = id }, trans);
                 if (approvedPayment != 1)
                     throw new InvalidOperationException("تغيرت حالة سند الصرف أثناء الاعتماد؛ أُلغيت العملية.");
                 trans.Commit();
@@ -2436,7 +2974,7 @@ namespace YKCoatings.Services
             ws.Range(1, 1, 1, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             int hr = 3;
-            var headers = new[] { "#", "رقم السند", "التاريخ", "الخزينة", "المستلم من", "المبلغ", "طريقة الدفع", "الحالة" };
+            var headers = new[] { "#", "رقم السند", "التاريخ", "المصدر", "المستلم من", "المبلغ", "طريقة الدفع", "الحالة" };
             for (int i = 0; i < headers.Length; i++)
             {
                 var c = ws.Cell(hr, i + 1);
@@ -2453,7 +2991,7 @@ namespace YKCoatings.Services
                 ws.Cell(r, 1).Value = n;
                 ws.Cell(r, 2).Value = item.ReceiptNumber ?? "";
                 ws.Cell(r, 3).Value = item.ReceiptDate.ToString("dd/MM/yyyy");
-                ws.Cell(r, 4).Value = item.CashBoxNameAr ?? "";
+                ws.Cell(r, 4).Value = item.BankAccountID.GetValueOrDefault() > 0 ? (item.BankAccountName ?? $"بنك #{item.BankAccountID}") : (item.CashBoxNameAr ?? "");
                 ws.Cell(r, 5).Value = item.EntityName ?? item.ReceivedFrom ?? "";
                 ws.Cell(r, 6).Value = item.Amount;
                 ws.Cell(r, 7).Value = item.PaymentMethodName ?? "";
@@ -2582,24 +3120,71 @@ namespace YKCoatings.Services
                 userId, "ليس لديك صلاحية تعديل الحسابات البنكية.", p => p.CanEdit, "SCR_BANKACC", "SCR_BANK_ACCOUNTS");
 
             using var connection = CreateConnection();
-            var sql = @"UPDATE dbo.BankAccounts SET BankName=@BankName, BranchName=@BranchName, AccountNumber=@AccountNumber, IBAN=@IBAN, SwiftCode=@SwiftCode,
-                        AccountType=@AccountType, CurrencyID=NULLIF(@CurrencyID,0), AccountID=NULLIF(@AccountID,0), ContactPerson=@ContactPerson, Phone=@Phone, IsActive=@IsActive
-                        WHERE BankAccountID=@BankAccountID";
-            await connection.ExecuteAsync(sql, new
+            await connection.OpenAsync();
+            using var trans = connection.BeginTransaction(IsolationLevel.Serializable);
+            try
             {
-                dto.BankAccountID,
-                dto.BankName,
-                dto.BranchName,
-                dto.AccountNumber,
-                dto.IBAN,
-                dto.SwiftCode,
-                dto.AccountType,
-                dto.CurrencyID,
-                dto.AccountID,
-                dto.ContactPerson,
-                dto.Phone,
-                dto.IsActive
-            });
+                var current = await connection.QueryFirstOrDefaultAsync<(
+                    int? BankAccountID, int? AccountID, int? CurrencyID)>(
+                    @"SELECT BankAccountID,AccountID,CurrencyID
+                      FROM dbo.BankAccounts WITH (UPDLOCK,HOLDLOCK)
+                      WHERE BankAccountID=@ID",
+                    new { ID = dto.BankAccountID }, trans);
+                if (!current.BankAccountID.HasValue)
+                    throw new InvalidOperationException("الحساب البنكي غير موجود أو تم حذفه.");
+
+                var hasPostedActivity = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(*) FROM (
+                          SELECT rv.ReceiptID FROM dbo.ReceiptVouchers rv WITH (UPDLOCK,HOLDLOCK)
+                          WHERE rv.BankAccountID=@ID AND (rv.ReceiptStatus=2 OR ISNULL(rv.IsPosted,0)=1 OR rv.JournalID IS NOT NULL)
+                          UNION ALL
+                          SELECT pv.PaymentID FROM dbo.PaymentVouchers pv WITH (UPDLOCK,HOLDLOCK)
+                          WHERE pv.BankAccountID=@ID AND (pv.PaymentStatus=2 OR ISNULL(pv.IsPosted,0)=1 OR pv.JournalID IS NOT NULL)
+                      ) activity",
+                    new { ID = dto.BankAccountID }, trans);
+                if (hasPostedActivity > 0
+                    && (dto.AccountID.GetValueOrDefault() != current.AccountID.GetValueOrDefault()
+                        || dto.CurrencyID.GetValueOrDefault() != current.CurrencyID.GetValueOrDefault()))
+                    throw new InvalidOperationException(
+                        "للحساب البنكي حركات مالية مرحّلة؛ لا تغيّر حسابه المحاسبي أو عملته مباشرة. أنشئ قيد تسوية بعد مراجعة المحاسب.");
+
+                var updated = await connection.ExecuteAsync(
+                    @"UPDATE dbo.BankAccounts SET BankName=@BankName, BranchName=@BranchName, AccountNumber=@AccountNumber, IBAN=@IBAN, SwiftCode=@SwiftCode,
+                              AccountType=@AccountType, CurrencyID=NULLIF(@CurrencyID,0), AccountID=NULLIF(@AccountID,0),
+                              ContactPerson=@ContactPerson, Phone=@Phone, IsActive=@IsActive
+                      WHERE BankAccountID=@BankAccountID",
+                    new
+                    {
+                        dto.BankAccountID,
+                        dto.BankName,
+                        dto.BranchName,
+                        dto.AccountNumber,
+                        dto.IBAN,
+                        dto.SwiftCode,
+                        dto.AccountType,
+                        dto.CurrencyID,
+                        dto.AccountID,
+                        dto.ContactPerson,
+                        dto.Phone,
+                        dto.IsActive
+                    }, trans);
+                if (updated != 1)
+                    throw new InvalidOperationException("لم يتم تحديث بيانات الحساب البنكي.");
+
+                trans.Commit();
+            }
+            catch
+            {
+                try { trans.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed while updating bank account {BankAccountID}.",
+                        dto.BankAccountID);
+                }
+                throw;
+            }
+
             await _audit.WriteAuditLogAsync(userId, 2, "BankAccounts", dto.BankAccountID.ToString(), moduleName: "SCR_BANKS", description: $"تعديل حساب بنكي: {dto.BankName}");
         }
 

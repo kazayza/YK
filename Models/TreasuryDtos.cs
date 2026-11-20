@@ -22,6 +22,7 @@ namespace YKCoatings.Models
         public decimal TotalPayments { get; set; }
         public decimal TotalIn { get; set; }
         public decimal TotalOut { get; set; }
+        public bool HasOpeningBalanceJournal { get; set; }
         public int? CurrencyID { get; set; }
         public string? CurrencyCode { get; set; }
         public bool IsActive { get; set; }
@@ -162,6 +163,7 @@ namespace YKCoatings.Models
         public int CashBoxID { get; set; }
         public string? CashBoxNameAr { get; set; }
         public int? BankAccountID { get; set; }
+        public string? BankAccountName { get; set; }
         public decimal Amount { get; set; }
         public decimal AmountLocal { get; set; }
         public string? CurrencyCode { get; set; }
@@ -613,6 +615,7 @@ namespace YKCoatings.Models
         public string? StatusName { get; set; }
         public bool IsPosted { get; set; }
         public int? JournalID { get; set; }
+        public int? JournalStatus { get; set; }
         public string? JournalNumber { get; set; }
         public int? PaymentMethod { get; set; }
         public int? CashBoxID { get; set; }
