@@ -1,4 +1,5 @@
-﻿using ClosedXML.Excel;
+﻿using System.Data;
+using ClosedXML.Excel;
 using Dapper;
 
 namespace YKCoatings.Services
@@ -1431,6 +1432,7 @@ public async Task<(bool Success, string Message)> AddToInventoryAsync(int batchI
     BatchInventoryDbDto? batch = null;
     decimal primaryQuantity = 0m;
     decimal primaryUnitCost = 0m;
+    var costComputedFromActuals = false;
 
     try
     {
@@ -1461,7 +1463,28 @@ WHERE pb.BatchID=@BatchID",
         if (batch.GoodQty <= 0)
             return (false, "يجب إدخال كمية صالحة موجبة");
         if (batch.UnitCost <= 0)
-            return (false, "أدخل تكلفة وحدة المنتج يدوياً بعد اعتماد الجودة وقبل الترحيل؛ لن نوزع تكلفة المواد أو الهالك/المرفوض تلقائياً.");
+        {
+            // لا تكلفة يدوية: احسب تكلفة الوحدة من فعلي أمر التصنيع (مواد صرف معتمدة FIFO
+            // + عمالة فعلية + مصروفات صناعية فعلية) موزعة على الكمية المقبولة من الجودة.
+            var computedUnitCost = await TryComputeBatchUnitCostFromActualsAsync(connection, transaction, batch);
+            if (computedUnitCost > 0)
+            {
+                var newTotalCost = decimal.Round(computedUnitCost * batch.GoodQty, 2, MidpointRounding.AwayFromZero);
+                var costUpdated = await connection.ExecuteAsync(@"
+UPDATE dbo.ProductionBatches
+SET TotalCost=@TotalCost,ModifiedBy=@UserID,ModifiedDate=GETDATE()
+WHERE BatchID=@BatchID AND BatchStatus=5 AND QCResult=1",
+                    new { BatchID = batchId, TotalCost = newTotalCost, UserID = userId }, transaction);
+                if (costUpdated != 1)
+                    return (false, "تغيرت حالة الدفعة أثناء حساب تكلفتها من الفعلي؛ أعد تحميلها.");
+                batch.UnitCost = computedUnitCost;
+                costComputedFromActuals = true;
+            }
+            else
+            {
+                return (false, "أدخل تكلفة وحدة المنتج يدوياً بعد اعتماد الجودة وقبل الترحيل؛ لن نوزع تكلفة المواد أو الهالك/المرفوض تلقائياً.");
+            }
+        }
         if (batch.PrimaryUnitID <= 0)
             return (false, "لا توجد وحدة مخزون أساسية صالحة للمنتج.");
 
@@ -1529,6 +1552,16 @@ EXEC dbo.sp_UpdateInventoryBalance
             }, transaction);
 
         await UpdateProductionOrderActualsAsync(connection, transaction, batch.ProductionOrderID, userId);
+
+        // القيد المحاسبي للتصنيع (مدين مخزون منتج تام / دائن تشغيل تحت التصنيع) بتكلفة الدفعة —
+        // يعمل فقط عند تهيئة حسابي التصنيع في الإعدادات.
+        await PostManufacturingJournalIfConfiguredAsync(
+            connection, transaction, "MFGBATCH", batchId, batch.BatchNumber,
+            batch.BatchDate, $"إتمام دفعة إنتاج {batch.BatchNumber} — تحويل تكلفة من التشغيل تحت التصنيع إلى مخزون المنتج التام",
+            debitIsWip: false,
+            amount: decimal.Round(batch.GoodQty * batch.UnitCost, 2, MidpointRounding.AwayFromZero),
+            userId: userId);
+
         await _notification.MarkRelatedAsActionedAsync(
             connection, transaction, "SCR_BATCH", batchId);
         await _notification.CreateForPermissionHoldersAsync(
@@ -1557,7 +1590,150 @@ EXEC dbo.sp_UpdateInventoryBalance
         moduleName: "SCR_BATCH",
         description: $"إدخال المخزن لدفعة: {batch!.BatchNumber}؛ الكمية الأساسية {primaryQuantity:#,##0.####} بتكلفة وحدة {primaryUnitCost:#,##0.####}"
     );
-    return (true, "تم ترحيل الكمية المقبولة إلى المخزون بالتكلفة المدخلة يدوياً.");
+    return (true, costComputedFromActuals
+        ? "تم ترحيل الكمية المقبولة إلى المخزون بتكلفة محسوبة من فعلي أمر التصنيع (مواد معتمدة + عمالة + مصروفات صناعية)."
+        : "تم ترحيل الكمية المقبولة إلى المخزون بالتكلفة المدخلة يدوياً.");
+}
+
+private async Task<decimal> TryComputeBatchUnitCostFromActualsAsync(
+    IDbConnection connection, IDbTransaction transaction, BatchInventoryDbDto batch)
+{
+    var orderCosts = await connection.QueryFirstOrDefaultAsync<(decimal Material, decimal Labor, decimal Overhead)>(@"
+SELECT ISNULL(ActualMaterialCost,0) AS Material, ISNULL(ActualLaborCost,0) AS Labor,
+       ISNULL(ActualOverheadCost,0) AS Overhead
+FROM dbo.ProductionOrders WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@OrderID",
+        new { OrderID = batch.ProductionOrderID }, transaction);
+    var totalCost = orderCosts.Material + orderCosts.Labor + orderCosts.Overhead;
+    if (totalCost <= 0) return 0m;
+
+    // أساس التوزيع: كل الكمية المقبولة من الجودة في دفعات الأمر (بالوحدة نفسها الملزمة للدفعات).
+    var acceptedGoodQty = await connection.ExecuteScalarAsync<decimal>(@"
+SELECT ISNULL(SUM(ISNULL(GoodQty,0)),0)
+FROM dbo.ProductionBatches WITH (UPDLOCK,HOLDLOCK)
+WHERE ProductionOrderID=@OrderID AND QCResult=1 AND BatchStatus>=5 AND ISNULL(GoodQty,0)>0",
+        new { OrderID = batch.ProductionOrderID }, transaction);
+    if (acceptedGoodQty <= 0 || batch.GoodQty <= 0) return 0m;
+    return decimal.Round(totalCost / acceptedGoodQty, 4, MidpointRounding.AwayFromZero);
+}
+
+private async Task PostManufacturingJournalIfConfiguredAsync(
+    IDbConnection connection, IDbTransaction transaction,
+    string sourceDocType, int sourceDocId, string sourceDocNumber,
+    DateTime journalDate, string description, bool debitIsWip, decimal amount, int userId)
+{
+    if (amount <= 0) return;
+    var wipCode = (await connection.QueryFirstOrDefaultAsync<string>(
+        "SELECT SettingValue FROM dbo.SystemSettings WITH (UPDLOCK,HOLDLOCK) WHERE SettingKey='MfgWipAccountCode'",
+        null, transaction))?.Trim();
+    var inventoryCode = (await connection.QueryFirstOrDefaultAsync<string>(
+        "SELECT SettingValue FROM dbo.SystemSettings WITH (UPDLOCK,HOLDLOCK) WHERE SettingKey='MfgFinishedInventoryAccountCode'",
+        null, transaction))?.Trim();
+    if (string.IsNullOrWhiteSpace(wipCode) && string.IsNullOrWhiteSpace(inventoryCode))
+        return; // المحاسبة الصناعية غير مهيأة بعد؛ يستمر المسار المخزني كما هو دون قيد.
+    if (string.IsNullOrWhiteSpace(wipCode) || string.IsNullOrWhiteSpace(inventoryCode))
+        throw new InvalidOperationException("تهيئة حسابات التصنيع ناقصة: املأ الإعدادين MfgWipAccountCode وMfgFinishedInventoryAccountCode معًا في شاشة الإعدادات (مجموعة التصنيع) أو أفرغهما معًا.");
+
+    async Task<int> ResolveAccountAsync(string code, string label)
+    {
+        var account = await connection.QueryFirstOrDefaultAsync<(
+            int AccountID, int AccountType, bool IsDetail, bool IsActive, bool CostCenterRequired)>(
+            @"SELECT AccountID, AccountType,
+                     CONVERT(bit,ISNULL(IsDetailAccount,0)) AS IsDetail,
+                     CONVERT(bit,ISNULL(IsActive,0)) AS IsActive,
+                     CONVERT(bit,ISNULL(CostCenterRequired,0)) AS CostCenterRequired
+              FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountCode=@Code",
+            new { Code = code }, transaction);
+        if (account.AccountID <= 0)
+            throw new InvalidOperationException($"حساب {label} {code} المثبت في الإعدادات غير موجود في دليل الحسابات.");
+        if (!account.IsActive || !account.IsDetail || account.AccountType != 1 || account.CostCenterRequired)
+            throw new InvalidOperationException($"حساب {label} {code} يجب أن يكون حساب أصول (النوع 1) تفصيليًا نشطًا لا يتطلب مركز تكلفة.");
+        return account.AccountID;
+    }
+
+    var wipAccountId = await ResolveAccountAsync(wipCode, "التشغيل تحت التصنيع");
+    var inventoryAccountId = await ResolveAccountAsync(inventoryCode, "المخزون");
+    if (wipAccountId == inventoryAccountId)
+        throw new InvalidOperationException("حسابا التشغيل تحت التصنيع والمخزون في الإعدادات متطابقان؛ صححهما قبل الترحيل.");
+
+    var existingJournal = await connection.ExecuteScalarAsync<int>(
+        @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+          WHERE SourceDocType=@SourceDocType AND SourceDocID=@SourceDocID AND JournalStatus=2",
+        new { SourceDocType = sourceDocType, SourceDocID = sourceDocId }, transaction);
+    if (existingJournal > 0) return; // قيد هذا المستند موجود؛ لا تكرار.
+
+    var openPeriods = (await connection.QueryAsync<(int FiscalYearID, int PeriodID)>(
+        @"SELECT fy.FiscalYearID, ap.PeriodID
+          FROM dbo.FiscalYears fy WITH (UPDLOCK,HOLDLOCK)
+          INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK,HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+          WHERE @JournalDate BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+            AND @JournalDate BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+            AND fy.YearStatus=1 AND ap.PeriodStatus=1
+          ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+        new { JournalDate = journalDate.Date }, transaction)).ToList();
+    if (openPeriods.Count != 1)
+        throw new InvalidOperationException("لا توجد فترة محاسبية مفتوحة واحدة تغطي تاريخ مستند التصنيع؛ لم يُنشأ القيد المحاسبي وأُلغيت العملية.");
+    var period = openPeriods[0];
+
+    var journalNumber = await connection.QueryFirstOrDefaultAsync<string>(
+        "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;",
+        transaction: transaction);
+    if (string.IsNullOrWhiteSpace(journalNumber))
+        throw new InvalidOperationException("تعذر توليد رقم قيد التصنيع؛ أُلغيت العملية.");
+
+    var employeeId = await connection.ExecuteScalarAsync<int?>(
+        "SELECT EmployeeID FROM dbo.SystemUsers WITH (UPDLOCK,HOLDLOCK) WHERE UserID=@UserID",
+        new { UserID = userId }, transaction);
+
+    var debitAccountId = debitIsWip ? wipAccountId : inventoryAccountId;
+    var creditAccountId = debitIsWip ? inventoryAccountId : wipAccountId;
+    var roundedAmount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
+
+    var journalId = await connection.ExecuteScalarAsync<int>(
+        @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate, PostedBy, PostedDate)
+          VALUES(@Number, @Date, @Description, @Reference, @SourceDocType, @SourceDocID, @SourceDocNumber, @Amount, @Amount, @FiscalYearID, @PeriodID, 1, 2, 1, @UserID, GETDATE(), @PostedBy, GETDATE());
+          SELECT CAST(SCOPE_IDENTITY() AS INT);",
+        new
+        {
+            Number = journalNumber,
+            Date = journalDate.Date,
+            Description = description,
+            Reference = sourceDocNumber,
+            SourceDocType = sourceDocType,
+            SourceDocID = sourceDocId,
+            SourceDocNumber = sourceDocNumber,
+            Amount = roundedAmount,
+            period.FiscalYearID,
+            period.PeriodID,
+            UserID = userId,
+            PostedBy = employeeId
+        }, transaction);
+
+    await connection.ExecuteAsync(
+        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description) VALUES(@JID, 1, @AccID, @Amount, 0, @Desc)",
+        new { JID = journalId, AccID = debitAccountId, Amount = roundedAmount, Desc = description }, transaction);
+    await connection.ExecuteAsync(
+        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description) VALUES(@JID, 2, @AccID, 0, @Amount, @Desc)",
+        new { JID = journalId, AccID = creditAccountId, Amount = roundedAmount, Desc = description }, transaction);
+
+    foreach (var (accountId, delta) in new[] { (debitAccountId, roundedAmount), (creditAccountId, -roundedAmount) })
+    {
+        await connection.ExecuteAsync(
+            "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@AccountID",
+            new { Delta = delta, AccountID = accountId }, transaction);
+        int? current = accountId;
+        for (var depth = 0; depth < 10; depth++)
+        {
+            var parentId = await connection.ExecuteScalarAsync<int?>(
+                "SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID",
+                new { ID = current }, transaction);
+            if (!parentId.HasValue || parentId.Value <= 0) break;
+            await connection.ExecuteAsync(
+                "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                new { Delta = delta, ID = parentId.Value }, transaction);
+            current = parentId.Value;
+        }
+    }
 }
 
 private static async Task<decimal> ResolveBatchToPrimaryUnitFactorAsync(

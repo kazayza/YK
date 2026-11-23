@@ -1033,21 +1033,78 @@ namespace YKCoatings.Services
         {
             await RequireInvoicePermissionAsync(userId, p => p.CanCancel, "ليس لديك صلاحية إلغاء فواتير المشتريات.");
             using var connection = CreateConnection();
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
 
-            var info = await connection.QueryFirstOrDefaultAsync<(string InvoiceNumber, int InvoiceStatus, decimal PaidAmount)>(
-                "SELECT InvoiceNumber, InvoiceStatus, ISNULL(PaidAmount, 0) FROM dbo.PurchaseInvoices WHERE InvoiceID = @ID",
-                new { ID = invoiceId });
+            string invoiceNumber = "";
+            try
+            {
+                var info = await connection.QueryFirstOrDefaultAsync<(
+                    string InvoiceNumber, int InvoiceStatus, decimal PaidAmount, int SupplierID, int? GRNID)>(
+                    @"SELECT InvoiceNumber, InvoiceStatus, ISNULL(PaidAmount,0) AS PaidAmount, SupplierID, GRNID
+                      FROM dbo.PurchaseInvoices WITH (UPDLOCK, HOLDLOCK) WHERE InvoiceID = @ID",
+                    new { ID = invoiceId }, transaction);
 
-            if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
-            if (info.InvoiceStatus == 7) throw new Exception("الفاتورة ملغية بالفعل");
-            if (info.PaidAmount > 0) throw new Exception("لا يمكن إلغاء فاتورة تم الدفع عليها");
+                if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
+                if (info.InvoiceStatus == 7) throw new Exception("الفاتورة ملغية بالفعل");
+                if (info.PaidAmount > 0) throw new Exception("لا يمكن إلغاء فاتورة تم الدفع عليها؛ ألغِ سندات الصرف المخصصة لها أولًا.");
+                invoiceNumber = info.InvoiceNumber;
 
-            await connection.ExecuteAsync(
-                @"UPDATE dbo.PurchaseInvoices SET
-                    InvoiceStatus = 7,
-                    ModifiedBy = @UserID, ModifiedDate = GETDATE()
-                  WHERE InvoiceID = @ID",
-                new { ID = invoiceId, UserID = userId });
+                var wasApproved = info.InvoiceStatus >= 3 && info.InvoiceStatus <= 6;
+                if (wasApproved)
+                {
+                    // الفاتورة المعتمدة لها قيد مرحّل ورصيد مورد وأثر على إذن الاستلام؛
+                    // الإلغاء بلا عكس كان يترك كل ذلك قائمًا. يُعكس القيد ويُحرَّر الاستلام هنا.
+                    var employeeId = await connection.ExecuteScalarAsync<int?>(
+                        "SELECT EmployeeID FROM dbo.SystemUsers WITH (UPDLOCK,HOLDLOCK) WHERE UserID=@UserID",
+                        new { UserID = userId }, transaction);
+                    if (!employeeId.HasValue || employeeId.Value <= 0)
+                        throw new InvalidOperationException("لا يمكن إلغاء فاتورة معتمدة لأن المستخدم الحالي غير مرتبط بموظف.");
+
+                    await ReversePurchaseInvoiceJournalAsync(
+                        connection, transaction, invoiceId, info.InvoiceNumber, userId, employeeId.Value);
+                }
+
+                var cancelled = await connection.ExecuteAsync(
+                    @"UPDATE dbo.PurchaseInvoices SET
+                        InvoiceStatus = 7,
+                        ModifiedBy = @UserID, ModifiedDate = GETDATE()
+                      WHERE InvoiceID = @ID AND InvoiceStatus = @OldStatus",
+                    new { ID = invoiceId, UserID = userId, OldStatus = info.InvoiceStatus }, transaction);
+                if (cancelled != 1)
+                    throw new InvalidOperationException("تغيرت حالة الفاتورة أثناء الإلغاء؛ أُلغيت العملية.");
+
+                if (wasApproved)
+                {
+                    var linkedGrnId = info.GRNID.GetValueOrDefault();
+                    if (linkedGrnId > 0)
+                    {
+                        // تحرير إذن الاستلام المحبوس في حالة «مرتبط بفاتورة» ليعاد استخدامه أو إلغاؤه.
+                        await connection.ExecuteAsync(
+                            @"UPDATE dbo.GoodsReceiptNotes SET GRNStatus = 2,
+                                ModifiedBy = @UserID, ModifiedDate = GETDATE()
+                              WHERE GRNID = @GRNID AND GRNStatus = 3",
+                            new { GRNID = linkedGrnId, UserID = userId }, transaction);
+                    }
+
+                    await connection.ExecuteAsync(
+                        "EXEC dbo.sp_UpdateSupplierBalanceAfterInvoice @SupplierID",
+                        new { SupplierID = info.SupplierID }, transaction);
+                }
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Rollback failed after cancelling purchase invoice {PurchaseInvoiceID} failed.",
+                        invoiceId);
+                }
+                throw;
+            }
 
             try
             {
@@ -1060,7 +1117,112 @@ namespace YKCoatings.Services
 
             await _audit.WriteAuditLogAsync(userId, 2, "PurchaseInvoices", invoiceId.ToString(),
                 moduleName: "SCR_PINV",
-                description: $"إلغاء فاتورة مشتريات: {info.InvoiceNumber}");
+                description: $"إلغاء فاتورة مشتريات: {invoiceNumber}");
+        }
+
+        private async Task ReversePurchaseInvoiceJournalAsync(
+            SqlConnection connection, SqlTransaction transaction,
+            int invoiceId, string invoiceNumber, int userId, int employeeId)
+        {
+            var linkedJournalIds = (await connection.QueryAsync<int>(
+                @"SELECT JournalID
+                  FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                  WHERE SourceDocID=@InvoiceID AND SourceDocNumber=@InvoiceNumber",
+                new { InvoiceID = invoiceId, InvoiceNumber = invoiceNumber }, transaction)).ToList();
+            if (linkedJournalIds.Count != 1)
+                throw new InvalidOperationException(
+                    $"إلغاء الفاتورة المعتمدة يتطلب قيدًا واحدًا مرتبطًا بها؛ وُجد {linkedJournalIds.Count}. أُوقف الإلغاء حفاظًا على الأرصدة.");
+            var originalJournalId = linkedJournalIds[0];
+
+            var original = await connection.QueryFirstOrDefaultAsync<(
+                string? JournalNumber, int JournalStatus, bool IsAutoGenerated, DateTime JournalDate)>(
+                @"SELECT JournalNumber, JournalStatus, ISNULL(IsAutoGenerated,0) AS IsAutoGenerated, JournalDate
+                  FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                  WHERE JournalID=@ID",
+                new { ID = originalJournalId }, transaction);
+            if (original.JournalStatus != 2 || !original.IsAutoGenerated)
+                throw new InvalidOperationException("قيد الفاتورة الأصلي غير مرحّل أو غير أوتوماتيكي؛ أُوقف الإلغاء.");
+
+            var alreadyReversed = await connection.ExecuteScalarAsync<int>(
+                @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK, HOLDLOCK)
+                  WHERE SourceDocType='REVERSAL' AND SourceDocID=@ID AND JournalStatus=2",
+                new { ID = originalJournalId }, transaction);
+            if (alreadyReversed > 0)
+                throw new InvalidOperationException("قيد هذه الفاتورة معكوس مسبقًا؛ لا يمكن عكسه مرتين.");
+
+            var details = (await connection.QueryAsync<(int AccountID, decimal Debit, decimal Credit, string? Description, int? CostCenterID)>(
+                @"SELECT AccountID, DebitAmount AS Debit, CreditAmount AS Credit, Description, CostCenterID
+                  FROM dbo.JournalEntryDetails WHERE JournalID=@ID ORDER BY LineNumber",
+                new { ID = originalJournalId }, transaction)).ToList();
+            if (details.Count < 2
+                || details.Any(d => d.AccountID <= 0 || d.Debit < 0 || d.Credit < 0 || (d.Debit > 0 && d.Credit > 0)))
+                throw new InvalidOperationException("سطور قيد الفاتورة الأصلي غير صالحة؛ أُوقف الإلغاء.");
+            var totalDebit = details.Sum(d => d.Debit);
+            if (totalDebit <= 0 || Math.Abs(totalDebit - details.Sum(d => d.Credit)) > 0.01m)
+                throw new InvalidOperationException("قيد الفاتورة الأصلي غير متوازن؛ أُوقف الإلغاء.");
+
+            // تاريخ العكس: تاريخ القيد الأصلي إن بقيت فترته مفتوحة، وإلا اليوم إن كانت فترته مفتوحة.
+            async Task<(int FiscalYearID, int PeriodID)?> ResolveOpenPeriodAsync(DateTime date)
+            {
+                var period = await connection.QueryFirstOrDefaultAsync<(int? FiscalYearID, int? PeriodID)>(
+                    @"SELECT TOP 1 fy.FiscalYearID, ap.PeriodID
+                      FROM dbo.FiscalYears fy WITH (UPDLOCK, HOLDLOCK)
+                      INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK, HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+                      WHERE fy.YearStatus=1 AND ap.PeriodStatus=1
+                        AND @Date BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+                        AND @Date BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+                      ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+                    new { Date = date.Date }, transaction);
+                return period.FiscalYearID.HasValue && period.PeriodID.HasValue
+                    ? (period.FiscalYearID.Value, period.PeriodID.Value)
+                    : null;
+            }
+
+            var reversalDate = original.JournalDate.Date;
+            var resolvedPeriod = await ResolveOpenPeriodAsync(reversalDate);
+            if (resolvedPeriod == null)
+            {
+                reversalDate = DateTime.Today;
+                resolvedPeriod = await ResolveOpenPeriodAsync(reversalDate);
+            }
+            if (resolvedPeriod == null)
+                throw new InvalidOperationException("لا توجد فترة مفتوحة لتاريخ القيد الأصلي ولا لتاريخ اليوم؛ افتح فترة أو أغلق الإلغاء لحين فتحها.");
+
+            var reversalNumber = await connection.QueryFirstOrDefaultAsync<string>(
+                "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;",
+                transaction: transaction);
+            if (string.IsNullOrWhiteSpace(reversalNumber))
+                throw new InvalidOperationException("تعذر توليد رقم القيد العكسي؛ أُوقف الإلغاء.");
+
+            var reversalId = await connection.ExecuteScalarAsync<int>(
+                @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate, PostedBy, PostedDate)
+                  VALUES(@Number, @Date, @Description, @Reference, 'REVERSAL', @OriginalID, @OriginalNumber, @Total, @Total, @FiscalYearID, @PeriodID, 3, 2, 1, @UserID, GETDATE(), @PostedBy, GETDATE());
+                  SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                new
+                {
+                    Number = reversalNumber,
+                    Date = reversalDate,
+                    Description = $"عكس قيد فاتورة مشتريات {invoiceNumber} — إلغاء الفاتورة",
+                    Reference = original.JournalNumber,
+                    OriginalID = originalJournalId,
+                    OriginalNumber = original.JournalNumber,
+                    Total = totalDebit,
+                    FiscalYearID = resolvedPeriod.Value.FiscalYearID,
+                    PeriodID = resolvedPeriod.Value.PeriodID,
+                    UserID = userId,
+                    PostedBy = employeeId
+                }, transaction);
+
+            int line = 1;
+            foreach (var d in details)
+            {
+                await connection.ExecuteAsync(
+                    "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, CostCenterID) VALUES(@JID, @Line, @AccID, @Debit, @Credit, @Desc, NULLIF(@CCID,0))",
+                    new { JID = reversalId, Line = line++, AccID = d.AccountID, Debit = d.Credit, Credit = d.Debit, Desc = d.Description, CCID = d.CostCenterID ?? 0 }, transaction);
+            }
+            // ملاحظة مقصودة: لا تُحدَّث أرصدة ChartOfAccounts المخزنة هنا، لأن مسار اعتماد فاتورة
+            // المشتريات نفسه لا يحدّثها من C# (يتولاها إجراء إنشاء القيد أو لا تحدث)؛ ميزان المراجعة
+            // ودفتر الأستاذ يُحسبان من سطور القيود المرحّلة فينعكس العكس فيهما مباشرة.
         }
 
         // ==========================================

@@ -156,10 +156,12 @@ else
                                     else{<span class="status-badge-luxury" style="--sc:#9ca3af"><span class="status-dot" style="--sc:#9ca3af"></span>ملغي</span>}
                                     @if(ch.ChequeStatus==4 && !string.IsNullOrEmpty(ch.BounceReason)){<div style="font-size:.68rem;color:#dc2626;margin-top:4px">@ch.BounceReason</div>}
                                 </td>
-                                <td class="td-muted">@(ch.ReceiptNumber ?? ch.PaymentNumber ?? "—")</td>
+                                <td class="td-muted">@(ch.ReceiptNumber ?? ch.PaymentNumber ?? "—")@if(ch.JournalID.HasValue){<div style="font-size:.68rem;color:#6b7280">آخر قيد دورة: @ch.JournalID</div>}</td>
                                 <td class="td-center"><div class="actions-wrap-luxury">
-                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeType==1 && ch.ChequeStatus==1){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
-                                    @if(HasChequePermission(p => p.CanApprove) && (ch.ChequeStatus==1 || ch.ChequeStatus==2)){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="ارتجاع" @onclick="()=>Bounce(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeStatus==1){<button class="act-btn" style="color:#2563eb;border-color:#bfdbfe" title="تقديم للبنك" @onclick="()=>ShowPresent(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6l7-3 7 3"/><path d="M9 21v-6"/><path d="M15 21v-6"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeType==1 && ch.ChequeStatus==2){<button class="act-btn add" title="تحصيل" @onclick="()=>Collect(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && ch.ChequeType==2 && (ch.ChequeStatus==1 || ch.ChequeStatus==2)){<button class="act-btn add" title="تسوية من البنك" @onclick="()=>Settle(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg></button>}
+                                    @if(HasChequePermission(p => p.CanApprove) && (ch.ChequeStatus==1 || ch.ChequeStatus==2 || (ch.ChequeType==1 && ch.ChequeStatus==3))){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="ارتجاع" @onclick="()=>Bounce(ch.ChequeID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>}
                                     @if(HasChequePermission(p => p.CanEdit)){<button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(ch.ChequeID)" disabled="@isLoadingChequeDetails"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                 </div></td>
                             </tr>
@@ -190,7 +192,7 @@ else
                 <div class="fg"><label>الحساب البنكي</label><select @bind="editDto.BankAccountID"><option value="0">— اختر —</option>@foreach(var ba in bankAccounts){<option value="@ba.Id">@ba.Name</option>}</select></div>
                 <div class="fg"><label>نوع الجهة</label><select @bind="editDto.EntityType"><option value="1">عميل</option><option value="2">مورد</option><option value="3">أخرى</option></select></div>
                 <div class="fg"><label>الجهة</label><input type="text" @bind="editDto.EntityName" placeholder="اسم العميل/المورد" /></div>
-                <div class="fg"><label>الحالة</label><select @bind="editDto.ChequeStatus"><option value="1">بالحافظة</option><option value="2">مقدم للبنك</option><option value="3">محصل</option><option value="4">مرتجع</option><option value="5">ملغي</option></select></div>
+                <div class="fg"><label>الحالة</label><select @bind="editDto.ChequeStatus">@if(editDto.ChequeStatus==2 || editDto.ChequeStatus==3 || editDto.ChequeStatus==4){<option value="@editDto.ChequeStatus">@ChequeStatusText(editDto.ChequeStatus) — تُدار من إجراءات الدورة</option>}else{<option value="1">بالحافظة</option><option value="5">ملغي</option>}</select></div>
                 <div class="fg full"><label>ملاحظات</label><textarea @bind="editDto.Notes" rows="2"></textarea></div>
             </div>
             @if(!string.IsNullOrEmpty(editMsg)){<div class="msg-luxury @(editOk?"msg-success":"msg-error")">@editMsg</div>}
@@ -206,6 +208,16 @@ else
         <div class="ml-header"><h3>ارتجاع شيك</h3><button class="btn-close-x" @onclick="()=>showBounce=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
         <div class="ml-body"><div class="fg full"><label>سبب الارتجاع *</label><textarea @bind="bounceReason" rows="3" placeholder="مثال: عدم كفاية رصيد"></textarea></div></div>
         <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" style="background:#dc2626" @onclick="ConfirmBounce">تأكيد الارتجاع</button><button class="btn-luxury btn-ghost-luxury" @onclick="()=>showBounce=false">إلغاء</button></div>
+    </div></div>
+}
+
+@if (showPresent)
+{
+    <div class="modal-overlay-luxury" @onclick="()=>showPresent=false"><div class="modal-card-luxury" @onclick:stopPropagation="true">
+        <div class="ml-gold-line"></div>
+        <div class="ml-header"><h3>تقديم شيك للبنك</h3><button class="btn-close-x" @onclick="()=>showPresent=false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button></div>
+        <div class="ml-body"><div class="fg full"><label>الحساب البنكي *</label><select @bind="presentBankAccountId"><option value="0">— اختر —</option>@foreach(var ba in bankAccounts){<option value="@ba.Id">@ba.Name</option>}</select></div></div>
+        <div class="ml-footer"><button class="btn-luxury btn-primary-luxury" @onclick="ConfirmPresent">تأكيد التقديم</button><button class="btn-luxury btn-ghost-luxury" @onclick="()=>showPresent=false">إلغاء</button></div>
     </div></div>
 }
 
@@ -313,6 +325,9 @@ else
     private List<LookupDto> bankAccounts = new();
     private int bounceId = 0;
     private string bounceReason = "";
+    private bool showPresent = false;
+    private int presentChequeId = 0;
+    private int presentBankAccountId = 0;
     private bool permissionChecked;
     private bool isAuthorized;
     private bool isLoadingPermissions;
@@ -560,9 +575,34 @@ else
         finally{ isSaving=false; }
     }
 
+    private static string ChequeStatusText(int status) => status switch
+    {
+        1 => "بالحافظة",
+        2 => "مقدم للبنك",
+        3 => "محصل",
+        4 => "مرتجع",
+        5 => "ملغي",
+        _ => "غير محدد"
+    };
+
+    private void ShowPresent(int id){ presentChequeId=id; presentBankAccountId=0; showPresent=true; }
+
+    private async Task ConfirmPresent()
+    {
+        if(presentBankAccountId<=0){ toast="اختر الحساب البنكي"; toastOk=false; return; }
+        try{ await TreasuryService.PostChequeToBankAsync(presentChequeId, presentBankAccountId, UserSession.UserID); toast="تم تقديم الشيك للبنك "; toastOk=true; showPresent=false; await LoadData(); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
     private async Task Collect(int id)
     {
         try{ await TreasuryService.CollectChequeAsync(id, UserSession.UserID); toast="تم تحصيل الشيك "; toastOk=true; await LoadData(); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
+    private async Task Settle(int id)
+    {
+        try{ await TreasuryService.SettleOutgoingChequeAsync(id, UserSession.UserID); toast="تمت تسوية الشيك من البنك "; toastOk=true; await LoadData(); }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }
     }
 

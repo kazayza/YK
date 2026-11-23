@@ -1,0 +1,136 @@
+@page "/balance-sheet"
+@using YKCoatings.Services
+@using YKCoatings.Models
+@inject AccountingService AccountingService
+@inject UserSessionService UserSession
+@inject Microsoft.Extensions.Logging.ILogger<BalanceSheet> Logger
+
+<PageTitle>الميزانية العمومية</PageTitle>
+
+@if (!UserSession.IsLoggedIn)
+{<div class="no-access-luxury" dir="rtl"><h4>يجب تسجيل الدخول</h4></div>}
+else
+{
+<div class="luxury-page" dir="rtl">
+    <div class="luxury-header-hybrid">
+        <div class="lh-gold-line"></div>
+        <div class="lh-content">
+            <div class="lh-right">
+                <div class="lh-logo-wrap"><img src="/images/yk-icon-gold.png" alt="YK" class="lh-logo" /></div>
+                <div class="lh-text">
+                    <h2 class="lh-title">الميزانية العمومية</h2>
+                    <p class="lh-subtitle">أصول والتزامات وحقوق ملكية حتى تاريخه — من القيود المرحّلة والأرصدة الافتتاحية</p>
+                </div>
+            </div>
+            <div class="lh-actions">
+                <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>تحديث</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {<div class="loading-luxury"><div class="loader-luxury"></div><p>جاري تحميل الميزانية العمومية...</p></div>}
+    else if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <div class="loading-luxury" role="alert">
+            <p style="color:#dc2626">@loadError</p>
+            <button class="btn-luxury btn-ghost-luxury" @onclick="LoadData">إعادة المحاولة</button>
+        </div>
+    }
+    else
+    {
+        <div class="filter-luxury">
+            <div class="select-wrap-luxury"><input type="date" @bind="asOfDate" @bind:after="LoadData" style="height:42px;border:1.5px solid #e8e2d0;border-radius:12px;padding:0 12px;font-family:'Tajawal';font-size:.82rem" /></div>
+            <span class="level-badge">حتى @asOfDate.ToString("dd/MM/yyyy")</span>
+        </div>
+
+        @if (sheet != null)
+        {
+            @if (Math.Abs(sheet.Difference) > 0.01m)
+            {
+                <div class="msg-luxury msg-error" role="alert">تنبيه: الميزانية غير متوازنة بفارق @sheet.Difference.ToString("#,##0.00") — غالبًا أرصدة افتتاحية غير متوازنة أو قيود قديمة ناقصة؛ راجع ميزان المراجعة.</div>
+            }
+            @RenderSection("الأصول", sheet.AssetLines, sheet.TotalAssets)
+            @RenderSection("الالتزامات", sheet.LiabilityLines, sheet.TotalLiabilities)
+            @RenderSection("حقوق الملكية", sheet.EquityLines, sheet.TotalEquity)
+            <div class="table-card-luxury">
+                <div class="card-head-luxury"><h3>نتيجة الفترات غير المقفلة حتى تاريخه</h3><span class="amount-luxury @(sheet.CurrentPeriodResult>=0?"":"negative")">@sheet.CurrentPeriodResult.ToString("#,##0.00")</span></div>
+            </div>
+            <div class="table-card-luxury" style="background:linear-gradient(135deg,#070B14,#0A0F1E)">
+                <div class="card-head-luxury" style="background:transparent;border-bottom:none"><h3 style="color:#F5E6C8">إجمالي الالتزامات وحقوق الملكية ونتيجة الفترة</h3><span class="amount-luxury" style="background:rgba(212,175,55,.15);color:#F5E6C8;border-color:rgba(212,175,55,.3);font-size:1.05rem">@((sheet.TotalLiabilities + sheet.TotalEquity + sheet.CurrentPeriodResult).ToString("#,##0.00"))</span></div>
+                <div class="card-head-luxury" style="background:transparent;border-bottom:none"><h3 style="color:#F5E6C8">إجمالي الأصول</h3><span class="amount-luxury" style="background:rgba(212,175,55,.15);color:#F5E6C8;border-color:rgba(212,175,55,.3);font-size:1.05rem">@sheet.TotalAssets.ToString("#,##0.00")</span></div>
+            </div>
+        }
+    }
+</div>
+}
+
+@code {
+    private RenderFragment RenderSection(string title, List<FinancialStatementLineDto> lines, decimal total) => __builder =>
+    {
+        <div class="table-card-luxury">
+            <div class="card-head-luxury"><h3>@title</h3><span class="amount-luxury">@total.ToString("#,##0.00")</span></div>
+            <div class="table-responsive">
+                <table class="table-luxury detailed">
+                    <thead><tr><th class="th-num">#</th><th>كود الحساب</th><th>اسم الحساب</th><th>الرصيد</th></tr></thead>
+                    <tbody>
+                        @{int n=0;}
+                        @foreach(var l in lines){n++;
+                            <tr>
+                                <td class="td-num">@n</td>
+                                <td><span class="doc-num-luxury">@l.AccountCode</span></td>
+                                <td><span class="acc-name">@l.AccountNameAr</span></td>
+                                <td><span class="amount-luxury @(l.Amount>=0?"":"negative")">@l.Amount.ToString("#,##0.00")</span></td>
+                            </tr>
+                        }
+                        @if(lines.Count==0){<tr><td colspan="4" style="text-align:center;color:#6b7280;padding:14px">لا توجد أرصدة في هذا القسم</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    };
+
+    private BalanceSheetDto? sheet;
+    private DateTime asOfDate = DateTime.Today;
+    private bool isLoading = true;
+    private string loadError = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        loadError = string.Empty;
+        StateHasChanged();
+        try { sheet = await AccountingService.GetBalanceSheetAsync(asOfDate); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load balance sheet.");
+            loadError = ex.Message;
+            sheet = null;
+        }
+        finally { isLoading = false; }
+    }
+}
+
+<style>
+:root{--gold:#D4AF37;--gold-dark:#9C7C2E;--black:#070B14;--black2:#0A0F1E;--border-gold:rgba(212,175,55,.18)}
+.luxury-page{display:flex;flex-direction:column;gap:16px;font-family:'Tajawal',sans-serif;max-width:1400px;margin:0 auto}
+.luxury-header-hybrid{position:relative;background:linear-gradient(135deg,var(--black) 0%,var(--black2) 50%,#121A2E 100%);border-radius:20px;padding:18px 22px;border:1px solid var(--border-gold);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.lh-logo{width:26px;height:26px;object-fit:contain}
+.lh-title{font-size:1.25rem;font-weight:900;color:#F5E6C8;margin:0}
+.lh-subtitle{font-size:.72rem;color:#8B95A5;font-weight:600;margin:3px 0 0}
+.btn-luxury{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:12px;font-weight:700;font-size:.82rem;border:none;cursor:pointer;transition:.2s;font-family:'Tajawal'}
+.table-card-luxury{background:#fff;border:1px solid #e8e2d0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.04);position:relative}
+.table-card-luxury::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.5}
+.card-head-luxury{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#fcfaf6,#f8f6f0);border-bottom:1px solid #f1efe8;flex-wrap:wrap;gap:8px}
+.card-head-luxury h3{font-size:.9rem;font-weight:800;color:#0A0F1E;display:flex;align-items:center;gap:8px;margin:0}
+.table-responsive{overflow-x:auto}
+.table-luxury{width:100%;border-collapse:collapse;min-width:700px}
+.acc-name{font-weight:800;color:#0A0F1E;font-size:.86rem}
+.level-badge{font-family:monospace;font-weight:700;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;padding:3px 8px;border-radius:999px;font-size:.72rem}
+.amount-luxury{font-family:monospace;font-weight:800;color:#0A0F1E;background:#f8f6f0;padding:4px 10px;border-radius:8px;border:1px solid #e8e2d0}
+.amount-luxury.negative{color:#dc2626;background:#fef2f2;border-color:#fecaca}
+.loading-luxury{text-align:center;padding:60px 20px;color:#6b7280}
+.loader-luxury{width:40px;height:40px;border:3px solid #f1efe8;border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+</style>

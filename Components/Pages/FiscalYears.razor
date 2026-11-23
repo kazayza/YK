@@ -94,6 +94,8 @@ else
                                 <td class="td-center"><div class="actions-wrap-luxury">
                                     <button class="act-btn edit" title="تعديل" @onclick="()=>ShowEdit(fy.FiscalYearID, fy.PeriodsCount)" disabled="@isLoadingFiscalYearEdit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
                                     <button class="act-btn add" title="الفترات" @onclick="()=>ViewPeriods(fy.FiscalYearID)" disabled="@isLoadingPeriods"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></button>
+                                    @if(fy.YearStatus==1){<button class="act-btn" style="color:#059669;border-color:#a7f3d0" title="توليد قيد الإقفال السنوي" @onclick="()=>GenerateClosing(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>}
+                                    @if(fy.YearStatus==1){<button class="act-btn" style="color:#b45309;border-color:#fde68a" title="عكس قيد الإقفال" @onclick="()=>CancelClosing(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>}
                                     @if(fy.YearStatus==1){<button class="act-btn" style="color:#dc2626;border-color:#fecaca" title="إغلاق السنة" @onclick="()=>CloseYear(fy.FiscalYearID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>}
                                 </div></td>
                             </tr>
@@ -442,6 +444,18 @@ else
     private async Task CloseYear(int id)
     {
         try{ await AccountingService.CloseFiscalYearAsync(id, UserSession.UserID); toast="تم إغلاق السنة المالية "; toastOk=true; await LoadData(); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
+    private async Task GenerateClosing(int id)
+    {
+        try{ var journalId = await AccountingService.GenerateYearClosingJournalAsync(id, UserSession.UserID); toast=$"تم توليد قيد الإقفال السنوي وترحيله (قيد رقم {journalId})"; toastOk=true; await LoadData(); }
+        catch(Exception ex){ toast=ex.Message; toastOk=false; }
+    }
+
+    private async Task CancelClosing(int id)
+    {
+        try{ await AccountingService.CancelYearClosingJournalAsync(id, UserSession.UserID); toast="تم عكس قيد الإقفال السنوي"; toastOk=true; await LoadData(); }
         catch(Exception ex){ toast=ex.Message; toastOk=false; }
     }
 

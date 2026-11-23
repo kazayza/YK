@@ -192,6 +192,10 @@ else
                                             {
                                                 <button class="v-icon-btn approve" title="اعتماد وترحيل" aria-label="اعتماد وترحيل" @onclick="() => ApproveRowAsync(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg></button>
                                             }
+                                            @if (row.Status == 2 && canApprove)
+                                            {
+                                                <button class="v-icon-btn delete" title="إلغاء السند المعتمد" aria-label="إلغاء السند المعتمد" @onclick="() => CancelApprovedRowAsync(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+                                            }
                                             @if (row.Status == 1 && canDelete)
                                             {
                                                 <button class="v-icon-btn delete" title="حذف المسودة" aria-label="حذف المسودة" @onclick="() => RequestDelete(row)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg></button>
@@ -968,6 +972,18 @@ else
             if (row.IsReceipt) await TreasuryService.ApproveReceiptAsync(row.Id, UserSession.UserID);
             else await TreasuryService.ApprovePaymentAsync(row.Id, UserSession.UserID);
             toast = $"تم اعتماد سند {(row.IsReceipt ? "القبض" : "الصرف")} {row.Number} عبر إجراء الترحيل الحالي.";
+            await ReloadListsAsync();
+        }
+        catch (Exception ex) { pageError = ex.Message; }
+    }
+
+    private async Task CancelApprovedRowAsync(VoucherRow row)
+    {
+        try
+        {
+            if (row.IsReceipt) await TreasuryService.CancelReceiptAsync(row.Id, UserSession.UserID, DateTime.Today, null);
+            else await TreasuryService.CancelPaymentAsync(row.Id, UserSession.UserID, DateTime.Today, null);
+            toast = $"تم إلغاء سند {(row.IsReceipt ? "القبض" : "الصرف")} المعتمد {row.Number} وعكس قيده وتسوياته.";
             await ReloadListsAsync();
         }
         catch (Exception ex) { pageError = ex.Message; }

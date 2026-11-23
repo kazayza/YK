@@ -108,7 +108,7 @@ namespace YKCoatings.Services
             return (await connection.QueryAsync<SalesReturnDetailDto>(sql, new { ReturnID = returnId })).ToList();
         }
 
-        /// <summary>Approved invoices only; delivery-based invoices are excluded because their original stock source is not linked here.</summary>
+        /// <summary>Approved or fully-paid invoices only; delivery-based invoices are excluded because their original stock source is not linked here.</summary>
         public async Task<List<SearchableItem>> GetEligibleInvoicesAsync(int userId)
         {
             await RequireReturnPermissionAsync(userId, p => p.CanAdd || p.CanView,
@@ -122,7 +122,7 @@ namespace YKCoatings.Services
                 FROM dbo.SalesInvoices si
                 INNER JOIN dbo.Customers c ON c.CustomerID=si.CustomerID
                 LEFT JOIN dbo.Currencies cur ON cur.CurrencyID=si.CurrencyID
-                WHERE si.InvoiceStatus=3
+                WHERE si.InvoiceStatus IN (3,4)
                   AND ISNULL(si.InvoiceSource,3) IN (2,3)
                   AND si.DeliveryID IS NULL
                   AND ISNULL(si.ExchangeRate,1)=1
@@ -849,8 +849,8 @@ table{{width:100%;border-collapse:collapse;margin-top:16px}}th{{background:#070b
                 await LocalCurrencyGuard.EnsureLocalCurrencyAsync(
                     connection, transaction, order.CurrencyID, order.ExchangeRate);
             }
-            if (invoice.InvoiceStatus != 3)
-                throw new InvalidOperationException("لا يقبل المرتجع إلا من فاتورة مبيعات معتمدة.");
+            if (invoice.InvoiceStatus is not (3 or 4))
+                throw new InvalidOperationException("لا يقبل المرتجع إلا من فاتورة مبيعات معتمدة أو مدفوعة بالكامل.");
             if (invoice.ShippingCost != 0 || invoice.OtherCosts != 0)
                 throw new InvalidOperationException("الفاتورة تحتوي على شحن أو تكاليف إضافية لا تُحفظ كسطور قابلة للمرتجع؛ أوقفنا الإشعار حتى لا نُصدر دائنًا ناقصًا أو مبالغًا فيه.");
             if (invoice.InvoiceSource is not (2 or 3) || invoice.DeliveryID.GetValueOrDefault() > 0)

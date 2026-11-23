@@ -494,7 +494,15 @@ namespace YKCoatings.Services
                                           AND (jd.AccountID IS NULL OR jd.AccountID<=0
                                                OR coa.AccountID IS NULL
                                                OR ISNULL(coa.IsActive,1)<>1
-                                               OR ISNULL(coa.IsDetailAccount,0)<>1
+                                               OR (ISNULL(coa.IsDetailAccount,0)<>1
+                                                   AND NOT (
+                                                       coa.AccountCode=N'2101'
+                                                       AND ISNULL(coa.IsSystemAccount,0)=1
+                                                       AND ISNULL(coa.AccountType,0)=2
+                                                       AND UPPER(LTRIM(RTRIM(ISNULL(coa.LinkedEntityType,N''))))=N'SUPPLIER'
+                                                       AND UPPER(LTRIM(RTRIM(ISNULL(jd.EntityType,N''))))=N'SUPPLIER'
+                                                       AND jd.EntityID=@SupplierID
+                                                   ))
                                                OR (ISNULL(coa.CostCenterRequired,0)=1 AND ISNULL(jd.CostCenterID,0)<=0)
                                                OR jd.CostCenterID<0
                                                OR (jd.CostCenterID>0 AND (cc.CostCenterID IS NULL OR ISNULL(cc.IsActive,1)<>1)))
@@ -504,7 +512,7 @@ namespace YKCoatings.Services
                       LEFT JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
                       LEFT JOIN dbo.CostCenters cc WITH (UPDLOCK,HOLDLOCK) ON cc.CostCenterID=jd.CostCenterID
                       WHERE jd.JournalID=@JournalID",
-                    new { JournalID = linkedJournal.JournalID }, transaction);
+                    new { JournalID = linkedJournal.JournalID, SupplierID = info.SupplierID }, transaction);
                 if (journalTotals.DetailCount < 2 || journalTotals.InvalidDetailCount > 0
                     || journalTotals.TotalDebit <= 0m || journalTotals.TotalDebit != journalTotals.TotalCredit)
                     throw new InvalidOperationException("تفاصيل قيد مرتجع المشتريات غير مكتملة أو تحتوي سطرًا محاسبيًا غير صالح أو غير متوازنة؛ أُلغيت العملية.");

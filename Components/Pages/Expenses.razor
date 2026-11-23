@@ -137,6 +137,7 @@ else
                                     @if(exp.ExpenseStatus==1 && permissions?.CanEdit == true && (!exp.IsPosted || permissions?.CanApprove == true)){<button class="act-btn edit" title="تعديل المسودة" aria-label="تعديل المسودة" @onclick="()=>EditExpense(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>}
                                     @if(exp.ExpenseStatus==1 && permissions?.CanApprove == true){<button class="act-btn approve" title="اعتماد" @onclick="()=>Approve(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01 9 11.01"/></svg></button>}
                                     @if(exp.ExpenseStatus==1 && permissions?.CanDelete == true){<button class="act-btn delete" title="حذف" @onclick="()=>ShowDelete(exp)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg></button>}
+                                    @if(exp.ExpenseStatus==2 && permissions?.CanApprove == true){<button class="act-btn delete" title="إلغاء المعتمد وعكس قيده" @onclick="()=>CancelApproved(exp.ExpenseID)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>}
                                 </div></td>
                             </tr>
                         }
@@ -521,6 +522,13 @@ else
     {
         if (permissions?.CanApprove != true) return;
         try { await AccountingService.ApproveExpenseAsync(id, UserSession.UserID); toast = "تم اعتماد المصروف"; toastOk = true; await LoadData(); }
+        catch (Exception ex) { toast = ex.Message; toastOk = false; }
+    }
+
+    private async Task CancelApproved(int id)
+    {
+        if (permissions?.CanApprove != true) return;
+        try { await AccountingService.CancelApprovedExpenseAsync(id, UserSession.UserID, DateTime.Today, null); toast = "تم إلغاء المصروف المعتمد وعكس قيده"; toastOk = true; await LoadData(); }
         catch (Exception ex) { toast = ex.Message; toastOk = false; }
     }
 

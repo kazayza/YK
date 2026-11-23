@@ -426,15 +426,21 @@ WHERE ContractOrderID = @ContractOrderID",
                 if ((int)contract.ContractStatus != 1)
                     return (false, "لا يمكن اعتماد العقد إلا من حالة مسودة");
 
+                var approverEmployeeId = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID=@UserID",
+                    new { UserID = userId }, transaction);
+                if (!approverEmployeeId.HasValue || approverEmployeeId.Value <= 0)
+                    return (false, "لا يمكن اعتماد العقد لأن المستخدم الحالي غير مرتبط بموظف.");
+
                 await connection.ExecuteAsync(@"
 UPDATE dbo.ContractOrders
 SET ContractStatus = 2,
-    ApprovedBy = @UserID,
+    ApprovedBy = @EmployeeID,
     ApprovedDate = GETDATE(),
     ModifiedBy = @UserID,
     ModifiedDate = GETDATE()
 WHERE ContractOrderID = @ContractOrderID",
-                    new { ContractOrderID = contractOrderId, UserID = userId }, transaction);
+                    new { ContractOrderID = contractOrderId, UserID = userId, EmployeeID = approverEmployeeId.Value }, transaction);
 
                 transaction.Commit();
 

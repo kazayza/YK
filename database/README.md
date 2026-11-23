@@ -10,8 +10,9 @@
 |---|---|---|
 | `seed/01-number-sequences.sql` | ✅ جاهز | 37 تسلسلاً (36 من الإنتاج + `ITM` الناقص)، مع تصحيح بادئة `SQ` |
 | `cleanup-e2e-testdata.sql` | ✅ جاهز | ينظّف بيانات الاختبار — **DRY RUN افتراضياً** |
-| `schema.sql` | ⬜ مطلوب | استخراج من `sql.txt` (99 جدولاً + كل الـ SPs) |
-| `procedures.sql` | ⬜ مطلوب | كل procedures/views/functions/triggers |
+| `schema.sql` | ⬜ يُولّد آليًا | شغّل `extract-schema.ps1` (أسفل) على القاعدة الحية |
+| `procedures.sql` | ⬜ يُولّد آليًا | النص الحرفي من `sys.sql_modules` — يشمل كل procedures/views/functions/triggers |
+| `extract-schema.ps1` | ✅ جاهز | سكربت الاستخراج (PowerShell + SqlClient، بلا أي بيانات أعمال) |
 | `seed/02-*.sql` | ⬜ مطلوب | `SystemModules` · الأدوار · شجرة الحسابات ·FiscalYears · `SystemSettings` |
 
 ## لماذا `seed/01-number-sequences.sql` إلزامي
@@ -72,3 +73,21 @@ EXEC dbo.sp_CleanupE2ETestData @Execute = 1, @Marker = 'TEST-%';
 ⇒ **قبل تعديل أي SP، شغّل أداة المقارنة** بين القاعدة التي ستعدّلها وبين `db68995`
 (جداول · SPs · أعمدة محسوبة · تسلسلات). الفرق في الأعمدة المحسوبة يُظهر كخطأ
 `Invalid column name` صامت عند التشغيل.
+
+## استخراج السكيما والإجراءات من القاعدة الحية (extract-schema.ps1)
+
+من جهازك المتصل بقاعدة الإنتاج، في جذر المستودع بعد تطبيق التصحيحات:
+
+```powershell
+# مصادقة ويندوز:
+powershell -ExecutionPolicy Bypass -File .\database\extract-schema.ps1 -Server "SERVER\INSTANCE" -Database "YKCoatings"
+
+# أو مصادقة SQL (تُطلب كلمة المرور في نافذة آمنة ولا تُحفظ في أي ملف):
+powershell -ExecutionPolicy Bypass -File .\database\extract-schema.ps1 -Server "host,1433" -Database "YKCoatings" -SqlUser "USER"
+```
+
+- يتطلب SQL Server 2017 أو أحدث (يستخدم `STRING_AGG`) وصلاحية `VIEW DEFINITION`.
+- الناتج: `database/schema.sql` (كل الجداول والمفاتيح والفهارس) و`database/procedures.sql` (النص الحرفي لكل كائن قابل للبرمجة).
+- راجع الملفين بسرعة (بحثًا عن أي سلسلة اتصال أو كلمة مرور داخل نص إجراء قديم)، ثم:
+  `git add database/schema.sql database/procedures.sql` وادفعهما مع بقية عملك.
+- أعد التشغيل بعد أي تغيير بنيوي في القاعدة حتى يبقى المستودع مرآة للحقيقة.

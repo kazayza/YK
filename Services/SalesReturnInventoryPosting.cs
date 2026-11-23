@@ -75,6 +75,7 @@ namespace YKCoatings.Services
             public int AccountType { get; set; }
             public bool IsDetailAccount { get; set; }
             public bool IsActive { get; set; }
+            public bool IsSystemAccount { get; set; }
             public bool CostCenterRequired { get; set; }
         }
 
@@ -517,16 +518,67 @@ namespace YKCoatings.Services
                 throw new InvalidOperationException("مبالغ مرتجع المبيعات لا يمكن أن تكون سالبة.");
             if (Math.Abs((subtotal + taxAmount) - totalAmount) > 0.01m)
                 throw new InvalidOperationException("إجمالي المرتجع لا يساوي صافي السطور مضافاً إليه الضريبة.");
+            // عكس تكلفة البضاعة السليمة المعادة للمخزون يحتاج حسابي تكلفة مبيعات ومخزون.
+            // الحساب 5101 هو «مواد خام مستخدمة» وفق الشجرة التي أكدها المستخدم فلا يصلح بديلًا،
+            // ولا يُخمَّن حساب آخر ولا يُثبَّت كود واحد لكل المرتجعات (حسابات المخزون عائلة بحسب
+            // نوع البضاعة): يُشتق الحسابان من قيد الفاتورة الأصلي المرحّل نفسه — حساب التكلفة هو
+            // الحساب المدين من النوع 5 فيه، وحساب المخزون هو الحساب الدائن من النوع 1 بخلاف سطر
+            // العملاء — فيطابق العكسُ ما فعله قيد البيع أصلًا مهما اختلف نوع البضاعة. أي غياب أو
+            // تعدد يبقي الاعتماد مغلقًا برسالة صريحة كما كان.
+            string? cogsAccountCode = null;
+            string? inventoryAccountCode = null;
             if (restockedCost > 0m)
-                throw new InvalidOperationException(
-                    "لا يمكن اعتماد مرتجع يتطلب عكس تكلفة مخزون قبل تثبيت حساب تكلفة المبيعات الصحيح؛ كود 5101 هو «مواد خام مستخدمة» وفق الشجرة التي أكدها المستخدم. لم يتم اختيار حساب بديل، وأُلغيت المعاملة.");
+            {
+                var invoiceJournalIds = (await connection.QueryAsync<int>(
+                    @"SELECT JournalID FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+                      WHERE SourceDocType IN (N'SI',N'SalesInvoice') AND SourceDocID=@InvoiceID AND JournalStatus=2",
+                    new { InvoiceID = header.InvoiceID }, transaction)).ToList();
+                if (invoiceJournalIds.Count != 1)
+                    throw new InvalidOperationException(
+                        "لم يُعثر على قيد مرحّل وحيد للفاتورة الأصلية؛ لا يمكن اشتقاق حسابي تكلفة المبيعات والمخزون لعكس تكلفة البضاعة السليمة. لم يتم اعتماد المرتجع.");
+                var invoiceLines = (await connection.QueryAsync<(
+                    int AccountID, string AccountCode, int AccountType, decimal Debit, decimal Credit, string? EntityType)>(
+                    @"SELECT jd.AccountID, coa.AccountCode, coa.AccountType,
+                             jd.DebitAmount AS Debit, jd.CreditAmount AS Credit, jd.EntityType
+                      FROM dbo.JournalEntryDetails jd WITH (UPDLOCK,HOLDLOCK)
+                      INNER JOIN dbo.ChartOfAccounts coa WITH (UPDLOCK,HOLDLOCK) ON coa.AccountID=jd.AccountID
+                      WHERE jd.JournalID=@JournalID",
+                    new { JournalID = invoiceJournalIds[0] }, transaction)).ToList();
+                var cogsCandidates = invoiceLines
+                    .Where(x => x.Debit > 0m && x.AccountType == 5)
+                    .Select(x => (x.AccountID, x.AccountCode)).Distinct().ToList();
+                if (cogsCandidates.Count != 1)
+                    throw new InvalidOperationException(
+                        "قيد الفاتورة الأصلي لا يحتوي حساب تكلفة (النوع 5) مدينًا وحيدًا متميزًا؛ لا يمكن عكس تكلفة البضاعة السليمة تلقائيًا. لم يتم اعتماد المرتجع.");
+                if (string.Equals(cogsCandidates[0].AccountCode, "5101", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "قيد الفاتورة الأصلي يستخدم الحساب 5101 «مواد خام مستخدمة» في موضع التكلفة، وهو ليس حساب تكلفة مبيعات؛ صحح قيد البيع قبل اعتماد مرتجع سليم منه. لم يتم اعتماد المرتجع.");
+                var inventoryCandidates = invoiceLines
+                    .Where(x => x.Credit > 0m && x.AccountType == 1
+                        && !string.Equals(x.EntityType, "Customer", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(x.AccountCode, "1103", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => (x.AccountID, x.AccountCode)).Distinct().ToList();
+                if (inventoryCandidates.Count != 1)
+                    throw new InvalidOperationException(
+                        "قيد الفاتورة الأصلي لا يحتوي حساب مخزون دائنًا وحيدًا متميزًا (فاتورة متعددة حسابات المخزون أو بلا سطر مخزون)؛ عكس التكلفة لهذه الفاتورة يتطلب تسوية يدوية. لم يتم اعتماد المرتجع.");
+                if (cogsCandidates[0].AccountID == inventoryCandidates[0].AccountID)
+                    throw new InvalidOperationException(
+                        "حسابا التكلفة والمخزون المشتقان من قيد الفاتورة الأصلي متطابقان؛ راجع قيد الفاتورة قبل اعتماد المرتجع.");
+                cogsAccountCode = cogsCandidates[0].AccountCode;
+                inventoryAccountCode = inventoryCandidates[0].AccountCode;
+            }
 
             var lines = new List<ReturnJournalLine>();
-            // Verify only the confirmed receivable, revenue, and tax mapping used by this portion.
-            // Inventory-cost reversals fail closed above until a valid cost-of-sales account is confirmed.
-            var accountCodes = new[] { "1103", "41", "2105" };
+            var accountCodeList = new List<string> { "1103", "41", "2105" };
+            if (restockedCost > 0m)
+            {
+                accountCodeList.Add(cogsAccountCode!);
+                accountCodeList.Add(inventoryAccountCode!);
+            }
+            var accountCodes = accountCodeList.ToArray();
             var accountRows = (await connection.QueryAsync<AccountIdRow>(
                 @"SELECT AccountCode,AccountID,AccountType,IsDetailAccount,ISNULL(IsActive,0) AS IsActive,
+                         CONVERT(bit,ISNULL(IsSystemAccount,0)) AS IsSystemAccount,
                          CONVERT(bit,ISNULL(CostCenterRequired,0)) AS CostCenterRequired
                   FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK)
                   WHERE AccountCode IN @AccountCodes;",
@@ -539,7 +591,14 @@ namespace YKCoatings.Services
             {
                 if (!accounts.TryGetValue(code, out var account))
                     throw new InvalidOperationException($"الحساب المحاسبي {code} المطلوب لعكس فاتورة البيع غير مهيأ؛ لم يتم اعتماد المرتجع.");
-                if (!account.IsActive || !account.IsDetailAccount || account.AccountType != expectedType)
+                // الحسابان الرقابيان النظاميان 1103 (عملاء) و41 (إيرادات مبيعات) غير تفصيليين
+                // في الشجرة الفعلية وترحّل إليهما قيود البيع نفسها؛ يُقبلان بنفس منطق استثناء
+                // حساب الموردين 2101 في تحقق فواتير المشتريات، وما عداهما يجب أن يكون تفصيليًا.
+                var isSystemControlAccount =
+                    account.IsSystemAccount &&
+                    ((string.Equals(code, "1103", StringComparison.OrdinalIgnoreCase) && expectedType == 1) ||
+                     (string.Equals(code, "41", StringComparison.OrdinalIgnoreCase) && expectedType == 4));
+                if (!account.IsActive || (!account.IsDetailAccount && !isSystemControlAccount) || account.AccountType != expectedType)
                     throw new InvalidOperationException($"الحساب {code} غير نشط أو ليس حساباً تفصيلياً من النوع المتوقع؛ راجع دليل الحسابات قبل اعتماد المرتجع.");
                 if (account.CostCenterRequired)
                     throw new InvalidOperationException($"الحساب {code} يتطلب مركز تكلفة، لكن مرتجع المبيعات لا يوفّر مركزًا لهذا القيد؛ أُلغيت المعاملة بدل إنشاء قيد غير مكتمل.");
@@ -550,6 +609,17 @@ namespace YKCoatings.Services
                 RequireAccount("1103", expectedType: 1); // receivables / asset
                 if (subtotal > 0) RequireAccount("41", expectedType: 4); // sales revenue
                 if (taxAmount > 0) RequireAccount("2105", expectedType: 2); // output tax liability
+            }
+            if (restockedCost > 0m)
+            {
+                RequireAccount(inventoryAccountCode!, expectedType: 1); // inventory / asset
+                if (!accounts.TryGetValue(cogsAccountCode!, out var cogsAccount))
+                    throw new InvalidOperationException($"حساب تكلفة المبيعات {cogsAccountCode} المشتق من قيد الفاتورة الأصلي غير موجود في دليل الحسابات؛ لم يتم اعتماد المرتجع.");
+                if (!cogsAccount.IsActive || !cogsAccount.IsDetailAccount
+                    || (cogsAccount.AccountType != 5 && cogsAccount.AccountType != 6))
+                    throw new InvalidOperationException($"حساب تكلفة المبيعات {cogsAccountCode} غير نشط أو ليس حسابًا تفصيليًا من نوع مصروفات/تكلفة؛ راجع دليل الحسابات قبل اعتماد المرتجع.");
+                if (cogsAccount.CostCenterRequired)
+                    throw new InvalidOperationException($"حساب تكلفة المبيعات {cogsAccountCode} يتطلب مركز تكلفة، لكن مرتجع المبيعات لا يوفّر مركزًا لهذا القيد؛ أُلغيت المعاملة بدل إنشاء قيد غير مكتمل.");
             }
             var customerName = await connection.ExecuteScalarAsync<string>(
                 "SELECT CustomerNameAr FROM dbo.Customers WHERE CustomerID=@CustomerID;",
@@ -575,6 +645,19 @@ namespace YKCoatings.Services
                     EntityType = "Customer",
                     EntityID = header.CustomerID
                 });
+            if (restockedCost > 0m)
+            {
+                lines.Add(new ReturnJournalLine
+                {
+                    AccountID = accounts[inventoryAccountCode!].AccountID, Debit = restockedCost, Credit = 0m,
+                    Description = TruncateJournalText($"إعادة مخزون بضاعة سليمة مرتجعة - {header.ReturnNumber}", 200)
+                });
+                lines.Add(new ReturnJournalLine
+                {
+                    AccountID = accounts[cogsAccountCode!].AccountID, Debit = 0m, Credit = restockedCost,
+                    Description = TruncateJournalText($"عكس تكلفة مبيعات مرتجع - {header.ReturnNumber}", 200)
+                });
+            }
             if (lines.Count == 0) return;
             var openPeriods = (await connection.QueryAsync<ReturnAccountingPeriod>(
                 @"SELECT fy.FiscalYearID,ap.PeriodID

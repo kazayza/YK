@@ -51,7 +51,7 @@ else
             <tbody>
                 @{int n=0;}
                 @foreach(var t in transfers){n++;
-                    <tr><td class="td-num">@n</td><td><span class="doc-num-luxury">@t.TransferNo</span></td><td class="td-muted">@t.TransferDate.ToString("dd/MM/yyyy")</td><td class="td-name">@t.FromCashBoxNameAr</td><td class="td-name">@t.ToCashBoxNameAr</td><td><span class="amount-luxury">@t.Amount.ToString("#,##0.00")</span></td><td><span class="status-badge-luxury" style="--sc:@(t.Status==1?"#6b7280":"#10b981")">@(t.StatusName ?? (t.Status==1?"مسودة":"معتمد"))</span></td><td class="td-center"><div class="actions-wrap-luxury">@if(t.Status==1 && PermissionService.CanApprove("SCR_CASHTRANS")){<button class="act-btn approve" @onclick="() => Approve(t.TransferID)">اعتماد</button>}</div></td></tr>
+                    <tr><td class="td-num">@n</td><td><span class="doc-num-luxury">@t.TransferNo</span></td><td class="td-muted">@t.TransferDate.ToString("dd/MM/yyyy")</td><td class="td-name">@t.FromCashBoxNameAr</td><td class="td-name">@t.ToCashBoxNameAr</td><td><span class="amount-luxury">@t.Amount.ToString("#,##0.00")</span></td><td><span class="status-badge-luxury" style="--sc:@(t.Status==1?"#6b7280":"#10b981")">@(t.StatusName ?? (t.Status==1?"مسودة":"معتمد"))</span></td><td class="td-center"><div class="actions-wrap-luxury">@if(t.Status==1 && PermissionService.CanApprove("SCR_CASHTRANS")){<button class="act-btn approve" @onclick="() => Approve(t.TransferID)">اعتماد</button>}@if(t.Status==2 && PermissionService.CanApprove("SCR_CASHTRANS")){<button class="act-btn approve" style="border-color:#fecaca;background:#fef2f2;color:#dc2626" @onclick="() => CancelTransfer(t.TransferID)">إلغاء معتمد</button>}</div></td></tr>
                 }
             </tbody>
         </table></div></div>
@@ -202,6 +202,12 @@ else
     private async Task Approve(int id)
     {
         await TreasuryService.ApproveTransferAsync(id, UserSession.UserID);
+        await LoadTransfersAsync();
+    }
+
+    private async Task CancelTransfer(int id)
+    {
+        await TreasuryService.CancelTransferAsync(id, UserSession.UserID, DateTime.Today, null);
         await LoadTransfersAsync();
     }
 }
