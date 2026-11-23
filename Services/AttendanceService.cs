@@ -7,9 +7,12 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
 
-        public AttendanceService(IConfiguration configuration, AuditService audit) : base(configuration)
+        private readonly ModuleAuthorizationService _authorization;
+
+        public AttendanceService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
 
         public async Task<AttendanceStatsDto> GetAttendanceStatsAsync(DateTime? dateFrom, DateTime? dateTo)
@@ -111,6 +114,8 @@ namespace YKCoatings.Services
 
                 public async Task<int> InsertAttendanceAsync(AttendanceEditDto item, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_ATTEND", p => p.CanAdd,
+                "ليس لديك صلاحية تسجيل الحضور.");
             using var connection = CreateConnection();
             if (item.EmployeeID <= 0) throw new Exception("يجب اختيار الموظف");
 
@@ -160,6 +165,8 @@ namespace YKCoatings.Services
 
                 public async Task UpdateAttendanceAsync(AttendanceEditDto item, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_ATTEND", p => p.CanEdit,
+                "ليس لديك صلاحية تعديل الحضور.");
             using var connection = CreateConnection();
 
             // حساب الأوفرتايم تلقائياً
@@ -261,6 +268,8 @@ namespace YKCoatings.Services
 
         public async Task<int> ImportFromFingerprintAsync(List<FingerprintRecord> records, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_ATTEND", p => p.CanAdd,
+        "ليس لديك صلاحية استيراد بصمة الحضور.");
     using var connection = CreateConnection();
     var imported = 0;
 

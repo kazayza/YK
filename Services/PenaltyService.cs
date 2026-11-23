@@ -7,11 +7,13 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
         private readonly NotificationService _notif;
+        private readonly ModuleAuthorizationService _authorization;
 
-        public PenaltyService(IConfiguration configuration, AuditService audit, NotificationService notif) : base(configuration)
+        public PenaltyService(IConfiguration configuration, AuditService audit, NotificationService notif, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
             _notif = notif;
+            _authorization = authorization;
         }
 
         public async Task<PenaltyPagedResult> GetPenaltiesPagedAsync(PenaltyFilterDto filter)
@@ -88,6 +90,9 @@ namespace YKCoatings.Services
 
         public async Task<int> InsertPenaltyAsync(PenaltyEditDto item, int userId)
         {
+            // إصلاح 15: فحص الصلاحية داخل الخدمة نفسها، لا في الصفحة فقط
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PENALTY", p => p.CanAdd,
+                "ليس لديك صلاحية إضافة جزاءات أو مكافآت.");
             using var connection = CreateConnection();
             if (item.EmployeeID <= 0) throw new Exception("يجب اختيار الموظف");
             if (string.IsNullOrWhiteSpace(item.Description)) throw new Exception("الوصف مطلوب");
@@ -139,7 +144,17 @@ namespace YKCoatings.Services
 
         public async Task UpdatePenaltyAsync(PenaltyEditDto item, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PENALTY", p => p.CanEdit,
+                "ليس لديك صلاحية تعديل الجزاءات أو المكافآت.");
             using var connection = CreateConnection();
+            // إصلاح 15: لا تعديل بعد الاعتماد — السجل المعتمد وثيقة نهائية أثرها يصل إلى المسير
+            var currentStatus = await connection.ExecuteScalarAsync<int?>(
+                "SELECT RecordStatus FROM dbo.EmployeePenaltiesRewards WHERE RecordID = @RecordID",
+                new { item.RecordID });
+            if (currentStatus == null)
+                throw new Exception("السجل غير موجود");
+            if (currentStatus.Value != 1)
+                throw new Exception("لا يمكن تعديل جزاء أو مكافأة بعد اعتمادها؛ ألغِ السجل وأنشئ سجلًا جديدًا.");
             if (item.EffectiveMonth.HasValue)
             item.EffectiveMonth = new DateTime(item.EffectiveMonth.Value.Year, item.EffectiveMonth.Value.Month, 1);
 
@@ -167,6 +182,8 @@ namespace YKCoatings.Services
 
         public async Task ApprovePenaltyAsync(int recordId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PENALTY", p => p.CanApprove,
+                "ليس لديك صلاحية اعتماد الجزاءات أو المكافآت.");
             using var connection = CreateConnection();
 
             // جلب EmployeeID من UserID
@@ -177,11 +194,14 @@ namespace YKCoatings.Services
             if (employeeId == null || employeeId == 0)
                 throw new Exception("لم يتم العثور على بيانات الموظف المرتبط بحسابك");
 
-            await connection.ExecuteAsync(@"
+            // إصلاح 15: الاعتماد من حالة المسودة فقط — اعتماد ثانٍ أو اعتماد ملغي يُرفض
+            var affected = await connection.ExecuteAsync(@"
                 UPDATE dbo.EmployeePenaltiesRewards SET
                     RecordStatus = 2, ApprovedBy = @ApprovedBy, ApprovedDate = GETDATE()
-                WHERE RecordID = @RecordID",
+                WHERE RecordID = @RecordID AND RecordStatus = 1",
                 new { RecordID = recordId, ApprovedBy = employeeId });
+            if (affected != 1)
+                throw new Exception("لا يمكن اعتماد هذا السجل؛ إما أنه غير موجود أو سبق اعتماده أو أُلغي.");
 
             await _audit.WriteAuditLogAsync(userId, 2, "EmployeePenaltiesRewards",
                 recordId.ToString(), moduleName: "SCR_PENALTY",
@@ -192,16 +212,24 @@ namespace YKCoatings.Services
 
                 public async Task CancelPenaltyAsync(int recordId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_PENALTY", p => p.CanCancel,
+                "ليس لديك صلاحية إلغاء الجزاءات أو المكافآت.");
             using var connection = CreateConnection();
 
             var employeeId = await connection.ExecuteScalarAsync<int?>(
                 "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID = @UserID",
                 new { UserID = userId });
 
-            await connection.ExecuteAsync(@"
+            if (employeeId == null || employeeId == 0)
+                throw new Exception("لم يتم العثور على بيانات الموظف المرتبط بحسابك");
+
+            // إصلاح 15: لا إلغاء لسجل دخل مسيرًا فعليًا، ولا إلغاء مكرر
+            var affected = await connection.ExecuteAsync(@"
                 UPDATE dbo.EmployeePenaltiesRewards SET RecordStatus = 3
-                WHERE RecordID = @RecordID",
+                WHERE RecordID = @RecordID AND RecordStatus IN (1, 2) AND PayrollID IS NULL",
                 new { RecordID = recordId });
+            if (affected != 1)
+                throw new Exception("لا يمكن إلغاء هذا السجل؛ إما أنه غير موجود أو سبق إلغاؤه أو دخل في مسير رواتب.");
 
             await _audit.WriteAuditLogAsync(userId, 2, "EmployeePenaltiesRewards",
                 recordId.ToString(), moduleName: "SCR_PENALTY",

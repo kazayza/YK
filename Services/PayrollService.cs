@@ -440,6 +440,14 @@ namespace YKCoatings.Services
                 if (payroll.PayrollStatus != 3)
                     throw new Exception("يمكن دفع المسير فقط بعد الاعتماد");
 
+                // إصلاح 15: صافي سالب لأي موظف يجعل قيد الدفع مستحيلًا وينهار عند الترحيل؛
+                // يُرفض الدفع هنا برسالة واضحة قبل إنشاء أي قيد.
+                var negativeNetCount = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dbo.PayrollDetails WHERE PayrollID = @PayrollID AND ISNULL(NetSalary, 0) < 0",
+                    new { PayrollID = payrollId }, transaction);
+                if (negativeNetCount > 0)
+                    throw new InvalidOperationException("لا يمكن دفع المسير: صافي راتب سالب لموظف واحد أو أكثر بسبب خصومات تتجاوز الاستحقاق. راجع تفاصيل المسير وصحّح الخصومات أو الحضور أولًا.");
+
                 var employeeId = await connection.ExecuteScalarAsync<int?>(
                     "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID = @UserID",
                     new { UserID = userId }, transaction);
@@ -645,7 +653,7 @@ namespace YKCoatings.Services
             using var connection = CreateConnection();
 
             var payroll = await connection.QueryFirstOrDefaultAsync<PayrollActionInfo>(@"
-                SELECT PayrollID, PayrollNumber, PayrollMonth, PayrollStatus
+                SELECT PayrollID, PayrollNumber, PayrollMonth, PayrollStatus, JournalID
                 FROM dbo.Payroll
                 WHERE PayrollID = @PayrollID;",
                 new { PayrollID = payrollId });
@@ -653,8 +661,11 @@ namespace YKCoatings.Services
             if (payroll == null)
                 throw new Exception("المسير غير موجود");
 
-            if (payroll.PayrollStatus != 1 && payroll.PayrollStatus != 2)
-                throw new Exception("يمكن إلغاء المسير فقط في حالة مسودة أو محسوب");
+            // إصلاح 15: مسير معتمد لم يُدفع ولم يرتبط بأي قيد يمكن إلغاؤه أيضًا —
+            // غير ذلك يعلق بلا مخرج إن تعذر دفعه. المدفوع أو المرتبط بقيد لا يُلغى من هنا.
+            if (payroll.PayrollStatus != 1 && payroll.PayrollStatus != 2
+                && !(payroll.PayrollStatus == 3 && !payroll.JournalID.HasValue))
+                throw new Exception("يمكن إلغاء المسير فقط في حالة مسودة أو محسوب، أو معتمد لم يُدفع ولم يرتبط بقيد");
 
             await connection.ExecuteAsync(@"
                 UPDATE dbo.Payroll
@@ -868,6 +879,7 @@ namespace YKCoatings.Services
             public string? PayrollNumber { get; set; }
             public DateTime PayrollMonth { get; set; }
             public int PayrollStatus { get; set; }
+            public int? JournalID { get; set; }
         }
 
         private sealed class PayrollPayInfo

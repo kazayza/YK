@@ -9,15 +9,19 @@ namespace YKCoatings.Services
         private readonly SequenceService _sequence;
         private readonly NotificationService _notif;
 
+        private readonly ModuleAuthorizationService _authorization;
+
         public LeaveRequestService(
             IConfiguration configuration,
             AuditService audit,
             SequenceService sequence,
-            NotificationService notif) : base(configuration)
+            NotificationService notif,
+            ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
             _sequence = sequence;
             _notif = notif;
+            _authorization = authorization;
         }
 
         // ========================================
@@ -139,6 +143,9 @@ namespace YKCoatings.Services
         // ========================================
         public async Task<int> InsertLeaveRequestAsync(LeaveRequestEditDto item, int userId)
         {
+            // إصلاح 15: فحص الصلاحية داخل الخدمة نفسها، لا في الصفحة فقط
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanAdd,
+                "ليس لديك صلاحية إنشاء طلبات الإجازات.");
             using var connection = CreateConnection();
 
             if (item.EmployeeID <= 0)
@@ -269,6 +276,8 @@ namespace YKCoatings.Services
         // ========================================
         public async Task ApproveByManagerAsync(int id, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanApprove,
+                "ليس لديك صلاحية اعتماد طلبات الإجازات.");
             using var connection = CreateConnection();
 
             var request = await connection.QueryFirstOrDefaultAsync<LeaveRequestActionInfo>(
@@ -327,6 +336,8 @@ namespace YKCoatings.Services
         // ========================================
         public async Task ApproveByHRAsync(int id, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanApprove,
+                "ليس لديك صلاحية اعتماد طلبات الإجازات.");
             using var connection = CreateConnection();
 
             var request = await connection.QueryFirstOrDefaultAsync<LeaveRequestActionInfo>(
@@ -428,6 +439,8 @@ namespace YKCoatings.Services
         // ========================================
         public async Task RejectLeaveRequestAsync(int id, int userId, string reason)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanApprove,
+                "ليس لديك صلاحية رفض طلبات الإجازات.");
             using var connection = CreateConnection();
 
             var request = await connection.QueryFirstOrDefaultAsync<LeaveRequestActionInfo>(
@@ -493,6 +506,8 @@ namespace YKCoatings.Services
         // ========================================
         public async Task CancelLeaveRequestAsync(int id, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanCancel,
+                "ليس لديك صلاحية إلغاء طلبات الإجازات.");
             using var connection = CreateConnection();
 
             var request = await connection.QueryFirstOrDefaultAsync<LeaveRequestActionInfo>(

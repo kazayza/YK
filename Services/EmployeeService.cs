@@ -9,10 +9,13 @@ namespace YKCoatings.Services
 
         private readonly SequenceService _sequence;
 
-        public EmployeeService(IConfiguration configuration, AuditService audit, SequenceService sequence) : base(configuration)
+        private readonly ModuleAuthorizationService _authorization;
+
+        public EmployeeService(IConfiguration configuration, AuditService audit, SequenceService sequence, ModuleAuthorizationService authorization) : base(configuration)
       {
        _audit = audit;
        _sequence = sequence;
+       _authorization = authorization;
       }
 
         // ==========================================
@@ -145,6 +148,9 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task<int> InsertEmployeeAsync(EmployeeEditDto emp, int userId)
         {
+            // إصلاح 15: فحص الصلاحية داخل الخدمة نفسها، لا في الصفحة فقط
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_EMP", p => p.CanAdd,
+                "ليس لديك صلاحية إضافة موظفين.");
             using var connection = CreateConnection();
 
             ValidateEmployee(emp);
@@ -224,6 +230,8 @@ namespace YKCoatings.Services
         // ==========================================
         public async Task UpdateEmployeeAsync(EmployeeEditDto emp, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_EMP", p => p.CanEdit,
+                "ليس لديك صلاحية تعديل بيانات الموظفين.");
             using var connection = CreateConnection();
 
             ValidateEmployee(emp);
@@ -299,6 +307,8 @@ namespace YKCoatings.Services
         public async Task<(bool Success, string Message)> SetEmployeeActiveStatusAsync(
             int employeeId, bool isActive, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_EMP", p => p.CanEdit,
+                "ليس لديك صلاحية تغيير حالة الموظفين.");
             using var connection = CreateConnection();
 
             var emp = await connection.QueryFirstOrDefaultAsync<dynamic>(

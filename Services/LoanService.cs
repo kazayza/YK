@@ -9,11 +9,14 @@ namespace YKCoatings.Services
 private readonly SequenceService _sequence;
 private readonly NotificationService _notif;
 
-public LoanService(IConfiguration configuration, AuditService audit, SequenceService sequence, NotificationService notif) : base(configuration)
+private readonly ModuleAuthorizationService _authorization;
+
+public LoanService(IConfiguration configuration, AuditService audit, SequenceService sequence, NotificationService notif, ModuleAuthorizationService authorization) : base(configuration)
 {
     _audit = audit;
     _sequence = sequence;
     _notif = notif;
+    _authorization = authorization;
 }
 
         public async Task<LoanPagedResult> GetLoansPagedAsync(LoanFilterDto filter)
@@ -85,6 +88,9 @@ public LoanService(IConfiguration configuration, AuditService audit, SequenceSer
 
         public async Task<int> InsertLoanAsync(LoanEditDto item, int userId)
         {
+            // إصلاح 15: فحص الصلاحية داخل الخدمة نفسها، لا في الصفحة فقط
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanAdd,
+                "ليس لديك صلاحية إضافة سلف.");
             using var connection = CreateConnection();
             if (item.EmployeeID <= 0) throw new Exception("يجب اختيار الموظف");
             if (item.LoanAmount <= 0) throw new Exception("مبلغ السلفة يجب أن يكون أكبر من صفر");
@@ -138,6 +144,8 @@ await _notif.CreateForPermissionHoldersAsync(
 
         public async Task UpdateLoanAsync(LoanEditDto item, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanEdit,
+                "ليس لديك صلاحية تعديل السلف.");
             using var connection = CreateConnection();
             await connection.ExecuteAsync(@"
                 UPDATE dbo.EmployeeLoans SET
@@ -155,6 +163,8 @@ await _notif.CreateForPermissionHoldersAsync(
         }
         public async Task ApproveLoanAsync(int loanId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanApprove,
+        "ليس لديك صلاحية اعتماد السلف.");
     using var connection = CreateConnection();
 
     // جلب EmployeeID للمعتمد
@@ -256,6 +266,8 @@ await _notif.CreateForPermissionHoldersAsync(
 }
 public async Task RejectLoanAsync(int loanId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanApprove,
+        "ليس لديك صلاحية رفض السلف.");
     using var connection = CreateConnection();
 
     var loan = await connection.QueryFirstOrDefaultAsync<LoanEditDto>(

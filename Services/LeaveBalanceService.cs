@@ -7,9 +7,12 @@ namespace YKCoatings.Services
     {
         private readonly AuditService _audit;
 
-        public LeaveBalanceService(IConfiguration configuration, AuditService audit) : base(configuration)
+        private readonly ModuleAuthorizationService _authorization;
+
+        public LeaveBalanceService(IConfiguration configuration, AuditService audit, ModuleAuthorizationService authorization) : base(configuration)
         {
             _audit = audit;
+            _authorization = authorization;
         }
 
         public async Task<List<LeaveBalanceViewDto>> GetLeaveBalancesAsync(
@@ -116,6 +119,8 @@ namespace YKCoatings.Services
         public async Task UpdateBalanceAsync(int balanceId, decimal entitledDays,
             decimal carriedForward, decimal additionalDays, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanEdit,
+                "ليس لديك صلاحية تعديل أرصدة الإجازات.");
             using var connection = CreateConnection();
 
             if (entitledDays < 0 || carriedForward < 0 || additionalDays < 0)
@@ -150,6 +155,8 @@ namespace YKCoatings.Services
         }
         public async Task ExcludeBalanceAsync(int balanceId, int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanDelete,
+        "ليس لديك صلاحية استبعاد أرصدة الإجازات.");
     using var connection = CreateConnection();
 
     var balance = await connection.QueryFirstOrDefaultAsync<dynamic>(
@@ -194,6 +201,8 @@ namespace YKCoatings.Services
 }
         public async Task InitializeBalancesAsync(int employeeId, int fiscalYearId, int userId)
         {
+            await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanAdd,
+                "ليس لديك صلاحية تهيئة أرصدة الإجازات.");
             using var connection = CreateConnection();
 
             var sql = @"
@@ -223,6 +232,8 @@ namespace YKCoatings.Services
         }
         public async Task<int> InitializeAllBalancesAsync(int userId)
 {
+    await _authorization.RequireUserPermissionAsync(userId, "SCR_LEAVE", p => p.CanAdd,
+        "ليس لديك صلاحية تهيئة أرصدة الإجازات.");
     using var connection = CreateConnection();
 
     var fiscalYearId = await connection.ExecuteScalarAsync<int?>(
