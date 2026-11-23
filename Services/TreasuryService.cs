@@ -2099,19 +2099,13 @@ namespace YKCoatings.Services
             int cashBoxId, int? bankAccountId, int paymentMethod, decimal amountLocal,
             bool isReceipt, string voucherNumber)
         {
-            // اعتماد السند حرّك رصيد الخزينة/البنك عبر إجراء الترحيل لطريقتي النقدي والتحويل البنكي؛
-            // الإلغاء يعيد الحركة نفسها هنا. طريقة الشيك لا تُمسّ هنا: أثرها يُعالج في دورة الشيكات.
-            if (paymentMethod != 1 && paymentMethod != 2) return;
+            // تصحيح 01b بعد فحص إجرائي الترحيل الفعليين على قاعدة البيانات: إجراءا
+            // sp_PostReceiptVoucher وsp_PostPaymentVoucher يحرّكان دائمًا رصيد خزينة السند
+            // (CashBoxes.CurrentBalance) أيًّا كانت طريقة الدفع، ولا يمسّان BankAccounts إطلاقًا
+            // (رصيدها المخزن لا يحرّكه أي مسار في النظام). الإلغاء إذن يعيد حركة الخزينة نفسها
+            // لكل الطرق — بما فيها الشيك — ولا يقترب من جدول البنوك.
+            _ = bankAccountId; _ = paymentMethod;
             var delta = isReceipt ? -amountLocal : amountLocal;
-            if (bankAccountId.GetValueOrDefault() > 0)
-            {
-                var affected = await connection.ExecuteAsync(
-                    "UPDATE dbo.BankAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE BankAccountID=@ID",
-                    new { Delta = delta, ID = bankAccountId!.Value }, transaction);
-                if (affected != 1)
-                    throw new InvalidOperationException($"تعذر إعادة رصيد البنك لسند {voucherNumber}؛ أُلغي الإلغاء.");
-                return;
-            }
             if (cashBoxId > 0)
             {
                 var affected = await connection.ExecuteAsync(
@@ -3852,14 +3846,17 @@ namespace YKCoatings.Services
             return ledgerId;
         }
 
+        // تصحيح 02b بعد فحص قاعدة البيانات الحية: رصيد BankAccounts.CurrentBalance المخزّن
+        // لا يحرّكه أي مسار في النظام (إجراءا ترحيل السندات يحرّكان خزائن CashBoxes فقط،
+        // والبنك ممثَّل بخزينة حسابها المحاسبي هو حساب البنك). الرصيد المخزّن الحقيقي للبنك
+        // إذن هو رصيد الخزينة المرتبطة بحسابه المحاسبي؛ وإن لم توجد خزينة مرتبطة به فلا
+        // تمثيل مخزّنًا للحركة ويبقى القيد المحاسبي هو المرجع وحده.
         private async Task AdjustChequeBankStoredBalanceAsync(
-            IDbConnection connection, IDbTransaction transaction, int bankAccountId, decimal delta, string chequeNumber)
+            IDbConnection connection, IDbTransaction transaction, int bankLedgerAccountId, decimal delta)
         {
-            var affected = await connection.ExecuteAsync(
-                "UPDATE dbo.BankAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE BankAccountID=@ID",
-                new { Delta = delta, ID = bankAccountId }, transaction);
-            if (affected != 1)
-                throw new InvalidOperationException($"تعذر تحديث رصيد البنك المخزّن لشيك {chequeNumber}؛ أُلغيت العملية.");
+            await connection.ExecuteAsync(
+                "UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@AccountID",
+                new { Delta = delta, AccountID = bankLedgerAccountId }, transaction);
         }
 
         private async Task<int> CreateChequeReclassJournalIfLinkedAsync(
@@ -4306,9 +4303,11 @@ namespace YKCoatings.Services
                         ChequeCollectionSourceType, cheque.ChequeID, cheque.ChequeNumber ?? "",
                         $"تحصيل شيك وارد {cheque.ChequeNumber} — إيداع بنكي مقابل ذمة الطرف",
                         null, null, party.EntityType, party.EntityID, userId);
+                    // تصحيح 02b: في مسار إعادة التصنيف حُسب المبلغ مخزّنًا عند اعتماد السند
+                    // فلا يُعاد حسابه؛ أما بلا سند فالتحصيل هو أول حركة مخزّنة للبنك.
+                    await AdjustChequeBankStoredBalanceAsync(
+                        connection, trans, bankLedgerId, cheque.Amount);
                 }
-                await AdjustChequeBankStoredBalanceAsync(
-                    connection, trans, cheque.BankAccountID!.Value, cheque.Amount, cheque.ChequeNumber ?? "");
 
                 var updated = await connection.ExecuteAsync(
                     @"UPDATE dbo.Cheques SET ChequeStatus=3, CollectionDate=GETDATE(), JournalID=@JournalID
@@ -4384,9 +4383,11 @@ namespace YKCoatings.Services
                         ChequeSettlementSourceType, cheque.ChequeID, cheque.ChequeNumber ?? "",
                         $"تسوية شيك صادر {cheque.ChequeNumber} — خصم بنكي مقابل ذمة الطرف",
                         party.EntityType, party.EntityID, null, null, userId);
+                    // تصحيح 02b: في مسار إعادة التصنيف خُصم المبلغ مخزّنًا عند اعتماد سند
+                    // الصرف فلا يُعاد خصمه؛ أما بلا سند فالتسوية هي أول حركة مخزّنة للبنك.
+                    await AdjustChequeBankStoredBalanceAsync(
+                        connection, trans, bankLedgerId, -cheque.Amount);
                 }
-                await AdjustChequeBankStoredBalanceAsync(
-                    connection, trans, cheque.BankAccountID!.Value, -cheque.Amount, cheque.ChequeNumber ?? "");
 
                 var updated = await connection.ExecuteAsync(
                     @"UPDATE dbo.Cheques SET ChequeStatus=3, CollectionDate=GETDATE(), JournalID=@JournalID
@@ -4459,8 +4460,21 @@ namespace YKCoatings.Services
                         ChequeBounceSourceType, cheque.ChequeID, cheque.ChequeNumber ?? "",
                         $"ارتجاع شيك وارد محصّل {cheque.ChequeNumber} — إعادة الذمة وخصم البنك: {reason.Trim()}",
                         party.EntityType, party.EntityID, null, null, userId);
-                    await AdjustChequeBankStoredBalanceAsync(
-                        connection, trans, cheque.BankAccountID!.Value, -cheque.Amount, cheque.ChequeNumber ?? "");
+                    // تصحيح 02b: الخصم المخزّن يُعكس من الموضع الذي حُسب فيه المبلغ أولًا:
+                    // مع إعادة تصنيف كان محسوبًا في خزينة سند القبض منذ اعتماده، وبدونها
+                    // كان محسوبًا في خزينة بنك الإيداع منذ التحصيل.
+                    if (reclassId != null && cheque.ReceiptID.GetValueOrDefault() > 0)
+                    {
+                        await connection.ExecuteAsync(
+                            @"UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)-@Amount
+                              WHERE CashBoxID=(SELECT CashBoxID FROM dbo.ReceiptVouchers WHERE ReceiptID=@ReceiptID)",
+                            new { Amount = cheque.Amount, ReceiptID = cheque.ReceiptID!.Value }, trans);
+                    }
+                    else
+                    {
+                        await AdjustChequeBankStoredBalanceAsync(
+                            connection, trans, bankLedgerId, -cheque.Amount);
+                    }
                 }
                 else if (reclassId != null)
                 {

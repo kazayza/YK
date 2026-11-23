@@ -1,0 +1,38 @@
+diff --git a/Services/AccountingService.cs b/Services/AccountingService.cs
+index e2ff297..6cf56a3 100644
+--- a/Services/AccountingService.cs
++++ b/Services/AccountingService.cs
+@@ -3482,7 +3482,10 @@ namespace YKCoatings.Services
+                 ("SCR_FY", p => p.CanView));
+ 
+             using var connection = CreateConnection();
+-            // أرصدة الحسابات التفصيلية فقط (التجميعية تُستنتج من أبنائها) = رصيد افتتاحي + حركات مرحّلة حتى التاريخ.
++            // أرصدة الحسابات الطرفية = رصيد افتتاحي + حركات مرحّلة حتى التاريخ. حساب طرفي هو
++            // التفصيلي أو الذي لا أبناء له: شجرة الحسابات الفعلية ترحّل مباشرة إلى حسابات
++            // رقابية بلا أبناء (كالعملاء 1103 والموردين 2101) فلا يصح استبعادها، بينما
++            // تُستبعد التجميعية ذات الأبناء حتى لا تُحسب الحركة مرتين (تصحيح 05c).
+             var rows = (await connection.QueryAsync<(
+                 int AccountID, string? AccountCode, string? AccountNameAr, int AccountType, decimal Balance)>(
+                 @"SELECT coa.AccountID, coa.AccountCode, coa.AccountNameAr, coa.AccountType,
+@@ -3496,7 +3499,9 @@ namespace YKCoatings.Services
+                       WHERE je.JournalStatus=2 AND je.JournalDate < DATEADD(DAY,1,CONVERT(date,@AsOf))
+                       GROUP BY jd.AccountID
+                   ) m ON m.AccountID=coa.AccountID
+-                  WHERE coa.IsActive=1 AND ISNULL(coa.IsDetailAccount,0)=1 AND coa.AccountType IN (1,2,3)
++                  WHERE coa.IsActive=1 AND coa.AccountType IN (1,2,3)
++                    AND (ISNULL(coa.IsDetailAccount,0)=1
++                         OR NOT EXISTS (SELECT 1 FROM dbo.ChartOfAccounts ch WHERE ch.ParentAccountID=coa.AccountID))
+                   ORDER BY coa.AccountCode",
+                 new { AsOf = asOfDate.Date })).ToList();
+ 
+@@ -3534,7 +3539,9 @@ namespace YKCoatings.Services
+                       WHERE je.JournalStatus=2 AND je.JournalDate < DATEADD(DAY,1,CONVERT(date,@AsOf))
+                       GROUP BY jd.AccountID
+                   ) m ON m.AccountID=coa.AccountID
+-                  WHERE ISNULL(coa.IsDetailAccount,0)=1 AND coa.AccountType IN (4,5,6)",
++                  WHERE coa.AccountType IN (4,5,6)
++                    AND (ISNULL(coa.IsDetailAccount,0)=1
++                         OR NOT EXISTS (SELECT 1 FROM dbo.ChartOfAccounts ch WHERE ch.ParentAccountID=coa.AccountID))",
+                 new { AsOf = asOfDate.Date });
+             sheet.CurrentPeriodResult = -plBalance;
+             return sheet;
