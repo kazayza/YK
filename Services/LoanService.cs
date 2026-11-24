@@ -166,21 +166,26 @@ await _notif.CreateForPermissionHoldersAsync(
     await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanApprove,
         "ليس لديك صلاحية اعتماد السلف.");
     using var connection = CreateConnection();
+    await connection.OpenAsync();
+    using var transaction = connection.BeginTransaction();
 
+    LoanEditDto? loan = null;
+    try
+    {
     // جلب EmployeeID للمعتمد
     var approverEmployeeId = await connection.ExecuteScalarAsync<int?>(
         "SELECT EmployeeID FROM dbo.SystemUsers WHERE UserID = @UserID",
-        new { UserID = userId });
+        new { UserID = userId }, transaction);
 
     if (approverEmployeeId == null || approverEmployeeId == 0)
         throw new Exception("لم يتم العثور على بيانات الموظف المرتبط بحسابك");
 
     // جلب بيانات السلفة
-    var loan = await connection.QueryFirstOrDefaultAsync<LoanEditDto>(
+    loan = await connection.QueryFirstOrDefaultAsync<LoanEditDto>(
         @"SELECT LoanID, LoanNumber, EmployeeID, LoanAmount, NumberOfInstallments,
                  InstallmentAmount, StartDeductionDate, LoanStatus
           FROM dbo.EmployeeLoans WHERE LoanID = @LoanID",
-        new { LoanID = loanId });
+        new { LoanID = loanId }, transaction);
 
     if (loan == null) throw new Exception("السلفة غير موجودة");
     if (loan.LoanStatus != 1) throw new Exception("لا يمكن اعتماد سلفة ليست في حالة (مقدم)");
@@ -194,7 +199,7 @@ await _notif.CreateForPermissionHoldersAsync(
             ModifiedBy = @ModifiedBy,
             ModifiedDate = GETDATE()
         WHERE LoanID = @LoanID",
-        new { LoanID = loanId, ApprovedBy = approverEmployeeId, ModifiedBy = userId });
+        new { LoanID = loanId, ApprovedBy = approverEmployeeId, ModifiedBy = userId }, transaction);
 
     // توليد الأقساط
     var startDate = loan.StartDeductionDate ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -222,7 +227,7 @@ await _notif.CreateForPermissionHoldersAsync(
                 InstallmentNumber = i,
                 DueDate = dueDate,
                 Amount = amount
-            });
+            }, transaction);
 
         totalGenerated += amount;
     }
@@ -231,7 +236,20 @@ await _notif.CreateForPermissionHoldersAsync(
     await connection.ExecuteAsync(@"
         UPDATE dbo.EmployeeLoans SET InstallmentAmount = @InstallmentAmount
         WHERE LoanID = @LoanID",
-        new { LoanID = loanId, InstallmentAmount = installmentAmount });
+        new { LoanID = loanId, InstallmentAmount = installmentAmount }, transaction);
+
+    // إصلاح 17: صرف السلفة قيدًا محاسبيًا داخل نفس المعاملة — مدين سلف الموظفين
+    // 1106 ودائن الصندوق 1101 مع تخفيض رصيد الخزينة المخزّن؛ فاعتماد سلفة بلا
+    // أثر مالي كان يجعل حساب السلف ينحرف سالبًا مع أقساط المسير.
+    await PostLoanDisbursementJournalAsync(connection, transaction, loan, userId);
+
+    transaction.Commit();
+    }
+    catch
+    {
+        try { transaction.Rollback(); } catch { }
+        throw;
+    }
 
     // Audit
     await _audit.WriteAuditLogAsync(userId, 2, "EmployeeLoans", loanId.ToString(),
@@ -264,6 +282,112 @@ await _notif.CreateForPermissionHoldersAsync(
     createdBy: userId);
     }
 }
+// إصلاح 17: قيد صرف السلفة عند الاعتماد (مدين 1106 سلف موظفين / دائن 1101 الصندوق)
+private async Task PostLoanDisbursementJournalAsync(
+    System.Data.IDbConnection connection, System.Data.IDbTransaction transaction,
+    LoanEditDto loan, int userId)
+{
+    var amount = decimal.Round(loan.LoanAmount, 2, MidpointRounding.AwayFromZero);
+    if (amount <= 0) throw new InvalidOperationException("مبلغ السلفة يجب أن يكون أكبر من صفر.");
+
+    async Task<int> ResolveAccountAsync(string code, string label)
+    {
+        var account = await connection.QueryFirstOrDefaultAsync<(
+            int AccountID, int AccountType, bool IsDetail, bool IsActive, bool CostCenterRequired)>(
+            @"SELECT AccountID, AccountType,
+                     CONVERT(bit,ISNULL(IsDetailAccount,0)) AS IsDetail,
+                     CONVERT(bit,ISNULL(IsActive,0)) AS IsActive,
+                     CONVERT(bit,ISNULL(CostCenterRequired,0)) AS CostCenterRequired
+              FROM dbo.ChartOfAccounts WITH (UPDLOCK,HOLDLOCK) WHERE AccountCode=@Code",
+            new { Code = code }, transaction);
+        if (account.AccountID <= 0)
+            throw new InvalidOperationException($"حساب {label} {code} غير موجود في دليل الحسابات.");
+        if (!account.IsActive || !account.IsDetail || account.AccountType != 1 || account.CostCenterRequired)
+            throw new InvalidOperationException($"حساب {label} {code} يجب أن يكون حساب أصول (النوع 1) تفصيليًا نشطًا لا يتطلب مركز تكلفة.");
+        return account.AccountID;
+    }
+
+    var loanAccountId = await ResolveAccountAsync("1106", "سلف الموظفين");
+    var cashAccountId = await ResolveAccountAsync("1101", "الصندوق");
+
+    var existingJournal = await connection.ExecuteScalarAsync<int>(
+        @"SELECT COUNT(*) FROM dbo.JournalEntries WITH (UPDLOCK,HOLDLOCK)
+          WHERE SourceDocType='LOAN' AND SourceDocID=@LoanID AND JournalStatus=2",
+        new { LoanID = loan.LoanID }, transaction);
+    if (existingJournal > 0) return; // قيد الصرف موجود؛ لا تكرار.
+
+    var journalDate = DateTime.Today;
+    var openPeriods = (await connection.QueryAsync<(int FiscalYearID, int PeriodID)>(
+        @"SELECT fy.FiscalYearID, ap.PeriodID
+          FROM dbo.FiscalYears fy WITH (UPDLOCK,HOLDLOCK)
+          INNER JOIN dbo.AccountingPeriods ap WITH (UPDLOCK,HOLDLOCK) ON ap.FiscalYearID=fy.FiscalYearID
+          WHERE @JournalDate BETWEEN CAST(fy.StartDate AS date) AND CAST(fy.EndDate AS date)
+            AND @JournalDate BETWEEN CAST(ap.StartDate AS date) AND CAST(ap.EndDate AS date)
+            AND fy.YearStatus=1 AND ap.PeriodStatus=1
+          ORDER BY fy.FiscalYearID DESC, ap.PeriodNumber",
+        new { JournalDate = journalDate }, transaction)).ToList();
+    if (openPeriods.Count != 1)
+        throw new InvalidOperationException("لا توجد فترة محاسبية مفتوحة واحدة تغطي تاريخ الصرف؛ لم يُنشأ القيد وأُلغي الاعتماد.");
+    var period = openPeriods[0];
+
+    var journalNumber = await connection.QueryFirstOrDefaultAsync<string>(
+        "DECLARE @Next NVARCHAR(50); EXEC sp_GetNextNumber N'JV', @Next OUTPUT; SELECT @Next;",
+        transaction: transaction);
+    if (string.IsNullOrWhiteSpace(journalNumber))
+        throw new InvalidOperationException("تعذر توليد رقم قيد الصرف؛ أُلغي الاعتماد.");
+
+    var description = $"صرف سلفة {loan.LoanNumber}";
+    var journalId = await connection.ExecuteScalarAsync<int>(
+        @"INSERT INTO dbo.JournalEntries(JournalNumber, JournalDate, Description, Reference, SourceDocType, SourceDocID, SourceDocNumber, TotalDebit, TotalCredit, FiscalYearID, PeriodID, JournalType, JournalStatus, IsAutoGenerated, CreatedBy, CreatedDate, PostedBy, PostedDate)
+          VALUES(@Number, @Date, @Description, @Reference, 'LOAN', @SourceDocID, @SourceDocNumber, @Amount, @Amount, @FiscalYearID, @PeriodID, 1, 2, 1, @UserID, GETDATE(), @PostedBy, GETDATE());
+          SELECT CAST(SCOPE_IDENTITY() AS INT);",
+        new
+        {
+            Number = journalNumber,
+            Date = journalDate,
+            Description = description,
+            Reference = loan.LoanNumber,
+            SourceDocID = loan.LoanID,
+            SourceDocNumber = loan.LoanNumber,
+            Amount = amount,
+            period.FiscalYearID,
+            period.PeriodID,
+            UserID = userId,
+            PostedBy = (int?)null
+        }, transaction);
+
+    await connection.ExecuteAsync(
+        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description, EntityType, EntityID) VALUES(@JID, 1, @AccID, @Amount, 0, @Desc, 'Employee', @EmpID)",
+        new { JID = journalId, AccID = loanAccountId, Amount = amount, Desc = description, EmpID = loan.EmployeeID }, transaction);
+    await connection.ExecuteAsync(
+        "INSERT INTO dbo.JournalEntryDetails(JournalID, LineNumber, AccountID, DebitAmount, CreditAmount, Description) VALUES(@JID, 2, @AccID, 0, @Amount, @Desc)",
+        new { JID = journalId, AccID = cashAccountId, Amount = amount, Desc = description }, transaction);
+
+    foreach (var (accountId, delta) in new[] { (loanAccountId, amount), (cashAccountId, -amount) })
+    {
+        await connection.ExecuteAsync(
+            "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@AccountID",
+            new { Delta = delta, AccountID = accountId }, transaction);
+        int? current = accountId;
+        for (var depth = 0; depth < 10; depth++)
+        {
+            var parentId = await connection.ExecuteScalarAsync<int?>(
+                "SELECT ParentAccountID FROM dbo.ChartOfAccounts WHERE AccountID=@ID",
+                new { ID = current }, transaction);
+            if (!parentId.HasValue || parentId.Value <= 0) break;
+            await connection.ExecuteAsync(
+                "UPDATE dbo.ChartOfAccounts SET CurrentBalance=ISNULL(CurrentBalance,0)+@Delta WHERE AccountID=@ID",
+                new { Delta = delta, ID = parentId.Value }, transaction);
+            current = parentId.Value;
+        }
+    }
+
+    // الخزينة المرتبطة بحساب الصندوق تُخفّض مخزّنًا بنفس حركة الصرف
+    await connection.ExecuteAsync(
+        "UPDATE dbo.CashBoxes SET CurrentBalance=ISNULL(CurrentBalance,0)-@Amount WHERE AccountID=@AccountID",
+        new { Amount = amount, AccountID = cashAccountId }, transaction);
+}
+
 public async Task RejectLoanAsync(int loanId, int userId)
 {
     await _authorization.RequireUserPermissionAsync(userId, "SCR_LOANS", p => p.CanApprove,

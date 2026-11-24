@@ -776,6 +776,10 @@ namespace YKCoatings.Services
                 if (string.IsNullOrWhiteSpace(info.InvoiceNumber)) throw new Exception("الفاتورة غير موجودة");
                 if (info.InvoiceStatus != 2) throw new Exception("لا يمكن اعتماد فاتورة ليست في انتظار الاعتماد");
                 if (info.DetailCount == 0) throw new Exception("لا يمكن اعتماد فاتورة بدون أصناف");
+                // إصلاح 19: فاتورة بلا إذن استلام كانت تُعتمد فترحّل قيمة المخزون محاسبيًا
+                // دون أي حركة كمية (الكميات تدخل عبر الإذن وفحصه فقط) فينفصل الدفتر عن المخزن.
+                if (info.GRNID == null)
+                    throw new InvalidOperationException("لا يمكن اعتماد فاتورة مشتريات دون إذن استلام مرتبط؛ أنشئ إذن الاستلام وافحصه ثم اربط الفاتورة به أولًا.");
                 if (!info.IsDefaultCurrency || Math.Abs(info.ExchangeRate - 1m) > 0.000001m)
                     throw new InvalidOperationException("لا يمكن اعتماد فاتورة مشتريات بعملة غير العملة الافتراضية أو بسعر صرف مختلف عن 1.");
                 await EnsureLinkedPurchaseOrderLocalCurrencyAsync(

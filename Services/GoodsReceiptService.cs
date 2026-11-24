@@ -1274,7 +1274,10 @@ tr:nth-child(even){{background:#f8fafc}}
                       ORDER BY u.UserID",
                     new { EmployeeID = info.AssignedInspectorID.Value }, transaction)).ToList();
 
-                if (inspectorUserIds.Count != 1)
+                // إصلاح 19: كان الشرط «حساب واحد بالضبط» فيعطّل الفاحص بصمت متى امتلك
+                // حسابًا ثانيًا مؤهلًا؛ الصحيح اشتراط وجود حساب مؤهل واحد على الأقل،
+                // ويُنبّه أولها ترتيبًا، وتنفيذ الفحص نفسه يتحقق من الموظف لا من الحساب.
+                if (inspectorUserIds.Count == 0)
                     throw new InvalidOperationException(
                         "مسئول الفحص المحدد يجب أن يكون مرتبطًا بحساب مستخدم نشط لديه صلاحية فحص الجودة وعرض إذن الاستلام.");
 

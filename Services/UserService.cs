@@ -795,12 +795,14 @@ public async Task ClearUserPermissionsAsync(int userId)
         // ══════════════════════════════════════
         // Hash كلمة المرور
         // ══════════════════════════════════════
+        // إصلاح 18: نفس صيغة AuthService الحديثة PBKDF2-SHA256 بملح عشوائي
+        // (PBKDF2$iterations$saltBase64$hashBase64) — يجب أن تبقى متطابقة معها.
         private string HashPassword(string password)
         {
-            using var sha256 = System.Security.Cryptography.SHA256.Create();
-            var bytes = System.Text.Encoding.UTF8.GetBytes(password);
-            var hash = sha256.ComputeHash(bytes);
-            return BitConverter.ToString(hash).Replace("-", "").ToUpper();
+            var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+            var hash = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+                password, salt, 100_000, System.Security.Cryptography.HashAlgorithmName.SHA256, 32);
+            return $"PBKDF2$100000${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
         }
     }
 }

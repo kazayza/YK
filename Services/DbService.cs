@@ -74,6 +74,8 @@
         public string RoleCode { get; set; } = "";
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
+        public DateTime? LockoutEnd { get; set; }
+        public bool LockoutExpired { get; set; }
         public bool MustChangePassword { get; set; }
         public DateTime? PasswordChangedDate { get; set; }
 public int PasswordExpiryDays { get; set; }

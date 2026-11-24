@@ -17,14 +17,14 @@ namespace YKCoatings.Services
             string? ipAddress = null, string? machineName = null)
         {
             using var connection = CreateConnection();
-            var passwordHash = HashPassword(password);
 
             var sql = @"
                 SELECT
                     u.UserID, u.Username, u.FullName,
                     u.PasswordHash,
                     u.RoleID, r.RoleNameAr, r.RoleCode,
-                    u.IsActive, u.IsLocked,
+                    u.IsActive, u.IsLocked, u.LockoutEnd,
+                    CASE WHEN u.LockoutEnd IS NOT NULL AND u.LockoutEnd <= GETDATE() THEN 1 ELSE 0 END AS LockoutExpired,
                     u.MustChangePassword,
                     u.PasswordChangedDate,
                     u.PasswordExpiryDays,
@@ -51,13 +51,31 @@ namespace YKCoatings.Services
                 };
 
             if (user.IsLocked)
-                return new LoginResultDto
+            {
+                // إصلاح 18: القفل ينتهي بانتهاء مدته المسجلة (LockoutEnd)؛ كان الكود
+                // يتجاهل التاريخ تمامًا فيبقى الحساب مقفلًا إلى الأبد حتى يفكه مسؤول يدويًا.
+                // المقارنة بساعة قاعدة البيانات نفسها (LockoutExpired محسوبة بـ GETDATE)
+                // حتى لا يختلف طول القفل باختلاف منطقة خادم التطبيق عن خادم القاعدة.
+                if (user.LockoutExpired)
                 {
-                    Success = false,
-                    Message = "هذا الحساب محظور مؤقتاً"
-                };
+                    await connection.ExecuteAsync(@"
+                        UPDATE dbo.SystemUsers SET
+                            IsLocked = 0, FailedLoginAttempts = 0, LockoutEnd = NULL
+                        WHERE UserID = @UserID",
+                        new { user.UserID });
+                    user.IsLocked = false;
+                }
+                else
+                {
+                    return new LoginResultDto
+                    {
+                        Success = false,
+                        Message = "هذا الحساب محظور مؤقتاً"
+                    };
+                }
+            }
 
-            if (user.PasswordHash != passwordHash)
+            if (!VerifyPassword(password, user.PasswordHash))
             {
                 // تحديث عداد المحاولات الفاشلة مع Lockout
                 await connection.ExecuteAsync(@"
@@ -103,6 +121,16 @@ namespace YKCoatings.Services
                     LockoutEnd = NULL
                 WHERE UserID = @UserID",
                 new { user.UserID });
+
+            // إصلاح 18: ترقية شفافة — أي بصمة قديمة بصيغة SHA-256 تُعاد كتابتها
+            // بالصيغة المملّحة الحديثة عند أول دخول ناجح، دون إجبار أحد على تغيير كلمته.
+            if (!string.IsNullOrEmpty(user.PasswordHash)
+                && !user.PasswordHash.StartsWith("PBKDF2$", StringComparison.Ordinal))
+            {
+                await connection.ExecuteAsync(
+                    "UPDATE dbo.SystemUsers SET PasswordHash = @Hash WHERE UserID = @UserID",
+                    new { Hash = HashPassword(password), user.UserID });
+            }
 
             // تسجيل الدخول الناجح
             await connection.ExecuteAsync(@"
@@ -189,12 +217,45 @@ namespace YKCoatings.Services
         // ══════════════════════════════════════
         // Helpers
         // ══════════════════════════════════════
+        // إصلاح 18: الصيغة الحديثة PBKDF2-SHA256 بملح عشوائي لكل كلمة مرور
+        // (PBKDF2$iterations$saltBase64$hashBase64). البصمات القديمة SHA-256 hex
+        // تبقى قابلة للتحقق عبر LegacyHashPassword وتُرقّى عند أول دخول ناجح.
         private string HashPassword(string password)
+        {
+            var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+            var hash = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+                password, salt, 100_000, System.Security.Cryptography.HashAlgorithmName.SHA256, 32);
+            return $"PBKDF2$100000${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+        }
+
+        private static string LegacyHashPassword(string password)
         {
             using var sha256 = System.Security.Cryptography.SHA256.Create();
             var bytes = System.Text.Encoding.UTF8.GetBytes(password);
             var hash = sha256.ComputeHash(bytes);
             return BitConverter.ToString(hash).Replace("-", "").ToUpper();
+        }
+
+        private bool VerifyPassword(string password, string? storedHash)
+        {
+            if (string.IsNullOrEmpty(storedHash)) return false;
+            if (storedHash.StartsWith("PBKDF2$", StringComparison.Ordinal))
+            {
+                var parts = storedHash.Split('$');
+                if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations) || iterations <= 0)
+                    return false;
+                byte[] salt, expected;
+                try
+                {
+                    salt = Convert.FromBase64String(parts[2]);
+                    expected = Convert.FromBase64String(parts[3]);
+                }
+                catch { return false; }
+                var actual = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+                    password, salt, iterations, System.Security.Cryptography.HashAlgorithmName.SHA256, expected.Length);
+                return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(actual, expected);
+            }
+            return string.Equals(storedHash, LegacyHashPassword(password), StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsPasswordExpired(DateTime? passwordChangedDate, int expiryDays)
